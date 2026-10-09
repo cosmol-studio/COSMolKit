@@ -158,6 +158,7 @@ fn add_group(
             atom_indices.iter().copied().map(AtomId::new).collect(),
             bond_indices.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_id(7),
     );
 }

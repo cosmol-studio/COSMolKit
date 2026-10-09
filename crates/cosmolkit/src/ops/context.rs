@@ -590,6 +590,59 @@ impl<'a, Access> OpParts<'a, Access> {
         }
     }
 
+    pub(super) fn with_mutable_candidate_blocks_runtime<R>(
+        &mut self,
+        body: impl FnOnce(
+            &mut TopologyBlock,
+            &mut CoordinateBlock,
+            &mut MoleculeProperties,
+            &mut DerivedCacheBlock,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
+        let mut topology = self.checkout_topology_runtime()?;
+        let mut coordinates = match self.checkout_coordinates_runtime() {
+            Ok(value) => value,
+            Err(error) => {
+                self.topology = WorkingBlock::Installed(topology);
+                return Err(error);
+            }
+        };
+        let mut properties = match self.checkout_properties_runtime() {
+            Ok(value) => value,
+            Err(error) => {
+                self.topology = WorkingBlock::Installed(topology);
+                self.coordinates = WorkingBlock::Installed(coordinates);
+                return Err(error);
+            }
+        };
+        let mut cache = match self.checkout_derived_cache_runtime() {
+            Ok(value) => value,
+            Err(error) => {
+                self.topology = WorkingBlock::Installed(topology);
+                self.properties = WorkingBlock::Installed(properties);
+                self.coordinates = WorkingBlock::Installed(coordinates);
+                return Err(error);
+            }
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            body(&mut topology, &mut coordinates, &mut properties, &mut cache)
+        }));
+        // Restore storage before fallible invariant validation; finish owns
+        // acceptance of these complete detached blocks.
+        self.topology = WorkingBlock::Installed(topology);
+        self.coordinates = WorkingBlock::Installed(coordinates);
+        self.properties = WorkingBlock::Installed(properties);
+        self.derived_cache = WorkingBlock::Installed(cache);
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
     pub(super) fn install_topology_runtime(
         &mut self,
         topology: TopologyBlock,
@@ -1123,6 +1176,30 @@ impl<'a, Access> OpParts<'a, Access> {
             && spec.may_mutate.contains(BlockSet::PROPERTIES);
         match spec.cip_state {
             CipStatePolicy::Preserve => {}
+            CipStatePolicy::ScaffoldSourceTransition => {
+                let blocks = BlockSet::TOPOLOGY
+                    .union(BlockSet::COORDINATES)
+                    .union(BlockSet::PROPERTIES)
+                    .union(BlockSet::DERIVED_CACHE);
+                if !matches!(
+                    spec.method,
+                    "murcko_scaffold" | "net_scaffold" | "murcko_decompose"
+                ) || spec.kind != crate::MoleculeOpKind::Strong
+                    || spec.output != MoleculeOpOutput::Single
+                    || spec.topology_edit != TopologyEditKind::Compacting
+                    || spec.requires_mapping != MappingRequirement::Required
+                    || !spec.access.read().is_empty()
+                    || spec.access.write() != blocks
+                    || spec.may_mutate != blocks
+                    || spec.auto_remap != BlockSet::COORDINATES.union(BlockSet::PROPERTIES)
+                {
+                    return Err(OperationError::CipStateContract {
+                        operation: spec.method,
+                        policy: spec.cip_state,
+                        issue: "scaffold source transition requires an exact strong compacting scaffold operation and four write-owned blocks",
+                    });
+                }
+            }
             CipStatePolicy::ReactionSourceTransition => {
                 let blocks = BlockSet::TOPOLOGY
                     .union(BlockSet::COORDINATES)
@@ -2364,6 +2441,29 @@ impl<'a, Access> OpParts<'a, Access> {
                         policy: self.spec.cip_state,
                         issue: "assignment did not install computed _CIPComputed evidence",
                     });
+                }
+            }
+            CipStatePolicy::ScaffoldSourceTransition => {
+                // Core reproduces MolHash's force=true clean stereo assignment,
+                // or MurckoDecompose's clearComputedProps. No generic CIP clear
+                // may erase the former's freshly assigned labels. The exact
+                // declaration allow-list above grants no new storage authority.
+                if self.spec.method != "murcko_decompose" {
+                    let properties = self.current_properties_candidate()?;
+                    if !properties
+                        .is_prop_computed("_StereochemDone")
+                        .map_err(|e| {
+                            OperationError::InvalidProperty(
+                                cosmolkit_model::MoleculePropertyError::ComputedListKind(e),
+                            )
+                        })?
+                    {
+                        return Err(OperationError::CipStateContract {
+                            operation: self.spec.method,
+                            policy: self.spec.cip_state,
+                            issue: "MolHash scaffold did not complete source stereochemistry assignment",
+                        });
+                    }
                 }
             }
             CipStatePolicy::StereoisomerSourceTransition => {

@@ -614,11 +614,10 @@ fn invalid_topology_is_rejected_before_either_algorithm_traverses() {
     );
 
     let invalid_stereo_group = TopologyBlock {
-        stereo_groups: vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(4)],
-            vec![],
-        )],
+        stereo_groups: vec![
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(4)], vec![])
+                .expect("valid distinct stereo members"),
+        ],
         ..topology(1, &[])
     };
     assert_eq!(

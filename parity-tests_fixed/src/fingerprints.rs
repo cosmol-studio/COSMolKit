@@ -232,6 +232,12 @@ pub struct CountVector {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
+    /// Actual isolated reference process failure; never a chemical value or match.
+    ReferenceProcessFailure {
+        exit_code: i64,
+        process_id: u32,
+        stderr: String,
+    },
     Maccs {
         raw: Bits,
         public: Bits,
@@ -259,6 +265,18 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
             && fp.entries.windows(2).all(|pair| pair[0].0 < pair[1].0)
     };
     let valid = match (&row.params, output) {
+        (
+            Params::Layered {
+                branched: false,
+                roots: Roots::All,
+                ..
+            },
+            Observation::ReferenceProcessFailure {
+                exit_code,
+                process_id,
+                ..
+            },
+        ) => (*exit_code < 0 || *exit_code >= 0x8000_0000) && *process_id != 0,
         (Params::Maccs, Observation::Maccs { raw, public }) => {
             raw.length == 167
                 && public.length == 166
@@ -316,6 +334,10 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
     }
 }
 
+pub fn matches(expected: &Observation, actual: &Observation) -> bool {
+    !matches!(expected, Observation::ReferenceProcessFailure { .. }) && expected == actual
+}
+
 pub fn run(row: &FingerprintInput) -> Result<Record, String> {
     let mol = Molecule::from_smiles(&row.case.smiles).map_err(|e| e.to_string())?;
     let n = mol.num_atoms();
@@ -352,6 +374,7 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
                 use_bond_order: bond_order,
                 atom_invariants: custom_invariants.then(|| (1..=n as u32).collect()),
                 from_atoms: roots.resolve(n),
+                ignore_atoms: None,
             };
             Observation::Bits {
                 fingerprint: mol
@@ -533,6 +556,60 @@ fn fuzzy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reference_process_failure_requires_the_isolated_branch_and_real_exit() {
+        let cases = vec![SmilesCase {
+            id: "fixed-CCO".into(),
+            smiles: "CCO".into(),
+        }];
+        let Input::Fingerprint(mut row) = inputs(&cases, Kind::Layered).remove(0) else {
+            unreachable!()
+        };
+        row.params = Params::Layered {
+            layers: 63,
+            min_path: 1,
+            max_path: 7,
+            fp_size: 2048,
+            branched: false,
+            roots: Roots::All,
+            counts: Counts::Seeded,
+            mask: Mask::Absent,
+        };
+        for exit_code in [-11, -9, 0xc000_0005] {
+            let failure = Observation::ReferenceProcessFailure {
+                exit_code,
+                process_id: 123,
+                stderr: "native diagnostic".into(),
+            };
+            validate_output(&row, &failure).unwrap();
+            assert!(!matches(&failure, &failure));
+        }
+        for (exit_code, process_id) in [(0, 123), (1, 123), (-11, 0)] {
+            assert!(
+                validate_output(
+                    &row,
+                    &Observation::ReferenceProcessFailure {
+                        exit_code,
+                        process_id,
+                        stderr: String::new(),
+                    }
+                )
+                .is_err()
+            );
+        }
+        let failure = Observation::ReferenceProcessFailure {
+            exit_code: -11,
+            process_id: 123,
+            stderr: String::new(),
+        };
+        if let Params::Layered { roots, .. } = &mut row.params {
+            *roots = Roots::First;
+        }
+        assert!(validate_output(&row, &failure).is_err());
+        row.params = Params::Maccs;
+        assert!(validate_output(&row, &failure).is_err());
+    }
+
     #[test]
     fn fingerprint_seed_is_stable_and_one_profile_per_case() {
         let cases: Vec<_> = (0..1000)

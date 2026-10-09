@@ -11,6 +11,8 @@ pub struct SpecialRegression {
 }
 #[derive(Clone, Copy)]
 pub enum SpecialRegressionSchema {
+    ForcefieldOptimizers,
+    MmffBuiltin,
     BioMmcifSwitches,
     StructureTags,
     TautomerBranches,
@@ -18,6 +20,18 @@ pub enum SpecialRegressionSchema {
     MolAlign,
 }
 pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
+    SpecialRegression {
+        key: "forcefield_optimizers",
+        fixture: "special/forcefield_optimizers.json",
+        rows: 24,
+        schema: SpecialRegressionSchema::ForcefieldOptimizers,
+    },
+    SpecialRegression {
+        key: "mmff_builtin",
+        fixture: "special/mmff_builtin.json",
+        rows: 2052,
+        schema: SpecialRegressionSchema::MmffBuiltin,
+    },
     SpecialRegression {
         key: "bio_mmcif_switches",
         fixture: "special/bio_mmcif_switches.json",
@@ -132,6 +146,9 @@ macro_rules! corpus_tasks {
             (exact_molecular_weight_smiles, Operation::Molecular(molecule_plan::TaskId::ExactMolecularWeight), CorpusType::Smiles, "generate_exact_molecular_weight"),
             (molecular_formula_smiles, Operation::Molecular(molecule_plan::TaskId::MolecularFormula), CorpusType::Smiles, "generate_molecular_formula"),
             (num_heavy_atoms_smiles, Operation::Molecular(molecule_plan::TaskId::NumHeavyAtoms), CorpusType::Smiles, "generate_num_heavy_atoms"),
+            (murcko_scaffold_smiles, Operation::Molecular(molecule_plan::TaskId::MurckoScaffold), CorpusType::Smiles, "generate_murcko_scaffold"),
+            (net_scaffold_smiles, Operation::Molecular(molecule_plan::TaskId::NetScaffold), CorpusType::Smiles, "generate_net_scaffold"),
+            (murcko_decompose_smiles, Operation::Molecular(molecule_plan::TaskId::MurckoDecompose), CorpusType::Smiles, "generate_murcko_decompose"),
             (total_atom_count_smiles, Operation::Molecular(molecule_plan::TaskId::TotalAtomCount), CorpusType::Smiles, "generate_total_atom_count"),
             (lipinski_hba_smiles, Operation::Molecular(molecule_plan::TaskId::LipinskiHBA), CorpusType::Smiles, "generate_lipinski_hba"),
             (lipinski_hbd_smiles, Operation::Molecular(molecule_plan::TaskId::LipinskiHBD), CorpusType::Smiles, "generate_lipinski_hbd"),
@@ -140,7 +157,7 @@ macro_rules! corpus_tasks {
             (num_hba_smiles, Operation::Molecular(molecule_plan::TaskId::NumHba), CorpusType::Smiles, "generate_num_hba"),
             (num_hbd_smiles, Operation::Molecular(molecule_plan::TaskId::NumHbd), CorpusType::Smiles, "generate_num_hbd"),
             (add_hydrogens_smiles, Operation::Molecular(molecule_plan::TaskId::AddHydrogens), CorpusType::Smiles, "generate_add_hydrogens"),
-            (remove_hydrogens_smiles, Operation::Molecular(molecule_plan::TaskId::RemoveHydrogens), CorpusType::Smiles, "generate_remove_hydrogens"),
+            (remove_hs_smiles, Operation::Molecular(molecule_plan::TaskId::RemoveHydrogens), CorpusType::Smiles, "generate_remove_hydrogens"),
             (coordinates_2d_smiles, Operation::Molecular(molecule_plan::TaskId::Coordinates2d), CorpusType::Smiles, "generate_coordinates_2d"),
             (svg_smiles, Operation::Molecular(molecule_plan::TaskId::Svg), CorpusType::Smiles, "generate_svg"),
             (distance_matrix_smiles, Operation::Molecular(molecule_plan::TaskId::DistanceMatrix), CorpusType::Smiles, "generate_distance_matrix"),
@@ -244,7 +261,7 @@ macro_rules! define_tasks {
 }
 crate::corpus_tasks!(define_tasks);
 
-pub const RDKIT_VERSION: &str = "2026.03.1";
+pub const RDKIT_VERSION: &str = "2026.03.6";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -379,6 +396,9 @@ impl Input {
             Self::Molecular { profile, .. } => {
                 use molecule_plan::Profile::*;
                 match profile {
+                    MurckoScaffold => "murcko_scaffold",
+                    NetScaffold => "net_scaffold",
+                    MurckoDecompose => "murcko_decompose",
                     SmilesRead { .. } => "smiles_read",
                     SanitizeAll => "sanitize",
                     Kekulize { .. } => "kekulize",

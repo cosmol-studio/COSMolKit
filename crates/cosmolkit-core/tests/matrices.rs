@@ -621,6 +621,7 @@ fn shortest_only_paths_regress_through_the_unique_unweighted_matrix_owner() {
         &input,
         2,
         &PathSearchParams {
+            ignore_atoms: None,
             use_hydrogens: false,
             rooted_at_atom: None,
             only_shortest_paths: true,

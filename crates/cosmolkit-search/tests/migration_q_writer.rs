@@ -1025,12 +1025,15 @@ fn q102_cx_query_output_maps_properties_coordinates_stereo_and_supported_bonds()
             true,
         )],
         vec![
-            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(1)], Vec::new()).with_id(91),
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(1)], Vec::new())
+                .expect("valid distinct stereo members")
+                .with_id(91),
             StereoGroup::new(
                 StereoGroupKind::Absolute,
                 vec![AtomId::new(0), AtomId::new(2)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(77),
         ],
     )

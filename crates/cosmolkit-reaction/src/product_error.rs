@@ -1,6 +1,9 @@
 use cosmolkit_model::{AtomId, BondId};
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionProductError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error(transparent)]
     Coordinate(#[from] cosmolkit_model::CoordinateValidationError),
     #[error(transparent)]

@@ -85,6 +85,7 @@ fn calculation_preserves_atoms_bonds_adjacency_stereo_and_sgroups() {
             vec![AtomId::new(1)],
             vec![BondId::new(1)],
         )
+        .expect("valid distinct stereo members")
         .with_id(23),
     ];
     input.validate().unwrap();

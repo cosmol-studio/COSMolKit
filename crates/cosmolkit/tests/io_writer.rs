@@ -1163,15 +1163,15 @@ fn mol_to_v3000_block_writes_enhanced_stereo_collections() {
         .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
         .unwrap();
     builder
-        .add_stereo_group(StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![a0],
-            Vec::new(),
-        ))
+        .add_stereo_group(
+            StereoGroup::new(StereoGroupKind::Absolute, vec![a0], Vec::new())
+                .expect("valid distinct stereo members"),
+        )
         .unwrap();
     builder
         .add_stereo_group(
             StereoGroup::new(StereoGroupKind::Or, vec![a1], Vec::new())
+                .expect("valid distinct stereo members")
                 .with_id(2)
                 .with_write_id(2),
         )

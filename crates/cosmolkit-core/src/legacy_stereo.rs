@@ -19,6 +19,8 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum LegacyStereoError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
     #[error(transparent)]
     InvalidTopology(#[from] TopologyValidationError),
     #[error(transparent)]
@@ -1172,7 +1174,7 @@ pub fn assign_legacy_stereochemistry_source(
             cleanup_atropisomer_stereo_groups(&topology, &crate::AtropisomerAssignment::default())?
                 .groups;
     }
-    crate::structure_tags::cleanup_stereo_groups(&mut topology);
+    crate::structure_tags::cleanup_stereo_groups(&mut topology)?;
     topology.validate()?;
     Ok(())
 }

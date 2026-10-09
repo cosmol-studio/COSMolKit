@@ -314,6 +314,76 @@ fn cip_label_aux(
     center_idx: usize,
     context: &mut CipLabelerContext,
 ) -> Result<bool, CipLabelerError> {
+    // BEGIN RDKit 2026.03.6 COMPLETE labelAux
+    // RDKit❗❌: bool labelAux(std::vector<std::unique_ptr<Configuration>> &configs,
+    // RDKit❗❌:               const Rules &rules,
+    // RDKit❗❌:               const std::unique_ptr<Configuration> &center) {
+    // RDKit❗❌:   using Node_Cfg_Pair = std::pair<Node *, Configuration *>;
+    // RDKit❗❌:   std::vector<Node_Cfg_Pair> aux;
+    // RDKit❗❌:
+    // RDKit❗❌:   auto &digraph = center->getDigraph();
+    // RDKit❗❌:   for (const auto &config : configs) {
+    // RDKit❗❌:     if (config == center) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // FIXME: specific to each descriptor
+    // RDKit❗❌:     const auto &foci = config->getFoci();
+    // RDKit❗❌:
+    // RDKit❗❌:     // Skip if none of the foci atoms were reached during expansion
+    // RDKit❗❌:     if (std::ranges::none_of(foci,
+    // RDKit❗❌:                      [&](auto f) { return digraph.seenAtom(f); })) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (const auto &node : digraph.getNodes(foci[0])) {
+    // RDKit❗❌:       if (node->isDuplicate()) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       auto low = node;
+    // RDKit❗❌:       if (foci.size() == 2) {
+    // RDKit❗❌:         for (const auto &edge : node->getEdges(foci[1])) {
+    // RDKit❗❌:           const auto &other_node = edge->getOther(node);
+    // RDKit❗❌:           if (other_node->getDistance() < node->getDistance()) {
+    // RDKit❗❌:             low = other_node;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (!low->isDuplicate()) {
+    // RDKit❗❌:         aux.emplace_back(low, config.get());
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   auto farthest = [](const Node_Cfg_Pair &a, const Node_Cfg_Pair &b) {
+    // RDKit❗❌:     return a.first->getDistance() > b.first->getDistance();
+    // RDKit❗❌:   };
+    // RDKit❗❌:   std::sort(aux.begin(), aux.end(), farthest);
+    // RDKit❗❌:
+    // RDKit❗❌:   // Using a boost::unordered_map because it is more performant
+    // RDKit❗❌:   // than the STL version.
+    // RDKit❗❌:   boost::unordered_map<Node *, Descriptor> queue;
+    // RDKit❗❌:   int prev = std::numeric_limits<int>::max();
+    // RDKit❗❌:   for (const auto &e : aux) {
+    // RDKit❗❌:     const auto &node = e.first;
+    // RDKit❗❌:
+    // RDKit❗❌:     if (node->getDistance() < prev) {
+    // RDKit❗❌:       for (const auto &e2 : queue) {
+    // RDKit❗❌:         e2.first->setAux(e2.second);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       queue.clear();
+    // RDKit❗❌:       prev = node->getDistance();
+    // RDKit❗❌:     }
+    // RDKit❗❌:     const auto &config = e.second;
+    // RDKit❗❌:     auto label = config->label(node, digraph, rules);
+    // RDKit❗❌:     queue.emplace(node, label);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (const auto &e : queue) {
+    // RDKit❗❌:     e.first->setAux(e.second);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   return true;
+    // RDKit❗❌: }
+    // END RDKit 2026.03.6 COMPLETE labelAux
     let config_foci = configs
         .iter()
         .enumerate()
@@ -325,6 +395,9 @@ fn cip_label_aux(
     {
         let digraph = configs[center_idx].get_digraph_mut();
         for (config_idx, foci) in config_foci {
+            if !foci.iter().any(|&atom| digraph.seen_atom(atom)) {
+                continue;
+            }
             for node in digraph.get_nodes(foci[0])? {
                 if digraph.node(node).is_duplicate() {
                     continue;
@@ -2249,6 +2322,99 @@ impl<'a> CipSp2Bond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE Sp2Bond::label
+        // RDKit❗❌: Descriptor Sp2Bond::label(Node *root1, Digraph &digraph, const Rules &comp) {
+        // RDKit❗❌:   const auto &focus1 = getFoci()[0];
+        // RDKit❗❌:   const auto &focus2 = getFoci()[1];
+        // RDKit❗❌:
+        // RDKit❗❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
+        // RDKit❗❌:
+        // RDKit❗❌:   d_ranked_anchors.clear();
+        // RDKit❗❌:
+        // RDKit❗❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
+        // RDKit❗❌:   if (internal == nullptr) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   const auto &root2 = internal->getOther(root1);
+        // RDKit❗❌:
+        // RDKit❗❌:   auto edges1 = root1->getEdges();
+        // RDKit❗❌:   auto edges2 = root2->getEdges();
+        // RDKit❗❌:   removeInternalEdges(edges1, focus1, focus2);
+        // RDKit❗❌:   removeInternalEdges(edges2, focus1, focus2);
+        // RDKit❗❌:
+        // RDKit❗❌:   auto carriers = std::vector<Atom *>(getCarriers());
+        // RDKit❗❌:   auto config = d_cfg;
+        // RDKit❗❌:
+        // RDKit❗❌:   if (root1->getAtom() == focus2) {
+        // RDKit❗❌:     std::swap(carriers[0], carriers[1]);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   digraph.changeRoot(root1);
+        // RDKit❗❌:   const auto &priority1 = comp.sort(root1, edges1);
+        // RDKit❗❌:   if (!priority1.isUnique() && !is_constitutional) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // swap
+        // RDKit❗❌:   if (edges1.size() > 1 && carriers[0] != edges1[0]->getEnd()->getAtom()) {
+        // RDKit❗❌:     if (config == Bond::STEREOCIS) {
+        // RDKit❗❌:       config = Bond::STEREOTRANS;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       config = Bond::STEREOCIS;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   digraph.changeRoot(root2);
+        // RDKit❗❌:   const auto &priority2 = comp.sort(root2, edges2);
+        // RDKit❗❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // swap
+        // RDKit❗❌:   if (edges2.size() > 1 && carriers[1] != edges2[0]->getEnd()->getAtom()) {
+        // RDKit❗❌:     if (config == Bond::STEREOCIS) {
+        // RDKit❗❌:       config = Bond::STEREOTRANS;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       config = Bond::STEREOCIS;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   {
+        // RDKit❗❌:     // At this point, edges1 and edges2 are sorted by priority starting from
+        // RDKit❗❌:     // this node. Record that now! - they may be resorted after processing
+        // RDKit❗❌:     // other nodes.
+        // RDKit❗❌:
+        // RDKit❗❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+        // RDKit❗❌:     // in the paper on which this code is based states that,
+        // RDKit❗❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+        // RDKit❗❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+        // RDKit❗❌:     // if that is the case.
+        // RDKit❗❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
+        // RDKit❗❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
+        // RDKit❗❌:
+        // RDKit❗❌:     // Make sure the stereo atoms are in the right order
+        // RDKit❗❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
+        // RDKit❗❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
+        // RDKit❗❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
+        // RDKit❗❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   if (config == Bond::STEREOCIS) {
+        // RDKit❗❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit❗❌:       return Descriptor::seqCis;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       return Descriptor::Z;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   } else if (config == Bond::STEREOTRANS) {
+        // RDKit❗❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit❗❌:       return Descriptor::seqTrans;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       return Descriptor::E;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   return Descriptor::UNKNOWN;
+        // RDKit❗❌: }
+        // END RDKit 2026.03.6 COMPLETE Sp2Bond::label
+        let is_constitutional = comp.get_num_sub_rules() == 3;
         let focus1 = foci[0];
         let focus2 = foci[1];
         ranked_anchors.clear();
@@ -2278,7 +2444,7 @@ impl<'a> CipSp2Bond<'a> {
 
         digraph.change_root(root1)?;
         let priority1 = comp.sort(digraph, context, root1, &mut edges1, true)?;
-        if !priority1.is_unique() {
+        if !priority1.is_unique() && !is_constitutional {
             return Ok(Descriptor::Unknown);
         }
         if edges1.len() > 1
@@ -2293,7 +2459,7 @@ impl<'a> CipSp2Bond<'a> {
 
         digraph.change_root(root2)?;
         let priority2 = comp.sort(digraph, context, root2, &mut edges2, true)?;
-        if !priority2.is_unique() {
+        if !priority2.is_unique() || !priority1.is_unique() {
             return Ok(Descriptor::Unknown);
         }
         if edges2.len() > 1
@@ -2664,6 +2830,104 @@ impl<'a> CipAtropisomerBond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE AtropisomerBond::label
+        // RDKit❗❌: Descriptor AtropisomerBond::label(Node *root1, Digraph &digraph,
+        // RDKit❗❌:                                   const Rules &comp) {
+        // RDKit❗❌:   const auto &focus1 = getFoci()[0];
+        // RDKit❗❌:   const auto &focus2 = getFoci()[1];
+        // RDKit❗❌:
+        // RDKit❗❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
+        // RDKit❗❌:
+        // RDKit❗❌:   d_ranked_anchors.clear();
+        // RDKit❗❌:
+        // RDKit❗❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
+        // RDKit❗❌:   if (internal == nullptr) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   const auto &root2 = internal->getOther(root1);
+        // RDKit❗❌:
+        // RDKit❗❌:   auto edges1 = root1->getEdges();
+        // RDKit❗❌:   auto edges2 = root2->getEdges();
+        // RDKit❗❌:   removeInternalEdges(edges1, focus1, focus2);
+        // RDKit❗❌:   removeInternalEdges(edges2, focus1, focus2);
+        // RDKit❗❌:
+        // RDKit❗❌:   removeDuplicatesAndHs(edges1);
+        // RDKit❗❌:   removeDuplicatesAndHs(edges2);
+        // RDKit❗❌:
+        // RDKit❗❌:   auto carriers = std::vector<Atom *>(getCarriers());
+        // RDKit❗❌:   auto config = d_cfg;
+        // RDKit❗❌:
+        // RDKit❗❌:   if (root1->getAtom() == focus2) {
+        // RDKit❗❌:     std::swap(carriers[0], carriers[1]);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   digraph.changeRoot(root1);
+        // RDKit❗❌:   const auto &priority1 = comp.sort(root1, edges1);
+        // RDKit❗❌:   if (!priority1.isUnique() && !is_constitutional) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // swap
+        // RDKit❗❌:   if (edges1.size() > 1 && carriers[0] == edges1[1]->getEnd()->getAtom()) {
+        // RDKit❗❌:     if (config == Bond::STEREOATROPCCW) {
+        // RDKit❗❌:       config = Bond::STEREOATROPCW;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       config = Bond::STEREOATROPCCW;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   digraph.changeRoot(root2);
+        // RDKit❗❌:   const auto &priority2 = comp.sort(root2, edges2);
+        // RDKit❗❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
+        // RDKit❗❌:     return Descriptor::UNKNOWN;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // swap
+        // RDKit❗❌:   if (edges2.size() > 1 && carriers[1] == edges2[1]->getEnd()->getAtom()) {
+        // RDKit❗❌:     if (config == Bond::STEREOATROPCCW) {
+        // RDKit❗❌:       config = Bond::STEREOATROPCW;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       config = Bond::STEREOATROPCCW;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   {
+        // RDKit❗❌:     // This is mostly the same as in Sp2Bonds, but I doubt the anchors will be
+        // RDKit❗❌:     // implicit Hs in this case.
+        // RDKit❗❌:
+        // RDKit❗❌:     // At this point, edges1 and edges2 are sorted by priority starting from
+        // RDKit❗❌:     // this node. Record that now! - they may be resorted after processing
+        // RDKit❗❌:     // other nodes.
+        // RDKit❗❌:
+        // RDKit❗❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+        // RDKit❗❌:     // in the paper on which this code is based states that,
+        // RDKit❗❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+        // RDKit❗❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+        // RDKit❗❌:     // if that is the case.
+        // RDKit❗❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
+        // RDKit❗❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
+        // RDKit❗❌:
+        // RDKit❗❌:     // Make sure the stereo atoms are in the right order
+        // RDKit❗❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
+        // RDKit❗❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
+        // RDKit❗❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
+        // RDKit❗❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   if (config == Bond::STEREOATROPCCW) {
+        // RDKit❗❌:     if (priority1.isPseudoAsymetric() || priority2.isPseudoAsymetric()) {
+        // RDKit❗❌:       return Descriptor::m;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       return Descriptor::M;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   } else if (config == Bond::STEREOATROPCW) {
+        // RDKit❗❌:     if (priority1.isPseudoAsymetric() || priority2.isPseudoAsymetric()) {
+        // RDKit❗❌:       return Descriptor::p;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       return Descriptor::P;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return Descriptor::UNKNOWN;
+        // RDKit❗❌: }
+        // END RDKit 2026.03.6 COMPLETE AtropisomerBond::label
+        let is_constitutional = comp.get_num_sub_rules() == 3;
         let focus1 = foci[0];
         let focus2 = foci[1];
         ranked_anchors.clear();
@@ -2697,7 +2961,7 @@ impl<'a> CipAtropisomerBond<'a> {
 
         digraph.change_root(root1)?;
         let priority1 = comp.sort(digraph, context, root1, &mut edges1, true)?;
-        if !priority1.is_unique() {
+        if !priority1.is_unique() && !is_constitutional {
             return Ok(Descriptor::Unknown);
         }
         if edges1.len() > 1
@@ -2712,7 +2976,7 @@ impl<'a> CipAtropisomerBond<'a> {
 
         digraph.change_root(root2)?;
         let priority2 = comp.sort(digraph, context, root2, &mut edges2, true)?;
-        if !priority2.is_unique() {
+        if !priority2.is_unique() || !priority1.is_unique() {
             return Ok(Descriptor::Unknown);
         }
         if edges2.len() > 1
@@ -2890,5 +3154,445 @@ mod uint_complete_source_condition_cells {
                 kind: cosmolkit_model::PropertyValueKind::IntVector
             })
         ));
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem02 {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
+    use cosmolkit_types::Element;
+    use std::{cell::RefCell, rc::Rc};
+    fn axis(atrop: bool) -> TopologyBlock {
+        let elements = [
+            Element::F,
+            Element::C,
+            Element::C,
+            Element::CL,
+            Element::BR,
+            Element::I,
+        ];
+        let atoms = elements
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+            .collect();
+        let edges = [(1, 2), (1, 0), (1, 4), (2, 3), (2, 5)];
+        let bonds = edges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                let mut s = BondSpec::new(
+                    AtomId::new(a),
+                    AtomId::new(b),
+                    if i == 0 && !atrop {
+                        BondOrder::Double
+                    } else {
+                        BondOrder::Single
+                    },
+                );
+                if i == 0 {
+                    s = s
+                        .with_stereo(if atrop {
+                            BondStereo::AtropCcw
+                        } else {
+                            BondStereo::Cis
+                        })
+                        .with_stereo_atoms(AtomId::new(4), AtomId::new(5));
+                }
+                Bond::from_spec(BondId::new(i), s)
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    struct RecordingRule {
+        trace: Rc<RefCell<Vec<usize>>>,
+        ties: [bool; 2],
+        fail_second: bool,
+    }
+    impl CipSequenceRule for RecordingRule {
+        fn compare(
+            &self,
+            g: &mut CipDigraph<'_>,
+            _c: &mut CipLabelerContext,
+            _a: CipEdgeId,
+            _b: CipEdgeId,
+        ) -> Result<i32, CipLabelerError> {
+            let atom = g.node(g.get_current_root()).atom_idx().unwrap();
+            self.trace.borrow_mut().push(atom);
+            if atom == 2 && self.fail_second {
+                return Err(CipLabelerError::SomethingUnexpected);
+            }
+            Ok(if self.ties[usize::from(atom == 2)] {
+                0
+            } else {
+                1
+            })
+        }
+        fn get_comparison_with_sort_rules(
+            &self,
+            _s: Option<&[&dyn CipSequenceRule]>,
+            g: &mut CipDigraph<'_>,
+            c: &mut CipLabelerContext,
+            a: CipEdgeId,
+            b: CipEdgeId,
+            _deep: bool,
+        ) -> Result<i32, CipLabelerError> {
+            self.compare(g, c, a, b)
+        }
+        fn recursive_compare_with_sort_rules(
+            &self,
+            _s: &[&dyn CipSequenceRule],
+            g: &mut CipDigraph<'_>,
+            c: &mut CipLabelerContext,
+            a: CipEdgeId,
+            b: CipEdgeId,
+        ) -> Result<i32, CipLabelerError> {
+            self.compare(g, c, a, b)
+        }
+    }
+    fn run(
+        atrop: bool,
+        count: usize,
+        ties: [bool; 2],
+        fail: bool,
+    ) -> (Result<Descriptor, CipLabelerError>, Vec<usize>) {
+        let t = axis(atrop);
+        let trace = Rc::new(RefCell::new(vec![]));
+        let rules = CipRules::new(
+            (0..count)
+                .map(|_| {
+                    Box::new(RecordingRule {
+                        trace: trace.clone(),
+                        ties,
+                        fail_second: fail,
+                    }) as Box<dyn CipSequenceRule>
+                })
+                .collect(),
+        )
+        .unwrap();
+        let mut g = CipDigraph::new(&t, 1, atrop).unwrap();
+        let root = g.get_current_root();
+        let mut c = CipLabelerContext::new(0);
+        let mut anchors = vec![];
+        let result = if atrop {
+            CipAtropisomerBond::label_node_impl(
+                &[1, 2],
+                &[Some(4), Some(5)],
+                BondStereo::AtropCcw,
+                &mut anchors,
+                root,
+                &mut g,
+                &rules,
+                &mut c,
+            )
+        } else {
+            CipSp2Bond::label_node_impl(
+                &[1, 2],
+                &[Some(4), Some(5)],
+                BondStereo::Cis,
+                &mut anchors,
+                root,
+                &mut g,
+                &rules,
+                &mut c,
+            )
+        };
+        let seen = trace.borrow().clone();
+        (result, seen)
+    }
+    #[test]
+    fn constitutional_first_tie_visits_second_side_then_combined_unknown() {
+        for atrop in [false, true] {
+            for count in [3, 9] {
+                for ties in [[true, false], [true, true], [false, true], [false, false]] {
+                    let (r, seen) = run(atrop, count, ties, false);
+                    let second = seen.contains(&2);
+                    assert_eq!(second, !ties[0] || count == 3, "{atrop} {count} {ties:?}");
+                    if ties[0] || ties[1] {
+                        assert_eq!(r, Ok(Descriptor::Unknown));
+                    } else {
+                        assert!(r.unwrap() != Descriptor::Unknown);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn source_second_sort_error_priority_and_aux_absent_focus_gate() {
+        for atrop in [false, true] {
+            assert_eq!(
+                run(atrop, 3, [true, false], true).0,
+                Err(CipLabelerError::SomethingUnexpected)
+            );
+            assert_eq!(
+                run(atrop, 9, [true, false], true).0,
+                Ok(Descriptor::Unknown)
+            );
+        }
+        let t = axis(false);
+        let mut configs =
+            cip_find_configs(&t, &vec![true; t.atoms.len()], &vec![true; t.bonds.len()]).unwrap();
+        // One configuration cannot produce another center: retained control path.
+        let mut c = CipLabelerContext::with_remaining_call_count(1);
+        let before = configs[0].get_digraph_mut().get_num_nodes();
+        cip_label_aux(&mut configs, &cip_all_rules().unwrap(), 0, &mut c).unwrap();
+        assert_eq!(configs[0].get_digraph_mut().get_num_nodes(), before);
+    }
+    #[cfg(feature = "enumeration")]
+    fn parsed(s: &str) -> TopologyBlock {
+        cosmolkit_smiles::parse_smiles_complete_source(
+            s,
+            &cosmolkit_smiles::SmilesParseParams::default(),
+        )
+        .unwrap()
+        .topology
+    }
+    fn configs(t: &TopologyBlock) -> Vec<CipConfig<'_>> {
+        cip_find_configs(t, &vec![true; t.atoms.len()], &vec![true; t.bonds.len()]).unwrap()
+    }
+    // Existing get_edges only reads an already-expanded node; it returns Err for
+    // unexpanded nodes. This observation never calls the lazy expansion owner.
+    fn passive(g: &CipDigraph<'_>) -> (usize, CipNodeId, CipNodeId, Vec<(CipNodeId, CipNode)>) {
+        let mut pending = vec![g.get_original_root()];
+        let mut out = vec![];
+        while let Some(id) = pending.pop() {
+            if out.iter().any(|(old, _)| *old == id) {
+                continue;
+            }
+            let node = g.node(id);
+            out.push((id, node.clone()));
+            if let Ok(edges) = node.get_edges() {
+                for &edge in edges {
+                    pending.push(g.edge(edge).get_other(edge, id).unwrap());
+                }
+            }
+        }
+        (
+            g.get_num_nodes(),
+            g.get_original_root(),
+            g.get_current_root(),
+            out,
+        )
+    }
+    fn created_normal(g: &CipDigraph<'_>, atom: usize) -> CipNodeId {
+        passive(g)
+            .3
+            .into_iter()
+            .find(|(_, n)| n.atom_idx() == Some(atom) && !n.is_duplicate())
+            .unwrap()
+            .0
+    }
+    #[cfg(feature = "enumeration")]
+    #[test]
+    fn absent_auxiliary_focus_retains_created_state_and_budget_one() {
+        let t = parsed("F[C@](Cl)(Br)C.F[C@](Cl)(Br)C");
+        let mut cfg = configs(&t);
+        assert_eq!(
+            cfg.iter()
+                .map(|c| c.get_foci().to_vec())
+                .collect::<Vec<_>>(),
+            vec![vec![1], vec![6]]
+        );
+        let before = passive(cfg[0].get_digraph_mut());
+        let mut c = CipLabelerContext::with_remaining_call_count(1);
+        assert!(cip_label_aux(&mut cfg, &cip_all_rules().unwrap(), 0, &mut c).unwrap());
+        assert_eq!(passive(cfg[0].get_digraph_mut()), before);
+    }
+    #[cfg(feature = "enumeration")]
+    #[test]
+    fn auxiliary_seen_gate_is_live_and_keeps_source_iteration_order() {
+        let t = parsed("F[C@](Cl)(Br)[C@](F)(Cl)C[C@](F)(Cl)Br");
+        let mut target = CipTetrahedral::new(&t, 8).unwrap();
+        let expected = target
+            .label(
+                &cip_constitutional_rules().unwrap(),
+                &mut CipLabelerContext::new(0),
+            )
+            .unwrap();
+        assert!(matches!(expected, Descriptor::R | Descriptor::S));
+        for late_first in [false, true] {
+            let mut cfg = configs(&t);
+            assert_eq!(
+                cfg.iter()
+                    .map(|c| c.get_foci().to_vec())
+                    .collect::<Vec<_>>(),
+                vec![vec![1], vec![4], vec![8]]
+            );
+            if late_first {
+                cfg.swap(1, 2);
+            }
+            let g = cfg[0].get_digraph_mut();
+            g.node_edges(g.get_original_root()).unwrap();
+            assert!(g.seen_atom(4));
+            assert!(!g.seen_atom(8));
+            cip_label_aux(
+                &mut cfg,
+                &cip_all_rules().unwrap(),
+                0,
+                &mut CipLabelerContext::new(0),
+            )
+            .unwrap();
+            let g = cfg[0].get_digraph_mut();
+            assert!(g.seen_atom(8));
+            assert_eq!(
+                g.node(created_normal(g, 8)).get_aux(),
+                if late_first {
+                    Descriptor::None
+                } else {
+                    expected
+                }
+            );
+            assert_ne!(g.node(created_normal(g, 4)).get_aux(), Descriptor::None);
+        }
+    }
+    #[cfg(feature = "enumeration")]
+    #[test]
+    fn two_focus_auxiliary_gate_accepts_either_reached_endpoint() {
+        for (s, center, foci, closer) in [
+            ("F[C@](Cl)(Br)/C=C/F", 1, [4, 5], 4),
+            ("F/C=C/[C@](F)(Cl)Br", 3, [1, 2], 2),
+        ] {
+            for expansion in 0..3 {
+                let t = parsed(s);
+                let mut cfg = configs(&t);
+                assert_eq!(cfg.len(), 2);
+                assert_eq!(cfg[0].get_foci(), &[center]);
+                assert_eq!(cfg[1].get_foci(), &foci);
+                let g = cfg[0].get_digraph_mut();
+                if expansion == 1 {
+                    g.node_edges(g.get_original_root()).unwrap();
+                    assert_eq!(
+                        [g.seen_atom(foci[0]), g.seen_atom(foci[1])],
+                        if closer == foci[0] {
+                            [true, false]
+                        } else {
+                            [false, true]
+                        }
+                    );
+                } else if expansion == 2 {
+                    g.get_nodes(center).unwrap();
+                    assert!(g.seen_atom(foci[0]) && g.seen_atom(foci[1]));
+                } else {
+                    assert!(!g.seen_atom(foci[0]) && !g.seen_atom(foci[1]));
+                }
+                let before = passive(g);
+                cip_label_aux(
+                    &mut cfg,
+                    &cip_all_rules().unwrap(),
+                    0,
+                    &mut CipLabelerContext::new(0),
+                )
+                .unwrap();
+                let g = cfg[0].get_digraph_mut();
+                if expansion == 0 {
+                    assert_eq!(passive(g), before);
+                } else {
+                    assert!(g.seen_atom(foci[0]) && g.seen_atom(foci[1]));
+                    assert_eq!(g.node(created_normal(g, closer)).get_aux(), Descriptor::E);
+                }
+            }
+        }
+    }
+    #[test]
+    fn real_constitutional_sort_expands_second_side_after_first_tie() {
+        use crate::cip_graph::CipRule1a;
+        for atrop in [false, true] {
+            for constitutional in [false, true] {
+                let elements = [
+                    Element::C,
+                    Element::C,
+                    Element::C,
+                    Element::C,
+                    Element::C,
+                    Element::C,
+                    Element::F,
+                    Element::C,
+                    Element::F,
+                ];
+                let atoms = elements
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+                    .collect();
+                let mut axis = BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    if atrop {
+                        BondOrder::Single
+                    } else {
+                        BondOrder::Double
+                    },
+                )
+                .with_stereo(if atrop {
+                    BondStereo::AtropCcw
+                } else {
+                    BondStereo::Cis
+                });
+                if !atrop {
+                    axis = axis.with_stereo_atoms(AtomId::new(2), AtomId::new(4));
+                }
+                let mut specs = vec![axis];
+                for (a, b) in [(0, 2), (0, 3), (1, 4), (1, 5), (4, 6), (5, 7), (7, 8)] {
+                    specs.push(BondSpec::new(
+                        AtomId::new(a),
+                        AtomId::new(b),
+                        BondOrder::Single,
+                    ));
+                }
+                let bonds = specs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, s)| Bond::from_spec(BondId::new(i), s))
+                    .collect();
+                let t = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+                let mut g = CipDigraph::new(&t, 0, atrop).unwrap();
+                let root = g.get_original_root();
+                let rules = if constitutional {
+                    cip_constitutional_rules().unwrap()
+                } else {
+                    CipRules::new(vec![Box::new(CipRule1a)]).unwrap()
+                };
+                let mut c = CipLabelerContext::new(0);
+                let mut anchors = vec![];
+                let result = if atrop {
+                    CipAtropisomerBond::label_node_impl(
+                        &[0, 1],
+                        &[None, None],
+                        BondStereo::AtropCcw,
+                        &mut anchors,
+                        root,
+                        &mut g,
+                        &rules,
+                        &mut c,
+                    )
+                } else {
+                    CipSp2Bond::label_node_impl(
+                        &[0, 1],
+                        &[Some(2), Some(4)],
+                        BondStereo::Cis,
+                        &mut anchors,
+                        root,
+                        &mut g,
+                        &rules,
+                        &mut c,
+                    )
+                };
+                assert_eq!(result, Ok(Descriptor::Unknown));
+                assert!(anchors.is_empty());
+                assert_eq!(
+                    g.node(g.get_current_root()).atom_idx(),
+                    Some(if constitutional { 1 } else { 0 })
+                );
+                for atom in [4, 5] {
+                    assert_eq!(
+                        g.node(created_normal(&g, atom)).is_expanded(),
+                        constitutional
+                    );
+                }
+                assert_eq!(g.seen_atom(6), constitutional);
+                assert_eq!(g.seen_atom(7), constitutional);
+            }
+        }
     }
 }

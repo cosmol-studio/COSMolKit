@@ -130,8 +130,8 @@ def persistent_forcefield_case(wrapped):
             # whitelist or treating every RuntimeError as an expected rejection.
             lines = [line.strip() for line in str(error).splitlines() if line.strip()]
             if lines != ["Pre-condition Violation", "bad params pointer",
-                         "Violation occurred on line 79 in file Code/ForceField/UFF/AngleBend.cpp",
-                         "Failed Expression: at2Params", "RDKIT: 2026.03.1", "BOOST: 1_85"]:
+                         "Violation occurred on line 78 in file Code/ForceField/UFF/AngleBend.cpp",
+                         "Failed Expression: at2Params", "RDKIT: 2026.03.6", "BOOST: 1_85"]:
                 raise
             centers = [atom.GetIdx() for atom in molecule.GetAtoms()
                        if atom.GetHybridization() == Chem.HybridizationType.SP3D
@@ -206,7 +206,7 @@ def mmff_case(payload):
     import struct
     from rdkit import Chem
     from rdkit.Chem import AllChem
-    from fingerprint_values_pilot import prepare_forcefield_geometry
+    from forcefield_preparation import prepare_geometry
     case, profiles = payload
     bits = lambda value: struct.unpack(">Q", struct.pack(">d", value))[0]
     rows = []
@@ -227,7 +227,10 @@ def mmff_case(payload):
             else:
                 # Reuse input preparation only; no UFF optimization is performed.
                 common = {"case": case, "profile": {name: {**options, "add_hydrogens": True}}, "preparation": None}
-                row["preparation"] = prepare_forcefield_geometry(common, label="MMFF")
+                row["preparation"] = prepare_geometry(common, label="MMFF")
+                if "TimedOut" in row["preparation"]:
+                    rows.append({"input": {"Mmff": row}, "output": {"Mmff": row["preparation"]}})
+                    continue
                 if "Rejected" in row["preparation"]:
                     rows.append({"input": {"Mmff": row}, "output": {"Mmff": {"Error": row["preparation"]["Rejected"]}}})
                     continue
@@ -277,6 +280,16 @@ def mmff_case(payload):
     return rows
 
 
+def writer_native_profile(profile):
+    """Project CK option names to the pinned oracle's internal parameter keys."""
+    params = dict(profile)
+    params["do_isomeric_smiles"] = params.pop("isomeric_smiles")
+    params["do_kekule"] = params.pop("kekule")
+    if params["rooted_at_atom"] == "none":
+        params["rooted_at_atom"] = None
+    return params
+
+
 def writer_case(payload):
     from rdkit import Chem
     from _generate_smiles_writer_golden import branch_result
@@ -286,7 +299,7 @@ def writer_case(payload):
         return [{"Error": "Parse"} for _ in profiles]
     outcomes = []
     for profile in profiles:
-        params = {**profile, "rooted_at_atom": None if profile["rooted_at_atom"] == "none" else profile["rooted_at_atom"]}
+        params = writer_native_profile(profile)
         result = branch_result(molecule, {"params": params})
         outcomes.append({"Smiles": result["smiles"]} if result["ok"] else {"Error": "Write"})
     return outcomes
@@ -295,8 +308,7 @@ def writer_case(payload):
 def writer_rows(cases, profiles, threads, progress):
     from _generate_smiles_writer_golden import iter_branches
     existing = [branch["params"] for branch in iter_branches()]
-    existing = [{**p, "rooted_at_atom": p["rooted_at_atom"] or "none"} for p in existing]
-    if profiles != existing:
+    if [writer_native_profile(profile) for profile in profiles] != existing:
         raise ValueError("writer profiles must equal the existing ordered 768-branch matrix")
     return parallel(writer_case, [(case, profiles) for case in cases], threads, progress)
 
@@ -358,6 +370,19 @@ def bio_mmcif_switch_case(payload):
             "flag": flag, "value": value, "text": text}
 
 
+def uff_case(payload):
+    from fingerprint_values_pilot import uff
+    from forcefield_preparation import prepare_geometry
+    case, profiles, first_case_id = payload
+    rows = []
+    for profile in profiles:
+        row = {"case": case, "profile": profile, "preparation": None}
+        preparation = prepare_geometry(row, first_case_id=first_case_id)
+        output = preparation if preparation is not None and "TimedOut" in preparation else uff(row, first_case_id=first_case_id)
+        rows.append({"input": {"Uff": row}, "output": {"Uff": output}})
+    return rows
+
+
 def generate(request):
     threads = request["threads"]
     if not isinstance(threads,int) or threads < 1:
@@ -382,6 +407,11 @@ def generate(request):
         raise RuntimeError(f"RDKit version {rdBase.rdkitVersion} != {pin['version']}")
     if kind == "descriptors":
         return parallel(descriptor_case, request["corpus"], threads, progress)
+    if kind in ("forcefield_optimizers", "mmff_builtin"):
+        from forcefield_regression import optimizer_case, builtin_case
+        fixture = request["input"]
+        function = optimizer_case if kind == "forcefield_optimizers" else builtin_case
+        return parallel(function, fixture["cases"], threads, progress)
     if kind == "batch_smiles":
         recipes = request["input"]
         values = parallel(batch_case, recipes[0]["cases"], threads, progress)
@@ -405,6 +435,12 @@ def generate(request):
     if kind != "corpus":
         raise ValueError(f"unknown recipe {kind}")
     generator = request["generator"]
+    if generator in ("generate_uff_has_all_molecule_params", "generate_uff_optimize", "generate_uff_optimize_conformers"):
+        first_case_ids = {}
+        for case in request["corpus"]:
+            first_case_ids.setdefault(case["smiles"], case["id"])
+        results = parallel(uff_case, [(case, request["parameters"], first_case_ids[case["smiles"]]) for case in request["corpus"]], threads, progress)
+        return [row for batch in results for row in batch]
     if generator == "generate_persistent_force_field":
         return parallel(persistent_forcefield_case, request["input"], threads, progress)
     if generator == "generate_molalign":

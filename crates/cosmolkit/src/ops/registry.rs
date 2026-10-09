@@ -4,6 +4,13 @@ use cosmolkit_macros::molecule_ops;
 
 use super::FeatureSpec;
 
+#[cfg(feature = "cap-hashing")]
+pub(crate) static SCAFFOLDS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-hashing",
+    category: "chemistry",
+    docs: "Source-distinct Murcko, ExtendedMurcko and MurckoDecompose scaffolds.",
+};
+
 #[cfg(feature = "cap-fingerprints")]
 pub(crate) static FINGERPRINTS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-fingerprints",
@@ -138,6 +145,67 @@ pub(crate) static REACTION_FEATURE: FeatureSpec = FeatureSpec {
 };
 
 molecule_ops! {
+
+    #[cfg(feature = "cap-hashing")]
+    op murcko_scaffold() {
+        method: murcko_scaffold,
+        docs: "Return the MolHash Murcko scaffold without changing self. Repeated terminal-atom pruning transfers bond order to hydrogen counts; calculated hydrogen state is required.",
+        impl_fn: crate::ops::scaffolds::murcko_scaffold_impl,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [coordinates, properties],
+        derived_effects: {
+            recompute: [valence, rings], preserve: [],
+            invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: scaffold_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::SCAFFOLDS_FEATURE,
+        parity: required_now, parity_profile: "murcko_scaffold_rdkit_2026_03_6",
+        io_roundtrip: false, invariant_profile: "scaffold_compacting_mapping_source_stereo_and_metadata",
+    }
+
+    #[cfg(feature = "cap-hashing")]
+    op net_scaffold() {
+        method: net_scaffold,
+        docs: "Return the MolHash ExtendedMurcko scaffold without changing self. Ring/linker atoms survive and directly attached substituents become dummy atoms; calculated hydrogen state is required.",
+        impl_fn: crate::ops::scaffolds::net_scaffold_impl,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [coordinates, properties],
+        derived_effects: {
+            recompute: [valence, rings], preserve: [],
+            invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: scaffold_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::SCAFFOLDS_FEATURE,
+        parity: required_now, parity_profile: "net_scaffold_rdkit_2026_03_6",
+        io_roundtrip: false, invariant_profile: "scaffold_compacting_mapping_source_stereo_and_metadata",
+    }
+
+    #[cfg(feature = "cap-hashing")]
+    op murcko_decompose() {
+        method: murcko_decompose,
+        docs: "Return ChemTransforms MurckoDecompose without changing self. Preserve rings, shortest-path linkers and their exocyclic double-bonded atoms. Nonempty input requires initialized ring information; this is not MolHash MurckoScaffold.",
+        impl_fn: crate::ops::scaffolds::murcko_decompose_impl,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [coordinates, properties],
+        derived_effects: {
+            recompute: [], preserve: [],
+            invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: scaffold_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::SCAFFOLDS_FEATURE,
+        parity: required_now, parity_profile: "murcko_decompose_rdkit_2026_03_6",
+        io_roundtrip: false, invariant_profile: "scaffold_compacting_mapping_source_stereo_and_metadata",
+    }
+
     #[cfg(feature = "cap-stereoisomers")]
     op enumerate_stereoisomers(options: &crate::StereoisomerOptions) {
         method: enumerate_stereoisomers_with_options, impl_fn: crate::ops::stereoisomers::enumerate_stereoisomers_impl,
@@ -341,6 +409,7 @@ molecule_ops! {
     #[cfg(feature = "cap-tautomer")]
     op enumerate_tautomers_with_params(params: &crate::TautomerParams) {
         method: enumerate_tautomers_with_params,
+        default_method: enumerate_tautomers, default_args: [&crate::TautomerParams::default()],
         impl_fn: crate::ops::tautomer::enumerate_tautomers_impl,
         output: multiple,
         result_type: crate::TautomerEnumeration,
@@ -348,41 +417,38 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
-        access: { read: [coordinates], write: [topology, properties, derived_cache] },
-        may_mutate: [topology, properties, derived_cache],
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [],
-        derived_effects: { recompute: [valence, rings, aromaticity, stereo], preserve: [coordinates], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
+        derived_effects: { recompute: [valence, rings, aromaticity, stereo, coordinates], preserve: [], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
         cip_state: tautomer_source_transition,
         requires_mapping: identity,
         feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
         parity: required_now,
         parity_profile: "tautomer_current_v1_source_5000",
         io_roundtrip: false,
-        invariant_profile: "tautomer_source_state_and_shared_coordinates",
-        default_method: enumerate_tautomers,
-        default_args: [&crate::TautomerParams::default()],
+        invariant_profile: "tautomer_source_quickcopy_and_canonical_restoration",
     }
 
     #[cfg(feature = "cap-tautomer")]
     op canonical_tautomer_with_params(params: &crate::TautomerParams) {
         method: canonical_tautomer_with_params,
+        default_method: canonical_tautomer, default_args: [&crate::TautomerParams::default()],
         impl_fn: crate::ops::tautomer::canonical_tautomer_impl,
         domain: topology,
         kind: weak,
         topology_edit: local,
-        access: { read: [coordinates], write: [topology, properties, derived_cache] },
-        may_mutate: [topology, properties, derived_cache],
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [],
-        derived_effects: { recompute: [valence, rings, aromaticity, stereo], preserve: [coordinates], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
+        derived_effects: { recompute: [valence, rings, aromaticity, stereo, coordinates], preserve: [], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
         cip_state: tautomer_source_transition,
         requires_mapping: identity,
         feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
         parity: required_now,
         parity_profile: "tautomer_current_v1_source_5000",
         io_roundtrip: false,
-        invariant_profile: "tautomer_source_state_and_shared_coordinates",
-        default_method: canonical_tautomer,
-        default_args: [&crate::TautomerParams::default()],
+        invariant_profile: "tautomer_source_quickcopy_and_canonical_restoration",
     }
 
     #[cfg(feature = "cap-forcefields")]
@@ -737,6 +803,66 @@ molecule_ops! {
         invariant_profile: "weak_ring_cache_assignment",
         inplace: true,
         inplace_method: assign_rings_,
+    }
+    #[cfg(feature = "cap-tautomer")]
+    op with_assigned_symm_sssr {
+        method: with_assigned_symm_sssr,
+        method_visibility: pub(crate),
+        impl_fn: crate::ops::tautomer::assign_symm_sssr_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: none,
+        access: {
+            read: [topology],
+            write: [derived_cache],
+        },
+        may_mutate: [derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [rings],
+            preserve: [valence, aromaticity, stereo, coordinates, drawing, fingerprint],
+            invalidate: [ring_families],
+            operation_defined: [],
+        },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
+        parity: required_now,
+        parity_profile: "tautomer_score_symmetrize_sssr_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_ring_cache_assignment",
+        inplace: true,
+        inplace_method: assign_symm_sssr_,
+    }
+    #[cfg(feature = "cap-tautomer")]
+    op with_installed_tautomer_score_cache(rings: &cosmolkit_core::RingInfo) {
+        method: with_installed_tautomer_score_cache,
+        method_visibility: pub(crate),
+        impl_fn: crate::ops::tautomer::install_tautomer_score_cache_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: none,
+        access: {
+            read: [topology],
+            write: [derived_cache],
+        },
+        may_mutate: [derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [rings],
+            preserve: [valence, aromaticity, stereo, coordinates, drawing, fingerprint],
+            invalidate: [ring_families],
+            operation_defined: [],
+        },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
+        parity: required_now,
+        parity_profile: "tautomer_score_symmetrize_sssr_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_ring_cache_assignment",
+        inplace: true,
+        inplace_method: install_tautomer_score_cache_,
     }
 
     #[cfg(feature = "cap-rings")]

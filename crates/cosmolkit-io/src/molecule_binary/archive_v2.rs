@@ -1671,7 +1671,7 @@ impl MoleculeState {
             .into_iter()
             .map(|s| {
                 let mut group =
-                    StereoGroup::new(s.kind.into(), atom_ids(s.atoms)?, bond_ids(s.bonds)?)
+                    StereoGroup::new(s.kind.into(), atom_ids(s.atoms)?, bond_ids(s.bonds)?)?
                         .with_write_id(s.write_id);
                 if let Some(id) = s.id {
                     group = group.with_id(id).with_write_id(s.write_id);
@@ -2642,5 +2642,36 @@ mod tests {
         let restored = decode(&data).unwrap();
         assert_eq!(r.topology, restored.topology);
         assert_eq!(data, encode_molecule_binary(&input(&restored)).unwrap());
+    }
+
+    #[test]
+    fn recovery_chem29_archive20_malformed_wire_members_reject_with_typed_cause_without_schema_change()
+     {
+        use cosmolkit_model::StereoGroupError;
+        let record = fixture();
+        let good = encode_molecule_binary(&input(&record)).unwrap();
+        for (atoms, bonds, expected) in [
+            (vec![0, 0], vec![0, 0], StereoGroupError::DuplicateAtom),
+            (vec![0], vec![0, 0], StereoGroupError::DuplicateBond),
+        ] {
+            let malformed = mutate_molecule(&good, |m| {
+                m.stereo_groups.push(StereoRecord {
+                    id: Some(7),
+                    write_id: 9,
+                    kind: StereoGroupKindRecord::Or,
+                    atoms,
+                    bonds,
+                })
+            });
+            assert_eq!(&malformed[..12], &good[..12]); // Same actual archive 2.0 envelope.
+            let error = decode_molecule_binary(&malformed).unwrap_err();
+            assert_eq!(error, PickleError::StereoGroup(expected));
+            assert_eq!(
+                std::error::Error::source(&error)
+                    .unwrap()
+                    .downcast_ref::<StereoGroupError>(),
+                Some(&expected)
+            );
+        }
     }
 }

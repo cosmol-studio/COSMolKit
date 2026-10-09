@@ -266,43 +266,69 @@ fn enumerate_fingerprint_paths_for_root(
     use_hs: bool,
     branched_paths: bool,
     root: Option<u32>,
+    ignore_atoms: Option<&[bool]>,
 ) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, LayeredFingerprintError> {
-    // BEGIN RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
-    // RDKit✔️✔️: void enumerateAllPaths(const ROMol &mol, INT_PATH_LIST_MAP &allPaths,
-    // RDKit✔️✔️:                        const std::vector<std::uint32_t> *fromAtoms,
-    // RDKit✔️✔️:                        bool branchedPaths, bool useHs, unsigned int minPath,
-    // RDKit✔️✔️:                        unsigned int maxPath) {
-    // RDKit✔️✔️:   if (!fromAtoms) {
-    // RDKit✔️✔️:     if (branchedPaths) {
-    // RDKit✔️✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs);
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     for (auto aidx : *fromAtoms) {
-    // RDKit✔️✔️:       INT_PATH_LIST_MAP tPaths;
-    // RDKit✔️✔️:       if (branchedPaths) {
-    // RDKit✔️✔️:         tPaths =
-    // RDKit✔️✔️:             findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs, aidx);
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         tPaths =
-    // RDKit✔️✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs, aidx);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
-    // RDKit✔️✔️:            tpit != tPaths.end(); ++tpit) {
-    // RDKit✔️✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
-    // RDKit✔️✔️:                                      tpit->second.begin(), tpit->second.end());
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
+    // BEGIN RDKIT CPP FUNCTION RDKit::RDKitFPUtils::enumerateAllPaths (Release_2026_03_6)
+    // RDKit❗✔️: void enumerateAllPaths(const ROMol &mol, INT_PATH_LIST_MAP &allPaths,
+    // RDKit❗✔️:                        const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit❗✔️:                        bool branchedPaths, bool useHs, unsigned int minPath,
+    // RDKit❗✔️:                        unsigned int maxPath,
+    // RDKit❗✔️:                        boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   if (!fromAtoms) {
+    // RDKit❗✔️:     if (branchedPaths) {
+    // RDKit❗✔️:       int rootedAtAtom = -1;
+    // RDKit❗✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs,
+    // RDKit❗✔️:                                                rootedAtAtom, ignoreAtoms);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       bool useBonds = true;
+    // RDKit❗✔️:       int rootedAtAtom = -1;
+    // RDKit❗✔️:       bool onlyShortestPaths = false;
+    // RDKit❗✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, useBonds,
+    // RDKit❗✔️:                                            useHs, rootedAtAtom,
+    // RDKit❗✔️:                                            onlyShortestPaths, ignoreAtoms);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     for (auto aidx : *fromAtoms) {
+    // RDKit❗✔️:       INT_PATH_LIST_MAP tPaths;
+    // RDKit❗✔️:       if (branchedPaths) {
+    // RDKit❗✔️:         tPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs,
+    // RDKit❗✔️:                                                aidx, ignoreAtoms);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         bool useBonds = true;
+    // RDKit❗✔️:         bool onlyShortestPaths = false;
+    // RDKit❗✔️:         tPaths =
+    // RDKit❗✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, useBonds, useHs,
+    // RDKit❗✔️:                                       aidx, onlyShortestPaths, ignoreAtoms);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
+    // RDKit❗✔️:            tpit != tPaths.end(); ++tpit) {
+    // RDKit❗✔️: #ifdef VERBOSE_FINGERPRINTING
+    // RDKit❗✔️:         std::cerr << "paths from " << aidx << " size: " << tpit->first
+    // RDKit❗✔️:                   << std::endl;
+    // RDKit❗✔️:         for (auto path : tpit->second) {
+    // RDKit❗✔️:           std::cerr << " path: ";
+    // RDKit❗✔️:           std::copy(path.begin(), path.end(),
+    // RDKit❗✔️:                     std::ostream_iterator<int>(std::cerr, ", "));
+    // RDKit❗✔️:           std::cerr << std::endl;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️: #endif
+    // RDKit❗✔️:
+    // RDKit❗✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
+    // RDKit❗✔️:                                      tpit->second.begin(), tpit->second.end());
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::RDKitFPUtils::enumerateAllPaths
     // Source enumeration belongs to CORE paths; IDs are moved, never cloned.
     let rooted_at_atom = root.map(|index| AtomId::new(index as usize));
     if branched_paths {
         let params = SubgraphSearchParams {
             use_hydrogens: use_hs,
             rooted_at_atom,
+            ignore_atoms,
         };
         let paths = match graph {
             LayeredGraphInput::Concrete(topology) => {
@@ -332,6 +358,7 @@ fn enumerate_fingerprint_paths_for_root(
             &PathSearchParams {
                 use_hydrogens: use_hs,
                 rooted_at_atom,
+                ignore_atoms,
                 ..PathSearchParams::default()
             },
         )?,
@@ -342,6 +369,7 @@ fn enumerate_fingerprint_paths_for_root(
             &SubgraphSearchParams {
                 use_hydrogens: use_hs,
                 rooted_at_atom,
+                ignore_atoms,
             },
         )?,
     };
@@ -369,37 +397,62 @@ pub(super) fn enumerate_fingerprint_paths(
     use_hs: bool,
     branched_paths: bool,
     from_atoms: Option<&[u32]>,
+    ignore_atoms: Option<&[bool]>,
 ) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, LayeredFingerprintError> {
-    // BEGIN RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
-    // RDKit✔️✔️: void enumerateAllPaths(const ROMol &mol, INT_PATH_LIST_MAP &allPaths,
-    // RDKit✔️✔️:                        const std::vector<std::uint32_t> *fromAtoms,
-    // RDKit✔️✔️:                        bool branchedPaths, bool useHs, unsigned int minPath,
-    // RDKit✔️✔️:                        unsigned int maxPath) {
-    // RDKit✔️✔️:   if (!fromAtoms) {
-    // RDKit✔️✔️:     if (branchedPaths) {
-    // RDKit✔️✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs);
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     for (auto aidx : *fromAtoms) {
-    // RDKit✔️✔️:       INT_PATH_LIST_MAP tPaths;
-    // RDKit✔️✔️:       if (branchedPaths) {
-    // RDKit✔️✔️:         tPaths =
-    // RDKit✔️✔️:             findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs, aidx);
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         tPaths =
-    // RDKit✔️✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, true, useHs, aidx);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
-    // RDKit✔️✔️:            tpit != tPaths.end(); ++tpit) {
-    // RDKit✔️✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
-    // RDKit✔️✔️:                                      tpit->second.begin(), tpit->second.end());
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDKitFPUtils::enumerateAllPaths
+    // BEGIN RDKIT CPP FUNCTION RDKit::RDKitFPUtils::enumerateAllPaths (Release_2026_03_6)
+    // RDKit❗✔️: void enumerateAllPaths(const ROMol &mol, INT_PATH_LIST_MAP &allPaths,
+    // RDKit❗✔️:                        const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit❗✔️:                        bool branchedPaths, bool useHs, unsigned int minPath,
+    // RDKit❗✔️:                        unsigned int maxPath,
+    // RDKit❗✔️:                        boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   if (!fromAtoms) {
+    // RDKit❗✔️:     if (branchedPaths) {
+    // RDKit❗✔️:       int rootedAtAtom = -1;
+    // RDKit❗✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs,
+    // RDKit❗✔️:                                                rootedAtAtom, ignoreAtoms);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       bool useBonds = true;
+    // RDKit❗✔️:       int rootedAtAtom = -1;
+    // RDKit❗✔️:       bool onlyShortestPaths = false;
+    // RDKit❗✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, useBonds,
+    // RDKit❗✔️:                                            useHs, rootedAtAtom,
+    // RDKit❗✔️:                                            onlyShortestPaths, ignoreAtoms);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     for (auto aidx : *fromAtoms) {
+    // RDKit❗✔️:       INT_PATH_LIST_MAP tPaths;
+    // RDKit❗✔️:       if (branchedPaths) {
+    // RDKit❗✔️:         tPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, useHs,
+    // RDKit❗✔️:                                                aidx, ignoreAtoms);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         bool useBonds = true;
+    // RDKit❗✔️:         bool onlyShortestPaths = false;
+    // RDKit❗✔️:         tPaths =
+    // RDKit❗✔️:             findAllPathsOfLengthsMtoN(mol, minPath, maxPath, useBonds, useHs,
+    // RDKit❗✔️:                                       aidx, onlyShortestPaths, ignoreAtoms);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
+    // RDKit❗✔️:            tpit != tPaths.end(); ++tpit) {
+    // RDKit❗✔️: #ifdef VERBOSE_FINGERPRINTING
+    // RDKit❗✔️:         std::cerr << "paths from " << aidx << " size: " << tpit->first
+    // RDKit❗✔️:                   << std::endl;
+    // RDKit❗✔️:         for (auto path : tpit->second) {
+    // RDKit❗✔️:           std::cerr << " path: ";
+    // RDKit❗✔️:           std::copy(path.begin(), path.end(),
+    // RDKit❗✔️:                     std::ostream_iterator<int>(std::cerr, ", "));
+    // RDKit❗✔️:           std::cerr << std::endl;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️: #endif
+    // RDKit❗✔️:
+    // RDKit❗✔️:         allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
+    // RDKit❗✔️:                                      tpit->second.begin(), tpit->second.end());
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::RDKitFPUtils::enumerateAllPaths
     // Local complexity review: each source call and Rust helper enumerates the
     // same path/subgraph state once per requested root. Both prepend each root
     // group to the per-length vector; no molecule or completed path map is
@@ -407,6 +460,11 @@ pub(super) fn enumerate_fingerprint_paths(
     if min_path == 0 || max_path < min_path {
         return Err(LayeredFingerprintError::InvalidArguments {
             reason: "invalid path lengths",
+        });
+    }
+    if ignore_atoms.is_some_and(|mask| mask.len() != graph.atom_count()) {
+        return Err(LayeredFingerprintError::InvalidArguments {
+            reason: "bad ignoreAtoms size",
         });
     }
     let lower = min_path as usize;
@@ -419,6 +477,7 @@ pub(super) fn enumerate_fingerprint_paths(
             use_hs,
             branched_paths,
             None,
+            ignore_atoms,
         );
     };
 
@@ -431,6 +490,7 @@ pub(super) fn enumerate_fingerprint_paths(
             use_hs,
             branched_paths,
             Some(root),
+            ignore_atoms,
         )?;
         for (length, paths) in rooted_paths {
             result.entry(length).or_default().splice(0..0, paths);
@@ -1067,6 +1127,7 @@ fn layered_fingerprint_impl(
         false,
         params.branched_paths,
         params.from_atoms.as_deref(),
+        None,
     )?;
     let fp_size = params.fp_size as usize;
     let mut fingerprint = Fingerprint::new(params.fp_size);

@@ -67,3 +67,24 @@ fn bio_mmcif_switches() {
     .unwrap();
     cosmolkit_parity_tests_fixed::bio_mmcif::compare(&snapshot).unwrap();
 }
+#[cfg(parity_special_forcefield_optimizers)]
+#[test]
+fn forcefield_optimizers() {
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "forcefield_optimizers",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    cosmolkit_parity_tests_fixed::forcefield_regression::compare_optimizers(&snapshot);
+}
+
+#[cfg(parity_special_mmff_builtin)]
+#[test]
+fn mmff_builtin() {
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "mmff_builtin",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    cosmolkit_parity_tests_fixed::forcefield_regression::compare_builtin(&snapshot);
+}

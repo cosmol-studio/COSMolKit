@@ -249,6 +249,7 @@ fn q82_stereo_group(kind: StereoGroupKind, atom_indices: &[usize]) -> StereoGrou
         atom_indices.iter().copied().map(AtomId::new).collect(),
         Vec::new(),
     )
+    .expect("valid distinct stereo members")
 }
 
 fn q82_stereo_spec(index: usize, element: Element, center_tags: [ChiralTag; 2]) -> AtomSpec {

@@ -145,9 +145,14 @@ fn cx_cleanup_stereo_groups_keeps_valid_members_empty_groups_ids_and_order() {
             vec![AtomId::new(0), AtomId::new(1)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(7),
-        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(2)], Vec::new()).with_id(19),
-        StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), Vec::new()).with_id(23),
+        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(2)], Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(19),
+        StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(23),
     ];
     let mut topology = topology_with_stereo_groups(
         vec![
@@ -163,7 +168,7 @@ fn cx_cleanup_stereo_groups_keeps_valid_members_empty_groups_ids_and_order() {
     );
     let before = topology.clone();
 
-    cleanup_stereo_groups(&mut topology);
+    cleanup_stereo_groups(&mut topology).unwrap();
 
     assert_eq!(
         topology, before,
@@ -203,18 +208,20 @@ fn cx_cleanup_stereo_groups_filters_mixed_members_and_preserves_read_id_order() 
                     BondId::new(0),
                 ],
             )
+            .expect("valid distinct stereo members")
             .with_id(41),
         ],
     );
     let before = topology.clone();
 
-    cleanup_stereo_groups(&mut topology);
+    cleanup_stereo_groups(&mut topology).unwrap();
 
     let expected_group = StereoGroup::new(
         StereoGroupKind::Or,
         vec![AtomId::new(3), AtomId::new(1)],
         vec![BondId::new(3), BondId::new(1)],
     )
+    .expect("valid distinct stereo members")
     .with_id(41);
     assert_eq!(topology.stereo_groups, vec![expected_group]);
     assert_eq!(topology.atoms, before.atoms);
@@ -224,8 +231,9 @@ fn cx_cleanup_stereo_groups_filters_mixed_members_and_preserves_read_id_order() 
 
 #[test]
 fn cx_cleanup_stereo_groups_drops_invalid_groups_but_keeps_empty_group() {
-    let empty_group =
-        StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), Vec::new()).with_id(8);
+    let empty_group = StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), Vec::new())
+        .expect("valid distinct stereo members")
+        .with_id(8);
     let mut topology = topology_with_stereo_groups(
         vec![
             AtomSpec::new(Element::C),
@@ -239,27 +247,33 @@ fn cx_cleanup_stereo_groups_drops_invalid_groups_but_keeps_empty_group() {
                 .with_stereo(BondStereo::AtropCw),
         ],
         vec![
-            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], Vec::new()).with_id(5),
-            StereoGroup::new(StereoGroupKind::And, Vec::new(), vec![BondId::new(0)]).with_id(6),
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], Vec::new())
+                .expect("valid distinct stereo members")
+                .with_id(5),
+            StereoGroup::new(StereoGroupKind::And, Vec::new(), vec![BondId::new(0)])
+                .expect("valid distinct stereo members")
+                .with_id(6),
             StereoGroup::new(
                 StereoGroupKind::Or,
                 vec![AtomId::new(1)],
                 vec![BondId::new(1)],
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
             empty_group.clone(),
         ],
     );
 
-    cleanup_stereo_groups(&mut topology);
+    cleanup_stereo_groups(&mut topology).unwrap();
 
     assert_eq!(topology.stereo_groups, vec![empty_group]);
 }
 
 #[test]
 fn cx_cleanup_stereo_groups_accepts_only_atrop_bond_only_groups() {
-    let valid_group =
-        StereoGroup::new(StereoGroupKind::And, Vec::new(), vec![BondId::new(0)]).with_id(77);
+    let valid_group = StereoGroup::new(StereoGroupKind::And, Vec::new(), vec![BondId::new(0)])
+        .expect("valid distinct stereo members")
+        .with_id(77);
     let mut topology = topology_with_stereo_groups(
         vec![
             AtomSpec::new(Element::C),
@@ -274,11 +288,13 @@ fn cx_cleanup_stereo_groups_accepts_only_atrop_bond_only_groups() {
         ],
         vec![
             valid_group.clone(),
-            StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![BondId::new(1)]).with_id(78),
+            StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![BondId::new(1)])
+                .expect("valid distinct stereo members")
+                .with_id(78),
         ],
     );
 
-    cleanup_stereo_groups(&mut topology);
+    cleanup_stereo_groups(&mut topology).unwrap();
 
     assert_eq!(topology.stereo_groups, vec![valid_group]);
 }

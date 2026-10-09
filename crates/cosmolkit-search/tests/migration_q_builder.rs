@@ -739,3 +739,94 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
         "matching mutated the detached target"
     );
 }
+
+#[cfg(test)]
+mod chem24_subset_controller_tests {
+    use cosmolkit_model::{
+        Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate, BondSpec,
+        QueryAtom, QueryBond, QueryGraph, QueryNode,
+    };
+    use cosmolkit_search::query_graph_fragments;
+    use cosmolkit_types::{BondOrder, BondStereo, Element};
+
+    #[test]
+    fn fast_query_subset_maps_none_and_any_controllers_once() {
+        // Four source components trigger the getTheFrags fast_subset route.
+        // Old IDs 2,3,4,5 become 0,1,2,3. The .1 second mapping wrongly turns
+        // the right controller 3 into 1; .6 handleBondStereo maps exactly once.
+        // The controllers are real endpoint neighbors, not an invalid pair.
+        for stereo in [BondStereo::None, BondStereo::Any] {
+            let atoms = (0..7)
+                .map(|row| {
+                    QueryAtom::from_parts(
+                        Atom::from_spec(AtomId::new(row), AtomSpec::new(Element::C)),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    )
+                })
+                .collect();
+            let bonds = [
+                (2, 3, BondOrder::Single),
+                (3, 4, BondOrder::Double),
+                (4, 5, BondOrder::Single),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(row, (begin, end, order))| {
+                let mut carrier = Bond::from_spec(
+                    BondId::new(row),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), order),
+                );
+                if row == 1 {
+                    carrier.set_stereo_atoms(Some([AtomId::new(2), AtomId::new(5)]));
+                    carrier.set_stereo(stereo).unwrap();
+                    carrier.set_prop("retained", "source bond").unwrap();
+                }
+                QueryBond::from_parts(
+                    carrier,
+                    QueryNode::predicate(BondQueryPredicate::Order(order)),
+                )
+            })
+            .collect();
+            let input = QueryGraph::from_parts(
+                atoms,
+                bonds,
+                Vec::<(
+                    cosmolkit_model::PropertyText,
+                    cosmolkit_model::PropertyValue,
+                )>::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap();
+            input.validate().unwrap();
+            let snapshot = input.clone();
+            let fragments = query_graph_fragments(&input).unwrap();
+            assert_eq!(input, snapshot);
+            assert_eq!(fragments.len(), 4);
+            assert_eq!(
+                fragments
+                    .iter()
+                    .map(QueryGraph::num_atoms)
+                    .collect::<Vec<_>>(),
+                vec![1, 1, 4, 1]
+            );
+            let fragment = &fragments[2];
+            assert_eq!(fragment.num_bonds(), 3);
+            let double_bond = &fragment.bonds()[1];
+            assert_eq!(double_bond.begin(), AtomId::new(1));
+            assert_eq!(double_bond.end(), AtomId::new(2));
+            assert_eq!(double_bond.bond().stereo(), stereo);
+            assert_eq!(
+                double_bond.bond().stereo_atoms(),
+                Some([AtomId::new(0), AtomId::new(3)])
+            );
+            assert_eq!(double_bond.predicate(), input.bonds()[1].predicate());
+            assert_eq!(
+                double_bond.bond().prop("retained"),
+                input.bonds()[1].bond().prop("retained")
+            );
+            fragment.validate().unwrap();
+        }
+    }
+}

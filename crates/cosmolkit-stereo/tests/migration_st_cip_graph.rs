@@ -752,7 +752,7 @@ mod migration_tests {
         for descriptor in [Descriptor::R, Descriptor::P, Descriptor::R] {
             assert!(pairs.add(descriptor));
         }
-        assert_eq!(pairs.get_pairing(), (1_u64 << 62) | (1_u64 << 60));
+        assert_eq!(pairs.get_ref_descriptor(), Ok(Descriptor::R));
         assert_eq!(pairs.to_rdkit_string(), "R:lul");
 
         let mut head = CipPairList::with_ref(Descriptor::R);
@@ -778,7 +778,16 @@ mod migration_tests {
             fixed_width.add(Descriptor::S);
         }
         fixed_width.add(Descriptor::R);
-        assert_eq!(fixed_width.get_pairing(), (1_u64 << 62) | 1);
+        assert_eq!(
+            fixed_width.to_rdkit_string(),
+            format!("R:l{}l", "u".repeat(61))
+        );
+        fixed_width.add_all(&[Descriptor::R; 66]);
+        assert_eq!(fixed_width.descriptors.len(), 130);
+        assert_eq!(
+            fixed_width.to_rdkit_string(),
+            format!("R:l{}{}", "u".repeat(61), "l".repeat(67))
+        );
     }
 
     #[test]
@@ -862,14 +871,14 @@ mod migration_tests {
             CipRule6
                 .compare(&mut digraph, &mut context, left, right)
                 .unwrap(),
-            1
+            2
         );
         digraph.set_rule6_ref(Some(2)).unwrap();
         assert_eq!(
             CipRule6
                 .compare(&mut digraph, &mut context, left, right)
                 .unwrap(),
-            -1
+            -2
         );
         assert!(matches!(
             digraph.set_rule6_ref(Some(3)),
@@ -1038,5 +1047,554 @@ mod migration_tests {
                 .collect::<Vec<_>>(),
             vec![1, 1, 1]
         );
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem02_seen {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, BondSpec};
+    fn line() -> TopologyBlock {
+        let atoms = (0..3)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = (0..2)
+            .map(|i| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(i), AtomId::new(i + 1), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    #[test]
+    fn pure_created_nodes_only_including_duplicate_and_terminal() {
+        let m = line();
+        let mut g = CipDigraph::new(&m, 0, false).unwrap();
+        let before = (
+            g.nodes.clone(),
+            g.edges.clone(),
+            g.root,
+            g.origin,
+            g.rule6_ref,
+        );
+        assert!(g.seen_atom(0));
+        assert!(!g.seen_atom(1));
+        assert!(!g.seen_atom(2));
+        assert!(!g.seen_atom(usize::MAX));
+        assert_eq!(
+            (
+                g.nodes.clone(),
+                g.edges.clone(),
+                g.root,
+                g.origin,
+                g.rule6_ref
+            ),
+            before
+        );
+        g.node_edges(g.get_current_root()).unwrap();
+        assert!(g.seen_atom(1));
+        assert!(!g.seen_atom(2));
+        g.nodes
+            .iter_mut()
+            .find(|n| n.atom_idx() == Some(1))
+            .unwrap()
+            .flags |= CipNode::RING_DUPLICATE;
+        let before = (
+            g.nodes.clone(),
+            g.edges.clone(),
+            g.root,
+            g.origin,
+            g.rule6_ref,
+        );
+        assert!(g.seen_atom(1));
+        assert!(!g.seen_atom(2));
+        assert_eq!(
+            (
+                g.nodes.clone(),
+                g.edges.clone(),
+                g.root,
+                g.origin,
+                g.rule6_ref
+            ),
+            before
+        );
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem04 {
+    use super::*;
+    #[test]
+    fn rdkit_2026_03_6_chem04_pairlist_source_boundaries() {
+        // Official .6 Pairlist.h UBSan probe: all 18 descriptor kinds and unbounded vectors.
+        for d in Descriptor::ALL_IN_RDKIT_ORDER {
+            let expected = match d {
+                Descriptor::R | Descriptor::M | Descriptor::seqCis => Some(Descriptor::R),
+                Descriptor::S | Descriptor::P | Descriptor::seqTrans => Some(Descriptor::S),
+                _ => None,
+            };
+            let mut list = CipPairList::new();
+            assert_eq!(list.add(d), expected.is_some());
+            match expected {
+                Some(d) => {
+                    assert_eq!(list.descriptors, vec![d]);
+                    assert_eq!(list.get_ref_descriptor(), Ok(d));
+                    assert_eq!(
+                        list.to_rdkit_string(),
+                        format!("{}:", descriptor_to_string(d))
+                    );
+                }
+                None => {
+                    let error = list.get_ref_descriptor().unwrap_err();
+                    assert_eq!(error, CipLabelerError::EmptyPairListReference);
+                    assert_eq!(
+                        error.to_string(),
+                        "Cannot get a reference from an empty PairList"
+                    );
+                    assert!(list.descriptors.is_empty());
+                    assert_eq!(list.to_rdkit_string(), "");
+                }
+            }
+        }
+        for n in [1, 64, 65, 130] {
+            let mut same = CipPairList::new();
+            let mut alternating = CipPairList::new();
+            for i in 0..n {
+                same.add(Descriptor::R);
+                alternating.add(if i % 2 == 0 {
+                    Descriptor::R
+                } else {
+                    Descriptor::S
+                });
+            }
+            let suffix: String = (1..n).map(|i| if i % 2 == 0 { 'l' } else { 'u' }).collect();
+            assert_eq!(same.to_rdkit_string(), format!("R:{}", "l".repeat(n - 1)));
+            assert_eq!(alternating.to_rdkit_string(), format!("R:{suffix}"));
+            let cmp = if n == 1 { 0 } else { 1 };
+            assert_eq!(same.compare_to(&alternating), Ok(cmp));
+            assert_eq!(alternating.compare_to(&same), Ok(-cmp));
+            assert_eq!(same.compare_to(&same), Ok(0));
+            let combined = CipPairList::from_head_tail(&same, &alternating);
+            let mut expected = same.descriptors.clone();
+            expected.extend_from_slice(&alternating.descriptors);
+            assert_eq!(combined.descriptors, expected);
+            assert_eq!(combined.descriptors.len(), n * 2);
+            assert_eq!(
+                combined.to_rdkit_string(),
+                format!("R:{}l{suffix}", "l".repeat(n - 1))
+            );
+            assert_eq!(
+                CipPairList::from_head_tail(&CipPairList::new(), &same),
+                same
+            );
+            assert_eq!(
+                CipPairList::from_head_tail(&same, &CipPairList::new()),
+                same
+            );
+        }
+        let mut empty = vec![CipPairList::new(); 3];
+        CipPairList::sort_descending(&mut empty).unwrap();
+        assert_eq!(empty, vec![CipPairList::new(); 3]);
+        CipPairList::sort_descending(&mut []).unwrap();
+    }
+
+    #[test]
+    fn fill_pairs_empty_reference_precedes_sorter_and_does_not_mutate_graph() {
+        let atoms = (0..2)
+            .map(|i| {
+                Atom::from_spec(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(Element::C),
+                )
+            })
+            .collect();
+        let b = Bond::from_spec(
+            BondId::new(0),
+            cosmolkit_model::BondSpec::new(
+                cosmolkit_model::AtomId::new(0),
+                cosmolkit_model::AtomId::new(1),
+                BondOrder::Single,
+            ),
+        );
+        let t = TopologyBlock::try_from_parts(atoms, vec![b], vec![], vec![]).unwrap();
+        for missing in [false, true] {
+            for five in [false, true] {
+                let mut g = CipDigraph::new(&t, 0, false).unwrap();
+                let root = g.get_current_root();
+                let mut c = CipLabelerContext::new(77);
+                let before = (
+                    g.nodes.clone(),
+                    g.edges.clone(),
+                    g.root,
+                    g.origin,
+                    g.rule6_ref,
+                    c.remaining_call_count,
+                );
+                let mut list = CipPairList::new();
+                let unrelated = CipRule1a;
+                let refs: [&dyn CipSequenceRule; 1] = [&unrelated];
+                let sort = if missing { None } else { Some(refs.as_slice()) };
+                let r = if five {
+                    CipRule5New::new().fill_pairs(sort, &mut g, &mut c, root, &mut list)
+                } else {
+                    CipRule4b::new().fill_pairs(sort, &mut g, &mut c, root, &mut list)
+                };
+                assert_eq!(r, Err(CipLabelerError::EmptyPairListReference));
+                assert_eq!(list, CipPairList::new());
+                assert_eq!(
+                    (
+                        g.nodes.clone(),
+                        g.edges.clone(),
+                        g.root,
+                        g.origin,
+                        g.rule6_ref,
+                        c.remaining_call_count
+                    ),
+                    before
+                );
+            }
+        }
+        assert_eq!(CipPairList::new().compare_to(&CipPairList::new()), Ok(0));
+        assert_eq!(
+            CipPairList::new().compare_to(&CipPairList::with_ref(Descriptor::R)),
+            Err(CipLabelerError::DescriptorListLengthMismatch)
+        );
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem06 {
+    use super::*;
+    #[derive(Debug, PartialEq)]
+    struct Chem02PassiveState {
+        nodes: Vec<CipNode>,
+        edges: Vec<(CipNodeId, CipNodeId, Option<usize>, Descriptor)>,
+        root: CipNodeId,
+        origin: CipNodeId,
+        rule6_ref: Option<usize>,
+        atropisomer_mode: bool,
+        remaining_calls: u32,
+    }
+
+    fn chem02_passive_state(g: &CipDigraph<'_>, c: &CipLabelerContext) -> Chem02PassiveState {
+        // Observation must never trigger node_edges/get_nodes/change_root.
+        Chem02PassiveState {
+            nodes: g.nodes.clone(),
+            edges: g
+                .edges
+                .iter()
+                .map(|e| (e.beg, e.end, e.bond_idx, e.aux))
+                .collect(),
+            root: g.root,
+            origin: g.origin,
+            rule6_ref: g.rule6_ref,
+            atropisomer_mode: g.atropisomer_mode,
+            remaining_calls: c.remaining_call_count,
+        }
+    }
+
+    fn chem06_graph(s: &str) -> TopologyBlock {
+        use cosmolkit_model::{AtomId, AtomSpec, BondSpec};
+        let (elements, edges) = match s {
+            "C(C)(F)Cl" => (
+                vec![Element::C, Element::C, Element::F, Element::CL],
+                vec![
+                    (0, 1, BondOrder::Single),
+                    (0, 2, BondOrder::Single),
+                    (0, 3, BondOrder::Single),
+                ],
+            ),
+            "C=C" => (
+                vec![Element::C, Element::C],
+                vec![(0, 1, BondOrder::Double)],
+            ),
+            "CCC" => (
+                vec![Element::C; 3],
+                vec![(0, 1, BondOrder::Single), (1, 2, BondOrder::Single)],
+            ),
+            _ => unreachable!("three fixed typed source graphs"),
+        };
+        let atoms = elements
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+            .collect();
+        let bonds = edges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn chem06_edge_to(g: &CipDigraph<'_>, edges: &[CipEdgeId], atom: Option<usize>) -> CipEdgeId {
+        edges
+            .iter()
+            .copied()
+            .find(|e| {
+                let n = g.node(g.edge(*e).get_end());
+                n.atom_idx() == atom && !n.is_duplicate()
+            })
+            .unwrap()
+    }
+
+    fn chem06_sort_with_owner(
+        owner: usize,
+        g: &mut CipDigraph<'_>,
+        c: &mut CipLabelerContext,
+        root: CipNodeId,
+        edges: &mut [CipEdgeId],
+        deep: bool,
+    ) -> Result<CipPriority, CipLabelerError> {
+        match owner {
+            0 => CipRule6.sort(g, c, root, edges, deep),
+            1 => CipSort::new(&CipRule6).prioritize(g, c, root, edges, deep),
+            2 => CipRules::new(vec![Box::new(CipRule6)])
+                .unwrap()
+                .sort(g, c, root, edges, deep),
+            _ => unreachable!("three existing production sorter owners"),
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem06_official_9516_rule_and_sorters() {
+        // Official #9516 input and controlled reference state; no full9rule molecular-label claim.
+        let molecule = chem06_graph("C(C)(F)Cl");
+        let mut g = CipDigraph::new(&molecule, 0, false).unwrap();
+        let root = g.get_current_root();
+        let edges = g.node_edges(root).unwrap();
+        let a = chem06_edge_to(&g, &edges, Some(1));
+        let b = chem06_edge_to(&g, &edges, Some(2));
+        assert_eq!(
+            edges
+                .iter()
+                .filter(|e| g.node(g.edge(**e).get_end()).atom_idx().is_none())
+                .count(),
+            1
+        );
+        g.set_rule6_ref(Some(1)).unwrap();
+        let mut c = CipLabelerContext::with_remaining_call_count(100);
+        assert_eq!(CipRule6.compare(&mut g, &mut c, a, b), Ok(2));
+        assert_eq!(CipRule6.compare(&mut g, &mut c, b, a), Ok(-2));
+        for owner in 0..3 {
+            let mut order = [b, a];
+            let priority =
+                chem06_sort_with_owner(owner, &mut g, &mut c, root, &mut order, false).unwrap();
+            assert!(priority.is_unique());
+            assert!(priority.is_pseudo_asymetric());
+            assert_eq!(order, [a, b]);
+        }
+        // All actual raw forwarding APIs retain ±2; recursive exclusive-ref stops before expansion.
+        for (left, right, expected) in [(a, b, 2), (b, a, -2)] {
+            let before_nodes = g.nodes.clone();
+            let before_edges = g.edges.clone();
+            let rules = CipRules::new(vec![Box::new(CipRule6)]).unwrap();
+            let refs: [&dyn CipSequenceRule; 1] = [&CipRule6];
+            assert_eq!(
+                CipRule6.get_comparison(&mut g, &mut c, left, right, true),
+                Ok(expected)
+            );
+            assert_eq!(
+                CipRule6.get_comparison_with_sort_rules(
+                    Some(&refs),
+                    &mut g,
+                    &mut c,
+                    left,
+                    right,
+                    true
+                ),
+                Ok(expected)
+            );
+            assert_eq!(rules.compare(&mut g, &mut c, left, right), Ok(expected));
+            assert_eq!(
+                rules.get_comparison(&mut g, &mut c, left, right, false),
+                Ok(expected)
+            );
+            assert_eq!(
+                rules.get_comparison_with_sort_rules(None, &mut g, &mut c, left, right, false),
+                Ok(expected)
+            );
+            assert_eq!(g.nodes, before_nodes);
+            assert_eq!(g.edges, before_edges);
+        }
+        let groups = CipSort::new(&CipRule6)
+            .get_groups(&mut g, &mut c, &[a, b])
+            .unwrap();
+        assert_eq!(groups, vec![vec![a], vec![b]]);
+        // Direct no-ref0 does not imply deep0: CH3 versus F has different child-edge counts.
+        g.set_rule6_ref(None).unwrap();
+        assert_eq!(CipRule6.compare(&mut g, &mut c, a, b), Ok(0));
+        assert_eq!(CipRule6.get_comparison(&mut g, &mut c, a, b, true), Ok(1));
+        assert_eq!(CipRule6.get_comparison(&mut g, &mut c, b, a, true), Ok(-1));
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem06_rule6_reference_identity_matrix() {
+        let molecule = chem06_graph("C(C)(F)Cl");
+        let mut g = CipDigraph::new(&molecule, 0, false).unwrap();
+        let root = g.get_current_root();
+        let edges = g.node_edges(root).unwrap();
+        let a = chem06_edge_to(&g, &edges, Some(1));
+        let b = chem06_edge_to(&g, &edges, Some(2));
+        let h = chem06_edge_to(&g, &edges, None);
+        let mut c = CipLabelerContext::new(0);
+        let rows = [
+            (None, a, b, 0),
+            (Some(1), a, b, 2),
+            (Some(2), a, b, -2),
+            (Some(0), a, b, 0),
+            (Some(1), a, a, 0),
+            (Some(1), a, h, 2),
+            (Some(1), h, a, -2),
+        ];
+        for (reference, left, right, expected) in rows {
+            g.set_rule6_ref(reference).unwrap();
+            let state = chem02_passive_state(&g, &c);
+            assert_eq!(CipRule6.compare(&mut g, &mut c, left, right), Ok(expected));
+            assert_eq!(chem02_passive_state(&g, &c), state);
+        }
+        // Real source graph construction yields distinct nodes sharing an atom plus two None Hs.
+        let ethene = chem06_graph("C=C");
+        let mut g = CipDigraph::new(&ethene, 0, true).unwrap();
+        let root = g.get_current_root();
+        let edges = g.node_edges(root).unwrap();
+        let normal = chem06_edge_to(&g, &edges, Some(1));
+        let duplicate = edges
+            .iter()
+            .copied()
+            .find(|e| {
+                let n = g.node(g.edge(*e).get_end());
+                n.atom_idx() == Some(1) && n.is_duplicate()
+            })
+            .unwrap();
+        assert_ne!(g.edge(normal).get_end(), g.edge(duplicate).get_end());
+        let hs: Vec<_> = edges
+            .iter()
+            .copied()
+            .filter(|e| g.node(g.edge(*e).get_end()).atom_idx().is_none())
+            .collect();
+        assert_eq!(hs.len(), 2);
+        assert_ne!(g.edge(hs[0]).get_end(), g.edge(hs[1]).get_end());
+        g.set_rule6_ref(Some(1)).unwrap();
+        let state = chem02_passive_state(&g, &c);
+        assert_eq!(CipRule6.compare(&mut g, &mut c, normal, duplicate), Ok(0));
+        assert_eq!(CipRule6.compare(&mut g, &mut c, hs[0], hs[1]), Ok(0));
+        assert_eq!(chem02_passive_state(&g, &c), state);
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem06_pseudo_counts_comparisons_not_any() {
+        let molecule = chem06_graph("C(C)(F)Cl");
+        // Source insertion comparisons: [2,0] counts1; [0,-2,-2] counts2.
+        let cases = [
+            (vec![], Some(1), true, false, vec![], 0),
+            (vec![1], Some(1), true, false, vec![1], 0),
+            (vec![1, 2], Some(1), true, true, vec![1, 2], 1),
+            (vec![2, 1], Some(1), true, true, vec![1, 2], 1),
+            (vec![1, 2], None, false, false, vec![1, 2], 1),
+            (vec![1, 2, 3], Some(1), false, true, vec![1, 2, 3], 2),
+            (vec![2, 3, 1], Some(1), false, false, vec![1, 2, 3], 3),
+        ];
+        for owner in 0..3 {
+            for (case, (initial, reference, unique, pseudo, expected, comparisons)) in
+                cases.iter().enumerate()
+            {
+                let mut g = CipDigraph::new(&molecule, 0, false).unwrap();
+                let root = g.get_current_root();
+                let edges = g.node_edges(root).unwrap();
+                g.set_rule6_ref(*reference).unwrap();
+                let mut c = CipLabelerContext::with_remaining_call_count(100);
+                let mut order: Vec<_> = initial
+                    .iter()
+                    .map(|atom| chem06_edge_to(&g, &edges, Some(*atom)))
+                    .collect();
+                // Rules::getComparision explicitly ignores deep; its own sorter is Sort(this).
+                // Build exact expected state using only the source-directed child expansions.
+                let mut expected_g = CipDigraph::new(&molecule, 0, false).unwrap();
+                let expected_root = expected_g.get_current_root();
+                let expected_edges = expected_g.node_edges(expected_root).unwrap();
+                expected_g.set_rule6_ref(*reference).unwrap();
+                let mut expected_c = CipLabelerContext::with_remaining_call_count(100);
+                if owner == 2 {
+                    expected_c.remaining_call_count -= *comparisons;
+                    let expanded_atoms: &[usize] = match case {
+                        4 => &[1, 2],     // no-ref recursive CH3/F comparison reaches source sizediff+1
+                        5 | 6 => &[2, 3], // F/Cl direct0 recursively expands equal terminal branches
+                        _ => &[],         // exclusive reference returns before graph expansion
+                    };
+                    for atom in expanded_atoms {
+                        let edge = chem06_edge_to(&expected_g, &expected_edges, Some(*atom));
+                        let end = expected_g.edge(edge).get_end();
+                        expected_g.node_edges(end).unwrap();
+                    }
+                }
+                let p =
+                    chem06_sort_with_owner(owner, &mut g, &mut c, root, &mut order, false).unwrap();
+                let expected_unique = if owner == 2 && case == 4 {
+                    true
+                } else {
+                    *unique
+                };
+                assert_eq!(p.is_unique(), expected_unique, "owner={owner} case={case}");
+                assert_eq!(
+                    p.is_pseudo_asymetric(),
+                    *pseudo,
+                    "owner={owner} case={case}"
+                );
+                assert_eq!(
+                    order
+                        .iter()
+                        .map(|e| g.node(g.edge(*e).get_end()).atom_idx().unwrap())
+                        .collect::<Vec<_>>(),
+                    *expected
+                );
+                assert_eq!(
+                    chem02_passive_state(&g, &c),
+                    chem02_passive_state(&expected_g, &expected_c),
+                    "owner={owner} case={case}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem06_incoming_edge_priority_preempts_rule6() {
+        let molecule = chem06_graph("CCC");
+        let mut g = CipDigraph::new(&molecule, 0, false).unwrap();
+        let origin = g.get_current_root();
+        let initial = g.node_edges(origin).unwrap();
+        let incoming = chem06_edge_to(&g, &initial, Some(1));
+        let node = g.edge(incoming).get_end();
+        let edges = g.node_edges(node).unwrap();
+        let outgoing = chem06_edge_to(&g, &edges, Some(2));
+        assert!(!g.edge(incoming).is_beg(node));
+        assert!(g.edge(outgoing).is_beg(node));
+        g.set_rule6_ref(Some(1)).unwrap();
+        let mut c = CipLabelerContext::new(0);
+        for (a, b, direct, precheck) in [(incoming, outgoing, 2, 1), (outgoing, incoming, -2, -1)] {
+            assert_eq!(CipRule6.compare(&mut g, &mut c, a, b), Ok(direct));
+            assert_eq!(
+                super::compare_substituents_with_rule(&CipRule6, &mut g, &mut c, node, a, b, false),
+                Ok(precheck)
+            );
+            assert_eq!(
+                CipSort::new(&CipRule6).compare_substituents(&mut g, &mut c, node, a, b, false),
+                Ok(precheck)
+            );
+            for owner in 0..3 {
+                let mut order = [a, b];
+                let p =
+                    chem06_sort_with_owner(owner, &mut g, &mut c, node, &mut order, false).unwrap();
+                assert_eq!(order, [incoming, outgoing]);
+                assert!(p.is_unique());
+                assert!(!p.is_pseudo_asymetric());
+            }
+        }
     }
 }

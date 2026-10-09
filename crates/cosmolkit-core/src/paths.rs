@@ -27,16 +27,19 @@ pub enum GraphPath {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PathSearchParams {
+pub struct PathSearchParams<'a> {
+    /// Borrowed source ignoreAtoms bitmap; None differs from Some(empty).
+    pub ignore_atoms: Option<&'a [bool]>,
     pub representation: PathRepresentation,
     pub use_hydrogens: bool,
     pub rooted_at_atom: Option<AtomId>,
     pub only_shortest_paths: bool,
 }
 
-impl Default for PathSearchParams {
+impl Default for PathSearchParams<'_> {
     fn default() -> Self {
         Self {
+            ignore_atoms: None,
             representation: PathRepresentation::Bonds,
             use_hydrogens: false,
             rooted_at_atom: None,
@@ -46,23 +49,28 @@ impl Default for PathSearchParams {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SubgraphSearchParams {
+pub struct SubgraphSearchParams<'a> {
+    /// Borrowed source ignoreAtoms bitmap; None differs from Some(empty).
+    pub ignore_atoms: Option<&'a [bool]>,
     pub use_hydrogens: bool,
     pub rooted_at_atom: Option<AtomId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UniqueSubgraphParams {
+pub struct UniqueSubgraphParams<'a> {
+    /// Borrowed source ignoreAtoms bitmap; None differs from Some(empty).
+    pub ignore_atoms: Option<&'a [bool]>,
     pub use_hydrogens: bool,
     pub use_bond_orders: bool,
     pub rooted_at_atom: Option<AtomId>,
     pub extra_atom_invariants: Option<Vec<u32>>,
 }
 
-impl Default for UniqueSubgraphParams {
+impl Default for UniqueSubgraphParams<'_> {
     fn default() -> Self {
         Self {
             use_hydrogens: false,
+            ignore_atoms: None,
             use_bond_orders: true,
             rooted_at_atom: None,
             extra_atom_invariants: None,
@@ -119,6 +127,9 @@ pub struct SubtopologyResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PathError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("molecule property operation failed: {0}")]
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
     #[error("bond property operation failed: {0}")]
@@ -145,6 +156,8 @@ pub enum PathError {
         atom: AtomId,
         atom_count: usize,
     },
+    #[error("bad ignoreAtoms size: {actual} rows, expected {expected}")]
+    IgnoredAtomMaskLength { actual: usize, expected: usize },
     #[error("extra atom invariants have {actual} rows, expected {expected}")]
     ExtraInvariantLength { actual: usize, expected: usize },
     #[error(transparent)]
@@ -657,6 +670,7 @@ pub fn query_bond_paths_in_range(
         use_hydrogens: params.use_hydrogens,
         rooted_at_atom: params.rooted_at_atom,
         only_shortest_paths: false,
+        ignore_atoms: params.ignore_atoms,
     };
     all_paths_from_graph(
         PathGraphAccess::Query(query),
@@ -674,17 +688,121 @@ fn all_paths_from_graph(
     params: &PathSearchParams,
     distances: Option<&[usize]>,
 ) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
-    // BEGIN RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
-    // RDKit✔️✔️: PRECONDITION(lowerLen <= upperLen, "");
-    // RDKit✔️✔️: double *distMat = onlyShortestPaths ? MolOps::getDistanceMat(mol) : nullptr;
+    // BEGIN RDKIT CPP FUNCTION RDKit::findAllPathsOfLengthsMtoN (Release_2026_03_6)
+    // RDKit❗✔️: INT_PATH_LIST_MAP
+    // RDKit❗✔️: findAllPathsOfLengthsMtoN(const ROMol &mol, unsigned int lowerLen,
+    // RDKit❗✔️:                           unsigned int upperLen, bool useBonds, bool useHs,
+    // RDKit❗✔️:                           int rootedAtAtom, bool onlyShortestPaths,
+    // RDKit❗✔️:                           boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   //  We can't be clever here and just use the bond adjacency matrix
+    // RDKit❗✔️:   //  to solve this problem when useBonds is true.  This is because
+    // RDKit❗✔️:   //  the bond adjacency matrices for the molecules C1CC1 and CC(C)C
+    // RDKit❗✔️:   //  are indistinguishable.  In the second case, t-butane (and
+    // RDKit❗✔️:   //  anything else with a T junction), we'll get some subgraphs mixed
+    // RDKit❗✔️:   //  in with the paths.  So we have to construct paths of atoms and
+    // RDKit❗✔️:   //  then convert them into bond paths.
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   PRECONDITION(lowerLen <= upperLen, "");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // the molecule owns the distance matrix pointer (if we need to get it)
+    // RDKit❗✔️:   double *distMat = onlyShortestPaths ? MolOps::getDistanceMat(mol) : nullptr;
+    // RDKit❗✔️:   int *adjMat, dim;
+    // RDKit❗✔️:   dim = mol.getNumAtoms();
+    // RDKit❗✔️:   adjMat = new int[dim * dim];
+    // RDKit❗✔️:   memset((void *)adjMat, 0, dim * dim * sizeof(int));
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (!distMat) {
+    // RDKit❗✔️:     // generate the adjacency matrix by hand by looping over the bonds
+    // RDKit❗✔️:     for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:       Atom *beg = bond->getBeginAtom();
+    // RDKit❗✔️:       Atom *end = bond->getEndAtom();
+    // RDKit❗✔️:       // check for H, which we might be skipping
+    // RDKit❗✔️:       if (useHs || (beg->getAtomicNum() != 1 && end->getAtomicNum() != 1)) {
+    // RDKit❗✔️:         adjMat[beg->getIdx() * dim + end->getIdx()] = 1;
+    // RDKit❗✔️:         adjMat[end->getIdx() * dim + beg->getIdx()] = 1;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     // if we have the distance matrix, we can just loop over that:
+    // RDKit❗✔️:     for (auto i = 0; i < dim; ++i) {
+    // RDKit❗✔️:       for (auto j = i + 1; j < dim; ++j) {
+    // RDKit❗✔️:         if (fabs(distMat[i * dim + j] - 1) < 1e-4) {
+    // RDKit❗✔️:           adjMat[i * dim + j] = 1;
+    // RDKit❗✔️:           adjMat[j * dim + i] = 1;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // if we're using bonds, we'll need to find paths of length N+1,
+    // RDKit❗✔️:   // then convert them
+    // RDKit❗✔️:   if (useBonds) {
+    // RDKit❗✔️:     ++lowerLen;
+    // RDKit❗✔️:     ++upperLen;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // find the paths themselves
+    // RDKit❗✔️:   INT_PATH_LIST_MAP atomPaths = Subgraphs::pathFinderHelper(
+    // RDKit❗✔️:       adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat, ignoreAtoms);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // clean up the adjacency matrix
+    // RDKit❗✔️:   delete[] adjMat;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   INT_PATH_LIST_MAP res;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   //--------------------------------------------------------
+    // RDKit❗✔️:   // loop through all the paths we have and make sure that there are
+    // RDKit❗✔️:   // no duplicates (duplicate = contains identical bond indices)
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   //  We need to use the bond paths for this duplicate finding
+    // RDKit❗✔️:   //  because, in rings, there can be many paths which share atom
+    // RDKit❗✔️:   //  indices but which have different bond compositions. For example,
+    // RDKit❗✔️:   //  there is only one "atom unique" path of length 5 bonds (6 atoms)
+    // RDKit❗✔️:   //  through a 6-ring, but there are six bond paths.
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   if (!useBonds && lowerLen >= 1) {
+    // RDKit❗✔️:     res[1] = atomPaths[1];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (useBonds || upperLen > 1) {
+    // RDKit❗✔️:     for (unsigned int i = lowerLen; i <= upperLen; ++i) {
+    // RDKit❗✔️:       if (i <= 1) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       std::vector<boost::dynamic_bitset<>> invars;
+    // RDKit❗✔️:
+    // RDKit❗✔️:       for (PATH_LIST::const_iterator vivI = atomPaths[i].begin();
+    // RDKit❗✔️:            vivI != atomPaths[i].end(); ++vivI) {
+    // RDKit❗✔️:         boost::dynamic_bitset<> invar(mol.getNumBonds());
+    // RDKit❗✔️:         const PATH_TYPE &resi = *vivI;
+    // RDKit❗✔️:         PATH_TYPE locV;
+    // RDKit❗✔️:         locV.reserve(i);
+    // RDKit❗✔️:         for (unsigned int j = 0; j < i - 1; j++) {
+    // RDKit❗✔️:           const Bond *bond = mol.getBondBetweenAtoms(resi[j], resi[j + 1]);
+    // RDKit❗✔️:           locV.push_back(bond->getIdx());
+    // RDKit❗✔️:           invar.set(bond->getIdx());
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         if (std::find(invars.begin(), invars.end(), invar) == invars.end()) {
+    // RDKit❗✔️:           invars.push_back(invar);
+    // RDKit❗✔️:           if (useBonds) {
+    // RDKit❗✔️:             res[i - 1].push_back(locV);
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             res[i].push_back(resi);
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::findAllPathsOfLengthsMtoN
     validate_range(lower_length, upper_length)?;
+    validate_ignored_atom_mask(params.ignore_atoms, graph.atom_count())?;
 
     let adjacency =
         atom_adjacency_matrix(graph, params.only_shortest_paths || params.use_hydrogens);
-    // RDKit✔️✔️:   if (useBonds) {
-    // RDKit✔️✔️:     ++lowerLen;
-    // RDKit✔️✔️:     ++upperLen;
-    // RDKit✔️✔️:   }
     let (atom_lower, atom_upper) = match params.representation {
         PathRepresentation::Bonds => (
             lower_length
@@ -700,8 +818,6 @@ fn all_paths_from_graph(
         ),
         PathRepresentation::Atoms => (lower_length, upper_length),
     };
-    // RDKit✔️✔️:   INT_PATH_LIST_MAP atomPaths = Subgraphs::pathFinderHelper(
-    // RDKit✔️✔️:       adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat);
     let atom_paths = path_finder_helper(
         &adjacency,
         graph.atom_count(),
@@ -709,12 +825,10 @@ fn all_paths_from_graph(
         atom_upper,
         params.rooted_at_atom,
         distances,
+        params.ignore_atoms,
     );
 
     let mut result = BTreeMap::new();
-    // RDKit✔️✔️:   if (!useBonds && lowerLen >= 1) {
-    // RDKit✔️✔️:     res[1] = atomPaths[1];
-    // RDKit✔️✔️:   }
     if params.representation == PathRepresentation::Atoms && atom_lower >= 1 {
         result.insert(
             1,
@@ -726,9 +840,6 @@ fn all_paths_from_graph(
                 .collect(),
         );
     }
-    // RDKit✔️✔️:   for (unsigned int i = lowerLen; i <= upperLen; ++i) {
-    // RDKit✔️✔️:     if (i <= 1) { continue; }
-    // RDKit✔️✔️:     std::vector<boost::dynamic_bitset<>> invars;
     if params.representation == PathRepresentation::Bonds || atom_upper > 1 {
         for length in atom_lower..=atom_upper {
             if length <= 1 {
@@ -744,8 +855,6 @@ fn all_paths_from_graph(
                     bond_set[bond.index()] = true;
                     bond_path.push(bond);
                 }
-                // RDKit✔️✔️:       if (std::find(invars.begin(), invars.end(), invar) == invars.end()) {
-                // RDKit✔️✔️:         invars.push_back(invar);
                 if seen_bond_sets.contains(&bond_set) {
                     continue;
                 }
@@ -765,9 +874,6 @@ fn all_paths_from_graph(
             }
         }
     }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
     Ok(result)
 }
 
@@ -777,6 +883,7 @@ pub fn all_subgraphs_of_length(
     params: &SubgraphSearchParams,
 ) -> Result<Vec<Vec<BondId>>, PathError> {
     topology.validate().map_err(PathError::InvalidTopology)?;
+    validate_ignored_atom_mask(params.ignore_atoms, topology.atoms.len())?;
     if target_length == 0 {
         return Ok(Vec::new());
     }
@@ -786,6 +893,7 @@ pub fn all_subgraphs_of_length(
         &neighbors,
         target_length,
         params.rooted_at_atom,
+        params.ignore_atoms,
     ))
 }
 
@@ -827,12 +935,75 @@ fn all_subgraphs_from_graph(
     upper_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
-    // BEGIN RDKIT CPP FUNCTION findAllSubgraphsOfLengthsMtoN
-    // RDKit✔️✔️: PRECONDITION(lowerLen <= upperLen, "");
-    // RDKit✔️✔️: boost::dynamic_bitset<> forbidden(mol.getNumBonds());
-    // RDKit✔️✔️: INT_INT_VECT_MAP nbrs;
-    // RDKit✔️✔️: Subgraphs::getNbrsList(mol, useHs, nbrs);
+    // BEGIN RDKIT CPP FUNCTION RDKit::findAllSubgraphsOfLengthsMtoN (Release_2026_03_6)
+    // RDKit❗✔️: INT_PATH_LIST_MAP findAllSubgraphsOfLengthsMtoN(
+    // RDKit❗✔️:     const ROMol &mol, unsigned int lowerLen, unsigned int upperLen, bool useHs,
+    // RDKit❗✔️:     int rootedAtAtom, boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   PRECONDITION(lowerLen <= upperLen, "");
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   boost::dynamic_bitset<> forbidden(mol.getNumBonds());
+    // RDKit❗✔️:   // if there are any ignore atoms, mark any bonds involving them as forbidden
+    // RDKit❗✔️:   if (ignoreAtoms) {
+    // RDKit❗✔️:     for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:       if (ignoreAtoms->test(bond->getBeginAtomIdx()) ||
+    // RDKit❗✔️:           ignoreAtoms->test(bond->getEndAtomIdx())) {
+    // RDKit❗✔️:         forbidden[bond->getIdx()] = 1;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   INT_INT_VECT_MAP nbrs;
+    // RDKit❗✔️:   Subgraphs::getNbrsList(mol, useHs, nbrs);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Start path at each bond
+    // RDKit❗✔️:   INT_PATH_LIST_MAP res;
+    // RDKit❗✔️:   for (unsigned int idx = lowerLen; idx <= upperLen; idx++) {
+    // RDKit❗✔️:     PATH_LIST ordern;
+    // RDKit❗✔️:     res[idx] = ordern;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // start paths at each bond:
+    // RDKit❗✔️:   for (auto nbi = nbrs.begin(); nbi != nbrs.end(); nbi++) {
+    // RDKit❗✔️:     int i = (*nbi).first;
+    // RDKit❗✔️:     if (forbidden[i]) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // if we're only returning paths rooted at a particular atom, check now
+    // RDKit❗✔️:     // that this bond involves that atom:
+    // RDKit❗✔️:     if (rootedAtAtom >= 0 &&
+    // RDKit❗✔️:         mol.getBondWithIdx(i)->getBeginAtomIdx() !=
+    // RDKit❗✔️:             static_cast<unsigned int>(rootedAtAtom) &&
+    // RDKit❗✔️:         mol.getBondWithIdx(i)->getEndAtomIdx() !=
+    // RDKit❗✔️:             static_cast<unsigned int>(rootedAtAtom)) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // don't come back to this bond in the later subgraphs
+    // RDKit❗✔️:     forbidden[i] = 1;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // start the recursive path building with the current bond
+    // RDKit❗✔️:     PATH_TYPE spath;
+    // RDKit❗✔️:     spath.clear();
+    // RDKit❗✔️:     spath.push_back(i);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // neighbors of this bond are the next candidates
+    // RDKit❗✔️:     INT_VECT cands = nbrs[i];
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // now call the recursive function
+    // RDKit❗✔️:     // little bit different from the python version
+    // RDKit❗✔️:     // the result list of paths is passed as a reference, instead of on the fly
+    // RDKit❗✔️:     // appending
+    // RDKit❗✔️:     Subgraphs::recurseWalkRange(nbrs, spath, cands, lowerLen, upperLen,
+    // RDKit❗✔️:                                 forbidden, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   nbrs.clear();
+    // RDKit❗✔️:   return res;  // FIX : need some verbose testing code here
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::findAllSubgraphsOfLengthsMtoN
     validate_range(lower_length, upper_length)?;
+    validate_ignored_atom_mask(params.ignore_atoms, graph.atom_count())?;
     let neighbors = bond_neighbor_map(graph, params.use_hydrogens);
     let mut result = (lower_length..=upper_length)
         .map(|length| (length, Vec::new()))
@@ -840,10 +1011,12 @@ fn all_subgraphs_from_graph(
     if upper_length == 0 {
         return Ok(result);
     }
-    let mut forbidden = vec![false; graph.bond_count()];
-    // RDKit✔️✔️:   for (auto nbi = nbrs.begin(); nbi != nbrs.end(); nbi++) {
+    let mut forbidden = ignored_bonds(graph, params.ignore_atoms);
     for (&start, adjacent) in &neighbors {
-        if !graph_root_allows_bond(graph, params.rooted_at_atom, start) || forbidden[start] {
+        if forbidden[start] {
+            continue;
+        }
+        if !graph_root_allows_bond(graph, params.rooted_at_atom, start) {
             continue;
         }
         forbidden[start] = true;
@@ -857,9 +1030,6 @@ fn all_subgraphs_from_graph(
             &mut result,
         );
     }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION findAllSubgraphsOfLengthsMtoN
     Ok(result)
 }
 
@@ -868,6 +1038,17 @@ pub fn unique_subgraphs_of_length(
     target_length: usize,
     params: &UniqueSubgraphParams,
 ) -> Result<Vec<Vec<BondId>>, PathError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::findUniqueSubgraphsOfLengthN (Release_2026_03_6)
+    // RDKit❗✔️: PATH_LIST findUniqueSubgraphsOfLengthN(const ROMol &mol, unsigned int targetLen,
+    // RDKit❗✔️:                                        bool useHs, bool useBO, int rootedAtAtom,
+    // RDKit❗✔️:                                        boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   // start by finding all subgraphs, then uniquify
+    // RDKit❗✔️:   PATH_LIST allSubgraphs = findAllSubgraphsOfLengthN(mol, targetLen, useHs,
+    // RDKit❗✔️:                                                      rootedAtAtom, ignoreAtoms);
+    // RDKit❗✔️:   PATH_LIST res = Subgraphs::uniquifyPaths(mol, allSubgraphs, useBO);
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::findUniqueSubgraphsOfLengthN
     topology.validate().map_err(PathError::InvalidTopology)?;
     if let Some(extra) = &params.extra_atom_invariants
         && extra.len() != topology.atoms.len()
@@ -877,15 +1058,13 @@ pub fn unique_subgraphs_of_length(
             expected: topology.atoms.len(),
         });
     }
-    // RDKit✔️✔️: PATH_LIST allSubgraphs =
-    // RDKit✔️✔️:     findAllSubgraphsOfLengthN(mol, targetLen, useHs, rootedAtAtom);
-    // RDKit✔️✔️: PATH_LIST res = Subgraphs::uniquifyPaths(mol, allSubgraphs, useBO);
     let all = all_subgraphs_of_length(
         topology,
         target_length,
         &SubgraphSearchParams {
             use_hydrogens: params.use_hydrogens,
             rooted_at_atom: params.rooted_at_atom,
+            ignore_atoms: params.ignore_atoms,
         },
     )?;
     let mut result = Vec::new();
@@ -1050,6 +1229,7 @@ pub fn subtopology_from_path(
 
     let mut atom_old_to_new = vec![None; topology.atoms.len()];
     let mut atom_new_to_old = Vec::new();
+    let mut stereo_atom_mapping = BTreeMap::new();
     let mut copied_atoms = Vec::new();
     // RDKit✔️✔️: for (const auto &ref_atom : reference_mol.atoms()) {
     // RDKit✔️✔️:   if (!selectedAtoms[ref_atom->getIdx()]) { continue; }
@@ -1060,6 +1240,7 @@ pub fn subtopology_from_path(
         }
         let new_id = AtomId::new(copied_atoms.len());
         atom_old_to_new[atom.id().index()] = Some(new_id);
+        stereo_atom_mapping.insert(atom.id(), new_id);
         atom_new_to_old.push(Some(atom.id()));
         let mut copied = atom.clone().with_id(new_id);
         copied.clear_computed_props()?;
@@ -1080,30 +1261,16 @@ pub fn subtopology_from_path(
             atom_old_to_new[bond.begin().index()].expect("selected bond endpoints are selected");
         let end =
             atom_old_to_new[bond.end().index()].expect("selected bond endpoints are selected");
-        // RDKit✔️✔️: if (atoms.size() == 2) {
-        // RDKit✔️✔️:   if (map1 != atomMapping.end() && map2 != atomMapping.end()) {
-        // RDKit✔️✔️:     atoms[0] = map1->second; atoms[1] = map2->second;
-        // RDKit✔️✔️:   } else { atoms.clear(); }
-        let stereo_atoms = bond.stereo_atoms().and_then(|[left, right]| {
-            Some([
-                atom_old_to_new
-                    .get(left.index())
-                    .and_then(|mapped| *mapped)?,
-                atom_old_to_new
-                    .get(right.index())
-                    .and_then(|mapped| *mapped)?,
-            ])
-        });
+        // RDKit✔️✔️: handleBondStereo(*extracted_bond, *ref_bond, reference_mol, atomMapping);
+        // The sole .6 Subset::handleBondStereo owner in fragments.rs carries
+        // its complete source body and getOtherAtomIdx body. Reuse it for
+        // pathToSubmol's copyMolSubset route before remapping bond endpoints.
+        let (stereo, stereo_atoms) =
+            crate::fragments::handle_subset_bond_stereo(topology, bond, &stereo_atom_mapping);
         let mut copied = bond.clone();
         copied.clear_computed_props()?;
-        if stereo_atoms.is_none() && matches!(copied.stereo(), BondStereo::Cis | BondStereo::Trans)
-        {
-            copied.set_stereo_atoms(None);
-            copied
-                .set_stereo(BondStereo::None)
-                .expect("clearing stereo cannot fail");
-        }
         copied = copied.remapped(new_id, begin, end, stereo_atoms);
+        copied.set_stereo(stereo)?;
         bond_old_to_new[bond.id().index()] = Some(new_id);
         bond_new_to_old.push(Some(bond.id()));
         copied_bonds.push(copied);
@@ -1136,7 +1303,7 @@ pub fn subtopology_from_path(
     }
 
     let substance_groups = remap_selected_substance_groups(topology, &mapping);
-    let stereo_groups = remap_selected_stereo_groups(topology, &mapping);
+    let stereo_groups = remap_selected_stereo_groups(topology, &mapping)?;
 
     let subgraph = if params.copy_as_query {
         // RDKit✔️✔️: std::unique_ptr<Atom> extracted_atom{
@@ -1182,7 +1349,12 @@ pub fn subtopology_from_path(
             substance_groups,
             stereo_groups,
         )
-        .map_err(PathError::InvalidSubsetTopology)?;
+        .map_err(|error| match error {
+            cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
+                PathError::StereoGroup(cause)
+            }
+            error => PathError::InvalidSubsetTopology(error),
+        })?;
         DetachedPathSubgraph::Concrete(concrete)
     };
     // END RDKIT CPP FUNCTION getSubsetInfo/copySelectedAtomsAndBonds
@@ -1242,33 +1414,83 @@ fn path_finder_helper(
     maximum_length: usize,
     root: Option<AtomId>,
     distances: Option<&[usize]>,
+    ignore_atoms: Option<&[bool]>,
 ) -> BTreeMap<usize, Vec<Vec<usize>>> {
-    // BEGIN RDKIT CPP FUNCTION pathFinderHelper
-    // RDKit✔️✔️: if (rootedAtAtom < 0) {
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < dim; i++) {
-    // RDKit✔️✔️:     PATH_TYPE tPath; tPath.push_back(i); paths.push_back(tPath);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: } else if (rootedAtAtom < static_cast<int>(dim)) {
-    // RDKit✔️✔️:   PATH_TYPE tPath; tPath.push_back(rootedAtAtom); paths.push_back(tPath);
-    // RDKit✔️✔️: } else { return res; }
+    // BEGIN RDKIT CPP FUNCTION RDKit::Subgraphs::pathFinderHelper (Release_2026_03_6)
+    // RDKit❗✔️: INT_PATH_LIST_MAP
+    // RDKit❗✔️: pathFinderHelper(int *adjMat, unsigned int dim, unsigned int minLen,
+    // RDKit❗✔️:                  unsigned int maxLen, int rootedAtAtom, double *distMat,
+    // RDKit❗✔️:                  boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   PRECONDITION(adjMat, "no matrix");
+    // RDKit❗✔️:   PRECONDITION(minLen <= maxLen, "bad lengths provided");
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == dim,
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   // finds all paths of length N using an adjacency matrix,
+    // RDKit❗✔️:   //  which is constructed elsewhere
+    // RDKit❗✔️:   INT_PATH_LIST_MAP res;
+    // RDKit❗✔️:   PATH_LIST paths;
+    // RDKit❗✔️:   paths.clear();
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (rootedAtAtom < 0) {
+    // RDKit❗✔️:     // start a path at each possible index
+    // RDKit❗✔️:     for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗✔️:       if (ignoreAtoms && ignoreAtoms->test(i)) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       PATH_TYPE tPath;
+    // RDKit❗✔️:       tPath.push_back(i);
+    // RDKit❗✔️:       paths.push_back(tPath);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else if (rootedAtAtom < static_cast<int>(dim) &&
+    // RDKit❗✔️:              (!ignoreAtoms || !ignoreAtoms->test(rootedAtAtom))) {
+    // RDKit❗✔️:     // only start a path at the atom of interest:
+    // RDKit❗✔️:     PATH_TYPE tPath;
+    // RDKit❗✔️:     tPath.push_back(rootedAtAtom);
+    // RDKit❗✔️:     paths.push_back(tPath);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // and build them up one index at a time:
+    // RDKit❗✔️:   for (unsigned int length = 1; length < maxLen; length++) {
+    // RDKit❗✔️:     // extend each path:
+    // RDKit❗✔️:     if (length >= minLen) {
+    // RDKit❗✔️:       res[length] = paths;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     paths = extendPaths(adjMat, dim, paths, maxLen, distMat, ignoreAtoms);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   res[maxLen] = paths;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::Subgraphs::pathFinderHelper
     let mut paths = match root {
-        None => (0..dimension).map(|atom| vec![atom]).collect(),
-        Some(root) if root.index() < dimension => vec![vec![root.index()]],
+        None => (0..dimension)
+            .filter(|&atom| !ignore_atoms.is_some_and(|mask| mask[atom]))
+            .map(|atom| vec![atom])
+            .collect(),
+        Some(root) if root.index() < dimension => {
+            if ignore_atoms.is_some_and(|mask| mask[root.index()]) {
+                return BTreeMap::new();
+            }
+            vec![vec![root.index()]]
+        }
         Some(_) => return BTreeMap::new(),
     };
     let mut result = BTreeMap::new();
-    // RDKit✔️✔️: for (unsigned int length = 1; length < maxLen; length++) {
-    // RDKit✔️✔️:   if (length >= minLen) { res[length] = paths; }
-    // RDKit✔️✔️:   paths = extendPaths(adjMat, dim, paths, maxLen, distMat);
-    // RDKit✔️✔️: }
     for length in 1..maximum_length {
         if length >= minimum_length {
             result.insert(length, paths.clone());
         }
-        paths = extend_paths(adjacency, dimension, &paths, maximum_length, distances);
+        paths = extend_paths(
+            adjacency,
+            dimension,
+            &paths,
+            maximum_length,
+            distances,
+            ignore_atoms,
+        );
     }
-    // RDKit✔️✔️: res[maxLen] = paths;
-    // END RDKIT CPP FUNCTION pathFinderHelper
     result.insert(maximum_length, paths);
     result
 }
@@ -1279,22 +1501,80 @@ fn extend_paths(
     paths: &[Vec<usize>],
     allow_ring_closures: usize,
     distances: Option<&[usize]>,
+    ignore_atoms: Option<&[bool]>,
 ) -> Vec<Vec<usize>> {
-    // BEGIN RDKIT CPP FUNCTION extendPaths
-    // RDKit✔️✔️: for (path = paths.begin(); path != paths.end(); ++path) {
-    // RDKit✔️✔️:   unsigned int endIdx = (*path)[path->size() - 1];
-    // RDKit✔️✔️:   for (unsigned int otherIdx = 0; otherIdx < dim; otherIdx++) {
+    // BEGIN RDKIT CPP FUNCTION RDKit::Subgraphs::extendPaths (Release_2026_03_6)
+    // RDKit❗✔️: PATH_LIST
+    // RDKit❗✔️: extendPaths(int *adjMat, unsigned int dim, const PATH_LIST &paths,
+    // RDKit❗✔️:             int allowRingClosures, double *distMat,
+    // RDKit❗✔️:             boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   PRECONDITION(adjMat, "no matrix");
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == dim,
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   //  extend each of the currently active paths by adding
+    // RDKit❗✔️:   //   a single adjacent index to the end of each
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   PATH_LIST res;
+    // RDKit❗✔️:   PATH_LIST::const_iterator path;
+    // RDKit❗✔️:   for (path = paths.begin(); path != paths.end(); ++path) {
+    // RDKit❗✔️:     unsigned int endIdx = (*path)[path->size() - 1];
+    // RDKit❗✔️:     unsigned int iTab = endIdx * dim;
+    // RDKit❗✔️:     for (unsigned int otherIdx = 0; otherIdx < dim; otherIdx++) {
+    // RDKit❗✔️:       if (ignoreAtoms && ignoreAtoms->test(otherIdx)) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (adjMat[iTab + otherIdx] == 1) {
+    // RDKit❗✔️:         if (distMat &&
+    // RDKit❗✔️:             distMat[path->front() * dim + otherIdx] - path->size() < -0.001) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         // test 1: make sure the new atom is not already
+    // RDKit❗✔️:         //   in the path
+    // RDKit❗✔️:         auto loc =
+    // RDKit❗✔️:             std::find(path->begin(), path->end(), static_cast<int>(otherIdx));
+    // RDKit❗✔️:         // The two conditions for adding the atom are:
+    // RDKit❗✔️:         //   1) it's not there already
+    // RDKit❗✔️:         //   2) it's there, but ring closures are allowed and this
+    // RDKit❗✔️:         //      will be the last addition to the path.
+    // RDKit❗✔️:         if (loc == path->end()) {
+    // RDKit❗✔️:           // the easy case
+    // RDKit❗✔️:           // PATH_TYPE newPath=*path;
+    // RDKit❗✔️:           // newPath.push_back(otherIdx);
+    // RDKit❗✔️:           // res.push_back(newPath);
+    // RDKit❗✔️:           res.push_back(*path);
+    // RDKit❗✔️:           res.rbegin()->push_back(otherIdx);
+    // RDKit❗✔️:         } else if (allowRingClosures > 2 &&
+    // RDKit❗✔️:                    static_cast<int>(path->size()) == allowRingClosures - 1) {
+    // RDKit❗✔️:           // We *might* be adding the atom, but we need to make sure
+    // RDKit❗✔️:           // that we're not just duplicating the second to last
+    // RDKit❗✔️:           // element of the path:
+    // RDKit❗✔️:           auto rIt = path->rbegin();
+    // RDKit❗✔️:           rIt++;
+    // RDKit❗✔️:           if (*rIt != static_cast<int>(otherIdx)) {
+    // RDKit❗✔️:             // PATH_TYPE newPath=*path;
+    // RDKit❗✔️:             // newPath.push_back(otherIdx);
+    // RDKit❗✔️:             // res.push_back(newPath);
+    // RDKit❗✔️:             res.push_back(*path);
+    // RDKit❗✔️:             res.rbegin()->push_back(otherIdx);
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::Subgraphs::extendPaths
     let mut result = Vec::new();
     for path in paths {
         let end = *path.last().expect("path finder never stores an empty path");
         for other in 0..dimension {
+            if ignore_atoms.is_some_and(|mask| mask[other]) {
+                continue;
+            }
             if !adjacency[end * dimension + other] {
                 continue;
             }
-            // RDKit✔️✔️: if (distMat &&
-            // RDKit✔️✔️:     distMat[path->front() * dim + otherIdx] - path->size() < -0.001) {
-            // RDKit✔️✔️:   continue;
-            // RDKit✔️✔️: }
             if distances.is_some_and(|matrix| matrix[path[0] * dimension + other] < path.len()) {
                 continue;
             }
@@ -1312,7 +1592,6 @@ fn extend_paths(
             }
         }
     }
-    // END RDKIT CPP FUNCTION extendPaths
     result
 }
 
@@ -1360,14 +1639,89 @@ fn all_subgraphs_of_length_from_neighbors(
     neighbors: &BTreeMap<usize, Vec<usize>>,
     target_length: usize,
     root: Option<AtomId>,
+    ignore_atoms: Option<&[bool]>,
 ) -> Vec<Vec<BondId>> {
-    // BEGIN RDKIT CPP FUNCTION findAllSubgraphsOfLengthN
-    // RDKit✔️✔️: boost::dynamic_bitset<> forbidden(mol.getNumBonds());
-    // RDKit✔️✔️: for (auto nbi = nbrs.begin(); nbi != nbrs.end(); ++nbi) {
-    let mut forbidden = vec![false; topology.bonds.len()];
+    // BEGIN RDKIT CPP FUNCTION RDKit::findAllSubgraphsOfLengthN (Release_2026_03_6)
+    // RDKit❗✔️: PATH_LIST findAllSubgraphsOfLengthN(const ROMol &mol, unsigned int targetLen,
+    // RDKit❗✔️:                                     bool useHs, int rootedAtAtom,
+    // RDKit❗✔️:                                     boost::dynamic_bitset<> *ignoreAtoms) {
+    // RDKit❗✔️:   /*********************************************
+    // RDKit❗✔️:     FIX: Lots of issues here:
+    // RDKit❗✔️:     - pathListType is defined as a container of "pathType", should it be a
+    // RDKit❗✔️:   container
+    // RDKit❗✔️:     of "pointers to pathtype"
+    // RDKit❗✔️:     - to make few things clear it might be useful to typedef a
+    // RDKit❗✔️:   "subgraphListType" even if it is exactly same as the "pathListType", just to
+    // RDKit❗✔️:   not confuse between path vs. subgraph definitions
+    // RDKit❗✔️:     - To make it consistent with the python version of this function in
+    // RDKit❗✔️:   "subgraph.py"
+    // RDKit❗✔️:     it return a "list of paths" instead of a "list of list of paths" (see
+    // RDKit❗✔️:     "GetPathsUpTolength" in "molgraphs.cpp")
+    // RDKit❗✔️:   ****************************************************************************/
+    // RDKit❗✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                "bad ignoreAtoms size");
+    // RDKit❗✔️:   boost::dynamic_bitset<> forbidden(mol.getNumBonds());
+    // RDKit❗✔️:   // if there are any ignore atoms, mark any bonds involving them as forbidden
+    // RDKit❗✔️:   if (ignoreAtoms) {
+    // RDKit❗✔️:     for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:       if (ignoreAtoms->test(bond->getBeginAtomIdx()) ||
+    // RDKit❗✔️:           ignoreAtoms->test(bond->getEndAtomIdx())) {
+    // RDKit❗✔️:         forbidden[bond->getIdx()] = 1;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // this should be the only dependence on mol object:
+    // RDKit❗✔️:   INT_INT_VECT_MAP nbrs;
+    // RDKit❗✔️:   Subgraphs::getNbrsList(mol, useHs, nbrs);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Start path at each bond
+    // RDKit❗✔️:   PATH_LIST res;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // start paths at each bond:
+    // RDKit❗✔️:   for (auto nbi = nbrs.begin(); nbi != nbrs.end(); ++nbi) {
+    // RDKit❗✔️:     int i = (*nbi).first;
+    // RDKit❗✔️:     if (forbidden[i]) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     auto bi = mol.getBondWithIdx(i);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // if we're only returning paths rooted at a particular atom, check now
+    // RDKit❗✔️:     // that this bond involves that atom:
+    // RDKit❗✔️:     if (rootedAtAtom >= 0 &&
+    // RDKit❗✔️:         bi->getBeginAtomIdx() != static_cast<unsigned int>(rootedAtAtom) &&
+    // RDKit❗✔️:         bi->getEndAtomIdx() != static_cast<unsigned int>(rootedAtAtom)) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // don't come back to this bond in the later subgraphs
+    // RDKit❗✔️:     forbidden[i] = 1;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // start the recursive path building with the current bond
+    // RDKit❗✔️:     PATH_TYPE spath;
+    // RDKit❗✔️:     spath.clear();
+    // RDKit❗✔️:     spath.push_back(i);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // neighbors of this bond are the next candidates
+    // RDKit❗✔️:     INT_VECT cands = nbrs[i];
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // now call the recursive function
+    // RDKit❗✔️:     // little bit different from the python version
+    // RDKit❗✔️:     // the result list of paths is passed as a reference, instead of on the fly
+    // RDKit❗✔️:     // appending
+    // RDKit❗✔️:     Subgraphs::recurseWalk(nbrs, spath, cands, targetLen, forbidden, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   nbrs.clear();
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::findAllSubgraphsOfLengthN
+    let mut forbidden = ignored_bonds(PathGraphAccess::Concrete(topology), ignore_atoms);
     let mut raw_result = Vec::new();
     for (&start, adjacent) in neighbors {
-        if !root_allows_bond(topology, root, start) || forbidden[start] {
+        if forbidden[start] {
+            continue;
+        }
+        if !root_allows_bond(topology, root, start) {
             continue;
         }
         forbidden[start] = true;
@@ -1380,8 +1734,6 @@ fn all_subgraphs_of_length_from_neighbors(
             &mut raw_result,
         );
     }
-    // RDKit✔️✔️: return res;
-    // END RDKIT CPP FUNCTION findAllSubgraphsOfLengthN
     raw_result
         .into_iter()
         .map(|row| row.into_iter().map(BondId::new).collect())
@@ -1663,11 +2015,11 @@ fn remap_selected_substance_groups(
 fn remap_selected_stereo_groups(
     topology: &TopologyBlock,
     mapping: &TopologyMapping,
-) -> Vec<StereoGroup> {
+) -> Result<Vec<StereoGroup>, cosmolkit_model::StereoGroupError> {
     topology
         .stereo_groups
         .iter()
-        .filter_map(|group| {
+        .map(|group| {
             // RDKit✔️✔️: return objects.empty() ||
             // RDKit✔️✔️:        std::any_of(objects.begin(), objects.end(), [&](auto &object) {
             // RDKit✔️✔️:          return selected_indices[object->getIdx()];
@@ -1683,7 +2035,7 @@ fn remap_selected_stereo_groups(
                     .iter()
                     .any(|bond| mapping.bonds.old_to_new[bond.index()].is_some());
             if !atom_side_selected || !bond_side_selected {
-                return None;
+                return Ok(None);
             }
             let atoms = group
                 .atoms()
@@ -1695,15 +2047,16 @@ fn remap_selected_stereo_groups(
                 .iter()
                 .filter_map(|bond| mapping.bonds.old_to_new[bond.index()])
                 .collect();
-            let remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            let remapped = StereoGroup::new(group.kind(), atoms, bonds)?;
             let remapped = match group.id() {
                 Some(id) => remapped.with_id(id),
                 None => remapped,
             };
             // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
-            Some(remapped.with_write_id(group.write_id()))
+            Ok(Some(remapped.with_write_id(group.write_id())))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 #[cfg(test)]
@@ -1835,6 +2188,7 @@ mod cf3d_sgids_core_2_tests {
                 vec![AtomId::new(0), AtomId::new(2)],
                 vec![BondId::new(0), BondId::new(1)],
             )
+            .expect("valid distinct stereo members")
             .with_id(17)
             .with_write_id(9),
             StereoGroup::new(
@@ -1842,6 +2196,7 @@ mod cf3d_sgids_core_2_tests {
                 vec![AtomId::new(2)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(41)
             .with_write_id(5),
             StereoGroup::new(
@@ -1849,12 +2204,14 @@ mod cf3d_sgids_core_2_tests {
                 vec![AtomId::new(1), AtomId::new(3)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(0),
             StereoGroup::new(
                 StereoGroupKind::Absolute,
                 vec![AtomId::new(0), AtomId::new(2)],
                 vec![],
             )
+            .expect("valid distinct stereo members")
             .with_write_id(12),
         ];
         let source_groups = stereo_groups.clone();
@@ -1897,4 +2254,44 @@ mod cf3d_sgids_core_2_tests {
         assert!(groups[2].bonds().is_empty());
         assert_eq!(topology.stereo_groups, source_groups);
     }
+}
+
+fn validate_ignored_atom_mask(mask: Option<&[bool]>, expected: usize) -> Result<(), PathError> {
+    // RDKit✔️✔️:   PRECONDITION(!ignoreAtoms || ignoreAtoms->size() == mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad ignoreAtoms size");
+    if let Some(mask) = mask
+        && mask.len() != expected
+    {
+        return Err(PathError::IgnoredAtomMaskLength {
+            actual: mask.len(),
+            expected,
+        });
+    }
+    Ok(())
+}
+
+fn ignored_bonds(graph: PathGraphAccess<'_>, mask: Option<&[bool]>) -> Vec<bool> {
+    // RDKit✔️❌:   // if there are any ignore atoms, mark any bonds involving them as forbidden
+    // RDKit✔️❌:   if (ignoreAtoms) {
+    // RDKit✔️❌:     for (const auto bond : mol.bonds()) {
+    // RDKit✔️❌:       if (ignoreAtoms->test(bond->getBeginAtomIdx()) ||
+    // RDKit✔️❌:           ignoreAtoms->test(bond->getEndAtomIdx())) {
+    // RDKit✔️❌:         forbidden[bond->getIdx()] = 1;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+
+    // Source loops exactly one molecule bond pass when ignoreAtoms is present.
+    // Bitmap has one byte per entry rather than packed bits: same O(B) work,
+    // larger storage is retained and must not claim packed-memory parity.
+    let mut forbidden = vec![false; graph.bond_count()];
+    if let Some(mask) = mask {
+        for index in 0..graph.bond_count() {
+            let bond = graph.bond(index);
+            if mask[bond.begin().index()] || mask[bond.end().index()] {
+                forbidden[index] = true;
+            }
+        }
+    }
+    forbidden
 }

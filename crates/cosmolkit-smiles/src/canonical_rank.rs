@@ -167,7 +167,7 @@ fn build_ranking_fragment(
         bonds.push(bond.clone().remapped(new_bond, begin, end, stereo_atoms));
     }
     let stereo_groups =
-        remap_component_stereo_groups(&topology.stereo_groups, &old_to_new, &bond_old_to_new);
+        remap_component_stereo_groups(&topology.stereo_groups, &old_to_new, &bond_old_to_new)?;
     Ok(TopologyBlock {
         adjacency: AdjacencyList::from_topology(atoms.len(), &bonds),
         atoms,
@@ -181,7 +181,7 @@ fn remap_component_stereo_groups(
     groups: &[StereoGroup],
     atom_old_to_new: &[Option<AtomId>],
     bond_old_to_new: &[Option<BondId>],
-) -> Vec<StereoGroup> {
+) -> Result<Vec<StereoGroup>, cosmolkit_core::CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
     // RDKit✔️✔️:   std::vector<StereoGroup> extracted_stereo_groups;
     // RDKit✔️✔️:   for (const auto &stereo_group : reference_mol.getStereoGroups()) {
@@ -213,7 +213,7 @@ fn remap_component_stereo_groups(
     // END RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
     groups
         .iter()
-        .filter_map(|group| {
+        .map(|group| {
             let atoms = group
                 .atoms()
                 .iter()
@@ -227,17 +227,18 @@ fn remap_component_stereo_groups(
             if (!group.atoms().is_empty() && atoms.is_empty())
                 || (!group.bonds().is_empty() && bonds.is_empty())
             {
-                return None;
+                return Ok(None);
             }
-            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds)?;
             remapped = match group.id() {
                 Some(id) => remapped.with_id(id),
                 None => remapped,
             };
             set_stereo_group_write_id(&mut remapped, stereo_group_write_id(group));
-            Some(remapped)
+            Ok(Some(remapped))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 #[cfg(test)]
@@ -303,18 +304,20 @@ mod tests {
                 vec![AtomId::new(0), AtomId::new(2)],
                 vec![BondId::new(0), BondId::new(1)],
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
             StereoGroup::new(
                 StereoGroupKind::And,
                 vec![AtomId::new(1)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(9),
         ];
         let atom_map = vec![Some(AtomId::new(1)), None, Some(AtomId::new(0))];
         let bond_map = vec![None, Some(BondId::new(0))];
 
-        let remapped = remap_component_stereo_groups(&groups, &atom_map, &bond_map);
+        let remapped = remap_component_stereo_groups(&groups, &atom_map, &bond_map).unwrap();
         assert_eq!(remapped.len(), 1);
         assert_eq!(remapped[0].kind(), StereoGroupKind::Or);
         assert_eq!(remapped[0].id(), Some(7));
@@ -345,32 +348,38 @@ mod tests {
                 vec![AtomId::new(1), AtomId::new(0), AtomId::new(2)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(17),
             StereoGroup::new(
                 StereoGroupKind::And,
                 Vec::new(),
                 vec![BondId::new(1), BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(23),
             StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(2)], Vec::new())
+                .expect("valid distinct stereo members")
                 .with_id(29),
             StereoGroup::new(
                 StereoGroupKind::Or,
                 vec![AtomId::new(3), AtomId::new(0)],
                 vec![BondId::new(1), BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(31),
             StereoGroup::new(
                 StereoGroupKind::And,
                 vec![AtomId::new(0)],
                 vec![BondId::new(1)],
             )
+            .expect("valid distinct stereo members")
             .with_id(35),
             StereoGroup::new(
                 StereoGroupKind::Absolute,
                 vec![AtomId::new(3)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(37),
         ];
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), groups)

@@ -432,6 +432,7 @@ fn environments(
         input.topology,
         arguments.torsion_atom_count as usize,
         &PathSearchParams {
+            ignore_atoms: None,
             representation: PathRepresentation::Atoms,
             use_hydrogens: false,
             rooted_at_atom: None,

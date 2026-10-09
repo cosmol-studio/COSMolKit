@@ -1697,7 +1697,7 @@ fn apply_cx_progress_to_query_with_cursor(
         // above before this side effect, matching native sequential parsing.
         progress.emit_source_warning();
     }
-    if !progress.is_complete() {
+    if !progress.is_complete() && progress.enhanced_stereo_duplicate_atom().is_none() {
         // Source scanning captured a terminal warning, but only successful
         // replay reaches it. Any earlier graph/property/query failure returned
         // above before this side effect, matching native sequential parsing.
@@ -3169,7 +3169,7 @@ pub(crate) fn remap_query_stereo_groups_after_removal(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds)?;
             // RDKit❗✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
             // A removal retains the original group object and both IDs.
             cosmolkit_model::set_stereo_group_write_id(
@@ -8949,6 +8949,7 @@ mod query_hydrogen_merge_tests {
                     vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)],
                     vec![BondId::new(0), BondId::new(1)],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(17),
             ],
         )
@@ -9252,6 +9253,7 @@ mod query_hydrogen_merge_tests {
                 vec![AtomId::new(0), AtomId::new(1)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(17),]
         );
         assert_eq!(merged.props(), source.props());
@@ -9812,6 +9814,7 @@ mod cx_progress_label_tests {
             vec![AtomId::new(0), AtomId::new(1)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(73);
         graph.add_stereo_group(stereo_group.clone());
 
@@ -10056,7 +10059,7 @@ mod cx_progress_stereo_merge_tests {
 
     #[test]
     fn cx_progress_stereo_merge_matches_both_consumers_and_source_order() {
-        let input = "|a:0,1,0,o1:1,2,o1:2,2,&3:0,99,&3:1,a:99,o4:,o4:2,&858993459:2|";
+        let input = "|a:0,1,o1:1,2,o1:0,&3:0,99,&3:1,a:99,o4:,o4:2,&858993459:2|";
         let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX records");
         let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
         assert!(progress.is_complete());
@@ -10071,33 +10074,28 @@ mod cx_progress_stereo_merge_tests {
         let expected_groups = vec![
             StereoGroup::new(
                 StereoGroupKind::Absolute,
-                vec![
-                    AtomId::new(0),
-                    AtomId::new(1),
-                    AtomId::new(0),
-                    AtomId::new(2),
-                ],
+                vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(858_993_459),
             StereoGroup::new(
                 StereoGroupKind::Or,
-                vec![
-                    AtomId::new(1),
-                    AtomId::new(2),
-                    AtomId::new(2),
-                    AtomId::new(2),
-                ],
+                vec![AtomId::new(1), AtomId::new(2), AtomId::new(0)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(1),
             StereoGroup::new(
                 StereoGroupKind::And,
                 vec![AtomId::new(0), AtomId::new(1)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(3),
-            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(2)], Vec::new()).with_id(4),
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(2)], Vec::new())
+                .expect("valid distinct stereo members")
+                .with_id(4),
         ];
         assert_eq!(direct.stereo_groups(), expected_groups);
         assert_eq!(progressed.stereo_groups(), expected_groups);
@@ -10166,7 +10164,9 @@ mod cx_progress_stereo_merge_tests {
             .expect("completed source group before failed group");
 
         let expected_group =
-            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], Vec::new()).with_id(7);
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], Vec::new())
+                .expect("valid distinct stereo members")
+                .with_id(7);
         assert_eq!(graph.stereo_groups(), &[expected_group.clone()]);
         let mut expected = initial;
         replace_query_stereo_groups(&mut expected, vec![expected_group])
@@ -10195,6 +10195,7 @@ mod cx_progress_stereo_merge_tests {
             vec![AtomId::new(0), AtomId::new(1)],
             Vec::new(),
         )
+        .expect("valid distinct stereo members")
         .with_id(3);
         let mut expected = initial;
         replace_query_stereo_groups(&mut expected, vec![expected_group])
@@ -11707,4 +11708,150 @@ mod source_complete_smarts_composition_tests {
 #[cfg(test)]
 pub(crate) fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
     std::str::from_utf8(value.as_bytes()).expect("original text fixture has valid UTF8 bytes")
+}
+
+#[cfg(test)]
+mod recovery_chem29_query {
+    use super::*;
+    use cosmolkit_model::StereoGroupError;
+    fn leaf(error: &(dyn std::error::Error + 'static)) -> Option<StereoGroupError> {
+        let mut current = Some(error);
+        while let Some(error) = current {
+            if let Some(value) = error.downcast_ref::<StereoGroupError>() {
+                return Some(*value);
+            }
+            current = error.source();
+        }
+        None
+    }
+    #[test]
+    fn strict_same_record_and_cross_record_have_distinct_source_error_kinds() {
+        let same = parse_smarts("CC |o1:0,0|", &Default::default()).unwrap_err();
+        assert!(matches!(same, SmartsParseError::CxSmiles(_)));
+        assert_eq!(leaf(&same), None);
+        let cross = parse_smarts("CC |o1:0,o1:0|", &Default::default()).unwrap_err();
+        assert_eq!(leaf(&cross), Some(StereoGroupError::DuplicateAtom));
+    }
+    #[test]
+    fn lax_failure_preserves_completed_prefix_target_and_exact_consumed_text() {
+        for (cx, expected) in [
+            ("|o1:0,&2:1,1,a:0| suffix", "|o1:0,&2:1,1"),
+            ("|o1:0,o1:0,&2:1| suffix", "|o1:0,o1:0,"),
+        ] {
+            let input = format!("CC {cx}");
+            let graph = parse_smarts(
+                input,
+                &SmartsParseParams {
+                    strict_cxsmiles: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(graph.stereo_groups().len(), 1);
+            assert_eq!(graph.stereo_groups()[0].atoms(), [AtomId::new(0)]);
+            assert_eq!(graph.stereo_groups()[0].id(), Some(1));
+            assert_eq!(
+                graph
+                    .prop("_CXSMILES_Data")
+                    .unwrap()
+                    .as_string()
+                    .unwrap()
+                    .as_bytes(),
+                expected.as_bytes()
+            );
+            assert_eq!(graph.prop("_Name"), None);
+        }
+    }
+    #[test]
+    fn earlier_tracker_failure_preempts_later_duplicate_and_keeps_initial_groups() {
+        let mut graph = parse_smarts("CC", &Default::default()).unwrap();
+        graph.set_prop("_sgTracker", "bad").unwrap();
+        let before = graph.stereo_groups().to_vec();
+        let p = cosmolkit_cx::parse_cx_extensions_progress_with_atom_window("|o1:0,&2:1,1|", 0, 2);
+        let mut cursor = 0;
+        let error =
+            apply_cx_progress_to_query_with_cursor(&mut graph, &p, &mut cursor).unwrap_err();
+        assert!(matches!(error,SmartsParseError::CxLowering(crate::cx_lowering::CxQueryLoweringError::StereoGroupMerge(cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError::TrackerPropertyType{..}))));
+        assert_eq!(graph.stereo_groups(), before);
+        assert_eq!(cursor, "|o1:0,".len());
+    }
+    #[test]
+    fn warnings_emit_new_duplicate_once_keep_old_rb_twice_and_ctor_never() {
+        const ENV: &str = "COSMOLKIT_RECOVERY_CHEM29_WARNING_CHILD";
+        if let Ok(case) = std::env::var(ENV) {
+            match case.as_str() {
+                "same_strict" => {
+                    let _ = parse_smarts("CC |a:0,0|", &Default::default()).unwrap_err();
+                }
+                "same_lax" => {
+                    parse_smarts(
+                        "CC |a:0,0|",
+                        &SmartsParseParams {
+                            strict_cxsmiles: false,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                }
+                "ctor" => {
+                    let error = parse_smarts("CC |o1:0,o1:0|", &Default::default()).unwrap_err();
+                    assert_eq!(leaf(&error), Some(StereoGroupError::DuplicateAtom));
+                }
+                "rb" => {
+                    parse_smarts(
+                        "CC |rb:0:5|",
+                        &SmartsParseParams {
+                            strict_cxsmiles: false,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                }
+                "prior" => {
+                    let mut graph = parse_smarts("CC", &Default::default()).unwrap();
+                    graph.set_prop("_sgTracker", "bad").unwrap();
+                    let p = cosmolkit_cx::parse_cx_extensions_progress_with_atom_window(
+                        "|o1:0,&2:1,1|",
+                        0,
+                        2,
+                    );
+                    assert!(apply_cx_progress_to_query(&mut graph, &p).is_err());
+                }
+                _ => panic!("unknown private warning fixture"),
+            }
+            return;
+        }
+        for (case, duplicate, rb) in [
+            ("same_strict", 1, 0),
+            ("same_lax", 1, 0),
+            ("ctor", 0, 0),
+            ("rb", 0, 2),
+            ("prior", 0, 0),
+        ] {
+            let output=std::process::Command::new(std::env::current_exe().unwrap()).args(["--exact","smarts_parse::recovery_chem29_query::warnings_emit_new_duplicate_once_keep_old_rb_twice_and_ctor_never","--nocapture"]).env(ENV,case).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(
+                stderr
+                    .lines()
+                    .filter(|line| *line
+                        == "Atom 0 appears more than once in stereo group specification!")
+                    .count(),
+                duplicate,
+                "{case}: {stderr}"
+            );
+            assert_eq!(
+                stderr
+                    .lines()
+                    .filter(|line| *line == "unrecognized rb value: 5")
+                    .count(),
+                rb,
+                "{case}: {stderr}"
+            );
+        }
+    }
 }

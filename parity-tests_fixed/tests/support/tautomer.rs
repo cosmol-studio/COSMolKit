@@ -152,14 +152,29 @@ pub fn compare_rows(
                 rings: final_rings.as_ref(),
             };
             let actual = (|| -> Result<Value, Box<dyn std::error::Error>> {
-                let result = enumerate_with_catalog(view, catalog, params, None)?;
-                let canonical = pick_canonical_with(&result, &parsed.coordinates, |view| {
-                    Ok(score_tautomer(view)?.total())
-                })?;
+                // This detached test record owns the cache loan required by
+                // the source .6 scoring side effect; no molecule graph is cloned.
+                let mut source_rings = final_rings.clone().unwrap_or_else(|| {
+                    cosmolkit_core::RingInfo::new(
+                        cosmolkit_core::RingFindType::OtherOrUnknown,
+                        parsed.topology.atoms.len(),
+                        parsed.topology.bonds.len(),
+                    )
+                });
+                let mut result = enumerate_with_catalog(
+                    TautomerScoreView::new(view, &mut source_rings),
+                    catalog,
+                    params,
+                    None,
+                )?;
+                let canonical =
+                    pick_canonical_with(&mut result, &parsed.coordinates, |mut view| {
+                        Ok(score_tautomer_(&mut view)?.total())
+                    })?;
                 let mut scores = Vec::new();
                 let mut states = Vec::new();
-                for (_, candidate) in &result.entries {
-                    let score = score_tautomer(candidate.view(&parsed.coordinates))?;
+                for (_, candidate) in &mut result.entries {
+                    let score = score_tautomer_(&mut candidate.score_view(&parsed.coordinates))?;
                     scores.push(json!({"ring":score.ring(),"substructure":score.substructure(),"hetero_hydrogen":score.hetero_hydrogen(),"total":score.total()}));
                     states.push(molecule_state(candidate, &parsed.coordinates)?);
                 }

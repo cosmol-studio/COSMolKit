@@ -19,14 +19,18 @@ default = ["smiles-integration"]
 smiles-integration = ["dep:cosmolkit-smiles"]
 
 [dependencies]
-cosmolkit-smiles = { version = "0.5.0-rc.19", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-cx = { version = "0.5.0-rc.19", path = "../cosmolkit-cx" }
-cosmolkit-core = { version = "0.5.0-rc.19", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.19", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.5.0-rc.19", path = "../cosmolkit-types" }
+cosmolkit-smiles = { version = "0.5.0-rc.20", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-cx = { version = "0.5.0-rc.20", path = "../cosmolkit-cx" }
+cosmolkit-core = { version = "0.5.0-rc.20", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.20", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.20", path = "../cosmolkit-types" }
 serde_json = "1"
 thiserror = "2"
 
 [[test]]
 name = "migration_q_writer"
 required-features = ["smiles-integration"]
+
+[dev-dependencies]
+# Native child-isolated source SIGINT regressions only.
+libc = "0.2"

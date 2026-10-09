@@ -95,11 +95,14 @@ fn duplicate_ligands_with_stereo_state() -> Molecule {
             bond(3, 0, 4, BondOrder::Single),
         ],
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(0)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     Molecule::from_parts(

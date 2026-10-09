@@ -279,11 +279,10 @@ fn validation_reports_stereo_group_duplicate_and_stale_adjacency_errors() {
             vec![atom(0), atom(1)],
             vec![bond(0, 0, 1)],
             vec![],
-            vec![StereoGroup::new(
-                StereoGroupKind::Or,
-                vec![atom_id(2)],
-                vec![]
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Or, vec![atom_id(2)], vec![])
+                    .expect("valid distinct stereo members")
+            ],
         ),
         Err(TopologyValidationError::StereoGroupAtomOutOfRange {
             atom: atom_id(2),
@@ -295,11 +294,10 @@ fn validation_reports_stereo_group_duplicate_and_stale_adjacency_errors() {
             vec![atom(0), atom(1)],
             vec![bond(0, 0, 1)],
             vec![],
-            vec![StereoGroup::new(
-                StereoGroupKind::Or,
-                vec![],
-                vec![bond_id(1)]
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Or, vec![], vec![bond_id(1)])
+                    .expect("valid distinct stereo members")
+            ],
         ),
         Err(TopologyValidationError::StereoGroupBondOutOfRange {
             bond: bond_id(1),
@@ -702,8 +700,11 @@ fn enhanced_stereo_removal_retains_partial_members_in_order_and_drops_empty_grou
             vec![atom_id(0), atom_id(2), atom_id(3)],
             vec![bond_id(0), bond_id(2)],
         )
+        .expect("valid distinct stereo members")
         .with_id(7),
-        StereoGroup::new(StereoGroupKind::And, vec![atom_id(1)], vec![bond_id(0)]).with_id(8),
+        StereoGroup::new(StereoGroupKind::And, vec![atom_id(1)], vec![bond_id(0)])
+            .expect("valid distinct stereo members")
+            .with_id(8),
     ];
     source.validate().unwrap();
     let mut edit = source.begin_batch_edit().unwrap();
@@ -794,11 +795,14 @@ fn reorder_remaps_all_references_preserves_bond_order_and_reports_every_permutat
         atoms,
         bonds,
         vec![sgroup],
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![atom_id(3), atom_id(1)],
-            vec![bond_id(2), bond_id(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![atom_id(3), atom_id(1)],
+                vec![bond_id(2), bond_id(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     let snapshot = source.clone();

@@ -99,6 +99,7 @@ pub(crate) fn operation_pyerr(
     use ck::OperationError as E;
     let kind = match source {
         E::ReactionRun(..) => "ReactionRun",
+        E::Scaffold(..) => "Scaffold",
         E::ReactionApply(..) => "ReactionApply",
         E::Alignment(..) => "Alignment",
         E::Enumeration(..) => "Enumeration",
@@ -993,7 +994,7 @@ impl Molecule {
         self.inner
             .tautomer_score()
             .map(|inner| crate::tautomer_binding::TautomerScore { inner })
-            .map_err(|error| crate::tautomer_binding::run_pyerr(py, &error))
+            .map_err(|error| operation_pyerr(py, error))
     }
     fn tautomer_score_with_params(
         &self,
@@ -1003,7 +1004,7 @@ impl Molecule {
         self.inner
             .tautomer_score_with_params(&params.inner)
             .map(|inner| crate::tautomer_binding::TautomerScore { inner })
-            .map_err(|error| crate::tautomer_binding::run_pyerr(py, &error))
+            .map_err(|error| operation_pyerr(py, error))
     }
     #[pyo3(signature=(atom_id, branch_subtract=0, include_chirality=false, use_legacy_stereo_perception=true))]
     fn with_atom_pair_atom_code(
@@ -2684,6 +2685,27 @@ impl Molecule {
     fn with_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_hydrogens()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    /// MolHash MurckoScaffold: prune terminal atoms, returning a new molecule.
+    fn murcko_scaffold(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .murcko_scaffold()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    /// MolHash ExtendedMurcko: retain adjacent substituents as dummy atoms.
+    fn net_scaffold(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .net_scaffold()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    /// ChemTransforms MurckoDecompose, including ring-exocyclic double bonds.
+    fn murcko_decompose(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .murcko_decompose()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }

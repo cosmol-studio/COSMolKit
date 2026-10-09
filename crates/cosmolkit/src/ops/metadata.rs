@@ -212,6 +212,8 @@ pub enum CipStatePolicy {
     /// The reaction owner performs the pinned source's property transitions.
     /// This grants no mapping, cache, block-access, or commit authority.
     ReactionSourceTransition,
+    /// Exact MolHash/ChemTransforms scaffold transitions in the core owner.
+    ScaffoldSourceTransition,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "reference": {
     "implementation": "RDKit",
-    "version": "2026.3.1",
+    "version": "2026.3.6",
     "python_entry": "Chem.AssignAtomChiralTagsFromStructure",
     "cpp_entry": "RDKit::MolOps::assignChiralTypesFrom3D",
     "source": "third_party/rdkit/Code/GraphMol/Chirality.cpp:3377-3500"

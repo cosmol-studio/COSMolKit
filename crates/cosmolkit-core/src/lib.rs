@@ -37,6 +37,9 @@ mod radicals;
 mod random;
 mod rings;
 mod sanitize;
+mod scaffolds;
+#[doc(hidden)]
+pub mod source_control_c;
 mod source_sort;
 #[doc(hidden)]
 pub mod stereo_graph;
@@ -58,6 +61,9 @@ pub use random::{RdkitRandomEngine, RdkitRandomGenerator, with_rdkit_random_gene
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
 pub use fragments::{MoleculeFragment, MoleculeFragmentsError, get_molecule_fragments};
+pub use scaffolds::{
+    ScaffoldError, ScaffoldResult, murcko_decompose, murcko_scaffold, net_scaffold,
+};
 
 /// Narrow borrowed fragment bridge used by sibling algorithm crates.
 #[doc(hidden)]
@@ -135,7 +141,7 @@ pub use kekulize::{
     kekulize_if_possible_with_query_state_and_ring_info, kekulize_selected_fragment,
     kekulize_with_query_state, kekulize_with_query_state_and_ring_info, rank_fragment_atoms,
     rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
-    rank_mol_atoms_with_params,
+    rank_mol_atoms_with_params, source_kekulize_attempt,
 };
 
 pub use legacy_stereo::{
@@ -196,7 +202,7 @@ pub use rings::{
 pub use sanitize::{
     ChemistryProblem, ChemistryProblemError, ChemistryProblemReport, SanitizeAssignment,
     SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, detect_chemistry_problems,
-    sanitize_topology, sanitize_topology_with_query_state,
+    sanitize_topology, sanitize_topology_with_query_state, source_sanitize_tautomer_product,
 };
 pub(crate) use sanitize::{
     PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,
@@ -260,7 +266,7 @@ pub use coordinate_input::{
 /// Foundational quaternion alignment over detached point rows.
 pub use alignment::{align_points, alignment_sum_squared_residual, alignment_transform_point};
 
-pub use periodic_table::van_der_waals_radius;
+pub use periodic_table::{covalent_radius, van_der_waals_radius};
 
 mod property_numeric;
 #[doc(hidden)]

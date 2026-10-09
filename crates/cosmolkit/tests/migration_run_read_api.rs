@@ -22,11 +22,14 @@ fn read_fixture() -> Molecule {
                 .with_atoms(vec![AtomId::new(1)])
                 .with_bonds(vec![BondId::new(0)]),
         ],
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(0)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     let coordinates = CoordinateBlock {

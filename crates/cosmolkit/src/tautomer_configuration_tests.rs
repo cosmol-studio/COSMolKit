@@ -93,7 +93,7 @@ fn enumerator_configuration_callback_is_borrowed_and_replaceable() {
 }
 #[test]
 fn canonicalization_and_factories_share_current_and_v1_catalog_paths() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let default = TautomerParams::default();
     let current = TautomerParams::from_transform_file("").unwrap();
     let v1 = TautomerParams::v1().unwrap();
@@ -113,7 +113,7 @@ fn canonicalization_and_factories_share_current_and_v1_catalog_paths() {
 }
 #[test]
 fn canonicalization_and_factories_honor_options_without_mutating_configuration_or_source() {
-    let source = Molecule::from_smiles("CC(C)=O")
+    let mut source = Molecule::from_smiles("CC(C)=O")
         .unwrap()
         .to_builder()
         .with_property("source_id".into(), "canonical-options".into())
@@ -154,7 +154,7 @@ fn canonicalization_and_factories_custom_scorer_selects_from_the_sole_enumeratio
             })
         }
     }
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let before = source.clone();
     let scorer = Arc::new(Scorer(Default::default()));
     let mut p = TautomerParams::default();
@@ -184,7 +184,7 @@ fn canonicalization_and_factories_are_independent_of_input_tautomer_and_atom_ord
     assert_eq!(endpoints[0].as_bytes(), b"CC(C)=O");
 }
 #[test]
-fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state() {
+fn canonicalization_and_factories_canonical_selection_paths_follow_quickcopy_and_restoration() {
     // Canonical API replacement of the retired private in-place correspondence.
     // Exercise independently computed public selection paths on an enol that
     // actually changes bonds, retaining the original outer-state conditions.
@@ -214,7 +214,7 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
         .with_prop("source_id", "in-place-correspondence")
         .unwrap()
         .with_sdf_data_field("dataset", "tautomer");
-    let source = crate::MoleculeBuilder::from_parts(
+    let mut source = crate::MoleculeBuilder::from_parts(
         molecule.topology().clone(),
         coordinates.clone(),
         props.clone(),
@@ -227,32 +227,49 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
     let selected = source.canonical_tautomer().unwrap();
     assert_eq!(selected.to_smiles().unwrap().as_bytes(), b"CC(C)=O");
     assert_ne!(selected.bonds(), source.bonds());
-    let enumeration = source.enumerate_tautomers().unwrap();
+    let mut enumeration = source.enumerate_tautomers().unwrap();
     assert_eq!(enumeration.len(), 2);
     let enumeration_before = enumeration.clone();
     let from_enumeration = enumeration.canonical_tautomer().unwrap();
-    let candidates = enumeration.iter().cloned().collect::<Vec<_>>();
+    let mut candidates = enumeration.iter().cloned().collect::<Vec<_>>();
     let candidates_before = candidates.clone();
-    let from_iterable = canonical_tautomer_from_molecules(&candidates).unwrap();
-    // Source sanitize clears computed entries before recreating numArom,
-    // and source assignStereochemistry appends its Int(1) success marker.
-    // Preserve every native value, metadata vector, and insertion position.
-    let mut expected_properties = original_properties.clone();
-    expected_properties.clear_computed_props().unwrap();
-    expected_properties
+    let from_iterable = canonical_tautomer_from_molecules(&mut candidates).unwrap();
+    // .6 canonicalize restores the complete original molecule dictionary and
+    // appends source conformers with fresh global IDs. pickCanonical on the
+    // enumeration/iterable has no original-input restoration step: the chosen
+    // generated keto product retains quickCopy's empty conformer state and only
+    // the computed properties produced by sanitization and stereo assignment.
+    let expected_coordinates = CoordinateBlock {
+        conformers_2d: vec![original_coordinates.conformers_2d[0].clone().with_id(0)],
+        conformers_3d: vec![original_coordinates.conformers_3d[0].clone().with_id(1)],
+        source_coordinate_dim: None,
+        source_conformer_order: original_coordinates.source_conformer_order.clone(),
+    };
+    assert_eq!(selected.coordinate_block_runtime(), &expected_coordinates);
+    assert_eq!(selected.properties(), &original_properties);
+    let mut expected_product_properties = crate::MoleculeProperties::default();
+    expected_product_properties
+        .set_prop(
+            "__computedProps",
+            cosmolkit_model::PropertyValue::StringVector(Vec::new()),
+        )
+        .unwrap();
+    expected_product_properties
         .set_computed_prop("numArom", 0_i32)
         .unwrap();
-    expected_properties
+    expected_product_properties
         .set_computed_prop("_StereochemDone", 1_i32)
         .unwrap();
+    for picked in [&from_enumeration, &from_iterable] {
+        assert_eq!(
+            picked.coordinate_block_runtime(),
+            &CoordinateBlock::default()
+        );
+        assert_eq!(picked.properties(), &expected_product_properties);
+    }
     for replacement in [&selected, &from_enumeration, &from_iterable] {
         assert_eq!(replacement.atoms(), selected.atoms());
         assert_eq!(replacement.bonds(), selected.bonds());
-        assert_eq!(
-            replacement.coordinate_block_runtime(),
-            &original_coordinates
-        );
-        assert_eq!(replacement.properties(), &expected_properties);
         assert!(
             replacement
                 .derived_cache_runtime()
@@ -263,7 +280,7 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
             replacement.derived_cache_runtime().valence_assignment(),
             selected.derived_cache_runtime().valence_assignment()
         );
-        assert!(Arc::ptr_eq(
+        assert!(!Arc::ptr_eq(
             &replacement.coordinates_arc_runtime(),
             &source.coordinates_arc_runtime()
         ));
@@ -290,9 +307,12 @@ fn canonicalization_and_factories_do_not_expose_a_duplicate_in_place_api() {
 }
 #[test]
 fn enumeration_matches_pcs_fused_ring_max_transform_boundary() {
-    let source = Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").unwrap();
+    let mut source = Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").unwrap();
     let result = source.enumerate_tautomers().unwrap();
-    assert_eq!(result.len(), 272);
+    // Target .6 source keeps lazy Kekulize, preserved ring topology during
+    // product sanitization, and sparse stereo cleanup; the .1 count was 272.
+    // Keep the max-transform boundary and exact target count as separate checks.
+    assert_eq!(result.len(), 259);
     assert_eq!(
         result.status(),
         TautomerEnumerationStatus::MaxTransformsReached
@@ -301,4 +321,33 @@ fn enumeration_matches_pcs_fused_ring_max_transform_boundary() {
 
 fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
     std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test observation")
+}
+
+#[test]
+fn search04_registered_enumeration_propagates_failed_lazy_attempt_without_mutating_input() {
+    let mut source = Molecule::from_smiles_with_params(
+        "c1cccc1",
+        &crate::SmilesParseParams {
+            sanitize: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let before = source.clone();
+    let topology = source.topology().clone();
+    let properties = source.properties().clone();
+    let coordinates = source.coordinate_block_runtime().clone();
+    let cache = source.derived_cache_runtime().clone();
+    let error = source.enumerate_tautomers().unwrap_err();
+    assert!(matches!(
+        error,
+        OperationError::Tautomer(TautomerRunError::Kekulize(
+            cosmolkit_core::KekulizeError::NotKekulizable { .. }
+        ))
+    ));
+    assert_eq!(source, before);
+    assert_eq!(source.topology(), &topology);
+    assert_eq!(source.properties(), &properties);
+    assert_eq!(source.coordinate_block_runtime(), &coordinates);
+    assert_eq!(source.derived_cache_runtime(), &cache);
 }

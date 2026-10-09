@@ -19,7 +19,12 @@ enum DetachedCandidate {
         PreparedCacheValues,
     ),
     #[cfg(feature = "cap-tautomer")]
-    Prepared(TopologyBlock, MoleculeProperties, PreparedCacheValues),
+    Prepared(
+        TopologyBlock,
+        Option<CoordinateBlock>,
+        MoleculeProperties,
+        PreparedCacheValues,
+    ),
     #[cfg(feature = "cap-reaction")]
     Reconstructed(cosmolkit_reaction::ReactionProduct),
 }
@@ -393,6 +398,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         &mut self,
         candidates: Vec<(
             TopologyBlock,
+            Option<CoordinateBlock>,
             MoleculeProperties,
             cosmolkit_core::ValenceAssignment,
             cosmolkit_core::RingInfo,
@@ -416,9 +422,10 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         self.emitted = Some(
             candidates
                 .into_iter()
-                .map(|(topology, properties, valence, rings)| {
+                .map(|(topology, coordinates, properties, valence, rings)| {
                     DetachedCandidate::Prepared(
                         topology,
+                        coordinates,
                         properties,
                         PreparedCacheValues {
                             valence,
@@ -457,8 +464,8 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                             (t, c, p, Some(facts), false)
                         }
                         #[cfg(feature = "cap-tautomer")]
-                        DetachedCandidate::Prepared(t, p, facts) => {
-                            (t, None, p, Some(facts), false)
+                        DetachedCandidate::Prepared(t, c, p, facts) => {
+                            (t, c, p, Some(facts), false)
                         }
                         #[cfg(feature = "cap-reaction")]
                         DetachedCandidate::Reconstructed(product) => {
@@ -563,7 +570,7 @@ impl Iterator for StereoisomerIterator {
             #[cfg(feature = "cap-stereoisomers")]
             DetachedCandidate::StereoPrepared(t, c, p, facts) => (t, c, p, Some(facts)),
             #[cfg(feature = "cap-tautomer")]
-            DetachedCandidate::Prepared(t, p, facts) => (t, None, p, Some(facts)),
+            DetachedCandidate::Prepared(t, c, p, facts) => (t, c, p, Some(facts)),
             #[cfg(feature = "cap-reaction")]
             DetachedCandidate::Reconstructed(_) => {
                 return Some(Err(OperationError::MappingContract {

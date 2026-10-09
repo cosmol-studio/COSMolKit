@@ -255,6 +255,24 @@ impl Molecule {
             .molecular_hash()
             .map_err(|e| hash_error(&e).unwrap_or_else(|e| e))
     }
+    /// MolHash MurckoScaffold; returns a new molecule.
+    #[wasm_bindgen(js_name=murckoScaffold)]
+    pub fn murcko_scaffold(&self) -> Result<Self, JsValue> {
+        self.inner.murcko_scaffold().map(|inner| Self { inner: std::sync::Arc::new(inner) })
+            .map_err(|e| crate::alignment_values::operation_error(&e).unwrap_or_else(|e| e))
+    }
+    /// MolHash ExtendedMurcko; neighboring substituents become dummy atoms.
+    #[wasm_bindgen(js_name=netScaffold)]
+    pub fn net_scaffold(&self) -> Result<Self, JsValue> {
+        self.inner.net_scaffold().map(|inner| Self { inner: std::sync::Arc::new(inner) })
+            .map_err(|e| crate::alignment_values::operation_error(&e).unwrap_or_else(|e| e))
+    }
+    /// ChemTransforms MurckoDecompose; retains ring-exocyclic double bonds.
+    #[wasm_bindgen(js_name=murckoDecompose)]
+    pub fn murcko_decompose(&self) -> Result<Self, JsValue> {
+        self.inner.murcko_decompose().map(|inner| Self { inner: std::sync::Arc::new(inner) })
+            .map_err(|e| crate::alignment_values::operation_error(&e).unwrap_or_else(|e| e))
+    }
     #[wasm_bindgen(js_name=molecularHashWithRanks)]
     pub fn molecular_hash_with_ranks(
         &self,

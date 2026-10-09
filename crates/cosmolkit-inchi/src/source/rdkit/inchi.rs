@@ -17,10 +17,10 @@ use crate::source_types::{
     tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP, tagINCHIBondType_INCHI_BOND_TYPE_ALTERN,
     tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE, tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
     tagINCHIStereoParity0D_INCHI_PARITY_NONE, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
-    tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, tagINCHIStereoType0D_INCHI_StereoType_Allene,
-    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond, tagINCHIStereoType0D_INCHI_StereoType_None,
-    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagRetValGetINCHI_inchi_Ret_OKAY,
-    tagRetValGetINCHI_inchi_Ret_WARNING,
+    tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN,
+    tagINCHIStereoType0D_INCHI_StereoType_Allene, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
+    tagINCHIStereoType0D_INCHI_StereoType_None, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
+    tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_WARNING,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -357,6 +357,7 @@ pub trait MolToInchiToolkit {
         &mut self,
         molecule: &mut AdapterMol,
         mark_atoms_bonds: bool,
+        canonical: bool,
     ) -> Result<(), AdapterToolkitError>;
 
     fn element_symbol(&mut self, atomic_number: i32) -> Result<Vec<u8>, AdapterToolkitError>;
@@ -3926,430 +3927,435 @@ pub(crate) fn inchi_to_mol(
     sanitize: bool,
     remove_hs: bool,
 ) -> Result<InchiToMolResult, InchiToMolError> {
-    // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1254 InchiToMol
-    // RDKit✔️❌: RWMol *InchiToMol(const std::string &inchi, ExtraInchiReturnValues &rv,
-    // RDKit✔️❌:                   bool sanitize, bool removeHs) {
-    // RDKit✔️✔️:   // input
-    // RDKit✔️✔️:   std::vector<char> _inchi;
-    // RDKit✔️✔️:   _inchi.reserve(inchi.size() + 1);
-    // RDKit✔️✔️:   std::copy(inchi.begin(), inchi.end(), std::back_inserter(_inchi));
-    // RDKit✔️✔️:   _inchi.push_back('\0');
-
-    // RDKit✔️❌:   char options[1] = "";
-    // RDKit✔️❌:   inchi_InputINCHI inchiInput;
-    // RDKit✔️❌:   inchiInput.szInChI = _inchi.data();
-    // RDKit✔️❌:   inchiInput.szOptions = options;
-
-    // RDKit✔️❌:   // creating RWMol for return
-    // RDKit✔️❌:   RWMol *m = nullptr;
-    // RDKit✔️❌:   {
-    // RDKit✔️❌:     // output structure
-    // RDKit✔️❌:     inchi_OutputStruct inchiOutput;
-    // RDKit✔️❌:     // DLL call
-    // RDKit✔️❌:     int retcode = GetStructFromINCHI(&inchiInput, &inchiOutput);
-
-    // RDKit✔️❌:     // prepare output
-    // RDKit✔️❌:     rv.returnCode = retcode;
-    // RDKit✔️❌:     if (inchiOutput.szMessage) {
-    // RDKit✔️❌:       rv.messagePtr = std::string(inchiOutput.szMessage);
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     if (inchiOutput.szLog) {
-    // RDKit✔️❌:       rv.logPtr = std::string(inchiOutput.szLog);
-    // RDKit✔️❌:     }
-
-    // RDKit✔️❌:     // for isotopes of H
-    // RDKit✔️❌:     typedef std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
-    // RDKit✔️❌:         ISOTOPES_t;
-    // RDKit✔️❌:     ISOTOPES_t isotopes;
-    // RDKit✔️❌:     if (retcode == inchi_Ret_OKAY || retcode == inchi_Ret_WARNING) {
-    // RDKit✔️❌:       m = new RWMol;
-    // RDKit✔️❌:       std::vector<unsigned int> indexToAtomIndexMapping;
-    // RDKit✔️❌:       PeriodicTable *periodicTable = PeriodicTable::getTable();
-    // RDKit✔️❌:       unsigned int nAtoms = inchiOutput.num_atoms;
-    // RDKit✔️❌:       for (unsigned int i = 0; i < nAtoms; i++) {
-    // RDKit✔️❌:         inchi_Atom *inchiAtom = &(inchiOutput.atom[i]);
-    // RDKit✔️❌:         // use element name to set atomic number
-    // RDKit✔️❌:         int atomicNumber = periodicTable->getAtomicNumber(inchiAtom->elname);
-    // RDKit✔️❌:         Atom *atom = new Atom(atomicNumber);
-    // RDKit✔️❌:         double averageWeight = atom->getMass();
-    // RDKit✔️❌:         int refWeight = static_cast<int>(averageWeight + 0.5);
-    // RDKit✔️❌:         int isotope = 0;
-    // RDKit✔️❌:         if (inchiAtom->isotopic_mass) {
-    // RDKit✔️❌:           isotope = inchiAtom->isotopic_mass - ISOTOPIC_SHIFT_FLAG;
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         if (isotope) {
-    // RDKit✔️❌:           atom->setIsotope(isotope + refWeight);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         // set charge
-    // RDKit✔️❌:         atom->setFormalCharge(inchiAtom->charge);
-    // RDKit✔️❌:         // set radical
-    // RDKit✔️❌:         if (inchiAtom->radical) {
-    // RDKit✔️❌:           if (inchiAtom->radical != 3 && inchiAtom->radical != 2) {
-    // RDKit✔️❌:             BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:                 << "expect radical to be either 2 or 3 while getting "
-    // RDKit✔️❌:                 << inchiAtom->radical << ". Ignore radical." << std::endl;
-    // RDKit✔️❌:           } else {
-    // RDKit✔️❌:             atom->setNumRadicalElectrons(inchiAtom->radical - 1);
-    // RDKit✔️❌:           }
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         // number of hydrogens
-    // RDKit✔️❌:         atom->setNumExplicitHs(inchiAtom->num_iso_H[0]);
-    // RDKit✔️❌:         if (inchiAtom->num_iso_H[1]) {
-    // RDKit✔️❌:           isotopes.push_back(std::make_tuple(1, i, inchiAtom->num_iso_H[1]));
-    // RDKit✔️❌:         } else if (inchiAtom->num_iso_H[2]) {
-    // RDKit✔️❌:           isotopes.push_back(std::make_tuple(2, i, inchiAtom->num_iso_H[2]));
-    // RDKit✔️❌:         } else if (inchiAtom->num_iso_H[3]) {
-    // RDKit✔️❌:           isotopes.push_back(std::make_tuple(3, i, inchiAtom->num_iso_H[3]));
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         // at this point the molecule has all Hs it should have. Set the
-    // RDKit✔️❌:         // noImplicit flag so
-    // RDKit✔️❌:         // we don't end up with extras later (this was github #562):
-    // RDKit✔️❌:         atom->setNoImplicit(true);
-    // RDKit✔️❌:         // add atom to molecule
-    // RDKit✔️❌:         unsigned int aid = m->addAtom(atom, false, true);
-    // RDKit✔️❌:         indexToAtomIndexMapping.push_back(aid);
-    // RDKit❌❌: #ifdef DEBUG
-    // RDKit❌❌:         BOOST_LOG(rdWarningLog)
-    // RDKit❌❌:             << "adding " << aid << ":" << atom->getAtomicNum() << ":"
-    // RDKit❌❌:             << (int)inchiAtom->num_iso_H[0]
-    // RDKit❌❌:             << " charge: " << (int)inchiAtom->charge << std::endl;
-    // RDKit❌❌: #endif
-    // RDKit✔️❌:       }
-
-    // RDKit✔️❌:       // adding bonds
-    // RDKit✔️❌:       std::set<std::pair<unsigned int, unsigned int>> bondRegister;
-    // RDKit✔️❌:       for (unsigned int i = 0; i < nAtoms; i++) {
-    // RDKit✔️❌:         inchi_Atom *inchiAtom = &(inchiOutput.atom[i]);
-    // RDKit✔️❌:         unsigned int nBonds = inchiAtom->num_bonds;
-    // RDKit✔️❌:         for (unsigned int b = 0; b < nBonds; b++) {
-    // RDKit✔️❌:           unsigned int nbr = inchiAtom->neighbor[b];
-    // RDKit✔️❌:           // check register to avoid duplication
-    // RDKit✔️❌:           if (bondRegister.find(std::make_pair(i, nbr)) != bondRegister.end() ||
-    // RDKit✔️❌:               bondRegister.find(std::make_pair(nbr, i)) != bondRegister.end()) {
-    // RDKit✔️❌:             continue;
-    // RDKit✔️❌:           }
-    // RDKit✔️❌:           bondRegister.insert(std::make_pair(i, nbr));
-    // RDKit✔️❌:           Bond *bond = nullptr;
-    // RDKit✔️❌:           // bond type
-    // RDKit✔️❌:           if ((unsigned int)inchiAtom->bond_type[b] <= INCHI_BOND_TYPE_TRIPLE) {
-    // RDKit✔️❌:             bond = new Bond((Bond::BondType)inchiAtom->bond_type[b]);
-    // RDKit✔️❌:           } else if ((unsigned int)inchiAtom->bond_type[b] ==
-    // RDKit✔️❌:                      INCHI_BOND_TYPE_ALTERN) {
-    // RDKit✔️❌:             BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:                 << "receive ALTERN bond type which should be avoided. "
-    // RDKit✔️❌:                 << "This is treated as aromatic." << std::endl;
-    // RDKit✔️❌:             bond = new Bond(Bond::AROMATIC);
-    // RDKit✔️❌:             bond->setIsAromatic(true);
-    // RDKit✔️❌:           } else {
-    // RDKit✔️❌:             BOOST_LOG(rdErrorLog) << "illegal bond type ("
-    // RDKit✔️❌:                                   << (unsigned int)inchiAtom->bond_type[b]
-    // RDKit✔️❌:                                   << ") in InChI" << std::endl;
-    // RDKit✔️❌:             FreeStructFromINCHI(&inchiOutput);
-    // RDKit✔️❌:             delete m;
-    // RDKit✔️❌:             return nullptr;
-    // RDKit✔️❌:           }
-    // RDKit✔️❌:           // bond ends
-    // RDKit✔️❌:           bond->setBeginAtomIdx(indexToAtomIndexMapping[i]);
-    // RDKit✔️❌:           bond->setEndAtomIdx(indexToAtomIndexMapping[nbr]);
-    // RDKit✔️❌:           // bond stereo
-    // RDKit✔️❌:           switch (inchiAtom->bond_stereo[b]) {
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_NONE:
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_SINGLE_1UP:
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_SINGLE_2DOWN:
-    // RDKit✔️❌:               bond->setBondDir(Bond::BEGINWEDGE);
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_SINGLE_1DOWN:
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_SINGLE_2UP:
-    // RDKit✔️❌:               bond->setBondDir(Bond::BEGINDASH);
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_SINGLE_1EITHER:
-    // RDKit✔️❌:               bond->setBondDir(Bond::UNKNOWN);
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             case INCHI_BOND_STEREO_DOUBLE_EITHER:
-    // RDKit✔️❌:               bond->setBondDir(Bond::EITHERDOUBLE);
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:           }
-    // RDKit✔️❌:           // add bond
-    // RDKit✔️❌:           m->addBond(bond, true);
-    // RDKit❌❌: #ifdef DEBUG
-    // RDKit❌❌:           BOOST_LOG(rdWarningLog)
-    // RDKit❌❌:               << "adding " << (int)bond->getBeginAtomIdx() << "("
-    // RDKit❌❌:               << m->getAtomWithIdx(bond->getBeginAtomIdx())->getAtomicNum()
-    // RDKit❌❌:               << ")"
-    // RDKit❌❌:               << "-" << (int)bond->getEndAtomIdx() << "("
-    // RDKit❌❌:               << m->getAtomWithIdx(bond->getEndAtomIdx())->getAtomicNum() << ")"
-    // RDKit❌❌:               << "[" << (int)bond->getBondType() << "]" << std::endl;
-    // RDKit❌❌: #endif
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }
-
-    // RDKit✔️❌:       // adding isotopes at the end
-    // RDKit✔️❌:       for (auto &ii : isotopes) {
-    // RDKit✔️❌:         auto [isotope, aid, repeat] = ii;
-    // RDKit✔️❌:         aid = indexToAtomIndexMapping[aid];
-    // RDKit✔️❌:         for (unsigned int i = 0; i < repeat; i++) {
-    // RDKit✔️❌:           // create atom
-    // RDKit✔️❌:           Atom *atom = new Atom;
-    // RDKit✔️❌:           atom->setAtomicNum(1);
-    // RDKit✔️❌:           // set mass
-    // RDKit✔️❌:           atom->setIsotope(isotope);
-    // RDKit✔️❌:           int j = m->addAtom(atom, false, true);
-    // RDKit✔️❌:           // add bond
-    // RDKit✔️❌:           Bond *bond = new Bond(Bond::SINGLE);
-    // RDKit✔️❌:           bond->setEndAtomIdx(aid);
-    // RDKit✔️❌:           bond->setBeginAtomIdx(j);
-    // RDKit✔️❌:           m->addBond(bond, true);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }
-
-    // RDKit✔️❌:       // basic topological structure is ready. calculate valence
-    // RDKit✔️❌:       m->updatePropertyCache(false);
-
-    // RDKit✔️❌:       // 0Dstereo
-    // RDKit✔️❌:       INT_PAIR_VECT eBondPairs;
-    // RDKit✔️❌:       INT_PAIR_VECT zBondPairs;
-    // RDKit✔️❌:       unsigned int numStereo0D = inchiOutput.num_stereo0D;
-    // RDKit✔️❌:       if (numStereo0D) {
-    // RDKit✔️❌:         // calculate CIPCode as they might be used
-    // RDKit✔️❌:         UINT_VECT ranks;
-    // RDKit✔️❌:         Chirality::assignAtomCIPRanks(*m, ranks);
-    // RDKit✔️❌:         for (unsigned int i = 0; i < numStereo0D; i++) {
-    // RDKit✔️❌:           inchi_Stereo0D *stereo0DPtr = inchiOutput.stereo0D + i;
-    // RDKit✔️❌:           if (stereo0DPtr->parity == INCHI_PARITY_NONE ||
-    // RDKit✔️❌:               stereo0DPtr->parity == INCHI_PARITY_UNDEFINED) {
-    // RDKit✔️❌:             continue;
-    // RDKit✔️❌:           }
-    // RDKit✔️❌:           switch (stereo0DPtr->type) {
-    // RDKit✔️❌:             case INCHI_StereoType_None:
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             case INCHI_StereoType_DoubleBond: {
-    // RDKit✔️❌:               // find the bond
-    // RDKit✔️❌:               unsigned left = indexToAtomIndexMapping[stereo0DPtr->neighbor[1]];
-    // RDKit✔️❌:               unsigned right =
-    // RDKit✔️❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[2]];
-    // RDKit✔️❌:               int originalLeftNbr =
-    // RDKit✔️❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[0]];
-    // RDKit✔️❌:               int originalRightNbr =
-    // RDKit✔️❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[3]];
-
-    // RDKit✔️❌:               Bond *bond = m->getBondBetweenAtoms(left, right);
-    // RDKit✔️❌:               if (!bond) {
-    // RDKit✔️❌:                 // Likely to be allene stereochemistry, which we don't handle.
-    // RDKit✔️❌:                 BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:                     << "Extended double-bond stereochemistry (e.g. C=C=C=C) "
-    // RDKit✔️❌:                        "ignored"
-    // RDKit✔️❌:                     << std::endl;
-    // RDKit✔️❌:                 continue;
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               // also find neighboring atoms. Note we cannot use what InChI
-    // RDKit✔️❌:               // returned in stereo0DPtr->neighbor as there can be hydrogen in
-    // RDKit✔️❌:               // it, which is later removed and is therefore not reliable. Plus,
-    // RDKit✔️❌:               // InChI seems to use lower CIPRank-neighbors rather than
-    // RDKit✔️❌:               // higher-CIPRank ones (hence the use of hydrogen neighbor).
-    // RDKit✔️❌:               // However, if the neighbors we selected differ from what are in
-    // RDKit✔️❌:               // stereo0DPtr->neighbor, we might also need to switch E and Z
-
-    // RDKit✔️❌:               auto findNbrAtoms = [&m, &ranks](unsigned ref) {
-    // RDKit✔️❌:                 int nbr = -1;
-    // RDKit✔️❌:                 int extraNbr = -1;
-    // RDKit✔️❌:                 int cip = -1;
-    // RDKit✔️❌:                 int _cip = -1;
-    // RDKit✔️❌:                 for (auto bond : m->atomBonds(m->getAtomWithIdx(ref))) {
-    // RDKit✔️❌:                   if (bond->getBondType() != Bond::SINGLE &&
-    // RDKit✔️❌:                       bond->getBondType() != Bond::AROMATIC) {
-    // RDKit✔️❌:                     continue;
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                   auto atom = bond->getOtherAtomIdx(ref);
-    // RDKit✔️❌:                   if ((_cip = ranks[atom]) > cip) {
-    // RDKit✔️❌:                     if (nbr >= 0) {
-    // RDKit✔️❌:                       extraNbr = nbr;
-    // RDKit✔️❌:                     }
-    // RDKit✔️❌:                     nbr = atom;
-    // RDKit✔️❌:                     cip = _cip;
-    // RDKit✔️❌:                   } else {
-    // RDKit✔️❌:                     extraNbr = atom;
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                 }
-    // RDKit✔️❌:                 return std::make_pair(nbr, extraNbr);
-    // RDKit✔️❌:               };
-    // RDKit✔️❌:               auto [leftNbr, extraLeftNbr] = findNbrAtoms(left);
-    // RDKit✔️❌:               auto [rightNbr, extraRightNbr] = findNbrAtoms(right);
-
-    // RDKit✔️❌:               if (leftNbr < 0 || rightNbr < 0) {
-    // RDKit✔️❌:                 BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:                     << "Ignoring stereochemistry on double-bond without appropriate neighbors"
-    // RDKit✔️❌:                     << std::endl;
-    // RDKit✔️❌:                 continue;
-    // RDKit✔️❌:               }
-
-    // RDKit✔️❌:               bool switchEZ = false;
-    // RDKit✔️❌:               if ((originalLeftNbr == leftNbr &&
-    // RDKit✔️❌:                    originalRightNbr != rightNbr) ||
-    // RDKit✔️❌:                   (originalLeftNbr != leftNbr &&
-    // RDKit✔️❌:                    originalRightNbr == rightNbr)) {
-    // RDKit✔️❌:                 switchEZ = true;
-    // RDKit✔️❌:               }
-
-    // RDKit✔️❌:               char parity = stereo0DPtr->parity;
-    // RDKit✔️❌:               if (parity == INCHI_PARITY_ODD && switchEZ) {
-    // RDKit✔️❌:                 parity = INCHI_PARITY_EVEN;
-    // RDKit✔️❌:               } else if (parity == INCHI_PARITY_EVEN && switchEZ) {
-    // RDKit✔️❌:                 parity = INCHI_PARITY_ODD;
-    // RDKit✔️❌:               }
-
-    // RDKit✔️❌:               auto findBondPairs = [&m, &zBondPairs, &eBondPairs](
-    // RDKit✔️❌:                                        unsigned ref, int nbr, int extraNbr) {
-    // RDKit✔️❌:                 auto bond = m->getBondBetweenAtoms(ref, nbr);
-    // RDKit✔️❌:                 if (extraNbr >= 0) {
-    // RDKit✔️❌:                   // modifier to track whether bond is reversed
-    // RDKit✔️❌:                   int modifier = -1;
-    // RDKit✔️❌:                   if (bond->getBeginAtomIdx() != ref) {
-    // RDKit✔️❌:                     modifier *= -1;
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                   auto extraBond = m->getBondBetweenAtoms(ref, extraNbr);
-    // RDKit✔️❌:                   if (extraBond->getBeginAtomIdx() != ref) {
-    // RDKit✔️❌:                     modifier *= -1;
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                   if (modifier == 1) {
-    // RDKit✔️❌:                     zBondPairs.push_back(
-    // RDKit✔️❌:                         std::make_pair(bond->getIdx(), extraBond->getIdx()));
-    // RDKit✔️❌:                   } else {
-    // RDKit✔️❌:                     eBondPairs.push_back(
-    // RDKit✔️❌:                         std::make_pair(bond->getIdx(), extraBond->getIdx()));
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                 }
-    // RDKit✔️❌:                 return bond;
-    // RDKit✔️❌:               };
-
-    // RDKit✔️❌:               auto leftBond = findBondPairs(left, leftNbr, extraLeftNbr);
-    // RDKit✔️❌:               auto rightBond = findBondPairs(right, rightNbr, extraRightNbr);
-
-    // RDKit✔️❌:               int modifier = -1;  // modifier to track whether bond is reversed
-    // RDKit✔️❌:               if (leftBond->getBeginAtomIdx() != left) {
-    // RDKit✔️❌:                 modifier *= -1;
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               if (rightBond->getBeginAtomIdx() != right) {
-    // RDKit✔️❌:                 modifier *= -1;
-    // RDKit✔️❌:               }
-
-    // RDKit✔️❌:               if (parity == INCHI_PARITY_ODD) {
-    // RDKit✔️❌:                 bond->setStereo(Bond::STEREOZ);
-    // RDKit✔️❌:                 if (modifier == 1) {
-    // RDKit✔️❌:                   eBondPairs.push_back(
-    // RDKit✔️❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
-    // RDKit✔️❌:                 } else {
-    // RDKit✔️❌:                   zBondPairs.push_back(
-    // RDKit✔️❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
-    // RDKit✔️❌:                 }
-    // RDKit✔️❌:               } else if (parity == INCHI_PARITY_EVEN) {
-    // RDKit✔️❌:                 bond->setStereo(Bond::STEREOE);
-    // RDKit✔️❌:                 if (modifier == 1) {
-    // RDKit✔️❌:                   zBondPairs.push_back(
-    // RDKit✔️❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
-    // RDKit✔️❌:                 } else {
-    // RDKit✔️❌:                   eBondPairs.push_back(
-    // RDKit✔️❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
-    // RDKit✔️❌:                 }
-    // RDKit✔️❌:               } else if (parity == INCHI_PARITY_NONE) {
-    // RDKit✔️❌:                 bond->setStereo(Bond::STEREONONE);
-    // RDKit✔️❌:               } else {
-    // RDKit✔️❌:                 bond->setStereo(Bond::STEREOANY);
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               // set the stereo atoms for the double bond
-    // RDKit✔️❌:               bond->getStereoAtoms().push_back(leftNbr);
-    // RDKit✔️❌:               bond->getStereoAtoms().push_back(rightNbr);
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             }
-    // RDKit✔️❌:             case INCHI_StereoType_Tetrahedral: {
-    // RDKit✔️❌:               unsigned int c =
-    // RDKit✔️❌:                   indexToAtomIndexMapping[stereo0DPtr->central_atom];
-    // RDKit✔️❌:               Atom *atom = m->getAtomWithIdx(c);
-    // RDKit✔️❌:               // find number of swaps for the members
-    // RDKit✔️❌:               int nSwaps = 0;
-    // RDKit✔️❌:               unsigned int nid = 0;
-    // RDKit✔️❌:               if (stereo0DPtr->neighbor[0] == stereo0DPtr->central_atom) {
-    // RDKit✔️❌:                 // 3-neighbor case
-    // RDKit✔️❌:                 nid = 1;
-    // RDKit✔️❌:                 if (atom->getDegree() == 3) {
-    // RDKit✔️❌:                   // this happens with chiral three-coordinate S
-    // RDKit✔️❌:                   nSwaps = 1;
-    // RDKit✔️❌:                 }
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               // if (atom->getTotalNumHs(true) == 1)
-    // RDKit✔️❌:               //  nSwaps = 1;
-    // RDKit✔️❌:               // std::cerr<<"build atom: "<<c<<" "<<atom->getTotalNumHs(true);
-    // RDKit✔️❌:               std::list<int> neighbors;
-    // RDKit✔️❌:               for (; nid < 4; nid++) {
-    // RDKit✔️❌:                 unsigned end =
-    // RDKit✔️❌:                     indexToAtomIndexMapping[stereo0DPtr->neighbor[nid]];
-    // RDKit✔️❌:                 Bond *bond = m->getBondBetweenAtoms(c, end);
-    // RDKit✔️❌:                 neighbors.push_back(bond->getIdx());
-    // RDKit✔️❌:                 // std::cerr<<" "<<end<<"("<<bond->getIdx()<<")";
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               nSwaps += atom->getPerturbationOrder(neighbors);
-    // RDKit✔️❌:               // std::cerr<<" swaps: "<<nSwaps<<" parity: "<<
-    // RDKit✔️❌:               //  (stereo0DPtr->parity==INCHI_PARITY_EVEN?"even":"odd")<<std::endl;
-    // RDKit✔️❌:               if (stereo0DPtr->parity == INCHI_PARITY_ODD) {
-    // RDKit✔️❌:                 atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
-    // RDKit✔️❌:               } else {
-    // RDKit✔️❌:                 atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               if (nSwaps % 2) {
-    // RDKit✔️❌:                 atom->invertChirality();
-    // RDKit✔️❌:               }
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             }
-    // RDKit✔️❌:             case INCHI_StereoType_Allene:
-    // RDKit✔️❌:               BOOST_LOG(rdWarningLog) << "Allene-style stereochemistry is not "
-    // RDKit✔️❌:                                          "supported yet and will be ignored."
-    // RDKit✔️❌:                                       << std::endl;
-    // RDKit✔️❌:               break;
-    // RDKit✔️❌:             default:
-    // RDKit✔️❌:               BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:                   << "Unrecognized stereo0D type (" << (int)stereo0DPtr->type
-    // RDKit✔️❌:                   << ") is ignored!" << std::endl;
-    // RDKit✔️❌:           }  // end switch stereotype
-    // RDKit✔️❌:         }  // end for loop over all stereo0D entries
-    // RDKit✔️❌:         // set the bond directions
-    // RDKit✔️❌:         if (!assignBondDirs(*m, zBondPairs, eBondPairs)) {
-    // RDKit✔️❌:           BOOST_LOG(rdWarningLog)
-    // RDKit✔️❌:               << "Cannot assign bond directions!" << std::endl;
-    // RDKit✔️❌:           ;
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }  // end if (if stereo0D presents)
-    // RDKit✔️❌:     }  // end if (if return code is success)
-
-    // RDKit✔️❌:     // clean up
-    // RDKit✔️❌:     FreeStructFromINCHI(&inchiOutput);
-    // RDKit✔️❌:   }
-
-    // RDKit✔️❌:   // clean up the molecule to be acceptable to RDKit
-    // RDKit✔️❌:   if (m) {
-    // RDKit✔️❌:     cleanUp(*m);
-    // RDKit✔️❌:     try {
-    // RDKit✔️❌:       if (sanitize) {
-    // RDKit✔️❌:         if (removeHs) {
-    // RDKit✔️❌:           MolOps::removeHs(*m);
-    // RDKit✔️❌:         } else {
-    // RDKit✔️❌:           MolOps::sanitizeMol(*m);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     } catch (const MolSanitizeException &) {
-    // RDKit✔️❌:       delete m;
-    // RDKit✔️❌:       throw;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     // call assignStereochemistry just to be safe; otherwise, MolToSmiles may
-    // RDKit✔️❌:     // overwrite E/Z and/or bond direction on double bonds.
-    // RDKit✔️❌:     MolOps::assignStereochemistry(*m, true, true);
-    // RDKit✔️❌:   }
-
-    // RDKit✔️❌:   return m;
-    // RDKit✔️❌: }
-
+    // BEGIN RDKIT C++ FUNCTION: Release_2026_03_6 External/INCHI-API/inchi.cpp:1253 InchiToMol
+    // RDKit❗❌: Target source frame; changed branches are reproduced below.
+    // Existing checked graph/heap transport is not whole-function parity evidence.
+    // RDKit❗❌: RWMol *InchiToMol(const std::string &inchi, ExtraInchiReturnValues &rv,
+    // RDKit❗❌:                   bool sanitize, bool removeHs) {
+    // RDKit❗❌:   // input
+    // RDKit❗❌:   std::vector<char> _inchi;
+    // RDKit❗❌:   _inchi.reserve(inchi.size() + 1);
+    // RDKit❗❌:   std::copy(inchi.begin(), inchi.end(), std::back_inserter(_inchi));
+    // RDKit❗❌:   _inchi.push_back('\0');
+    // RDKit❗❌:
+    // RDKit❗❌:   char options[1] = "";
+    // RDKit❗❌:   inchi_InputINCHI inchiInput;
+    // RDKit❗❌:   inchiInput.szInChI = _inchi.data();
+    // RDKit❗❌:   inchiInput.szOptions = options;
+    // RDKit❗❌:
+    // RDKit❗❌:   // creating RWMol for return
+    // RDKit❗❌:   RWMol *m = nullptr;
+    // RDKit❗❌:   {
+    // RDKit❗❌:     // output structure
+    // RDKit❗❌:     inchi_OutputStruct inchiOutput;
+    // RDKit❗❌:     // DLL call
+    // RDKit❗❌:     int retcode = GetStructFromINCHI(&inchiInput, &inchiOutput);
+    // RDKit❗❌:
+    // RDKit❗❌:     // prepare output
+    // RDKit❗❌:     rv.returnCode = retcode;
+    // RDKit❗❌:     if (inchiOutput.szMessage) {
+    // RDKit❗❌:       rv.messagePtr = std::string(inchiOutput.szMessage);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (inchiOutput.szLog) {
+    // RDKit❗❌:       rv.logPtr = std::string(inchiOutput.szLog);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // for isotopes of H
+    // RDKit❗❌:     typedef std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
+    // RDKit❗❌:         ISOTOPES_t;
+    // RDKit❗❌:     ISOTOPES_t isotopes;
+    // RDKit❗❌:     if (retcode == inchi_Ret_OKAY || retcode == inchi_Ret_WARNING) {
+    // RDKit❗❌:       m = new RWMol;
+    // RDKit❗❌:       std::vector<unsigned int> indexToAtomIndexMapping;
+    // RDKit❗❌:       PeriodicTable *periodicTable = PeriodicTable::getTable();
+    // RDKit❗❌:       unsigned int nAtoms = inchiOutput.num_atoms;
+    // RDKit❗❌:       for (unsigned int i = 0; i < nAtoms; i++) {
+    // RDKit❗❌:         inchi_Atom *inchiAtom = &(inchiOutput.atom[i]);
+    // RDKit❗❌:         // use element name to set atomic number
+    // RDKit❗❌:         int atomicNumber = periodicTable->getAtomicNumber(inchiAtom->elname);
+    // RDKit❗❌:         Atom *atom = new Atom(atomicNumber);
+    // RDKit❗❌:         double averageWeight = atom->getMass();
+    // RDKit❗❌:         int refWeight = static_cast<int>(averageWeight + 0.5);
+    // RDKit❗❌:         int isotope = 0;
+    // RDKit❗❌:         if (inchiAtom->isotopic_mass) {
+    // RDKit❗❌:           isotope = inchiAtom->isotopic_mass - ISOTOPIC_SHIFT_FLAG;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (isotope) {
+    // RDKit❗❌:           atom->setIsotope(isotope + refWeight);
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // set charge
+    // RDKit❗❌:         atom->setFormalCharge(inchiAtom->charge);
+    // RDKit❗❌:         // set radical
+    // RDKit❗❌:         if (inchiAtom->radical) {
+    // RDKit❗❌:           if (inchiAtom->radical != 3 && inchiAtom->radical != 2) {
+    // RDKit❗❌:             BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                 << "expect radical to be either 2 or 3 while getting "
+    // RDKit❗❌:                 << inchiAtom->radical << ". Ignore radical." << std::endl;
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             atom->setNumRadicalElectrons(inchiAtom->radical - 1);
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // number of hydrogens
+    // RDKit❗❌:         atom->setNumExplicitHs(inchiAtom->num_iso_H[0]);
+    // RDKit❗❌:         if (inchiAtom->num_iso_H[1]) {
+    // RDKit❗❌:           isotopes.push_back(std::make_tuple(1, i, inchiAtom->num_iso_H[1]));
+    // RDKit❗❌:         } else if (inchiAtom->num_iso_H[2]) {
+    // RDKit❗❌:           isotopes.push_back(std::make_tuple(2, i, inchiAtom->num_iso_H[2]));
+    // RDKit❗❌:         } else if (inchiAtom->num_iso_H[3]) {
+    // RDKit❗❌:           isotopes.push_back(std::make_tuple(3, i, inchiAtom->num_iso_H[3]));
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // at this point the molecule has all Hs it should have. Set the
+    // RDKit❗❌:         // noImplicit flag so
+    // RDKit❗❌:         // we don't end up with extras later (this was github #562):
+    // RDKit❗❌:         atom->setNoImplicit(true);
+    // RDKit❗❌:         // add atom to molecule
+    // RDKit❗❌:         unsigned int aid = m->addAtom(atom, false, true);
+    // RDKit❗❌:         indexToAtomIndexMapping.push_back(aid);
+    // RDKit❗❌: #ifdef DEBUG
+    // RDKit❗❌:         BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:             << "adding " << aid << ":" << atom->getAtomicNum() << ":"
+    // RDKit❗❌:             << (int)inchiAtom->num_iso_H[0]
+    // RDKit❗❌:             << " charge: " << (int)inchiAtom->charge << std::endl;
+    // RDKit❗❌: #endif
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // adding bonds
+    // RDKit❗❌:       std::set<std::pair<unsigned int, unsigned int>> bondRegister;
+    // RDKit❗❌:       for (unsigned int i = 0; i < nAtoms; i++) {
+    // RDKit❗❌:         inchi_Atom *inchiAtom = &(inchiOutput.atom[i]);
+    // RDKit❗❌:         unsigned int nBonds = inchiAtom->num_bonds;
+    // RDKit❗❌:         for (unsigned int b = 0; b < nBonds; b++) {
+    // RDKit❗❌:           unsigned int nbr = inchiAtom->neighbor[b];
+    // RDKit❗❌:           // check register to avoid duplication
+    // RDKit❗❌:           if (bondRegister.find(std::make_pair(i, nbr)) != bondRegister.end() ||
+    // RDKit❗❌:               bondRegister.find(std::make_pair(nbr, i)) != bondRegister.end()) {
+    // RDKit❗❌:             continue;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           bondRegister.insert(std::make_pair(i, nbr));
+    // RDKit❗❌:           Bond *bond = nullptr;
+    // RDKit❗❌:           // bond type
+    // RDKit❗❌:           if ((unsigned int)inchiAtom->bond_type[b] <= INCHI_BOND_TYPE_TRIPLE) {
+    // RDKit❗❌:             bond = new Bond((Bond::BondType)inchiAtom->bond_type[b]);
+    // RDKit❗❌:           } else if ((unsigned int)inchiAtom->bond_type[b] ==
+    // RDKit❗❌:                      INCHI_BOND_TYPE_ALTERN) {
+    // RDKit❗❌:             BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                 << "receive ALTERN bond type which should be avoided. "
+    // RDKit❗❌:                 << "This is treated as aromatic." << std::endl;
+    // RDKit❗❌:             bond = new Bond(Bond::AROMATIC);
+    // RDKit❗❌:             bond->setIsAromatic(true);
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             BOOST_LOG(rdErrorLog) << "illegal bond type ("
+    // RDKit❗❌:                                   << (unsigned int)inchiAtom->bond_type[b]
+    // RDKit❗❌:                                   << ") in InChI" << std::endl;
+    // RDKit❗❌:             FreeStructFromINCHI(&inchiOutput);
+    // RDKit❗❌:             delete m;
+    // RDKit❗❌:             return nullptr;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           // bond ends
+    // RDKit❗❌:           bond->setBeginAtomIdx(indexToAtomIndexMapping[i]);
+    // RDKit❗❌:           bond->setEndAtomIdx(indexToAtomIndexMapping[nbr]);
+    // RDKit❗❌:           // bond stereo
+    // RDKit❗❌:           switch (inchiAtom->bond_stereo[b]) {
+    // RDKit❗❌:             case INCHI_BOND_STEREO_NONE:
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             case INCHI_BOND_STEREO_SINGLE_1UP:
+    // RDKit❗❌:             case INCHI_BOND_STEREO_SINGLE_2DOWN:
+    // RDKit❗❌:               bond->setBondDir(Bond::BEGINWEDGE);
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             case INCHI_BOND_STEREO_SINGLE_1DOWN:
+    // RDKit❗❌:             case INCHI_BOND_STEREO_SINGLE_2UP:
+    // RDKit❗❌:               bond->setBondDir(Bond::BEGINDASH);
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             case INCHI_BOND_STEREO_SINGLE_1EITHER:
+    // RDKit❗❌:               bond->setBondDir(Bond::UNKNOWN);
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             case INCHI_BOND_STEREO_DOUBLE_EITHER:
+    // RDKit❗❌:               bond->setBondDir(Bond::EITHERDOUBLE);
+    // RDKit❗❌:               break;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           // add bond
+    // RDKit❗❌:           m->addBond(bond, true);
+    // RDKit❗❌: #ifdef DEBUG
+    // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:               << "adding " << (int)bond->getBeginAtomIdx() << "("
+    // RDKit❗❌:               << m->getAtomWithIdx(bond->getBeginAtomIdx())->getAtomicNum()
+    // RDKit❗❌:               << ")"
+    // RDKit❗❌:               << "-" << (int)bond->getEndAtomIdx() << "("
+    // RDKit❗❌:               << m->getAtomWithIdx(bond->getEndAtomIdx())->getAtomicNum() << ")"
+    // RDKit❗❌:               << "[" << (int)bond->getBondType() << "]" << std::endl;
+    // RDKit❗❌: #endif
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // adding isotopes at the end
+    // RDKit❗❌:       for (auto &ii : isotopes) {
+    // RDKit❗❌:         auto [isotope, aid, repeat] = ii;
+    // RDKit❗❌:         aid = indexToAtomIndexMapping[aid];
+    // RDKit❗❌:         for (unsigned int i = 0; i < repeat; i++) {
+    // RDKit❗❌:           // create atom
+    // RDKit❗❌:           Atom *atom = new Atom;
+    // RDKit❗❌:           atom->setAtomicNum(1);
+    // RDKit❗❌:           // set mass
+    // RDKit❗❌:           atom->setIsotope(isotope);
+    // RDKit❗❌:           int j = m->addAtom(atom, false, true);
+    // RDKit❗❌:           // add bond
+    // RDKit❗❌:           Bond *bond = new Bond(Bond::SINGLE);
+    // RDKit❗❌:           bond->setEndAtomIdx(aid);
+    // RDKit❗❌:           bond->setBeginAtomIdx(j);
+    // RDKit❗❌:           m->addBond(bond, true);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // basic topological structure is ready. calculate valence
+    // RDKit❗❌:       m->updatePropertyCache(false);
+    // RDKit❗❌:
+    // RDKit❗❌:       // 0Dstereo
+    // RDKit❗❌:       INT_PAIR_VECT eBondPairs;
+    // RDKit❗❌:       INT_PAIR_VECT zBondPairs;
+    // RDKit❗❌:       unsigned int numStereo0D = inchiOutput.num_stereo0D;
+    // RDKit❗❌:       if (numStereo0D) {
+    // RDKit❗❌:         // calculate CIPCode as they might be used
+    // RDKit❗❌:         UINT_VECT ranks;
+    // RDKit❗❌:         Chirality::assignAtomCIPRanks(*m, ranks);
+    // RDKit❗❌:         for (unsigned int i = 0; i < numStereo0D; i++) {
+    // RDKit❗❌:           inchi_Stereo0D *stereo0DPtr = inchiOutput.stereo0D + i;
+    // RDKit❗❌:           if (stereo0DPtr->parity == INCHI_PARITY_NONE) {
+    // RDKit❗❌:             continue;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           switch (stereo0DPtr->type) {
+    // RDKit❗❌:             case INCHI_StereoType_None:
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             case INCHI_StereoType_DoubleBond: {
+    // RDKit❗❌:               // find the bond
+    // RDKit❗❌:               unsigned left = indexToAtomIndexMapping[stereo0DPtr->neighbor[1]];
+    // RDKit❗❌:               unsigned right =
+    // RDKit❗❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[2]];
+    // RDKit❗❌:               int originalLeftNbr =
+    // RDKit❗❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[0]];
+    // RDKit❗❌:               int originalRightNbr =
+    // RDKit❗❌:                   indexToAtomIndexMapping[stereo0DPtr->neighbor[3]];
+    // RDKit❗❌:
+    // RDKit❗❌:               Bond *bond = m->getBondBetweenAtoms(left, right);
+    // RDKit❗❌:               if (!bond) {
+    // RDKit❗❌:                 // Likely to be allene stereochemistry, which we don't handle.
+    // RDKit❗❌:                 BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                     << "Extended double-bond stereochemistry (e.g. C=C=C=C) "
+    // RDKit❗❌:                        "ignored"
+    // RDKit❗❌:                     << std::endl;
+    // RDKit❗❌:                 continue;
+    // RDKit❗❌:               }
+    // RDKit❗❌:               // also find neighboring atoms. Note we cannot use what InChI
+    // RDKit❗❌:               // returned in stereo0DPtr->neighbor as there can be hydrogen in
+    // RDKit❗❌:               // it, which is later removed and is therefore not reliable. Plus,
+    // RDKit❗❌:               // InChI seems to use lower CIPRank-neighbors rather than
+    // RDKit❗❌:               // higher-CIPRank ones (hence the use of hydrogen neighbor).
+    // RDKit❗❌:               // However, if the neighbors we selected differ from what are in
+    // RDKit❗❌:               // stereo0DPtr->neighbor, we might also need to switch E and Z
+    // RDKit❗❌:
+    // RDKit❗❌:               auto findNbrAtoms = [&m, &ranks](unsigned ref) {
+    // RDKit❗❌:                 int nbr = -1;
+    // RDKit❗❌:                 int extraNbr = -1;
+    // RDKit❗❌:                 int cip = -1;
+    // RDKit❗❌:                 int _cip = -1;
+    // RDKit❗❌:                 for (auto bond : m->atomBonds(m->getAtomWithIdx(ref))) {
+    // RDKit❗❌:                   if (bond->getBondType() != Bond::SINGLE &&
+    // RDKit❗❌:                       bond->getBondType() != Bond::AROMATIC) {
+    // RDKit❗❌:                     continue;
+    // RDKit❗❌:                   }
+    // RDKit❗❌:                   auto atom = bond->getOtherAtomIdx(ref);
+    // RDKit❗❌:                   if ((_cip = ranks[atom]) > cip) {
+    // RDKit❗❌:                     if (nbr >= 0) {
+    // RDKit❗❌:                       extraNbr = nbr;
+    // RDKit❗❌:                     }
+    // RDKit❗❌:                     nbr = atom;
+    // RDKit❗❌:                     cip = _cip;
+    // RDKit❗❌:                   } else {
+    // RDKit❗❌:                     extraNbr = atom;
+    // RDKit❗❌:                   }
+    // RDKit❗❌:                 }
+    // RDKit❗❌:                 return std::make_pair(nbr, extraNbr);
+    // RDKit❗❌:               };
+    // RDKit❗❌:               auto [leftNbr, extraLeftNbr] = findNbrAtoms(left);
+    // RDKit❗❌:               auto [rightNbr, extraRightNbr] = findNbrAtoms(right);
+    // RDKit❗❌:
+    // RDKit❗❌:               if (leftNbr < 0 || rightNbr < 0) {
+    // RDKit❗❌:                 BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                     << "Ignoring stereochemistry on double-bond without appropriate neighbors"
+    // RDKit❗❌:                     << std::endl;
+    // RDKit❗❌:                 continue;
+    // RDKit❗❌:               }
+    // RDKit❗❌:
+    // RDKit❗❌:               bool switchEZ = false;
+    // RDKit❗❌:               if ((originalLeftNbr == leftNbr &&
+    // RDKit❗❌:                    originalRightNbr != rightNbr) ||
+    // RDKit❗❌:                   (originalLeftNbr != leftNbr &&
+    // RDKit❗❌:                    originalRightNbr == rightNbr)) {
+    // RDKit❗❌:                 switchEZ = true;
+    // RDKit❗❌:               }
+    // RDKit❗❌:
+    // RDKit❗❌:               char parity = stereo0DPtr->parity;
+    // RDKit❗❌:               if (parity == INCHI_PARITY_ODD && switchEZ) {
+    // RDKit❗❌:                 parity = INCHI_PARITY_EVEN;
+    // RDKit❗❌:               } else if (parity == INCHI_PARITY_EVEN && switchEZ) {
+    // RDKit❗❌:                 parity = INCHI_PARITY_ODD;
+    // RDKit❗❌:               }
+    // RDKit❗❌:
+    // RDKit❗❌:               auto findBondPairs = [&m, &zBondPairs, &eBondPairs](
+    // RDKit❗❌:                                        unsigned ref, int nbr, int extraNbr) {
+    // RDKit❗❌:                 auto bond = m->getBondBetweenAtoms(ref, nbr);
+    // RDKit❗❌:                 if (extraNbr >= 0) {
+    // RDKit❗❌:                   // modifier to track whether bond is reversed
+    // RDKit❗❌:                   int modifier = -1;
+    // RDKit❗❌:                   if (bond->getBeginAtomIdx() != ref) {
+    // RDKit❗❌:                     modifier *= -1;
+    // RDKit❗❌:                   }
+    // RDKit❗❌:                   auto extraBond = m->getBondBetweenAtoms(ref, extraNbr);
+    // RDKit❗❌:                   if (extraBond->getBeginAtomIdx() != ref) {
+    // RDKit❗❌:                     modifier *= -1;
+    // RDKit❗❌:                   }
+    // RDKit❗❌:                   if (modifier == 1) {
+    // RDKit❗❌:                     zBondPairs.push_back(
+    // RDKit❗❌:                         std::make_pair(bond->getIdx(), extraBond->getIdx()));
+    // RDKit❗❌:                   } else {
+    // RDKit❗❌:                     eBondPairs.push_back(
+    // RDKit❗❌:                         std::make_pair(bond->getIdx(), extraBond->getIdx()));
+    // RDKit❗❌:                   }
+    // RDKit❗❌:                 }
+    // RDKit❗❌:                 return bond;
+    // RDKit❗❌:               };
+    // RDKit❗❌:
+    // RDKit❗❌:               auto leftBond = findBondPairs(left, leftNbr, extraLeftNbr);
+    // RDKit❗❌:               auto rightBond = findBondPairs(right, rightNbr, extraRightNbr);
+    // RDKit❗❌:
+    // RDKit❗❌:               int modifier = -1;  // modifier to track whether bond is reversed
+    // RDKit❗❌:               if (leftBond->getBeginAtomIdx() != left) {
+    // RDKit❗❌:                 modifier *= -1;
+    // RDKit❗❌:               }
+    // RDKit❗❌:               if (rightBond->getBeginAtomIdx() != right) {
+    // RDKit❗❌:                 modifier *= -1;
+    // RDKit❗❌:               }
+    // RDKit❗❌:
+    // RDKit❗❌:               if (parity == INCHI_PARITY_ODD) {
+    // RDKit❗❌:                 bond->setStereo(Bond::STEREOZ);
+    // RDKit❗❌:                 if (modifier == 1) {
+    // RDKit❗❌:                   eBondPairs.push_back(
+    // RDKit❗❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
+    // RDKit❗❌:                 } else {
+    // RDKit❗❌:                   zBondPairs.push_back(
+    // RDKit❗❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
+    // RDKit❗❌:                 }
+    // RDKit❗❌:               } else if (parity == INCHI_PARITY_EVEN) {
+    // RDKit❗❌:                 bond->setStereo(Bond::STEREOE);
+    // RDKit❗❌:                 if (modifier == 1) {
+    // RDKit❗❌:                   zBondPairs.push_back(
+    // RDKit❗❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
+    // RDKit❗❌:                 } else {
+    // RDKit❗❌:                   eBondPairs.push_back(
+    // RDKit❗❌:                       std::make_pair(leftBond->getIdx(), rightBond->getIdx()));
+    // RDKit❗❌:                 }
+    // RDKit❗❌:               } else if (parity == INCHI_PARITY_NONE) {
+    // RDKit❗❌:                 bond->setStereo(Bond::STEREONONE);
+    // RDKit❗❌:               } else {
+    // RDKit❗❌:                 bond->setStereo(Bond::STEREOANY);
+    // RDKit❗❌:               }
+    // RDKit❗❌:               // set the stereo atoms for the double bond
+    // RDKit❗❌:               bond->getStereoAtoms().push_back(leftNbr);
+    // RDKit❗❌:               bond->getStereoAtoms().push_back(rightNbr);
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             }
+    // RDKit❗❌:             case INCHI_StereoType_Tetrahedral: {
+    // RDKit❗❌:               if (stereo0DPtr->parity == INCHI_PARITY_UNDEFINED ||
+    // RDKit❗❌:                   stereo0DPtr->parity == INCHI_PARITY_UNKNOWN) {
+    // RDKit❗❌:                 break;
+    // RDKit❗❌:               }
+    // RDKit❗❌:               unsigned int c =
+    // RDKit❗❌:                   indexToAtomIndexMapping[stereo0DPtr->central_atom];
+    // RDKit❗❌:               Atom *atom = m->getAtomWithIdx(c);
+    // RDKit❗❌:               // find number of swaps for the members
+    // RDKit❗❌:               int nSwaps = 0;
+    // RDKit❗❌:               unsigned int nid = 0;
+    // RDKit❗❌:               if (stereo0DPtr->neighbor[0] == stereo0DPtr->central_atom) {
+    // RDKit❗❌:                 // 3-neighbor case
+    // RDKit❗❌:                 nid = 1;
+    // RDKit❗❌:                 if (atom->getDegree() == 3) {
+    // RDKit❗❌:                   // this happens with chiral three-coordinate S
+    // RDKit❗❌:                   nSwaps = 1;
+    // RDKit❗❌:                 }
+    // RDKit❗❌:               }
+    // RDKit❗❌:               // if (atom->getTotalNumHs(true) == 1)
+    // RDKit❗❌:               //  nSwaps = 1;
+    // RDKit❗❌:               // std::cerr<<"build atom: "<<c<<" "<<atom->getTotalNumHs(true);
+    // RDKit❗❌:               std::list<int> neighbors;
+    // RDKit❗❌:               for (; nid < 4; nid++) {
+    // RDKit❗❌:                 unsigned end =
+    // RDKit❗❌:                     indexToAtomIndexMapping[stereo0DPtr->neighbor[nid]];
+    // RDKit❗❌:                 Bond *bond = m->getBondBetweenAtoms(c, end);
+    // RDKit❗❌:                 neighbors.push_back(bond->getIdx());
+    // RDKit❗❌:                 // std::cerr<<" "<<end<<"("<<bond->getIdx()<<")";
+    // RDKit❗❌:               }
+    // RDKit❗❌:               nSwaps += atom->getPerturbationOrder(neighbors);
+    // RDKit❗❌:               // std::cerr<<" swaps: "<<nSwaps<<" parity: "<<
+    // RDKit❗❌:               //  (stereo0DPtr->parity==INCHI_PARITY_EVEN?"even":"odd")<<std::endl;
+    // RDKit❗❌:               if (stereo0DPtr->parity == INCHI_PARITY_ODD) {
+    // RDKit❗❌:                 atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+    // RDKit❗❌:               } else {
+    // RDKit❗❌:                 atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+    // RDKit❗❌:               }
+    // RDKit❗❌:               if (nSwaps % 2) {
+    // RDKit❗❌:                 atom->invertChirality();
+    // RDKit❗❌:               }
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             }
+    // RDKit❗❌:             case INCHI_StereoType_Allene:
+    // RDKit❗❌:               BOOST_LOG(rdWarningLog) << "Allene-style stereochemistry is not "
+    // RDKit❗❌:                                          "supported yet and will be ignored."
+    // RDKit❗❌:                                       << std::endl;
+    // RDKit❗❌:               break;
+    // RDKit❗❌:             default:
+    // RDKit❗❌:               BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                   << "Unrecognized stereo0D type (" << (int)stereo0DPtr->type
+    // RDKit❗❌:                   << ") is ignored!" << std::endl;
+    // RDKit❗❌:           }  // end switch stereotype
+    // RDKit❗❌:         }  // end for loop over all stereo0D entries
+    // RDKit❗❌:         // set the bond directions
+    // RDKit❗❌:         if (!assignBondDirs(*m, zBondPairs, eBondPairs)) {
+    // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:               << "Cannot assign bond directions!" << std::endl;
+    // RDKit❗❌:           ;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }  // end if (if stereo0D presents)
+    // RDKit❗❌:     }  // end if (if return code is success)
+    // RDKit❗❌:
+    // RDKit❗❌:     // clean up
+    // RDKit❗❌:     FreeStructFromINCHI(&inchiOutput);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // clean up the molecule to be acceptable to RDKit
+    // RDKit❗❌:   if (m) {
+    // RDKit❗❌:     cleanUp(*m);
+    // RDKit❗❌:     try {
+    // RDKit❗❌:       if (sanitize) {
+    // RDKit❗❌:         if (removeHs) {
+    // RDKit❗❌:           MolOps::removeHs(*m);
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           MolOps::sanitizeMol(*m);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } catch (const MolSanitizeException &) {
+    // RDKit❗❌:       delete m;
+    // RDKit❗❌:       throw;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // call assignStereochemistry just to be safe; otherwise, MolToSmiles may
+    // RDKit❗❌:     // overwrite E/Z and/or bond direction on double bonds.
+    // RDKit❗❌:     MolOps::assignStereochemistry(*m, true, true);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   return m;
+    // RDKit❗❌: }
     // END RDKIT C++ FUNCTION: InchiToMol
+
     // BEGIN RDKIT ACTIVE CONFIGURATION: InchiToMol
-    // RDKit✔️❌: Pinned RDKit 2026.03.1; GCC/Linux; DEBUG is not defined.
+    // RDKit✔️❌: Pinned RDKit 2026.03.6; GCC/Linux; DEBUG is not defined.
     // RDKit✔️❌: The neutral engine and toolkit traits preserve the source call boundary without
     // RDKit✔️❌: linking RDKit or official C in production. SourceHeap output cloning and checked
     // RDKit✔️❌: graph access are known to cost more than the native pointer implementation.
@@ -4571,9 +4577,10 @@ pub(crate) fn inchi_to_mol(
 
             for stereo in &output.stereo0d {
                 let parity = i32::from(stereo.parity);
-                if parity == tagINCHIStereoParity0D_INCHI_PARITY_NONE as i32
-                    || parity == tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i32
-                {
+                // RDKit✔️✔️:           if (stereo0DPtr->parity == INCHI_PARITY_NONE) {
+                // RDKit✔️✔️:             continue;
+                // RDKit✔️✔️:           }
+                if parity == tagINCHIStereoParity0D_INCHI_PARITY_NONE as i32 {
                     continue;
                 }
                 match i32::from(stereo.type_) {
@@ -4737,6 +4744,16 @@ pub(crate) fn inchi_to_mol(
                         bond.stereo_atoms.push(right_neighbor as u32);
                     }
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i32 => {
+                        // RDKit✔️✔️:               if (stereo0DPtr->parity == INCHI_PARITY_UNDEFINED ||
+                        // RDKit✔️✔️:                   stereo0DPtr->parity == INCHI_PARITY_UNKNOWN) {
+                        // RDKit✔️✔️:                 break;
+                        // RDKit✔️✔️:               }
+                        // Constant-time parity guard precedes every central/neighbor lookup.
+                        if parity == tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i32
+                            || parity == tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i32
+                        {
+                            continue;
+                        }
                         let central = *index_to_atom_index_mapping
                             .get(stereo.central_atom as u16 as usize)
                             .ok_or(InchiToMolError::InvalidSourceOutput(
@@ -4854,7 +4871,7 @@ pub(crate) fn fix_option_symbol(
     // RDKit✔️✔️: }
     // END RDKIT C++ FUNCTION: fixOptionSymbol
     // BEGIN RDKIT ACTIVE CONFIGURATION: fixOptionSymbol
-    // RDKit✔️✔️: Pinned RDKit 2026.03.1; GCC/Linux; `_WIN32` is not defined.
+    // RDKit✔️✔️: Pinned RDKit 2026.03.6; GCC/Linux; `_WIN32` is not defined.
     // RDKit✔️✔️: The production callers provide distinct input/output buffers, a terminating NUL,
     // RDKit✔️✔️: and `strlen(in) + 1` writable output bytes. The inactive Windows branch is retained
     // RDKit✔️✔️: only in the verbatim source frame. Rust validates those caller preconditions.
@@ -5023,7 +5040,7 @@ pub(crate) fn r_clean_up(molecule: &mut AdapterMol) {
     // RDKit✔️❌: }
     // END RDKIT C++ FUNCTION: rCleanUp
     // BEGIN RDKIT ACTIVE CONFIGURATION: rCleanUp
-    // RDKit✔️❌: Pinned RDKit 2026.03.1; GCC/Linux; no conditional source branch.
+    // RDKit✔️❌: Pinned RDKit 2026.03.6; GCC/Linux; no conditional source branch.
     // RDKit✔️❌: `SmilesToMol` produces plain atoms. `Atom::Match` requires atomic number and each
     // RDKit✔️❌: non-default query charge, isotope, and radical value; therefore the three `O-`
     // RDKit✔️❌: atoms and `Cl+3` match charges exactly, while the final neutral query oxygen's
@@ -5075,371 +5092,401 @@ pub(crate) fn mol_to_inchi(
     return_values: &mut ExtraInchiReturnValues,
     options: Option<&[u8]>,
 ) -> Result<MolToInchiResult, MolToInchiError> {
-    // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1747 MolToInchi
-    // RDKit✔️❌: complete source frame follows verbatim.
-    /*
-    std::string MolToInchi(const ROMol &mol, ExtraInchiReturnValues &rv,
-                           const char *options) {
-      std::unique_ptr<RWMol> m{new RWMol(mol)};
-    
-      // assign stereochem:
-      if (mol.needsUpdatePropertyCache()) {
-        m->updatePropertyCache(false);
-      }
-      // kekulize
-      MolOps::Kekulize(*m, false);
-    
-      // "reverse" cleanup: undo some clean up done by RDKit
-      rCleanUp(*m);
-    
-      unsigned int nAtoms = m->getNumAtoms();
-      unsigned int nBonds = m->getNumBonds();
-    
-      // Make array of inchi_atom (storage space)
-      std::unique_ptr<inchi_Atom[]> inchiAtoms(new inchi_Atom[nAtoms]);
-      // and a vector for stereo0D
-      std::vector<inchi_Stereo0D> stereo0DEntries;
-    
-      PeriodicTable *periodicTable = PeriodicTable::getTable();
-      // Fill inchi_Atom's by atoms in RWMol
-      for (unsigned int i = 0; i < nAtoms; i++) {
-        Atom *atom = m->getAtomWithIdx(i);
-        inchiAtoms[i].num_bonds = 0;
-    
-        // coordinates
-        if (!m->getNumConformers()) {
-          inchiAtoms[i].x = 0;
-          inchiAtoms[i].y = 0;
-          inchiAtoms[i].z = 0;
-        } else {
-          auto conformerIter = m->beginConformers();
-          RDGeom::Point3D coord = (*conformerIter)->getAtomPos(i);
-          inchiAtoms[i].x = coord[0];
-          inchiAtoms[i].y = coord[1];
-          inchiAtoms[i].z = coord[2];
-        }
-    
-        // element name
-        unsigned int atomicNumber = atom->getAtomicNum();
-        std::string elementName = periodicTable->getElementSymbol(atomicNumber);
-        strcpy(inchiAtoms[i].elname, elementName.c_str());
-    
-        // isotopes
-        int isotope = atom->getIsotope();
-        if (isotope) {
-          inchiAtoms[i].isotopic_mass =
-              ISOTOPIC_SHIFT_FLAG + isotope -
-              static_cast<int>(periodicTable->getAtomicWeight(atomicNumber) + 0.5);
-        } else {
-          // check explicit iso property. If this is set, we have a 0 offset
-          // Example: CHEMBL220875
-          // if (atom->getIsotope()){
-          //  inchiAtoms[i].isotopic_mass = ISOTOPIC_SHIFT_FLAG + 0;
-          //} else {
-          inchiAtoms[i].isotopic_mass = 0;
-          //}
-        }
-    
-        // charge
-        inchiAtoms[i].charge = atom->getFormalCharge();
-    
-        // number of iso H
-        int nHs = -1;
-        switch (atom->getAtomicNum()) {
-          case 6:
-          case 7:
-          case 8:
-          case 9:
-          case 17:
-          case 35:
-          case 53:
-            nHs = -1;
-            break;
-          default:
-            nHs = atom->getTotalNumHs();
-        }
-        inchiAtoms[i].num_iso_H[0] = nHs;
-        inchiAtoms[i].num_iso_H[1] = 0;
-        inchiAtoms[i].num_iso_H[2] = 0;
-        inchiAtoms[i].num_iso_H[3] = 0;
-    
-        // radical
-        inchiAtoms[i].radical = 0;
-        if (atom->getNumRadicalElectrons()) {
-          // the direct specification of radicals in InChI is tricky since they use
-          // the MDL representation (singlet, double, triplet) and we just have the
-          // number of unpaired electrons. Instead we set the number of implicit Hs
-          // here, that together with the atom identity and charge should be
-          // sufficient
-          inchiAtoms[i].num_iso_H[0] = atom->getTotalNumHs();
-        } else {
-        }
-    
-        // convert tetrahedral chirality info to Stereo0D
-        if (atom->getChiralTag() == Atom::ChiralType::CHI_TETRAHEDRAL_CCW ||
-            atom->getChiralTag() == Atom::ChiralType::CHI_TETRAHEDRAL_CW) {
-          atom->calcImplicitValence();
-          if (auto tval = atom->getTotalDegree(); tval < 3 || tval > 4) {
-            BOOST_LOG(rdWarningLog)
-                << "tetrahedral chirality on atom with <3 or >4 neighbors will be ignored."
-                << std::endl;
-    
-            continue;
-          }
-          inchi_Stereo0D stereo0D;
-          stereo0D.central_atom = i;
-          stereo0D.type = INCHI_StereoType_Tetrahedral;
-          ROMol::ADJ_ITER nbrIter, endNbrIter;
-          boost::tie(nbrIter, endNbrIter) = m->getAtomNeighbors(atom);
-          std::vector<std::pair<unsigned int, unsigned int>> neighbors;
-          while (nbrIter != endNbrIter) {
-            int cip = 0;
-            // if (m->getAtomWithIdx(*nbrIter)->hasProp("_CIPRank"))
-            //   m->getAtomWithIdx(*nbrIter)->getProp("_CIPRank", cip);
-            neighbors.emplace_back(cip, *nbrIter);
-            ++nbrIter;
-          }
-          // std::sort(neighbors.begin(), neighbors.end());
-          unsigned char nid = 0;
-          // std::cerr<<" at: "<<atom->getIdx();
-          for (const auto &p : neighbors) {
-            stereo0D.neighbor[nid++] = p.second;
-          }
-          if (nid == 3) {
-            // std::cerr<<" nid==3, reorder";
-            // std::cerr<<" "<<i;
-            for (; nid > 0; nid--) {
-              stereo0D.neighbor[nid] = stereo0D.neighbor[nid - 1];
-              // std::cerr<<" "<<stereo0D.neighbor[nid];
-            }
-            stereo0D.neighbor[0] = i;
-          }
-          // std::cerr<<std::endl;
-          Atom::ChiralType chiralTag;
-          if ((chiralTag = atom->getChiralTag()) != Atom::CHI_UNSPECIFIED) {
-            bool pushIt = false;
-            if (atom->getDegree() == 4) {
-              if (chiralTag == Atom::CHI_TETRAHEDRAL_CW) {
-                stereo0D.parity = INCHI_PARITY_EVEN;
-                pushIt = true;
-              } else {
-                stereo0D.parity = INCHI_PARITY_ODD;
-                pushIt = true;
-              }
-            } else {
-              // std::cerr<<"tag: "<<chiralTag<<std::endl;
-              if (chiralTag == Atom::CHI_TETRAHEDRAL_CCW) {
-                stereo0D.parity = INCHI_PARITY_EVEN;
-                pushIt = true;
-              } else if (chiralTag == Atom::CHI_TETRAHEDRAL_CW) {
-                stereo0D.parity = INCHI_PARITY_ODD;
-                pushIt = true;
-              } else {
-                BOOST_LOG(rdWarningLog)
-                    << "unrecognized chirality tag (" << chiralTag << ") on atom "
-                    << i << " is ignored." << std::endl;
-              }
-            }
-            if (pushIt) {
-              // this was github #296
-              // with molecules like C[S@@](=O)C(C)(C)C the stereochem of the sulfur
-              // from
-              // the inchi comes back reversed if we don't have wedged bonds. There
-              // must
-              // be something with the way S stereochem is being handled that I'm
-              // not
-              // getting.
-              // There's something of an explanation at around line 258 of
-              // inchi_api.h
-              // but that didn't help that much.
-              // For want of a better idea, detect this pattern
-              // and flip the stereochem:
-              // if(atom->getAtomicNum()==16 &&
-              //    atom->getDegree()==3 &&
-              //    atom->getValence(Atom::ValenceType::EXPLICIT)==4){
-              //   if(stereo0D.parity==INCHI_PARITY_EVEN){
-              //     stereo0D.parity=INCHI_PARITY_ODD;
-              //   } else if(stereo0D.parity==INCHI_PARITY_ODD){
-              //     stereo0D.parity=INCHI_PARITY_EVEN;
-              //   }
-              // }
-              stereo0DEntries.push_back(stereo0D);
-            }
-    
-          } else {
-            // std::string molParity;
-            // atom->getProp("molParity", molParity);
-            // if (molParity == "2") {
-            //  stereo0D.parity = INCHI_PARITY_EVEN;
-            //  stereo0DEntries.push_back(stereo0D);
-            //} else if (molParity == "1") {
-            //  stereo0D.parity = INCHI_PARITY_ODD;
-            //  stereo0DEntries.push_back(stereo0D);
-            //} else if (molParity == "0") {
-            //  stereo0D.parity = INCHI_PARITY_NONE;
-            //  stereo0DEntries.push_back(stereo0D);
-            //} else if (molParity == "3") {
-            //  stereo0D.parity = INCHI_PARITY_UNKNOWN;
-            //  stereo0DEntries.push_back(stereo0D);
-            //} else {
-            //  BOOST_LOG(rdWarningLog) << "unrecognized parity on atom "
-            //    << molParity << " is ignored." << std::endl;
-            //}
-          }
-        }
-      }
-    
-      // read bond info
-      for (unsigned int i = 0; i < nBonds; i++) {
-        Bond *bond = m->getBondWithIdx(i);
-        unsigned int atomIndex1 = bond->getBeginAtomIdx();
-        unsigned int atomIndex2 = bond->getEndAtomIdx();
-        int bondDirectionModifier = 1;
-        // update only for the atom having smaller index
-        if (atomIndex1 > atomIndex2) {
-          std::swap(atomIndex1, atomIndex2);
-          bondDirectionModifier = -1;
-        }
-    
-        // neighbor
-        unsigned int idx = inchiAtoms[atomIndex1].num_bonds;
-        // The InChI code has a max number of neighbors allowed:
-        if (idx >= MAXVAL) {
-          BOOST_LOG(rdErrorLog)
-              << " atom " << atomIndex1 << " has too many bonds: " << idx
-              << ". The InChI library supports at most " << MAXVAL << std::endl;
-          return "";
-        }
-        inchiAtoms[atomIndex1].neighbor[idx] = atomIndex2;
-    
-        // bond type
-        Bond::BondType bondType = bond->getBondType();
-        if (bondType > Bond::TRIPLE) {
-          BOOST_LOG(rdWarningLog) << "bond type above 3 (" << bondType
-                                  << ") is treated as unspecified!" << std::endl;
-          bondType = Bond::UNSPECIFIED;
-        }
-        inchiAtoms[atomIndex1].bond_type[idx] = bondType;
-    
-        // stereo
-        Bond::BondDir bondDirection = bond->getBondDir();
-        switch (bondDirection) {
-          case Bond::BEGINWEDGE:
-            inchiAtoms[atomIndex1].bond_stereo[idx] =
-                bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1UP;
-            break;
-          case Bond::BEGINDASH:
-            inchiAtoms[atomIndex1].bond_stereo[idx] =
-                bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1DOWN;
-            break;
-          case Bond::EITHERDOUBLE:
-            inchiAtoms[atomIndex1].bond_stereo[idx] =
-                INCHI_BOND_STEREO_DOUBLE_EITHER;
-            break;
-          case Bond::UNKNOWN:
-            inchiAtoms[atomIndex1].bond_stereo[idx] =
-                bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1EITHER;
-            break;
-          case Bond::NONE:
-          default:
-            inchiAtoms[atomIndex1].bond_stereo[idx] = INCHI_BOND_STEREO_NONE;
-        }
-    
-        // double bond stereochemistry
-        // single bond in the big ring will get E/Z assigned as well. Though rdkit
-        // will eventually remove it, I added it any way
-        if (  // bondType == Bond::DOUBLE and
-            bond->getStereo() > Bond::STEREOANY &&
-            bond->getStereoAtoms().size() >= 2) {
-          inchi_Stereo0D stereo0D;
-          if (bond->getStereo() == Bond::STEREOZ ||
-              bond->getStereo() == Bond::STEREOCIS) {
-            stereo0D.parity = INCHI_PARITY_ODD;
-          } else {
-            stereo0D.parity = INCHI_PARITY_EVEN;
-          }
-          stereo0D.neighbor[0] = bond->getStereoAtoms()[0];
-          stereo0D.neighbor[3] = bond->getStereoAtoms()[1];
-          stereo0D.neighbor[1] = atomIndex1;
-          stereo0D.neighbor[2] = atomIndex2;
-          if (!m->getBondBetweenAtoms(stereo0D.neighbor[0], stereo0D.neighbor[1])) {
-            std::swap(stereo0D.neighbor[0], stereo0D.neighbor[3]);
-          }
-          stereo0D.central_atom = NO_ATOM;
-          stereo0D.type = INCHI_StereoType_DoubleBond;
-          stereo0DEntries.push_back(stereo0D);
-        } else if (bond->getStereo() == Bond::STEREOANY) {
-          // have to treat STEREOANY separately because RDKit will clear out
-          // StereoAtoms information.
-          // Here we just change the coordinates of the two end atoms - to bring
-          // them really close - so that InChI will not try to infer stereobond
-          // info from coordinates.
-          inchiAtoms[atomIndex1].x = inchiAtoms[atomIndex2].x;
-          inchiAtoms[atomIndex1].y = inchiAtoms[atomIndex2].y;
-          inchiAtoms[atomIndex1].z = inchiAtoms[atomIndex2].z;
-        }
-    
-        // number of bonds
-        inchiAtoms[atomIndex1].num_bonds++;
-      }
-    
-      // create stereo0D
-      std::unique_ptr<inchi_Stereo0D[]> stereo0Ds;
-      if (stereo0DEntries.size()) {
-        stereo0Ds.reset(new inchi_Stereo0D[stereo0DEntries.size()]);
-        for (unsigned int i = 0; i < stereo0DEntries.size(); i++) {
-          stereo0Ds[i] = stereo0DEntries[i];
-        }
-      }
-    
-      // create input
-      inchi_Input input;
-      input.atom = inchiAtoms.get();
-      input.stereo0D = stereo0Ds.get();
-      std::unique_ptr<char[]> _options;
-      if (options) {
-        _options.reset(new char[strlen(options) + 1]);
-        fixOptionSymbol(options, _options.get());
-        input.szOptions = _options.get();
-      } else {
-        input.szOptions = nullptr;
-      }
-      input.num_atoms = nAtoms;
-      input.num_stereo0D = stereo0DEntries.size();
-    
-      // create output
-      inchi_Output output;
-    
-      // call DLL
-      std::string inchi;
-      {
-        int retcode = GetINCHI(&input, &output);
-    
-        // generate output
-        rv.returnCode = retcode;
-        if (output.szInChI) {
-          inchi = std::string(output.szInChI);
-        }
-        if (output.szMessage) {
-          rv.messagePtr = std::string(output.szMessage);
-        }
-        if (output.szLog) {
-          rv.logPtr = std::string(output.szLog);
-        }
-        if (output.szAuxInfo) {
-          rv.auxInfoPtr = std::string(output.szAuxInfo);
-        }
-    
-        // clean up
-        FreeINCHI(&output);
-      }
-    
-      return inchi;
-    }
-    */
+    // BEGIN RDKIT C++ FUNCTION: Release_2026_03_6 External/INCHI-API/inchi.cpp:1749 MolToInchi
+    // RDKit❗❌: Target source frame; changed branches are reproduced below.
+    // Existing checked graph/heap transport is not whole-function parity evidence.
+    // RDKit❗❌: std::string MolToInchi(const ROMol &mol, ExtraInchiReturnValues &rv,
+    // RDKit❗❌:                        const char *options) {
+    // RDKit❗❌:   std::unique_ptr<RWMol> m{new RWMol(mol)};
+    // RDKit❗❌:
+    // RDKit❗❌:   // assign stereochem:
+    // RDKit❗❌:   if (mol.needsUpdatePropertyCache()) {
+    // RDKit❗❌:     m->updatePropertyCache(false);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // kekulize
+    // RDKit❗❌:   MolOps::Kekulize(*m, false, false);
+    // RDKit❗❌:
+    // RDKit❗❌:   // "reverse" cleanup: undo some clean up done by RDKit
+    // RDKit❗❌:   rCleanUp(*m);
+    // RDKit❗❌:
+    // RDKit❗❌:   unsigned int nAtoms = m->getNumAtoms();
+    // RDKit❗❌:   unsigned int nBonds = m->getNumBonds();
+    // RDKit❗❌:
+    // RDKit❗❌:   // Make array of inchi_atom (storage space)
+    // RDKit❗❌:   std::unique_ptr<inchi_Atom[]> inchiAtoms(new inchi_Atom[nAtoms]);
+    // RDKit❗❌:   // and a vector for stereo0D
+    // RDKit❗❌:   std::vector<inchi_Stereo0D> stereo0DEntries;
+    // RDKit❗❌:
+    // RDKit❗❌:   PeriodicTable *periodicTable = PeriodicTable::getTable();
+    // RDKit❗❌:   // Fill inchi_Atom's by atoms in RWMol
+    // RDKit❗❌:   for (unsigned int i = 0; i < nAtoms; i++) {
+    // RDKit❗❌:     Atom *atom = m->getAtomWithIdx(i);
+    // RDKit❗❌:     inchiAtoms[i].num_bonds = 0;
+    // RDKit❗❌:
+    // RDKit❗❌:     // coordinates
+    // RDKit❗❌:     if (!m->getNumConformers()) {
+    // RDKit❗❌:       inchiAtoms[i].x = 0;
+    // RDKit❗❌:       inchiAtoms[i].y = 0;
+    // RDKit❗❌:       inchiAtoms[i].z = 0;
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       auto conformerIter = m->beginConformers();
+    // RDKit❗❌:       RDGeom::Point3D coord = (*conformerIter)->getAtomPos(i);
+    // RDKit❗❌:       inchiAtoms[i].x = coord[0];
+    // RDKit❗❌:       inchiAtoms[i].y = coord[1];
+    // RDKit❗❌:       inchiAtoms[i].z = coord[2];
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // element name
+    // RDKit❗❌:     unsigned int atomicNumber = atom->getAtomicNum();
+    // RDKit❗❌:     std::string elementName = periodicTable->getElementSymbol(atomicNumber);
+    // RDKit❗❌:     strcpy(inchiAtoms[i].elname, elementName.c_str());
+    // RDKit❗❌:
+    // RDKit❗❌:     // isotopes
+    // RDKit❗❌:     int isotope = atom->getIsotope();
+    // RDKit❗❌:     if (isotope) {
+    // RDKit❗❌:       inchiAtoms[i].isotopic_mass =
+    // RDKit❗❌:           ISOTOPIC_SHIFT_FLAG + isotope -
+    // RDKit❗❌:           static_cast<int>(periodicTable->getAtomicWeight(atomicNumber) + 0.5);
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       // check explicit iso property. If this is set, we have a 0 offset
+    // RDKit❗❌:       // Example: CHEMBL220875
+    // RDKit❗❌:       // if (atom->getIsotope()){
+    // RDKit❗❌:       //  inchiAtoms[i].isotopic_mass = ISOTOPIC_SHIFT_FLAG + 0;
+    // RDKit❗❌:       //} else {
+    // RDKit❗❌:       inchiAtoms[i].isotopic_mass = 0;
+    // RDKit❗❌:       //}
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // charge
+    // RDKit❗❌:     inchiAtoms[i].charge = atom->getFormalCharge();
+    // RDKit❗❌:
+    // RDKit❗❌:     // number of iso H
+    // RDKit❗❌:     int nHs = -1;
+    // RDKit❗❌:     switch (atom->getAtomicNum()) {
+    // RDKit❗❌:       case 6:
+    // RDKit❗❌:       case 7:
+    // RDKit❗❌:       case 8:
+    // RDKit❗❌:       case 9:
+    // RDKit❗❌:       case 17:
+    // RDKit❗❌:       case 35:
+    // RDKit❗❌:       case 53:
+    // RDKit❗❌:         nHs = -1;
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       default:
+    // RDKit❗❌:         nHs = atom->getTotalNumHs();
+    // RDKit❗❌:     }
+    // RDKit❗❌:     inchiAtoms[i].num_iso_H[0] = nHs;
+    // RDKit❗❌:     inchiAtoms[i].num_iso_H[1] = 0;
+    // RDKit❗❌:     inchiAtoms[i].num_iso_H[2] = 0;
+    // RDKit❗❌:     inchiAtoms[i].num_iso_H[3] = 0;
+    // RDKit❗❌:
+    // RDKit❗❌:     // radical
+    // RDKit❗❌:     inchiAtoms[i].radical = 0;
+    // RDKit❗❌:     if (atom->getNumRadicalElectrons()) {
+    // RDKit❗❌:       // the direct specification of radicals in InChI is tricky since they use
+    // RDKit❗❌:       // the MDL representation (singlet, double, triplet) and we just have the
+    // RDKit❗❌:       // number of unpaired electrons. Instead we set the number of implicit Hs
+    // RDKit❗❌:       // here, that together with the atom identity and charge should be
+    // RDKit❗❌:       // sufficient
+    // RDKit❗❌:       inchiAtoms[i].num_iso_H[0] = atom->getTotalNumHs();
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // convert tetrahedral chirality info to Stereo0D
+    // RDKit❗❌:     if (atom->getChiralTag() == Atom::ChiralType::CHI_TETRAHEDRAL_CCW ||
+    // RDKit❗❌:         atom->getChiralTag() == Atom::ChiralType::CHI_TETRAHEDRAL_CW) {
+    // RDKit❗❌:       atom->calcImplicitValence();
+    // RDKit❗❌:       if (auto tval = atom->getTotalDegree(); tval < 3 || tval > 4) {
+    // RDKit❗❌:         BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:             << "tetrahedral chirality on atom with <3 or >4 neighbors will be ignored."
+    // RDKit❗❌:             << std::endl;
+    // RDKit❗❌:
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       inchi_Stereo0D stereo0D;
+    // RDKit❗❌:       stereo0D.central_atom = i;
+    // RDKit❗❌:       stereo0D.type = INCHI_StereoType_Tetrahedral;
+    // RDKit❗❌:       ROMol::ADJ_ITER nbrIter, endNbrIter;
+    // RDKit❗❌:       boost::tie(nbrIter, endNbrIter) = m->getAtomNeighbors(atom);
+    // RDKit❗❌:       std::vector<std::pair<unsigned int, unsigned int>> neighbors;
+    // RDKit❗❌:       while (nbrIter != endNbrIter) {
+    // RDKit❗❌:         int cip = 0;
+    // RDKit❗❌:         // if (m->getAtomWithIdx(*nbrIter)->hasProp("_CIPRank"))
+    // RDKit❗❌:         //   m->getAtomWithIdx(*nbrIter)->getProp("_CIPRank", cip);
+    // RDKit❗❌:         neighbors.emplace_back(cip, *nbrIter);
+    // RDKit❗❌:         ++nbrIter;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // std::sort(neighbors.begin(), neighbors.end());
+    // RDKit❗❌:       unsigned char nid = 0;
+    // RDKit❗❌:       // std::cerr<<" at: "<<atom->getIdx();
+    // RDKit❗❌:       for (const auto &p : neighbors) {
+    // RDKit❗❌:         stereo0D.neighbor[nid++] = p.second;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (nid == 3) {
+    // RDKit❗❌:         // std::cerr<<" nid==3, reorder";
+    // RDKit❗❌:         // std::cerr<<" "<<i;
+    // RDKit❗❌:         for (; nid > 0; nid--) {
+    // RDKit❗❌:           stereo0D.neighbor[nid] = stereo0D.neighbor[nid - 1];
+    // RDKit❗❌:           // std::cerr<<" "<<stereo0D.neighbor[nid];
+    // RDKit❗❌:         }
+    // RDKit❗❌:         stereo0D.neighbor[0] = i;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // std::cerr<<std::endl;
+    // RDKit❗❌:       Atom::ChiralType chiralTag;
+    // RDKit❗❌:       if ((chiralTag = atom->getChiralTag()) != Atom::CHI_UNSPECIFIED) {
+    // RDKit❗❌:         bool pushIt = false;
+    // RDKit❗❌:         if (atom->getDegree() == 4) {
+    // RDKit❗❌:           if (chiralTag == Atom::CHI_TETRAHEDRAL_CW) {
+    // RDKit❗❌:             stereo0D.parity = INCHI_PARITY_EVEN;
+    // RDKit❗❌:             pushIt = true;
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             stereo0D.parity = INCHI_PARITY_ODD;
+    // RDKit❗❌:             pushIt = true;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           // std::cerr<<"tag: "<<chiralTag<<std::endl;
+    // RDKit❗❌:           if (chiralTag == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit❗❌:             stereo0D.parity = INCHI_PARITY_EVEN;
+    // RDKit❗❌:             pushIt = true;
+    // RDKit❗❌:           } else if (chiralTag == Atom::CHI_TETRAHEDRAL_CW) {
+    // RDKit❗❌:             stereo0D.parity = INCHI_PARITY_ODD;
+    // RDKit❗❌:             pushIt = true;
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:                 << "unrecognized chirality tag (" << chiralTag << ") on atom "
+    // RDKit❗❌:                 << i << " is ignored." << std::endl;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (pushIt) {
+    // RDKit❗❌:           // this was github #296
+    // RDKit❗❌:           // with molecules like C[S@@](=O)C(C)(C)C the stereochem of the sulfur
+    // RDKit❗❌:           // from
+    // RDKit❗❌:           // the inchi comes back reversed if we don't have wedged bonds. There
+    // RDKit❗❌:           // must
+    // RDKit❗❌:           // be something with the way S stereochem is being handled that I'm
+    // RDKit❗❌:           // not
+    // RDKit❗❌:           // getting.
+    // RDKit❗❌:           // There's something of an explanation at around line 258 of
+    // RDKit❗❌:           // inchi_api.h
+    // RDKit❗❌:           // but that didn't help that much.
+    // RDKit❗❌:           // For want of a better idea, detect this pattern
+    // RDKit❗❌:           // and flip the stereochem:
+    // RDKit❗❌:           // if(atom->getAtomicNum()==16 &&
+    // RDKit❗❌:           //    atom->getDegree()==3 &&
+    // RDKit❗❌:           //    atom->getValence(Atom::ValenceType::EXPLICIT)==4){
+    // RDKit❗❌:           //   if(stereo0D.parity==INCHI_PARITY_EVEN){
+    // RDKit❗❌:           //     stereo0D.parity=INCHI_PARITY_ODD;
+    // RDKit❗❌:           //   } else if(stereo0D.parity==INCHI_PARITY_ODD){
+    // RDKit❗❌:           //     stereo0D.parity=INCHI_PARITY_EVEN;
+    // RDKit❗❌:           //   }
+    // RDKit❗❌:           // }
+    // RDKit❗❌:           stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         // std::string molParity;
+    // RDKit❗❌:         // atom->getProp("molParity", molParity);
+    // RDKit❗❌:         // if (molParity == "2") {
+    // RDKit❗❌:         //  stereo0D.parity = INCHI_PARITY_EVEN;
+    // RDKit❗❌:         //  stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:         //} else if (molParity == "1") {
+    // RDKit❗❌:         //  stereo0D.parity = INCHI_PARITY_ODD;
+    // RDKit❗❌:         //  stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:         //} else if (molParity == "0") {
+    // RDKit❗❌:         //  stereo0D.parity = INCHI_PARITY_NONE;
+    // RDKit❗❌:         //  stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:         //} else if (molParity == "3") {
+    // RDKit❗❌:         //  stereo0D.parity = INCHI_PARITY_UNKNOWN;
+    // RDKit❗❌:         //  stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:         //} else {
+    // RDKit❗❌:         //  BOOST_LOG(rdWarningLog) << "unrecognized parity on atom "
+    // RDKit❗❌:         //    << molParity << " is ignored." << std::endl;
+    // RDKit❗❌:         //}
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // read bond info
+    // RDKit❗❌:   for (unsigned int i = 0; i < nBonds; i++) {
+    // RDKit❗❌:     Bond *bond = m->getBondWithIdx(i);
+    // RDKit❗❌:     unsigned int atomIndex1 = bond->getBeginAtomIdx();
+    // RDKit❗❌:     unsigned int atomIndex2 = bond->getEndAtomIdx();
+    // RDKit❗❌:     int bondDirectionModifier = 1;
+    // RDKit❗❌:     // update only for the atom having smaller index
+    // RDKit❗❌:     if (atomIndex1 > atomIndex2) {
+    // RDKit❗❌:       std::swap(atomIndex1, atomIndex2);
+    // RDKit❗❌:       bondDirectionModifier = -1;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // neighbor
+    // RDKit❗❌:     unsigned int idx = inchiAtoms[atomIndex1].num_bonds;
+    // RDKit❗❌:     // The InChI code has a max number of neighbors allowed:
+    // RDKit❗❌:     if (idx >= MAXVAL) {
+    // RDKit❗❌:       BOOST_LOG(rdErrorLog)
+    // RDKit❗❌:           << " atom " << atomIndex1 << " has too many bonds: " << idx
+    // RDKit❗❌:           << ". The InChI library supports at most " << MAXVAL << std::endl;
+    // RDKit❗❌:       return "";
+    // RDKit❗❌:     }
+    // RDKit❗❌:     inchiAtoms[atomIndex1].neighbor[idx] = atomIndex2;
+    // RDKit❗❌:
+    // RDKit❗❌:     // bond type
+    // RDKit❗❌:     Bond::BondType bondType = bond->getBondType();
+    // RDKit❗❌:     if (bondType > Bond::TRIPLE) {
+    // RDKit❗❌:       BOOST_LOG(rdWarningLog) << "bond type above 3 (" << bondType
+    // RDKit❗❌:                               << ") is treated as unspecified!" << std::endl;
+    // RDKit❗❌:       bondType = Bond::UNSPECIFIED;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     inchiAtoms[atomIndex1].bond_type[idx] = bondType;
+    // RDKit❗❌:
+    // RDKit❗❌:     // stereo
+    // RDKit❗❌:     Bond::BondDir bondDirection = bond->getBondDir();
+    // RDKit❗❌:     switch (bondDirection) {
+    // RDKit❗❌:       case Bond::BEGINWEDGE:
+    // RDKit❗❌:         inchiAtoms[atomIndex1].bond_stereo[idx] =
+    // RDKit❗❌:             bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1UP;
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       case Bond::BEGINDASH:
+    // RDKit❗❌:         inchiAtoms[atomIndex1].bond_stereo[idx] =
+    // RDKit❗❌:             bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1DOWN;
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       case Bond::EITHERDOUBLE:
+    // RDKit❗❌:         inchiAtoms[atomIndex1].bond_stereo[idx] =
+    // RDKit❗❌:             INCHI_BOND_STEREO_DOUBLE_EITHER;
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       case Bond::UNKNOWN:
+    // RDKit❗❌:         inchiAtoms[atomIndex1].bond_stereo[idx] =
+    // RDKit❗❌:             bondDirectionModifier * INCHI_BOND_STEREO_SINGLE_1EITHER;
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       case Bond::NONE:
+    // RDKit❗❌:       default:
+    // RDKit❗❌:         inchiAtoms[atomIndex1].bond_stereo[idx] = INCHI_BOND_STEREO_NONE;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // double bond stereochemistry
+    // RDKit❗❌:     // single bond in the big ring will get E/Z assigned as well. Though rdkit
+    // RDKit❗❌:     // will eventually remove it, I added it any way
+    // RDKit❗❌:     if (  // bondType == Bond::DOUBLE and
+    // RDKit❗❌:         bond->getStereo() > Bond::STEREOANY &&
+    // RDKit❗❌:         bond->getStereoAtoms().size() >= 2) {
+    // RDKit❗❌:       inchi_Stereo0D stereo0D;
+    // RDKit❗❌:       if (bond->getStereo() == Bond::STEREOZ ||
+    // RDKit❗❌:           bond->getStereo() == Bond::STEREOCIS) {
+    // RDKit❗❌:         stereo0D.parity = INCHI_PARITY_ODD;
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         stereo0D.parity = INCHI_PARITY_EVEN;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       stereo0D.neighbor[0] = bond->getStereoAtoms()[0];
+    // RDKit❗❌:       stereo0D.neighbor[3] = bond->getStereoAtoms()[1];
+    // RDKit❗❌:       stereo0D.neighbor[1] = atomIndex1;
+    // RDKit❗❌:       stereo0D.neighbor[2] = atomIndex2;
+    // RDKit❗❌:       if (!m->getBondBetweenAtoms(stereo0D.neighbor[0], stereo0D.neighbor[1])) {
+    // RDKit❗❌:         std::swap(stereo0D.neighbor[0], stereo0D.neighbor[3]);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       stereo0D.central_atom = NO_ATOM;
+    // RDKit❗❌:       stereo0D.type = INCHI_StereoType_DoubleBond;
+    // RDKit❗❌:       stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:     } else if (bond->getStereo() == Bond::STEREOANY) {
+    // RDKit❗❌:       // Collapse coordinates so InChI cannot infer stereo from geometry,
+    // RDKit❗❌:       // and send a proper stereo0D with UNKNOWN parity so that -SUU
+    // RDKit❗❌:       // produces the correct unknown annotation. StereoAtoms may be
+    // RDKit❗❌:       // cleared for STEREOANY, so we find neighbors by iterating bonds.
+    // RDKit❗❌:       inchiAtoms[atomIndex1].x = inchiAtoms[atomIndex2].x;
+    // RDKit❗❌:       inchiAtoms[atomIndex1].y = inchiAtoms[atomIndex2].y;
+    // RDKit❗❌:       inchiAtoms[atomIndex1].z = inchiAtoms[atomIndex2].z;
+    // RDKit❗❌:       int leftNbr = -1;
+    // RDKit❗❌:       int rightNbr = -1;
+    // RDKit❗❌:       for (const auto &nbond : m->atomBonds(m->getAtomWithIdx(atomIndex1))) {
+    // RDKit❗❌:         auto other = nbond->getOtherAtomIdx(atomIndex1);
+    // RDKit❗❌:         if (other != static_cast<unsigned int>(atomIndex2)) {
+    // RDKit❗❌:           leftNbr = other;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       for (const auto &nbond : m->atomBonds(m->getAtomWithIdx(atomIndex2))) {
+    // RDKit❗❌:         auto other = nbond->getOtherAtomIdx(atomIndex2);
+    // RDKit❗❌:         if (other != static_cast<unsigned int>(atomIndex1)) {
+    // RDKit❗❌:           rightNbr = other;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (leftNbr >= 0 && rightNbr >= 0) {
+    // RDKit❗❌:         inchi_Stereo0D stereo0D;
+    // RDKit❗❌:         stereo0D.parity = INCHI_PARITY_UNKNOWN;
+    // RDKit❗❌:         stereo0D.neighbor[0] = leftNbr;
+    // RDKit❗❌:         stereo0D.neighbor[1] = atomIndex1;
+    // RDKit❗❌:         stereo0D.neighbor[2] = atomIndex2;
+    // RDKit❗❌:         stereo0D.neighbor[3] = rightNbr;
+    // RDKit❗❌:         if (!m->getBondBetweenAtoms(stereo0D.neighbor[0],
+    // RDKit❗❌:                                     stereo0D.neighbor[1])) {
+    // RDKit❗❌:           std::swap(stereo0D.neighbor[0], stereo0D.neighbor[3]);
+    // RDKit❗❌:         }
+    // RDKit❗❌:         stereo0D.central_atom = NO_ATOM;
+    // RDKit❗❌:         stereo0D.type = INCHI_StereoType_DoubleBond;
+    // RDKit❗❌:         stereo0DEntries.push_back(stereo0D);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // number of bonds
+    // RDKit❗❌:     inchiAtoms[atomIndex1].num_bonds++;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // create stereo0D
+    // RDKit❗❌:   std::unique_ptr<inchi_Stereo0D[]> stereo0Ds;
+    // RDKit❗❌:   if (stereo0DEntries.size()) {
+    // RDKit❗❌:     stereo0Ds.reset(new inchi_Stereo0D[stereo0DEntries.size()]);
+    // RDKit❗❌:     for (unsigned int i = 0; i < stereo0DEntries.size(); i++) {
+    // RDKit❗❌:       stereo0Ds[i] = stereo0DEntries[i];
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // create input
+    // RDKit❗❌:   inchi_Input input;
+    // RDKit❗❌:   input.atom = inchiAtoms.get();
+    // RDKit❗❌:   input.stereo0D = stereo0Ds.get();
+    // RDKit❗❌:   std::unique_ptr<char[]> _options;
+    // RDKit❗❌:   if (options) {
+    // RDKit❗❌:     _options.reset(new char[strlen(options) + 1]);
+    // RDKit❗❌:     fixOptionSymbol(options, _options.get());
+    // RDKit❗❌:     input.szOptions = _options.get();
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     input.szOptions = nullptr;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   input.num_atoms = nAtoms;
+    // RDKit❗❌:   input.num_stereo0D = stereo0DEntries.size();
+    // RDKit❗❌:
+    // RDKit❗❌:   // create output
+    // RDKit❗❌:   inchi_Output output;
+    // RDKit❗❌:
+    // RDKit❗❌:   // call DLL
+    // RDKit❗❌:   std::string inchi;
+    // RDKit❗❌:   {
+    // RDKit❗❌:     int retcode = GetINCHI(&input, &output);
+    // RDKit❗❌:
+    // RDKit❗❌:     // generate output
+    // RDKit❗❌:     rv.returnCode = retcode;
+    // RDKit❗❌:     if (output.szInChI) {
+    // RDKit❗❌:       inchi = std::string(output.szInChI);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (output.szMessage) {
+    // RDKit❗❌:       rv.messagePtr = std::string(output.szMessage);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (output.szLog) {
+    // RDKit❗❌:       rv.logPtr = std::string(output.szLog);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (output.szAuxInfo) {
+    // RDKit❗❌:       rv.auxInfoPtr = std::string(output.szAuxInfo);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // clean up
+    // RDKit❗❌:     FreeINCHI(&output);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   return inchi;
+    // RDKit❗❌: }
     // END RDKIT C++ FUNCTION: MolToInchi
+
     // BEGIN RDKIT ACTIVE CONFIGURATION: MolToInchi
-    // RDKit✔️❌: Pinned RDKit 2026.03.1; GCC/Linux; no function-local preprocessor branch.
+    // RDKit✔️❌: Pinned RDKit 2026.03.6; GCC/Linux; no function-local preprocessor branch.
     // RDKit✔️❌: The engine contract invokes the in-tree Rust GetINCHI/FreeINCHI port; C++ is test-only.
     // RDKit✔️❌: Adapter conformers preserve source order and only the first conformer is consumed.
     // RDKit✔️❌: Cloning and owned vectors add known allocation overhead relative to native RDKit storage.
@@ -5450,7 +5497,8 @@ pub(crate) fn mol_to_inchi(
     if toolkit.needs_update_property_cache(molecule)? {
         toolkit.update_property_cache(&mut working, false)?;
     }
-    toolkit.kekulize(&mut working, false)?;
+    // RDKit✔️✔️:   MolOps::Kekulize(*m, false, false);
+    toolkit.kekulize(&mut working, false, false)?;
     r_clean_up(&mut working);
 
     let atom_count = working.atoms.len();
@@ -5655,6 +5703,66 @@ pub(crate) fn mol_to_inchi(
             inchi_atoms[atom_index_1 as usize].x = source[0];
             inchi_atoms[atom_index_1 as usize].y = source[1];
             inchi_atoms[atom_index_1 as usize].z = source[2];
+            // RDKit✔️✔️:     } else if (bond->getStereo() == Bond::STEREOANY) {
+            // RDKit✔️✔️:       // Collapse coordinates so InChI cannot infer stereo from geometry,
+            // RDKit✔️✔️:       // and send a proper stereo0D with UNKNOWN parity so that -SUU
+            // RDKit✔️✔️:       // produces the correct unknown annotation. StereoAtoms may be
+            // RDKit✔️✔️:       // cleared for STEREOANY, so we find neighbors by iterating bonds.
+            // RDKit✔️✔️:       inchiAtoms[atomIndex1].x = inchiAtoms[atomIndex2].x;
+            // RDKit✔️✔️:       inchiAtoms[atomIndex1].y = inchiAtoms[atomIndex2].y;
+            // RDKit✔️✔️:       inchiAtoms[atomIndex1].z = inchiAtoms[atomIndex2].z;
+            // RDKit✔️✔️:       int leftNbr = -1;
+            // RDKit✔️✔️:       int rightNbr = -1;
+            // RDKit✔️✔️:       for (const auto &nbond : m->atomBonds(m->getAtomWithIdx(atomIndex1))) {
+            // RDKit✔️✔️:         auto other = nbond->getOtherAtomIdx(atomIndex1);
+            // RDKit✔️✔️:         if (other != static_cast<unsigned int>(atomIndex2)) {
+            // RDKit✔️✔️:           leftNbr = other;
+            // RDKit✔️✔️:           break;
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:       for (const auto &nbond : m->atomBonds(m->getAtomWithIdx(atomIndex2))) {
+            // RDKit✔️✔️:         auto other = nbond->getOtherAtomIdx(atomIndex2);
+            // RDKit✔️✔️:         if (other != static_cast<unsigned int>(atomIndex1)) {
+            // RDKit✔️✔️:           rightNbr = other;
+            // RDKit✔️✔️:           break;
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:       if (leftNbr >= 0 && rightNbr >= 0) {
+            // RDKit✔️✔️:         inchi_Stereo0D stereo0D;
+            // RDKit✔️✔️:         stereo0D.parity = INCHI_PARITY_UNKNOWN;
+            // RDKit✔️✔️:         stereo0D.neighbor[0] = leftNbr;
+            // RDKit✔️✔️:         stereo0D.neighbor[1] = atomIndex1;
+            // RDKit✔️✔️:         stereo0D.neighbor[2] = atomIndex2;
+            // RDKit✔️✔️:         stereo0D.neighbor[3] = rightNbr;
+            // RDKit✔️✔️:         if (!m->getBondBetweenAtoms(stereo0D.neighbor[0],
+            // RDKit✔️✔️:                                     stereo0D.neighbor[1])) {
+            // RDKit✔️✔️:           std::swap(stereo0D.neighbor[0], stereo0D.neighbor[3]);
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:         stereo0D.central_atom = NO_ATOM;
+            // RDKit✔️✔️:         stereo0D.type = INCHI_StereoType_DoubleBond;
+            // RDKit✔️✔️:         stereo0DEntries.push_back(stereo0D);
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:     }
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:     // number of bonds
+            // The adjacency vectors retain source bond iteration order. Each first-neighbor
+            // scan and the final bond lookup are O(degree), with one optional stereo append.
+            let left_neighbor = working.adjacency[atom_index_1 as usize]
+                .iter().find(|&&(other, _)| other != atom_index_2).map(|&(other, _)| other);
+            let right_neighbor = working.adjacency[atom_index_2 as usize]
+                .iter().find(|&&(other, _)| other != atom_index_1).map(|&(other, _)| other);
+            if let (Some(left), Some(right)) = (left_neighbor, right_neighbor) {
+                let mut stereo = inchi_Stereo0D {
+                    parity: tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i8,
+                    neighbor: [left as i16, atom_index_1 as i16, atom_index_2 as i16, right as i16],
+                    central_atom: NO_ATOM as i16,
+                    type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
+                };
+                if bond_index_between(&working, stereo.neighbor[0] as u32, stereo.neighbor[1] as u32).is_none() {
+                    stereo.neighbor.swap(0,3);
+                }
+                stereo0d_entries.push(stereo);
+            }
         }
         inchi_atoms[atom_index_1 as usize].num_bonds += 1;
     }
@@ -5833,6 +5941,328 @@ pub(crate) fn mol_to_inchi_key(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rdkit_2026_03_6_inchi03_adapter_passes_two_false_flags_and_failure_stops_engine() {
+        let molecule = AdapterMol::from_graph(
+            vec![AdapterAtom {
+                atomic_number: 6,
+                ..Default::default()
+            }],
+            Vec::new(),
+        );
+        let original = molecule.clone();
+        for fail in [false, true] {
+            let mut toolkit = RecordingGenerationToolkit {
+                needs_update: true,
+                fail_on: fail.then(|| "kekulize".to_owned()),
+                ..Default::default()
+            };
+            let mut engine = ScriptedGenerationEngine::default();
+            let (result, _) = run_generation(&molecule, &mut toolkit, &mut engine, None);
+            assert_eq!(toolkit.kekulize_flags, [(false, false)]);
+            assert_eq!(
+                &toolkit.calls[..3],
+                [
+                    "needs_update_property_cache",
+                    "update_property_cache",
+                    "kekulize"
+                ]
+            );
+            if fail {
+                assert!(result.is_err());
+                assert!(engine.calls.is_empty());
+                assert!(engine.seen_inputs.is_empty());
+            } else {
+                assert!(result.is_ok());
+                assert_eq!(engine.calls, ["GetINCHI", "FreeINCHI"]);
+            }
+            assert_eq!(molecule, original);
+        }
+    }
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_export_first_neighbors_and_raw_fields() {
+        for reverse in [false, true] {
+            for flip_order in [false, true] {
+                for conformer in [false, true] {
+                    for stale_refs in [false, true] {
+                        let mut central = AdapterBond::new(
+                            if reverse { 1 } else { 0 },
+                            if reverse { 0 } else { 1 },
+                            BondType::Double,
+                        );
+                        central.stereo = BondStereo::Any;
+                        if stale_refs {
+                            central.stereo_atoms = vec![99, 88];
+                        }
+                        let (left, right) = if flip_order { (3, 5) } else { (2, 4) };
+                        let (left2, right2) = if flip_order { (2, 4) } else { (3, 5) };
+                        let bonds = vec![
+                            AdapterBond::new(0, left, BondType::Single),
+                            AdapterBond::new(right, 1, BondType::Single),
+                            central,
+                            AdapterBond::new(left2, 0, BondType::Single),
+                            AdapterBond::new(1, right2, BondType::Single),
+                        ];
+                        let mut mol = AdapterMol::from_graph(
+                            vec![
+                                AdapterAtom {
+                                    atomic_number: 6,
+                                    ..Default::default()
+                                };
+                                6
+                            ],
+                            bonds,
+                        );
+                        if conformer {
+                            mol.conformers = vec![
+                                (0..6)
+                                    .map(|i| [i as f64 + 1.0, i as f64 + 2.0, i as f64 + 3.0])
+                                    .collect(),
+                            ];
+                        }
+                        let before = mol.clone();
+                        let mut toolkit = RecordingGenerationToolkit::default();
+                        let mut engine = ScriptedGenerationEngine::default();
+                        let (result, _) =
+                            run_generation(&mol, &mut toolkit, &mut engine, Some(b"-SUU\0"));
+                        result.unwrap();
+                        assert_eq!(mol, before);
+                        assert_eq!(mol.conformers, before.conformers);
+                        assert_eq!(engine.calls, ["GetINCHI", "FreeINCHI"]);
+                        let input = &engine.seen_inputs[0];
+                        assert_eq!(input.stereo0d.len(), 1);
+                        let sd = &input.stereo0d[0];
+                        assert_eq!(sd.neighbor, [left as i16, 0, 1, right as i16]);
+                        assert_eq!(sd.parity, tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i8);
+                        assert_eq!(sd.central_atom, NO_ATOM as i16);
+                        assert_eq!(
+                            sd.type_,
+                            tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8
+                        );
+                        assert_eq!(
+                            (input.atoms[0].x, input.atoms[0].y, input.atoms[0].z),
+                            (input.atoms[1].x, input.atoms[1].y, input.atoms[1].z)
+                        );
+                        if conformer {
+                            assert_eq!(
+                                (input.atoms[0].x, input.atoms[0].y, input.atoms[0].z),
+                                (2.0, 3.0, 4.0)
+                            );
+                        }
+                        assert_eq!(input.options_with_nul.as_deref(), Some(&b"-SUU\0"[..]));
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_export_has_no_new_bond_type_gate() {
+        // Private controlled state: source branch tests Any, not double type.
+        let mut central = AdapterBond::new(0, 1, BondType::Single);
+        central.stereo = BondStereo::Any;
+        let mol = AdapterMol::from_graph(
+            vec![
+                AdapterAtom {
+                    atomic_number: 6,
+                    ..Default::default()
+                };
+                4
+            ],
+            vec![
+                central,
+                AdapterBond::new(0, 2, BondType::Single),
+                AdapterBond::new(1, 3, BondType::Single),
+            ],
+        );
+        let mut toolkit = RecordingGenerationToolkit::default();
+        let mut engine = ScriptedGenerationEngine::default();
+        run_generation(&mol, &mut toolkit, &mut engine, None)
+            .0
+            .unwrap();
+        assert_eq!(engine.seen_inputs[0].stereo0d.len(), 1);
+        assert_eq!(engine.seen_inputs[0].stereo0d[0].neighbor, [2, 0, 1, 3]);
+    }
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_export_missing_neighbors_still_collapses_coordinates() {
+        for has_left in [false, true] {
+            for has_right in [false, true] {
+                let mut central = AdapterBond::new(1, 0, BondType::Double);
+                central.stereo = BondStereo::Any;
+                let mut bonds = vec![central];
+                if has_left {
+                    bonds.push(AdapterBond::new(0, 2, BondType::Single));
+                }
+                if has_right {
+                    bonds.push(AdapterBond::new(1, 3, BondType::Single));
+                }
+                let mut mol = AdapterMol::from_graph(
+                    vec![
+                        AdapterAtom {
+                            atomic_number: 6,
+                            ..Default::default()
+                        };
+                        4
+                    ],
+                    bonds,
+                );
+                mol.conformers = vec![vec![
+                    [1.0, 2.0, 3.0],
+                    [7.0, 8.0, 9.0],
+                    [2.0, 3.0, 4.0],
+                    [3.0, 4.0, 5.0],
+                ]];
+                let mut toolkit = RecordingGenerationToolkit::default();
+                let mut engine = ScriptedGenerationEngine::default();
+                run_generation(&mol, &mut toolkit, &mut engine, None)
+                    .0
+                    .unwrap();
+                let input = &engine.seen_inputs[0];
+                assert_eq!(input.stereo0d.len(), usize::from(has_left && has_right));
+                assert_eq!(
+                    (input.atoms[0].x, input.atoms[0].y, input.atoms[0].z),
+                    (7.0, 8.0, 9.0)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_inchi_import_double_five_parities() {
+        for (parity, expected) in [
+            (0, BondStereo::None),
+            (1, BondStereo::Z),
+            (2, BondStereo::E),
+            (3, BondStereo::Any),
+            (4, BondStereo::Any),
+        ] {
+            let mut atoms = (0..6).map(|_| source_atom(b"C")).collect::<Vec<_>>();
+            for (a, b, t) in [(0, 1, 2), (0, 2, 1), (0, 3, 1), (1, 4, 1), (1, 5, 1)] {
+                connect_source_atoms(&mut atoms, a, b, t, 0, 0)
+            }
+            let stereo = inchi_Stereo0D {
+                neighbor: [2, 0, 1, 4],
+                central_atom: 0,
+                type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
+                parity,
+            };
+            let mut toolkit = RecordingToolkit {
+                ranks: Some(vec![0, 0, 9, 3, 8, 2]),
+                ..Default::default()
+            };
+            let (result, engine, _) = run_scripted(
+                scripted_output(atoms, vec![stereo]),
+                &mut toolkit,
+                false,
+                false,
+            );
+            let mol = result.unwrap().molecule.unwrap();
+            assert_eq!(engine.free_count, 1);
+            assert_eq!(
+                toolkit
+                    .calls
+                    .iter()
+                    .filter(|&&c| c == "assign_atom_cip_ranks")
+                    .count(),
+                1
+            );
+            assert_eq!(mol.bonds[0].stereo, expected, "parity {parity}");
+            assert_eq!(
+                mol.bonds[0].stereo_atoms,
+                if parity == 0 { vec![] } else { vec![2, 4] }
+            );
+        }
+    }
+    #[test]
+    fn rdkit_2026_03_inchi_import_tetra_five_parities_and_skip_before_mapping() {
+        for (parity, expected) in [
+            (0, ChiralTag::Unspecified),
+            (1, ChiralTag::TetrahedralCcw),
+            (2, ChiralTag::TetrahedralCw),
+            (3, ChiralTag::Unspecified),
+            (4, ChiralTag::Unspecified),
+        ] {
+            let mut atoms = (0..5).map(|_| source_atom(b"C")).collect::<Vec<_>>();
+            for n in 1..5 {
+                connect_source_atoms(&mut atoms, 0, n, 1, 0, 0)
+            }
+            let stereo = inchi_Stereo0D {
+                neighbor: [1, 2, 3, 4],
+                central_atom: 0,
+                type_: tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8,
+                parity,
+            };
+            let mut toolkit = RecordingToolkit::default();
+            let (result, engine, _) = run_scripted(
+                scripted_output(atoms, vec![stereo]),
+                &mut toolkit,
+                false,
+                false,
+            );
+            assert_eq!(
+                result.unwrap().molecule.unwrap().atoms[0].chiral_tag,
+                expected,
+                "parity {parity}"
+            );
+            assert_eq!(engine.free_count, 1);
+        }
+        for parity in [0, 3, 4] {
+            // Deliberately invalid private engine-output fixture: ignored
+            // parities must not inspect central/neighbor indices at all.
+            let stereo = inchi_Stereo0D {
+                neighbor: [-1, -1, -1, -1],
+                central_atom: -1,
+                type_: tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8,
+                parity,
+            };
+            let mut toolkit = RecordingToolkit::default();
+            let (result, engine, _) = run_scripted(
+                scripted_output(vec![source_atom(b"C")], vec![stereo]),
+                &mut toolkit,
+                false,
+                false,
+            );
+            assert_eq!(
+                result.unwrap().molecule.unwrap().atoms[0].chiral_tag,
+                ChiralTag::Unspecified
+            );
+            assert_eq!(engine.free_count, 1);
+            assert_eq!(
+                toolkit
+                    .calls
+                    .iter()
+                    .filter(|&&c| c == "assign_atom_cip_ranks")
+                    .count(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn rdkit_2026_03_inchi_import_unknown_double_still_validates_mapping_before_free() {
+        for parity in [3, 4] {
+            let stereo = inchi_Stereo0D {
+                neighbor: [-1, -1, -1, -1],
+                central_atom: -1,
+                type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
+                parity,
+            };
+            let mut toolkit = RecordingToolkit::default();
+            let (result, engine, _) = run_scripted(
+                scripted_output(vec![source_atom(b"C")], vec![stereo]),
+                &mut toolkit,
+                false,
+                false,
+            );
+            assert!(matches!(
+                result,
+                Err(InchiToMolError::InvalidSourceOutput(
+                    "double-bond stereo atom index is outside atom mapping"
+                ))
+            ));
+            // Existing native checked-output error ordering: failure precedes FreeStruct.
+            assert_eq!(engine.free_count, 0);
+        }
+    }
+
     use super::*;
 
     #[derive(Clone)]
@@ -7073,6 +7503,7 @@ mod tests {
         total_degrees: Vec<Option<u32>>,
         symbol_override: Option<Vec<u8>>,
         weight_override: Option<f64>,
+        kekulize_flags: Vec<(bool, bool)>,
     }
 
     impl RecordingGenerationToolkit {
@@ -7117,8 +7548,11 @@ mod tests {
             &mut self,
             _molecule: &mut AdapterMol,
             mark_atoms_bonds: bool,
+            canonical: bool,
         ) -> Result<(), AdapterToolkitError> {
+            self.kekulize_flags.push((mark_atoms_bonds, canonical));
             assert!(!mark_atoms_bonds);
+            assert!(!canonical);
             self.record("kekulize")
         }
 
@@ -9302,9 +9736,15 @@ mod tests {
             }));
         }
 
-        for parity in [
-            tagINCHIStereoParity0D_INCHI_PARITY_NONE as i8,
-            tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i8,
+        for (parity, expected) in [
+            (
+                tagINCHIStereoParity0D_INCHI_PARITY_NONE as i8,
+                BondStereo::None,
+            ),
+            (
+                tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i8,
+                BondStereo::Any,
+            ),
         ] {
             let stereo = inchi_Stereo0D {
                 neighbor: [2, 0, 1, 4],
@@ -9319,10 +9759,7 @@ mod tests {
                 false,
                 false,
             );
-            assert_eq!(
-                result.unwrap().molecule.unwrap().bonds[0].stereo,
-                BondStereo::None
-            );
+            assert_eq!(result.unwrap().molecule.unwrap().bonds[0].stereo, expected);
         }
 
         let absent_double = inchi_Stereo0D {

@@ -460,6 +460,7 @@ pub(crate) fn compute_bisect_point(center: Point2, angle: f64, a: Point2, b: Poi
 }
 
 pub(crate) fn reflect_point(point: Point2, a: Point2, b: Point2) -> Point2 {
+    // BEGIN RECOVERY DEP-04 SOURCE reflect_point
     // RDKit❗✔️: RDGeom::Point2D reflectPoint(const RDGeom::Point2D &point,
     // RDKit❗✔️:                              const RDGeom::Point2D &loc1,
     // RDKit❗✔️:                              const RDGeom::Point2D &loc2) {
@@ -467,10 +468,14 @@ pub(crate) fn reflect_point(point: Point2, a: Point2, b: Point2) -> Point2 {
     // RDKit❗✔️:   RDGeom::Point2D xaxis(1.0, 0.0);
     // RDKit❗✔️:   RDGeom::Point2D cent = (loc1 + loc2);
     // RDKit❗✔️:   cent *= 0.5;
+    // RDKit❗✔️:
     // RDKit❗✔️:   RDGeom::Transform2D trans;
     // RDKit❗✔️:   trans.SetTransform(org, xaxis, cent, loc1);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   /// reverse transform
     // RDKit❗✔️:   RDGeom::Transform2D itrans;
     // RDKit❗✔️:   itrans.SetTransform(cent, loc1, org, xaxis);
+    // RDKit❗✔️:
     // RDKit❗✔️:   RDGeom::INT_POINT2D_MAP_I nci;
     // RDKit❗✔️:   RDGeom::Point2D res;
     // RDKit❗✔️:   res = point;
@@ -479,6 +484,7 @@ pub(crate) fn reflect_point(point: Point2, a: Point2, b: Point2) -> Point2 {
     // RDKit❗✔️:   itrans.TransformPoint(res);
     // RDKit❗✔️:   return res;
     // RDKit❗✔️: }
+    // END RECOVERY DEP-04 SOURCE reflect_point
 
     let origin = [0.0, 0.0];
     let xaxis = [1.0, 0.0];

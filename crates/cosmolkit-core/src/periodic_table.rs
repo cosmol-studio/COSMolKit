@@ -380,7 +380,7 @@ pub(crate) fn rb0(atomic_number: u8) -> f64 {
         .map_or(0.0, |row| row.rb0)
 }
 
-pub(crate) fn covalent_radius(atomic_number: u8) -> Option<f64> {
+pub fn covalent_radius(atomic_number: u8) -> Option<f64> {
     // BEGIN RDKIT CPP FUNCTION PeriodicTable::getRcovalent
     // RDKit✔️✔️: double getRcovalent(UINT atomicNumber) const {
     // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");

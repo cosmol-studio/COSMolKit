@@ -119,6 +119,193 @@ where
     Energy: FnMut(&mut Context, &mut [f64]) -> Result<f64, E>,
     Gradient: FnMut(&mut Context, &mut [f64], &mut [f64]) -> Result<f64, E>,
 {
+    // BEGIN RECOVERY GEO-02 SOURCE minimize
+    // RDKit❗❌: template <typename EnergyFunctor, typename GradientFunctor>
+    // RDKit❗❌: int minimize(unsigned int dim, double *pos, double gradTol,
+    // RDKit❗❌:              unsigned int &numIters, double &funcVal, EnergyFunctor func,
+    // RDKit❗❌:              GradientFunctor gradFunc, unsigned int snapshotFreq,
+    // RDKit❗❌:              RDKit::SnapshotVect *snapshotVect, double funcTol = TOLX,
+    // RDKit❗❌:              unsigned int maxIts = MAXITS) {
+    // RDKit❗❌:   RDUNUSED_PARAM(funcTol);
+    // RDKit❗❌:   PRECONDITION(pos, "bad input array");
+    // RDKit❗❌:   PRECONDITION(gradTol > 0, "bad tolerance");
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<double> grad(dim);
+    // RDKit❗❌:   std::vector<double> dGrad(dim);
+    // RDKit❗❌:   std::vector<double> hessDGrad(dim);
+    // RDKit❗❌:   std::vector<double> xi(dim);
+    // RDKit❗❌:   std::vector<double> invHessian(dim * dim, 0);
+    // RDKit❗❌:   std::unique_ptr<double[]> newPos(new double[dim]);
+    // RDKit❗❌:   snapshotFreq = std::min(snapshotFreq, maxIts);
+    // RDKit❗❌:
+    // RDKit❗❌:   double fp = func(pos);
+    // RDKit❗❌:   gradFunc(pos, grad.data());
+    // RDKit❗❌:
+    // RDKit❗❌:   double sum = 0.0;
+    // RDKit❌❌: #ifdef RDK_SVE_AVAILABLE
+    // RDKit❌❌:   if (cpuHasSVE()) {
+    // RDKit❌❌:     // SVE path: initialise xi = -grad and compute ||pos||^2 in a single
+    // RDKit❌❌:     // vectorised pass.  The identity inverse Hessian is initialised separately
+    // RDKit❌❌:     // (scalar, O(dim)) since it is a simple diagonal write and does not benefit
+    // RDKit❌❌:     // from vectorisation over rows.
+    // RDKit❌❌:     sveInitXiAndSum(dim, grad.data(), xi.data(), pos, &sum);
+    // RDKit❌❌:     for (unsigned int i = 0; i < dim; i++) invHessian[i * dim + i] = 1.0;
+    // RDKit❌❌:   } else
+    // RDKit❌❌: #endif
+    // RDKit❗❌:   {
+    // RDKit❗❌:     // Scalar path: initialise the inverse Hessian to the identity matrix,
+    // RDKit❗❌:     // set the initial search direction xi = -grad (steepest descent step),
+    // RDKit❗❌:     // and accumulate ||pos||^2 to set an appropriate maximum step size.
+    // RDKit❗❌:     for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:       unsigned int itab = i * dim;
+    // RDKit❗❌:       invHessian[itab + i] = 1.0;
+    // RDKit❗❌:       xi[i] = -grad[i];
+    // RDKit❗❌:       sum += pos[i] * pos[i];
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   double maxStep = MAXSTEP * std::max(sqrt(sum), static_cast<double>(dim));
+    // RDKit❗❌:
+    // RDKit❗❌:   for (unsigned int iter = 1; iter <= maxIts; ++iter) {
+    // RDKit❗❌:     numIters = iter;
+    // RDKit❗❌:     int status = -1;
+    // RDKit❗❌:
+    // RDKit❗❌:     linearSearch(dim, pos, fp, grad.data(), xi.data(), newPos.get(), funcVal,
+    // RDKit❗❌:                  func, maxStep, status);
+    // RDKit❗❌:     CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
+    // RDKit❗❌:
+    // RDKit❗❌:     // save the function value for the next search:
+    // RDKit❗❌:     fp = funcVal;
+    // RDKit❗❌:     // set the direction of this line and save the gradient:
+    // RDKit❗❌:     double test = 0.0;
+    // RDKit❗❌:     for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:       xi[i] = newPos[i] - pos[i];
+    // RDKit❗❌:       pos[i] = newPos[i];
+    // RDKit❗❌:       double temp = fabs(xi[i]) / std::max(fabs(pos[i]), 1.0);
+    // RDKit❗❌:       if (temp > test) {
+    // RDKit❗❌:         test = temp;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       dGrad[i] = grad[i];
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (test < TOLX) {
+    // RDKit❗❌:       if (snapshotVect && snapshotFreq) {
+    // RDKit❗❌:         RDKit::Snapshot s(boost::shared_array<double>(newPos.release()), fp);
+    // RDKit❗❌:         snapshotVect->push_back(s);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       return 0;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // update the gradient:
+    // RDKit❗❌:     double gradScale = gradFunc(pos, grad.data());
+    // RDKit❗❌:
+    // RDKit❗❌:     test = 0.0;
+    // RDKit❗❌:     // Use |funcVal| so that negative energies (which arise routinely
+    // RDKit❗❌:     // mid-minimization in force fields containing stabilizing
+    // RDKit❗❌:     // electrostatic or dispersion terms) do not drive
+    // RDKit❗❌:     // funcVal * gradScale below zero and clamp the denominator to 1.0,
+    // RDKit❗❌:     // which would artificially tighten the gradient convergence test.
+    // RDKit❗❌:     double term = std::max(fabs(funcVal) * gradScale, 1.0);
+    // RDKit❗❌:     for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:       double temp = fabs(grad[i]) * std::max(fabs(pos[i]), 1.0);
+    // RDKit❗❌:       test = std::max(test, temp);
+    // RDKit❗❌:       dGrad[i] = grad[i] - dGrad[i];
+    // RDKit❗❌:     }
+    // RDKit❗❌:     test /= term;
+    // RDKit❗❌:     if (test < gradTol) {
+    // RDKit❗❌:       if (snapshotVect && snapshotFreq) {
+    // RDKit❗❌:         RDKit::Snapshot s(boost::shared_array<double>(newPos.release()), fp);
+    // RDKit❗❌:         snapshotVect->push_back(s);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       return 0;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // BFGS inverse Hessian update.
+    // RDKit❗❌:     double fac = 0, fae = 0, sumDGrad = 0, sumXi = 0;
+    // RDKit❌❌: #ifdef RDK_SVE_AVAILABLE
+    // RDKit❌❌:     if (cpuHasSVE()) {
+    // RDKit❌❌:       // SVE path: matrix-vector multiply and all four dot products computed in
+    // RDKit❌❌:       // one vectorised pass, saving two additional O(dim) traversals compared
+    // RDKit❌❌:       // to separate scalar dot-product calls.
+    // RDKit❌❌:       sveHessianVecMul(dim, invHessian.data(), dGrad.data(), hessDGrad.data(),
+    // RDKit❌❌:                        xi.data(), &fac, &fae, &sumDGrad, &sumXi);
+    // RDKit❌❌:     } else
+    // RDKit❌❌: #endif
+    // RDKit❗❌:     {
+    // RDKit❗❌:       // Scalar path: fused matrix-vector multiply and dot-product accumulation.
+    // RDKit❗❌:       // Pointer arithmetic (++ivh, ++dgj) avoids repeated index computations
+    // RDKit❗❌:       // and helps the compiler generate efficient load sequences.
+    // RDKit❗❌:       for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:         double *ivh = &(invHessian[i * dim]);
+    // RDKit❗❌:         double &hdgradi = hessDGrad[i];
+    // RDKit❗❌:         double *dgj = dGrad.data();
+    // RDKit❗❌:         hdgradi = 0.0;
+    // RDKit❗❌:         for (unsigned int j = 0; j < dim; ++j, ++ivh, ++dgj) {
+    // RDKit❗❌:           hdgradi += *ivh * *dgj;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         fac += dGrad[i] * xi[i];
+    // RDKit❗❌:         fae += dGrad[i] * hessDGrad[i];
+    // RDKit❗❌:         sumDGrad += dGrad[i] * dGrad[i];
+    // RDKit❗❌:         sumXi += xi[i] * xi[i];
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (fac > sqrt(EPS * sumDGrad * sumXi)) {
+    // RDKit❗❌:       fac = 1.0 / fac;
+    // RDKit❗❌:       double fad = 1.0 / fae;
+    // RDKit❗❌:       for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:         dGrad[i] = fac * xi[i] - fad * hessDGrad[i];
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❌❌: #ifdef RDK_SVE_AVAILABLE
+    // RDKit❌❌:       if (cpuHasSVE()) {
+    // RDKit❌❌:         // SVE path: symmetric rank-1 update with FMA, exploiting symmetry to
+    // RDKit❌❌:         // halve memory writes and FLOPs versus a full-matrix update
+    // RDKit❌❌:         sveHessianRank1Update(dim, invHessian.data(), xi.data(),
+    // RDKit❌❌:                               hessDGrad.data(), dGrad.data(), fac, fad, fae);
+    // RDKit❌❌:       } else
+    // RDKit❌❌: #endif
+    // RDKit❗❌:       {
+    // RDKit❗❌:         // Scalar path: upper-triangle-only update (j >= i) followed by
+    // RDKit❗❌:         // explicit symmetrisation. This halves the number of Hessian writes
+    // RDKit❗❌:         // at the cost of one additional pass over a row to mirror elements.
+    // RDKit❗❌:         for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:           unsigned int itab = i * dim;
+    // RDKit❗❌:           double pxi = fac * xi[i], hdgi = fad * hessDGrad[i],
+    // RDKit❗❌:                  dgi = fae * dGrad[i];
+    // RDKit❗❌:           double *pxj = &(xi[i]), *hdgj = &(hessDGrad[i]), *dgj = &(dGrad[i]);
+    // RDKit❗❌:           for (unsigned int j = i; j < dim; ++j, ++pxj, ++hdgj, ++dgj) {
+    // RDKit❗❌:             invHessian[itab + j] += pxi * *pxj - hdgi * *hdgj + dgi * *dgj;
+    // RDKit❗❌:             invHessian[j * dim + i] = invHessian[itab + j];
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❌❌: #ifdef RDK_SVE_AVAILABLE
+    // RDKit❌❌:     if (cpuHasSVE()) {
+    // RDKit❌❌:       sveHessianVecMulNeg(dim, invHessian.data(), grad.data(), xi.data());
+    // RDKit❌❌:     } else
+    // RDKit❌❌: #endif
+    // RDKit❗❌:     {
+    // RDKit❗❌:       for (unsigned int i = 0; i < dim; i++) {
+    // RDKit❗❌:         unsigned int itab = i * dim;
+    // RDKit❗❌:         xi[i] = 0.0;
+    // RDKit❗❌:         double &pxi = xi[i];
+    // RDKit❗❌:         double *ivh = &(invHessian[itab]);
+    // RDKit❗❌:         double *gj = grad.data();
+    // RDKit❗❌:         for (unsigned int j = 0; j < dim; ++j, ++ivh, ++gj) {
+    // RDKit❗❌:           pxi -= *ivh * *gj;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (snapshotVect && snapshotFreq && !(iter % snapshotFreq)) {
+    // RDKit❗❌:       RDKit::Snapshot s(boost::shared_array<double>(newPos.release()), fp);
+    // RDKit❗❌:       snapshotVect->push_back(s);
+    // RDKit❗❌:       newPos.reset(new double[dim]);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return 1;
+    // RDKit❗❌: }
+    // END RECOVERY GEO-02 SOURCE minimize
+
     // BEGIN RDKIT CPP FUNCTION BFGSOpt::minimize snapshot overload (BFGSOpt.h:184-327)
     // RDKit✔️✔️: const int MAXITS = 200;   //!< Default maximum number of iterations
     // RDKit✔️✔️: const double EPS = 3e-8;  //!< Default gradient tolerance in the minimizer
@@ -176,7 +363,7 @@ where
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:     double gradScale = gradFunc(pos, grad.data());
     // RDKit✔️✔️:     test = 0.0;
-    // RDKit✔️✔️:     double term = std::max(funcVal * gradScale, 1.0);
+    // RDKit✔️✔️:     double term = std::max(fabs(funcVal) * gradScale, 1.0);
     // RDKit✔️✔️:     for (unsigned int i = 0; i < dim; i++) {
     // RDKit✔️✔️:       double temp = fabs(grad[i]) * std::max(fabs(pos[i]), 1.0);
     // RDKit✔️✔️:       test = std::max(test, temp);
@@ -322,7 +509,7 @@ where
 
         let grad_scale = grad_func(context, pos, &mut grad).map_err(OptimizerError::Evaluation)?;
         test = 0.0;
-        let func_term = *func_val * grad_scale;
+        let func_term = func_val.abs() * grad_scale;
         let term = if func_term < 1.0 { 1.0 } else { func_term };
         for i in 0..dim {
             let abs_pos = pos[i].abs();
@@ -575,6 +762,87 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recovery_geo02_energy_sign_gradient_scale_and_source_snapshot() {
+        for (offset, scale, status) in [
+            (-1000., 1., 0),
+            (1000., 1., 0),
+            (-9. / 128., 1., 1),
+            (-1., 1., 1),
+            (-1000., 0.0001, 1),
+            (1000., 0.0001, 1),
+            (-1000., 0.5, 0),
+            (-1000., 0., 1),
+        ] {
+            let mut pos = [1.];
+            let mut its = 0;
+            let mut value = 0.;
+            let mut snapshots = Vec::new();
+            let actual = minimize(
+                &mut (),
+                &mut pos,
+                0.001,
+                &mut its,
+                &mut value,
+                |_, p| Ok::<f64, Infallible>(0.125 * p[0] * p[0] + offset),
+                |_, p, g| {
+                    g[0] = 0.25 * p[0];
+                    Ok::<f64, Infallible>(scale)
+                },
+                1,
+                Some(&mut snapshots),
+                1e-6,
+                1,
+            )
+            .unwrap();
+            assert_eq!(actual, status, "offset={offset},scale={scale}");
+            assert_eq!(pos, [0.75]);
+            assert_eq!(its, 1);
+            assert_eq!(snapshots.len(), 1);
+            assert_eq!(snapshots[0].positions, vec![0.75]);
+            assert_eq!(snapshots[0].energy, 9. / 128. + offset);
+        }
+    }
+    #[test]
+    fn recovery_geo02_snapshot_frequency_zero_iteration_and_existing_prefix() {
+        for (cap, freq, status, count) in [(1, 0, 0, 0), (1, 1, 0, 1), (1, 2, 0, 1), (0, 1, 1, 0)] {
+            let mut pos = [1.];
+            let mut its = 0;
+            let mut value = 0.;
+            let mut snapshots = vec![OptimizerSnapshot {
+                positions: vec![42.],
+                energy: 42.,
+            }];
+            let actual = minimize(
+                &mut (),
+                &mut pos,
+                0.001,
+                &mut its,
+                &mut value,
+                |_, p| Ok::<f64, Infallible>(0.125 * p[0] * p[0] - 1000.),
+                |_, p, g| {
+                    g[0] = 0.25 * p[0];
+                    Ok::<f64, Infallible>(1.)
+                },
+                freq,
+                Some(&mut snapshots),
+                1e-6,
+                cap,
+            )
+            .unwrap();
+            assert_eq!(actual, status);
+            assert_eq!(pos, [if cap == 0 { 1. } else { 0.75 }]);
+            assert_eq!(snapshots.len(), 1 + count);
+            assert_eq!(snapshots[0].positions, vec![42.]);
+            assert_eq!(snapshots[0].energy, 42.);
+            if count > 0 {
+                assert_eq!(snapshots[1].positions, vec![0.75]);
+                assert_eq!(snapshots[1].energy, -999.9296875);
+            }
+        }
+    }
+
     use std::convert::Infallible;
 
     use super::{

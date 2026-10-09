@@ -381,6 +381,7 @@ fn chiral_state_stereo_groups_sgroups_and_old_bond_properties_are_preserved() {
             vec![AtomId::new(0)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(19),
     ];
     source.validate().unwrap();

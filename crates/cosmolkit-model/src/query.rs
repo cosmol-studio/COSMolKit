@@ -1798,6 +1798,7 @@ impl QueryGraph {
                     });
                 }
             }
+            group.validate_members()?;
         }
 
         let mut expected_adjacency = vec![Vec::new(); self.atoms.len()];
@@ -2225,9 +2226,11 @@ pub fn replace_query_stereo_groups(
                 });
             }
         }
+        group.validate_members()?;
     }
 
-    graph.stereo_groups = crate::merge_absolute_stereo_groups(groups);
+    let checked = crate::merge_absolute_stereo_groups(groups)?;
+    graph.stereo_groups = checked;
     Ok(())
 }
 
@@ -2286,6 +2289,9 @@ pub fn replace_query_substance_groups(
 /// Query graph construction failed because a graph-local constraint was invalid.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QueryGraphError {
+    #[error("{0}")]
+    StereoGroup(#[from] crate::StereoGroupError),
+
     #[error("query atom at position {position} has id {id}, expected {position}")]
     AtomIdMismatch { position: usize, id: AtomId },
     #[error("query atom {atom} has invalid template attachment order: {source}")]
@@ -2446,6 +2452,7 @@ mod tests {
                     vec![AtomId::new(0)],
                     vec![BondId::new(0)],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(7),
             ],
         )
@@ -2822,15 +2829,17 @@ mod tests {
         let replacement = vec![
             StereoGroup::new(
                 StereoGroupKind::Or,
-                vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)],
+                vec![AtomId::new(1), AtomId::new(0)],
                 vec![BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(12),
             StereoGroup::new(
                 StereoGroupKind::Absolute,
                 vec![AtomId::new(0), AtomId::new(1)],
                 Vec::new(),
-            ),
+            )
+            .expect("valid distinct stereo members"),
         ];
 
         replace_query_stereo_groups(&mut graph, replacement.clone())
@@ -2903,11 +2912,10 @@ mod tests {
 
         let result = replace_query_stereo_groups(
             &mut graph,
-            vec![StereoGroup::new(
-                StereoGroupKind::Absolute,
-                vec![AtomId::new(2)],
-                Vec::new(),
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(2)], Vec::new())
+                    .expect("valid distinct stereo members"),
+            ],
         );
 
         assert_eq!(
@@ -2927,11 +2935,10 @@ mod tests {
 
         let result = replace_query_stereo_groups(
             &mut graph,
-            vec![StereoGroup::new(
-                StereoGroupKind::Absolute,
-                Vec::new(),
-                vec![BondId::new(1)],
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(1)])
+                    .expect("valid distinct stereo members"),
+            ],
         );
 
         assert_eq!(
@@ -2987,11 +2994,10 @@ mod tests {
             BTreeMap::new(),
             Vec::new(),
             Vec::new(),
-            vec![StereoGroup::new(
-                StereoGroupKind::Absolute,
-                vec![AtomId::new(1)],
-                Vec::new(),
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(1)], Vec::new())
+                    .expect("valid distinct stereo members"),
+            ],
         );
         assert!(matches!(
             group_result,
@@ -3257,6 +3263,7 @@ mod source_romol_copy_complete_tests {
             ],
             vec![
                 StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+                    .expect("valid distinct stereo members")
                     .with_id(19)
                     .with_write_id(27),
             ],

@@ -132,10 +132,16 @@ fn expected_operation_methods() -> Vec<&'static str> {
         expected.push("with_assigned_radicals");
     }
     if cfg!(feature = "cap-rings") {
+        expected.push("with_assigned_rings");
+    }
+    if cfg!(feature = "cap-tautomer") {
         expected.extend([
-            "with_assigned_rings",
-            "with_assigned_ring_families_with_params",
+            "with_assigned_symm_sssr",
+            "with_installed_tautomer_score_cache",
         ]);
+    }
+    if cfg!(feature = "cap-rings") {
+        expected.push("with_assigned_ring_families_with_params");
     }
     if cfg!(feature = "cap-stereo") {
         expected.extend([

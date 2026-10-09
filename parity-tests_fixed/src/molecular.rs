@@ -533,6 +533,7 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
         }
         (Mqns { .. }, Outcome::UnsignedVector(values)) => values.len() == 42,
         (MolecularFormula { .. }, Outcome::Text(_)) => true,
+        (MurckoScaffold | NetScaffold | MurckoDecompose, Outcome::Text(_)) => true,
         (SvgDefault, Outcome::Text(svg)) => svg.contains("<svg") && svg.contains("</svg>"),
         (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
         (TotalAtomCount { .. }, Outcome::Unsigned(_)) => true,
@@ -1251,6 +1252,23 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     .num_heavy_atoms()
                     .map(Outcome::Unsigned)
                     .map_err(|e| e.to_string());
+            }
+            MurckoScaffold | NetScaffold | MurckoDecompose => {
+                let scaffold = match profile {
+                    MurckoScaffold => mol.murcko_scaffold(),
+                    NetScaffold => mol.net_scaffold(),
+                    MurckoDecompose => mol.murcko_decompose(),
+                    _ => unreachable!("enclosing scaffold profile"),
+                }
+                .map_err(|e| e.to_string())?;
+                return scaffold
+                    .to_smiles()
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| {
+                        String::from_utf8(text.into_bytes())
+                            .map(Outcome::Text)
+                            .map_err(|e| e.to_string())
+                    });
             }
             TotalAtomCount { .. } => {
                 return mol

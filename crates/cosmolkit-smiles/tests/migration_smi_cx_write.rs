@@ -497,6 +497,7 @@ fn cx_writer_clean_stereo_guard_and_group_cleanup_match_legacy_oracle() {
                 vec![AtomId::new(1), AtomId::new(6)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
         ];
         if done_marker {
@@ -553,8 +554,9 @@ fn cx_writer_stereo_group_ids_keep_type_namespaces_holes_and_tie_order() {
     ]
     .into_iter()
     .map(|(kind, read_id, write_id, atom)| {
-        let mut group =
-            StereoGroup::new(kind, vec![AtomId::new(atom)], Vec::new()).with_id(read_id);
+        let mut group = StereoGroup::new(kind, vec![AtomId::new(atom)], Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(read_id);
         set_stereo_group_write_id(&mut group, write_id);
         group
     })
@@ -611,9 +613,15 @@ fn cx_writer_enhanced_stereo_maps_atom_and_atrop_bond_members_in_group_order() {
     axis.set_stereo(BondStereo::AtropCw)
         .expect("set source atrop stereo");
     record.topology.stereo_groups = vec![
-        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(11)], Vec::new()).with_id(29),
-        StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![axis_id]).with_id(19),
-        StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new()).with_id(31),
+        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(11)], Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(29),
+        StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![axis_id])
+            .expect("valid distinct stereo members")
+            .with_id(19),
+        StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(31),
     ];
     let before = record.clone();
     let params = CxSmilesWriteParams {
@@ -687,7 +695,11 @@ fn cx_writer_enhanced_stereo_preserves_overlapping_groups_with_atrop_wedge_map()
         (StereoGroupKind::And, vec![AtomId::new(3)], Vec::new(), 11),
     ]
     .into_iter()
-    .map(|(kind, atoms, bonds, read_id)| StereoGroup::new(kind, atoms, bonds).with_id(read_id))
+    .map(|(kind, atoms, bonds, read_id)| {
+        StereoGroup::new(kind, atoms, bonds)
+            .expect("valid distinct stereo members")
+            .with_id(read_id)
+    })
     .collect();
     let before = record.clone();
     let params = CxSmilesWriteParams {
@@ -727,6 +739,7 @@ fn cx_writer_nonisomeric_mask_removes_stereo_extensions_but_keeps_base_write() {
             vec![AtomId::new(1), AtomId::new(6)],
             Vec::new(),
         )
+        .expect("valid distinct stereo members")
         .with_id(7),
     ];
     let before = record.clone();

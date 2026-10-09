@@ -450,16 +450,26 @@ fn parse_cx_extensions_progress_impl(
             continue;
         }
         if dispatch == CxDispatch::EnhancedStereo {
-            if let Err(error) =
-                parse_enhanced_stereo_progress(text, &mut cursor, &mut records, &mut checkpoints)
-            {
+            let mut source_warning = None;
+            let mut duplicate_atom = None;
+            if let Err(error) = parse_enhanced_stereo_progress(
+                text,
+                &mut cursor,
+                &mut records,
+                &mut checkpoints,
+                atom_window.as_ref(),
+                &mut source_warning,
+                &mut duplicate_atom,
+            ) {
                 return CxParseProgress::from_parts(
                     records,
                     checkpoints,
                     cursor,
                     false,
                     Some(error),
-                );
+                )
+                .with_source_warning(source_warning)
+                .with_enhanced_stereo_duplicate_atom(duplicate_atom);
             }
             continue;
         }
@@ -2303,88 +2313,97 @@ fn parse_enhanced_stereo_progress(
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
+    atom_window: Option<&std::ops::Range<u32>>,
+    source_warning: &mut Option<Vec<u8>>,
+    duplicate_atom: &mut Option<u32>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; Search lowering commits only after this helper):
-    /*
-    template <typename Iterator>
-    bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                               unsigned int startAtomIdx) {
-      StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
-      if (*first == 'a') {
-        group_type = StereoGroupType::STEREO_ABSOLUTE;
-      } else if (*first == 'o') {
-        group_type = StereoGroupType::STEREO_OR;
-      } else if (*first == '&') {
-        group_type = StereoGroupType::STEREO_AND;
-      }
-      ++first;
-
-      // OR and AND groups carry a group number
-      unsigned int group_id = 0;
-      if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
-        read_int(first, last, group_id);
-      }
-
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-
-      std::vector<Atom *> atoms;
-      std::vector<Bond *> bonds;
-
-      while (first <= last && *first >= '0' && *first <= '9') {
-        unsigned int aidx;
-        if (read_int(first, last, aidx)) {
-          if (VALID_ATIDX(aidx)) {
-            Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
-            if (!atom) {
-              BOOST_LOG(rdWarningLog)
-                  << "Atom " << aidx << " not found!" << std::endl;
-              return false;
-            }
-            atoms.push_back(atom);
-          }
-        } else {
-          return false;
-        }
-
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      if (!atoms.empty()) {
-        // we need to do a bit of work to check whether or not we've already seen
-        // this particular StereoGroup (was Github #6050)
-        const auto group_hash =
-            10 * group_id + static_cast<unsigned int>(group_type);
-        std::vector<unsigned int> sgTracker;
-        mol.getPropIfPresent(cxsgTracker, sgTracker);
-        std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
-        TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
-
-        auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
-        if (iter != sgTracker.end()) {
-          auto index = iter - sgTracker.begin();
-          auto gAtoms = mol_stereo_groups[index].getAtoms();
-          gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
-          mol_stereo_groups[index] =
-              StereoGroup(mol_stereo_groups[index].getGroupType(),
-                          std::move(gAtoms), std::move(bonds), group_id);
-        } else {
-          // not seen this before, create a new stereogroup
-          mol_stereo_groups.emplace_back(group_type, std::move(atoms),
-                                         std::move(bonds), group_id);
-          sgTracker.push_back(group_hash);
-          mol.setProp(cxsgTracker, sgTracker);
-        }
-
-        mol.setStereoGroups(std::move(mol_stereo_groups));
-      }
-
-      return true;
-    }
-        */
+    // BEGIN COMPLETE RDKit .6 parser::parse_enhanced_stereo<Iterator>
+    // RDKit❗❌: template <typename Iterator>
+    // RDKit❗❌: bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗❌:                            unsigned int startAtomIdx) {
+    // RDKit❗❌:   StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗❌:   if (*first == 'a') {
+    // RDKit❗❌:     group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗❌:   } else if (*first == 'o') {
+    // RDKit❗❌:     group_type = StereoGroupType::STEREO_OR;
+    // RDKit❗❌:   } else if (*first == '&') {
+    // RDKit❗❌:     group_type = StereoGroupType::STEREO_AND;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   ++first;
+    // RDKit❗❌:
+    // RDKit❗❌:   // OR and AND groups carry a group number
+    // RDKit❗❌:   unsigned int group_id = 0;
+    // RDKit❗❌:   if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗❌:     read_int(first, last, group_id);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (first >= last || *first != ':') {
+    // RDKit❗❌:     return false;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   ++first;
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<Atom *> atoms;
+    // RDKit❗❌:   std::vector<Bond *> bonds;
+    // RDKit❗❌:
+    // RDKit❗❌:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit❗❌:     unsigned int aidx;
+    // RDKit❗❌:     if (read_int(first, last, aidx)) {
+    // RDKit❗❌:       if (VALID_ATIDX(aidx)) {
+    // RDKit❗❌:         Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
+    // RDKit❗❌:         if (!atom) {
+    // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:               << "Atom " << aidx << " not found!" << std::endl;
+    // RDKit❗❌:           return false;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (std::ranges::find(atoms, atom) != atoms.end()) {
+    // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:               << "Atom " << aidx
+    // RDKit❗❌:               << " appears more than once in stereo group specification!"
+    // RDKit❗❌:               << std::endl;
+    // RDKit❗❌:           return false;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         atoms.push_back(atom);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       return false;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (first < last && *first == ',') {
+    // RDKit❗❌:       ++first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!atoms.empty()) {
+    // RDKit❗❌:     // we need to do a bit of work to check whether or not we've already seen
+    // RDKit❗❌:     // this particular StereoGroup (was Github #6050)
+    // RDKit❗❌:     const auto group_hash =
+    // RDKit❗❌:         10 * group_id + static_cast<unsigned int>(group_type);
+    // RDKit❗❌:     std::vector<unsigned int> sgTracker;
+    // RDKit❗❌:     mol.getPropIfPresent(cxsgTracker, sgTracker);
+    // RDKit❗❌:     std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
+    // RDKit❗❌:     TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
+    // RDKit❗❌:
+    // RDKit❗❌:     auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
+    // RDKit❗❌:     if (iter != sgTracker.end()) {
+    // RDKit❗❌:       auto index = iter - sgTracker.begin();
+    // RDKit❗❌:       auto gAtoms = mol_stereo_groups[index].getAtoms();
+    // RDKit❗❌:       gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
+    // RDKit❗❌:       mol_stereo_groups[index] =
+    // RDKit❗❌:           StereoGroup(mol_stereo_groups[index].getGroupType(),
+    // RDKit❗❌:                       std::move(gAtoms), std::move(bonds), group_id);
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       // not seen this before, create a new stereogroup
+    // RDKit❗❌:       mol_stereo_groups.emplace_back(group_type, std::move(atoms),
+    // RDKit❗❌:                                      std::move(bonds), group_id);
+    // RDKit❗❌:       sgTracker.push_back(group_hash);
+    // RDKit❗❌:       mol.setProp(cxsgTracker, sgTracker);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     mol.setStereoGroups(std::move(mol_stereo_groups));
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   return true;
+    // RDKit❗❌: }
+    // END COMPLETE RDKit .6 parser::parse_enhanced_stereo<Iterator>
     // RDKit❗❌: the CX parser preserves each ordered member on failure; one
     // progress checkpoint per parsed index adds linear storage so Search can
     // defer the group effect until the pinned helper's completion point.
@@ -2419,6 +2438,25 @@ fn parse_enhanced_stereo_progress(
         let atom = read_number(text, cursor)?;
         let item_index = match &mut records[record_index] {
             CxRecord::EnhancedStereo(stereo) => {
+                // Source read_int is u32. Existing usize lexical/lowering behavior
+                // outside this legal domain is unchanged, not silently wrapped.
+                let source_atom = u32::try_from(atom).ok();
+                let valid = source_atom
+                    .is_some_and(|index| atom_window.is_none_or(|window| window.contains(&index)));
+                if valid && stereo.atoms.contains(&atom) {
+                    let index = source_atom.expect("valid source atom is representable");
+                    *duplicate_atom = Some(index);
+                    *source_warning = Some(
+                        format!(
+                            "Atom {index} appears more than once in stereo group specification!\n"
+                        )
+                        .into_bytes(),
+                    );
+                    return Err(CxParseError::new(
+                        *cursor,
+                        "failure parsing CXSMILES extensions",
+                    ));
+                }
                 let item_index = stereo.atoms.len();
                 stereo.atoms.push(atom);
                 item_index

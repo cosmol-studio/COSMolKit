@@ -1,4 +1,19 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+test('Scaffold values preserve the distinct pinned Murcko semantics and their input',()=>{
+ for (const [text,expected] of [
+  ['', ['', '', '']],
+  ['CCO', ['', '', '']],
+  ['Cc1ccccc1', ['c1ccccc1', '*c1ccccc1', 'c1ccccc1']],
+  ['O=C1CCCCC1', ['C1CCCCC1', '*=C1CCCCC1', 'O=C1CCCCC1']],
+  ['C[C@H]1CCCCO1', ['C1CCOCC1', '*[C@H]1CCCCO1', 'C1CCOCC1']],
+ ]) {
+  const mol=b.Molecule.fromSmiles(text), before=mol.toSmiles();
+  for (const [i,name] of ['murckoScaffold','netScaffold','murckoDecompose'].entries()) {
+   const output=mol[name](); assert.ok(output instanceof b.Molecule);
+   assert.equal(output.toSmiles(),expected[i]); assert.equal(mol.toSmiles(),before);
+  }
+ }
+});
 test('Both hash APIs retain full u64 bigint and read-only state with checked unsigned rank transport',()=>{
  for(const text of ['CCO','c1ccccc1','[NH4+]','C[C@H](O)F']){const m=b.Molecule.fromSmiles(text),before=m.toSmiles(),hash=m.molecularHash();assert.equal(typeof hash,'bigint');assert.ok(hash>=0n&&hash<=0xffffffffffffffffn);assert.equal(hash,m.molecularHash());const ranks=Array.from({length:m.numAtoms()},(_,i)=>0xffffffff-i);assert.equal(m.molecularHashWithRanks(ranks),m.molecularHashWithRanks(new Uint32Array(ranks)));assert.equal(typeof m.molecularHashWithRanks(ranks),'bigint');assert.equal(m.toSmiles(),before);}
  const m=b.Molecule.fromSmiles('CCO');for(const ranks of [[-1,0,1],[0,1,2**32],[0,1,1.5]])assert.throws(()=>m.molecularHashWithRanks(ranks),RangeError);assert.throws(()=>m.molecularHashWithRanks(['0',1,2]),TypeError);assert.throws(()=>m.molecularHashWithRanks(null),TypeError);

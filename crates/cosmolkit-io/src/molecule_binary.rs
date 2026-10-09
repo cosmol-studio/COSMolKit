@@ -51,6 +51,9 @@ const MAX_DERIVED_ROWS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PickleError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("unexpected end of data while reading pickle")]
     UnexpectedEof,
     #[error("unsupported pickle version: {0}")]
@@ -2611,7 +2614,7 @@ fn mol_from_legacy_binary_with_provenance(
         for _ in 0..bond_count_sg {
             bonds_sg.push(BondId::new(r.read_u32()? as usize));
         }
-        let mut sg = StereoGroup::new(kind, atoms_sg, bonds_sg);
+        let mut sg = StereoGroup::new(kind, atoms_sg, bonds_sg)?;
         if let Some(id) = sg_id {
             sg = sg.with_id(id);
         }
@@ -4364,8 +4367,9 @@ mod tests {
             ))
             .unwrap();
 
-        let sg =
-            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![]).with_id(1);
+        let sg = StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![])
+            .expect("valid distinct stereo members")
+            .with_id(1);
         builder.add_stereo_group(sg).unwrap();
 
         let mol = builder.build().expect("build molecule");
@@ -4662,6 +4666,7 @@ mod tests {
         );
         mol.topology.stereo_groups.push(
             StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![])
+                .expect("valid distinct stereo members")
                 .with_id(4)
                 .with_write_id(17),
         );

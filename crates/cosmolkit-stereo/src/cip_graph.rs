@@ -51,6 +51,8 @@ pub enum CipLabelerError {
     UnexpectedUpEdgeOrdering,
     #[error("No sequence rule provided")]
     NoSequenceRuleProvided,
+    #[error("Cannot get a reference from an empty PairList")]
+    EmptyPairListReference,
     #[error("Descriptor lists should be the same length!")]
     DescriptorListLengthMismatch,
     #[error("Invalid stereo descriptor")]
@@ -179,7 +181,6 @@ fn rdkit_atomic_mass(atomic_number: u8, isotope: Option<u16>) -> Result<f64, Cip
 }
 
 type CipSourceIndex = u32;
-type CipPairing = u64;
 
 const CIP_NO_ATOM: CipSourceIndex = CipSourceIndex::MAX;
 
@@ -1757,7 +1758,6 @@ impl CipSequenceRule for CipRule3 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CipPairList {
     descriptors: Vec<Descriptor>,
-    pairing: CipPairing,
 }
 
 impl Default for CipPairList {
@@ -1767,28 +1767,23 @@ impl Default for CipPairList {
 }
 
 impl CipPairList {
-    const NUM_PAIRING_BITS: usize = 64;
-
-    // BEGIN RDKIT CPP CLASS PairList (rules/Pairlist.h)
-    // RDKit✔️✔️: using pairing_t = std::uint64_t;
-    // RDKit✔️✔️: static constexpr int numPairingBits = sizeof(pairing_t) * 8;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️: static Descriptor ref(Descriptor descriptor) {
-    // RDKit✔️✔️:   switch (descriptor) {
-    // RDKit✔️✔️:     case Descriptor::R:
-    // RDKit✔️✔️:     case Descriptor::M:
-    // RDKit✔️✔️:     case Descriptor::seqCis:
-    // RDKit✔️✔️:       return Descriptor::R;
-    // RDKit✔️✔️:     case Descriptor::S:
-    // RDKit✔️✔️:     case Descriptor::P:
-    // RDKit✔️✔️:     case Descriptor::seqTrans:
-    // RDKit✔️✔️:       return Descriptor::S;
-    // RDKit✔️✔️:     default:
-    // RDKit✔️✔️:       return Descriptor::NONE;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP CLASS PairList ref
     pub(crate) fn ref_descriptor(descriptor: Descriptor) -> Descriptor {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::ref
+        // RDKit✔️✔️:   static Descriptor ref(Descriptor descriptor) {
+        // RDKit✔️✔️:     switch (descriptor) {
+        // RDKit✔️✔️:       case Descriptor::R:
+        // RDKit✔️✔️:       case Descriptor::M:
+        // RDKit✔️✔️:       case Descriptor::seqCis:
+        // RDKit✔️✔️:         return Descriptor::R;
+        // RDKit✔️✔️:       case Descriptor::S:
+        // RDKit✔️✔️:       case Descriptor::P:
+        // RDKit✔️✔️:       case Descriptor::seqTrans:
+        // RDKit✔️✔️:         return Descriptor::S;
+        // RDKit✔️✔️:       default:
+        // RDKit✔️✔️:         return Descriptor::NONE;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::ref
         match descriptor {
             Descriptor::R | Descriptor::M | Descriptor::seqCis => Descriptor::R,
             Descriptor::S | Descriptor::P | Descriptor::seqTrans => Descriptor::S,
@@ -1796,62 +1791,71 @@ impl CipPairList {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList constructors (rules/Pairlist.h)
-    // RDKit✔️✔️: PairList() = default;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️: PairList(Descriptor ref) { add(ref); }
-    // END RDKIT CPP FUNCTION PairList constructors
     pub(crate) fn new() -> Self {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::PairList()
+        // RDKit✔️✔️:   PairList() = default;
+        // END RDKit 2026.03.6 COMPLETE PairList::PairList()
         Self {
             descriptors: Vec::new(),
-            pairing: 0,
         }
     }
 
     pub(crate) fn with_ref(ref_descriptor: Descriptor) -> Self {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::PairList(Descriptor)
+        // RDKit✔️✔️:   PairList(Descriptor ref) { add(ref); }
+        // END RDKit 2026.03.6 COMPLETE PairList::PairList(Descriptor)
         let mut result = Self::new();
         result.add(ref_descriptor);
         result
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::PairList(head, tail) (rules/Pairlist.h)
-    // RDKit✔️✔️: PairList(const PairList &head, const PairList &tail) {
-    // RDKit✔️✔️:   // add descriptors to the new instance (ignored descriptors not added)
-    // RDKit✔️✔️:   addAll(head.d_descriptors);
-    // RDKit✔️✔️:   addAll(tail.d_descriptors);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION PairList::PairList(head, tail)
     pub(crate) fn from_head_tail(head: &Self, tail: &Self) -> Self {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::PairList(head,tail)
+        // RDKit✔️✔️:   PairList(const PairList &head, const PairList &tail) {
+        // RDKit✔️✔️:     // add descriptors to the new instance (ignored descriptors not added)
+        // RDKit✔️✔️:     addAll(head.d_descriptors);
+        // RDKit✔️✔️:     addAll(tail.d_descriptors);
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::PairList(head,tail)
         let mut result = Self::new();
         result.add_all(&head.descriptors);
         result.add_all(&tail.descriptors);
         result
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::getRefDescriptor (rules/Pairlist.h)
-    // RDKit✔️✔️: Descriptor getRefDescriptor() const { return ref(d_descriptors[0]); }
-    // END RDKIT CPP FUNCTION PairList::getRefDescriptor
-    pub(crate) fn get_ref_descriptor(&self) -> Descriptor {
-        Self::ref_descriptor(self.descriptors[0])
+    pub(crate) fn get_ref_descriptor(&self) -> Result<Descriptor, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::getRefDescriptor
+        // RDKit✔️✔️:   Descriptor getRefDescriptor() const {
+        // RDKit✔️✔️:     if (d_descriptors.empty()) {
+        // RDKit✔️✔️:       throw std::runtime_error("Cannot get a reference from an empty PairList");
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     return ref(d_descriptors[0]);
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::getRefDescriptor
+        self.descriptors
+            .first()
+            .copied()
+            .map(Self::ref_descriptor)
+            .ok_or(CipLabelerError::EmptyPairListReference)
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::add (rules/Pairlist.h)
-    // RDKit✔️✔️: bool add(Descriptor descriptor) {
-    // RDKit✔️✔️:   switch (descriptor) {
-    // RDKit✔️✔️:     case Descriptor::R:
-    // RDKit✔️✔️:     case Descriptor::S:
-    // RDKit✔️✔️:     case Descriptor::M:
-    // RDKit✔️✔️:     case Descriptor::P:
-    // RDKit✔️✔️:     case Descriptor::seqTrans:
-    // RDKit✔️✔️:     case Descriptor::seqCis:
-    // RDKit✔️✔️:       addAndPair(descriptor);
-    // RDKit✔️✔️:       return true;
-    // RDKit✔️✔️:     default:
-    // RDKit✔️✔️:       return false;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION PairList::add
     pub(crate) fn add(&mut self, descriptor: Descriptor) -> bool {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::add
+        // RDKit✔️✔️:   bool add(Descriptor descriptor) {
+        // RDKit✔️✔️:     switch (descriptor) {
+        // RDKit✔️✔️:       case Descriptor::R:
+        // RDKit✔️✔️:       case Descriptor::S:
+        // RDKit✔️✔️:       case Descriptor::M:
+        // RDKit✔️✔️:       case Descriptor::P:
+        // RDKit✔️✔️:       case Descriptor::seqTrans:
+        // RDKit✔️✔️:       case Descriptor::seqCis:
+        // RDKit✔️✔️:         d_descriptors.push_back(ref(descriptor));
+        // RDKit✔️✔️:         return true;
+        // RDKit✔️✔️:       default:
+        // RDKit✔️✔️:         return false;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::add
         match descriptor {
             Descriptor::R
             | Descriptor::S
@@ -1859,57 +1863,54 @@ impl CipPairList {
             | Descriptor::P
             | Descriptor::seqTrans
             | Descriptor::seqCis => {
-                self.add_and_pair(descriptor);
+                self.descriptors.push(Self::ref_descriptor(descriptor));
                 true
             }
             _ => false,
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::addAll (rules/Pairlist.h)
-    // RDKit✔️✔️: template <typename T>
-    // RDKit✔️✔️: void addAll(const T &descriptors) {
-    // RDKit✔️✔️:   for (const auto &descriptor : descriptors) {
-    // RDKit✔️✔️:     add(descriptor);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION PairList::addAll
     pub(crate) fn add_all(&mut self, descriptors: &[Descriptor]) {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::addAll
+        // RDKit✔️✔️:   template <typename T>
+        // RDKit✔️✔️:   void addAll(const T &descriptors) {
+        // RDKit✔️✔️:     for (const auto &descriptor : descriptors) {
+        // RDKit✔️✔️:       add(descriptor);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::addAll
         for descriptor in descriptors {
             self.add(*descriptor);
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::getPairing (rules/Pairlist.h)
-    // RDKit✔️✔️: pairing_t getPairing() const { return d_pairing; }
-    // END RDKIT CPP FUNCTION PairList::getPairing
-    pub(crate) fn get_pairing(&self) -> CipPairing {
-        self.pairing
-    }
-
-    // BEGIN RDKIT CPP FUNCTION PairList::compareTo/operator< (rules/Pairlist.h)
-    // RDKit✔️✔️: int compareTo(const PairList &that) const {
-    // RDKit✔️✔️:   if (d_descriptors.size() != that.d_descriptors.size()) {
-    // RDKit✔️✔️:     throw std::runtime_error("Descriptor lists should be the same length!");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   Descriptor thisRef = d_descriptors[0];
-    // RDKit✔️✔️:   Descriptor thatRef = that.d_descriptors[0];
-    // RDKit✔️✔️:   for (auto i = 1u; i < d_descriptors.size(); ++i) {
-    // RDKit✔️✔️:     if (thisRef == d_descriptors[i] && thatRef != that.d_descriptors[i]) {
-    // RDKit✔️✔️:       return +1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (thisRef != d_descriptors[i] && thatRef == that.d_descriptors[i]) {
-    // RDKit✔️✔️:       return -1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return 0;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️: bool operator<(const PairList &that) const { return compareTo(that) == -1; }
-    // END RDKIT CPP FUNCTION PairList::compareTo/operator<
     pub(crate) fn compare_to(&self, that: &Self) -> Result<i32, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::compareTo
+        // RDKit✔️✔️:   int compareTo(const PairList &that) const {
+        // RDKit✔️✔️:     if (d_descriptors.size() != that.d_descriptors.size()) {
+        // RDKit✔️✔️:       throw std::runtime_error("Descriptor lists should be the same length!");
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (d_descriptors.empty()) {
+        // RDKit✔️✔️:       return 0;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     Descriptor thisRef = d_descriptors[0];
+        // RDKit✔️✔️:     Descriptor thatRef = that.d_descriptors[0];
+        // RDKit✔️✔️:     for (auto i = 1u; i < d_descriptors.size(); ++i) {
+        // RDKit✔️✔️:       if (thisRef == d_descriptors[i] && thatRef != that.d_descriptors[i]) {
+        // RDKit✔️✔️:         return +1;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (thisRef != d_descriptors[i] && thatRef == that.d_descriptors[i]) {
+        // RDKit✔️✔️:         return -1;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     return 0;
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::compareTo
         if self.descriptors.len() != that.descriptors.len() {
             return Err(CipLabelerError::DescriptorListLengthMismatch);
+        }
+        if self.descriptors.is_empty() {
+            return Ok(0);
         }
         let this_ref = self.descriptors[0];
         let that_ref = that.descriptors[0];
@@ -1925,6 +1926,9 @@ impl CipPairList {
     }
 
     pub(crate) fn less_than(&self, that: &Self) -> Result<bool, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::operator<
+        // RDKit✔️✔️:   bool operator<(const PairList &that) const { return compareTo(that) == -1; }
+        // END RDKit 2026.03.6 COMPLETE PairList::operator<
         Ok(self.compare_to(that)? == -1)
     }
 
@@ -1947,28 +1951,28 @@ impl CipPairList {
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION PairList::toString (rules/Pairlist.h)
-    // RDKit✔️✔️: std::string toString() const {
-    // RDKit✔️✔️:   // handles cases that would break the toString method
-    // RDKit✔️✔️:   if (d_descriptors.empty() || d_descriptors[0] == Descriptor::NONE) {
-    // RDKit✔️✔️:     return "";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::stringstream ss;
-    // RDKit✔️✔️:   auto basis = d_descriptors[0];
-    // RDKit✔️✔️:   ss << to_string(basis) << ':';
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   basis = ref(basis);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // build like (l) / unlike (u) descriptor pairing
-    // RDKit✔️✔️:   for (auto it = d_descriptors.begin() + 1; it != d_descriptors.end(); ++it) {
-    // RDKit✔️✔️:     ss << (basis == ref(*it) ? "l" : "u");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   return ss.str();
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION PairList::toString
     pub(crate) fn to_rdkit_string(&self) -> String {
+        // BEGIN RDKit 2026.03.6 COMPLETE PairList::toString
+        // RDKit✔️✔️:   std::string toString() const {
+        // RDKit✔️✔️:     // handles cases that would break the toString method
+        // RDKit✔️✔️:     if (d_descriptors.empty() || d_descriptors[0] == Descriptor::NONE) {
+        // RDKit✔️✔️:       return "";
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     std::stringstream ss;
+        // RDKit✔️✔️:     auto basis = d_descriptors[0];
+        // RDKit✔️✔️:     ss << to_string(basis) << ':';
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     basis = ref(basis);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // build like (l) / unlike (u) descriptor pairing
+        // RDKit✔️✔️:     for (auto it = d_descriptors.begin() + 1; it != d_descriptors.end(); ++it) {
+        // RDKit✔️✔️:       ss << (basis == ref(*it) ? "l" : "u");
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     return ss.str();
+        // RDKit✔️✔️:   }
+        // END RDKit 2026.03.6 COMPLETE PairList::toString
         if self.descriptors.is_empty() || self.descriptors[0] == Descriptor::None {
             return String::new();
         }
@@ -1987,24 +1991,6 @@ impl CipPairList {
             });
         }
         result
-    }
-
-    // BEGIN RDKIT CPP FUNCTION PairList::addAndPair (rules/Pairlist.h)
-    // RDKit✔️✔️: void addAndPair(Descriptor descriptor) {
-    // RDKit✔️✔️:   // if this isn't the first descriptor - check the pairing
-    // RDKit✔️✔️:   if (!d_descriptors.empty() && d_descriptors[0] == descriptor) {
-    // RDKit✔️✔️:     // set the bit to indicate a pair
-    // RDKit✔️✔️:     d_pairing |= static_cast<pairing_t>(1)
-    // RDKit✔️✔️:                  << (numPairingBits - 1 - d_descriptors.size());
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   d_descriptors.push_back(ref(descriptor));
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION PairList::addAndPair
-    fn add_and_pair(&mut self, descriptor: Descriptor) {
-        if !self.descriptors.is_empty() && self.descriptors[0] == descriptor {
-            self.pairing |= 1_u64 << (Self::NUM_PAIRING_BITS - 1 - self.descriptors.len());
-        }
-        self.descriptors.push(Self::ref_descriptor(descriptor));
     }
 }
 
@@ -2434,7 +2420,25 @@ impl CipRule4b {
         beg: CipNodeId,
         plist: &mut CipPairList,
     ) -> Result<(), CipLabelerError> {
-        let replacement_rule = CipRule4b::with_ref(plist.get_ref_descriptor());
+        // BEGIN RDKit 2026.03.6 COMPLETE Rule4b::fillPairs
+        // RDKit❗❌: void Rule4b::fillPairs(const Node *beg, PairList &plist) const {
+        // RDKit❗❌:   const Rule4b replacement_rule(plist.getRefDescriptor());
+        // RDKit❗❌:   const auto &sorter = getRefSorter(&replacement_rule);
+        // RDKit❗❌:   auto queue = std::list<const Node *>({beg});
+        // RDKit❗❌:
+        // RDKit❗❌:   for (const auto &node : queue) {
+        // RDKit❗❌:     plist.add(node->getAux());
+        // RDKit❗❌:     auto edges = node->getEdges();
+        // RDKit❗❌:     sorter.prioritize(node, edges);
+        // RDKit❗❌:     for (const auto &edge : edges) {
+        // RDKit❗❌:       if (edge->isBeg(node) && !edge->getEnd()->isTerminal()) {
+        // RDKit❗❌:         queue.push_back(edge->getEnd());
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RDKit 2026.03.6 COMPLETE Rule4b::fillPairs
+        let replacement_rule = CipRule4b::with_ref(plist.get_ref_descriptor()?);
         let ref_sort_rules = self.get_ref_sorter(sort_rules, &replacement_rule)?;
         let sorter = CipSort::from_rules(ref_sort_rules);
         let mut queue = vec![beg];
@@ -2678,6 +2682,65 @@ impl CipSequenceRule for CipRule4b {
         a: CipEdgeId,
         b: CipEdgeId,
     ) -> Result<i32, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE Rule4b::compare
+        // RDKit❗❌: int Rule4b::compare(const Edge *a, const Edge *b) const {
+        // RDKit❗❌:   const auto &aBeg = a->getBeg();
+        // RDKit❗❌:   const auto &aEnd = a->getEnd();
+        // RDKit❗❌:   const auto &bBeg = b->getBeg();
+        // RDKit❗❌:   const auto &bEnd = b->getEnd();
+        // RDKit❗❌:   if (aBeg->getDigraph()->getCurrentRoot() != aBeg ||
+        // RDKit❗❌:       bBeg->getDigraph()->getCurrentRoot() != bBeg) {
+        // RDKit❗❌:     if (d_ref == Descriptor::NONE) {
+        // RDKit❗❌:       return 0;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     Descriptor aDesc = aEnd->getAux();
+        // RDKit❗❌:     Descriptor bDesc = bEnd->getAux();
+        // RDKit❗❌:     if (aDesc != Descriptor::NONE && bDesc != Descriptor::NONE &&
+        // RDKit❗❌:         aDesc != Descriptor::ns && bDesc != Descriptor::ns) {
+        // RDKit❗❌:       bool alike = PairList::ref(d_ref) == PairList::ref(aDesc);
+        // RDKit❗❌:       bool blike = PairList::ref(d_ref) == PairList::ref(bDesc);
+        // RDKit❗❌:       if (alike && !blike) {
+        // RDKit❗❌:         return +1;
+        // RDKit❗❌:       }
+        // RDKit❗❌:       if (blike && !alike) {
+        // RDKit❗❌:         return -1;
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:     return 0;
+        // RDKit❗❌:   } else {
+        // RDKit❗❌:     auto list1 = newPairLists(getReferenceDescriptors(aEnd));
+        // RDKit❗❌:
+        // RDKit❗❌:     auto list2 = newPairLists(getReferenceDescriptors(bEnd));
+        // RDKit❗❌:
+        // RDKit❗❌:     if (list1.empty() != list2.empty()) {
+        // RDKit❗❌:       throw std::runtime_error(
+        // RDKit❗❌:           "Substituents should be topologically equivalent!");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (list1.size() == 1) {
+        // RDKit❗❌:       return comparePairs(aEnd, bEnd, list1[0].getRefDescriptor(),
+        // RDKit❗❌:                           list2[0].getRefDescriptor());
+        // RDKit❗❌:     } else if (list1.size() > 1) {
+        // RDKit❗❌:       for (auto &plist : list1) {
+        // RDKit❗❌:         fillPairs(aEnd, plist);
+        // RDKit❗❌:       }
+        // RDKit❗❌:       for (auto &plist : list2) {
+        // RDKit❗❌:         fillPairs(bEnd, plist);
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       std::sort(list1.rbegin(), list1.rend());
+        // RDKit❗❌:       std::sort(list2.rbegin(), list2.rend());
+        // RDKit❗❌:
+        // RDKit❗❌:       for (auto i = 0u; i < list1.size(); ++i) {
+        // RDKit❗❌:         int cmp = list1[i].compareTo(list2[i]);
+        // RDKit❗❌:         if (cmp != 0) {
+        // RDKit❗❌:           return cmp;
+        // RDKit❗❌:         }
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:     return 0;
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RDKit 2026.03.6 COMPLETE Rule4b::compare
         let a_beg = digraph.edge(a).get_beg();
         let a_end = digraph.edge(a).get_end();
         let b_beg = digraph.edge(b).get_beg();
@@ -2723,8 +2786,8 @@ impl CipSequenceRule for CipRule4b {
                 context,
                 a_end,
                 b_end,
-                list1[0].get_ref_descriptor(),
-                list2[0].get_ref_descriptor(),
+                list1[0].get_ref_descriptor()?,
+                list2[0].get_ref_descriptor()?,
             )
         } else if list1.len() > 1 {
             for plist in &mut list1 {
@@ -2856,7 +2919,25 @@ impl CipRule5New {
         beg: CipNodeId,
         plist: &mut CipPairList,
     ) -> Result<(), CipLabelerError> {
-        let replacement_rule = CipRule5New::with_ref(plist.get_ref_descriptor());
+        // BEGIN RDKit 2026.03.6 COMPLETE Rule5New::fillPairs
+        // RDKit❗❌: void Rule5New::fillPairs(const Node *beg, PairList &plist) const {
+        // RDKit❗❌:   const Rule5New replacement_rule(plist.getRefDescriptor());
+        // RDKit❗❌:   const auto &sorter = getRefSorter(&replacement_rule);
+        // RDKit❗❌:   auto queue = std::list<const Node *>({beg});
+        // RDKit❗❌:
+        // RDKit❗❌:   for (const auto &node : queue) {
+        // RDKit❗❌:     plist.add(node->getAux());
+        // RDKit❗❌:     auto edges = node->getEdges();
+        // RDKit❗❌:     sorter.prioritize(node, edges);
+        // RDKit❗❌:     for (const auto &edge : edges) {
+        // RDKit❗❌:       if (edge->isBeg(node) && !edge->getEnd()->isTerminal()) {
+        // RDKit❗❌:         queue.push_back(edge->getEnd());
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RDKit 2026.03.6 COMPLETE Rule5New::fillPairs
+        let replacement_rule = CipRule5New::with_ref(plist.get_ref_descriptor()?);
         let ref_sort_rules = self.get_ref_sorter(sort_rules, &replacement_rule)?;
         let sorter = CipSort::from_rules(ref_sort_rules);
         let mut queue = vec![beg];
@@ -3048,25 +3129,6 @@ impl CipSequenceRule for CipRule5New {
 pub(crate) struct CipRule6;
 
 impl CipSequenceRule for CipRule6 {
-    // BEGIN RDKIT CPP FUNCTION Rule6::compare (rules/Rule6.cpp)
-    // RDKit✔️✔️: Rule6::Rule6() = default;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️: int Rule6::compare(const Edge *a, const Edge *b) const {
-    // RDKit✔️✔️:   const auto &digraph = a->getBeg()->getDigraph();
-    // RDKit✔️✔️:   const auto &ref = digraph->getRule6Ref();
-    // RDKit✔️✔️:   if (ref == nullptr) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const auto &aAtom = a->getEnd()->getAtom();
-    // RDKit✔️✔️:   const auto &bAtom = b->getEnd()->getAtom();
-    // RDKit✔️✔️:   if (ref == aAtom && ref != bAtom) {
-    // RDKit✔️✔️:     return +1;  // a is ref (has priority)
-    // RDKit✔️✔️:   } else if (ref != aAtom && ref == bAtom) {
-    // RDKit✔️✔️:     return -1;  // b is ref (has priority)
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return 0;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Rule6::compare
     fn compare(
         &self,
         digraph: &mut CipDigraph<'_>,
@@ -3074,15 +3136,32 @@ impl CipSequenceRule for CipRule6 {
         a: CipEdgeId,
         b: CipEdgeId,
     ) -> Result<i32, CipLabelerError> {
+        // BEGIN RDKit 2026.03.6 COMPLETE Rule6::compare
+        // RDKit✔️✔️: int Rule6::compare(const Edge *a, const Edge *b) const {
+        // RDKit✔️✔️:   const auto &digraph = a->getBeg()->getDigraph();
+        // RDKit✔️✔️:   const auto &ref = digraph->getRule6Ref();
+        // RDKit✔️✔️:   if (ref == nullptr) {
+        // RDKit✔️✔️:     return 0;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   const auto &aAtom = a->getEnd()->getAtom();
+        // RDKit✔️✔️:   const auto &bAtom = b->getEnd()->getAtom();
+        // RDKit✔️✔️:   if (ref == aAtom && ref != bAtom) {
+        // RDKit✔️✔️:     return +2;  // a is ref (has priority and Rule 6 follows Rule 5)
+        // RDKit✔️✔️:   } else if (ref != aAtom && ref == bAtom) {
+        // RDKit✔️✔️:     return -2;  // b is ref (has priority and Rule 6 follows Rule 5)
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return 0;
+        // RDKit✔️✔️: }
+        // END RDKit 2026.03.6 COMPLETE Rule6::compare
         let Some(ref_atom) = digraph.get_rule6_ref() else {
             return Ok(0);
         };
         let a_atom = digraph.node(digraph.edge(a).get_end()).atom_idx();
         let b_atom = digraph.node(digraph.edge(b).get_end()).atom_idx();
         if Some(ref_atom) == a_atom && Some(ref_atom) != b_atom {
-            Ok(1)
+            Ok(2)
         } else if Some(ref_atom) != a_atom && Some(ref_atom) == b_atom {
-            Ok(-1)
+            Ok(-2)
         } else {
             Ok(0)
         }
@@ -3735,6 +3814,18 @@ impl<'a> CipDigraph<'a> {
     // END RDKIT CPP FUNCTION Digraph::getNodes
     // Each lazy edge access returns an owned ID vector, adding temporary
     // allocations beyond the source's borrowed Node edge view.
+    pub(crate) fn seen_atom(&self, atom_idx: usize) -> bool {
+        // BEGIN RDKit 2026.03.6 COMPLETE Digraph::seenAtom
+        // RDKit✔️✔️: bool Digraph::seenAtom(Atom *atom) const {
+        // RDKit✔️✔️:   return std::ranges::any_of(
+        // RDKit✔️✔️:       d_nodes, [&](const auto &n) { return n.getAtom() == atom; });
+        // RDKit✔️✔️: }
+        // END RDKit 2026.03.6 COMPLETE Digraph::seenAtom
+        self.nodes
+            .iter()
+            .any(|node| node.atom_idx() == Some(atom_idx))
+    }
+
     pub(crate) fn get_nodes(&mut self, atom_idx: usize) -> Result<Vec<CipNodeId>, CipLabelerError> {
         self.mol.atom(atom_idx)?;
         let mut result = Vec::new();

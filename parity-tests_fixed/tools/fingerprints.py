@@ -1,4 +1,8 @@
 """RDKit calls using the exact seeded parameters recorded in each input row."""
+import os
+import pickle
+import subprocess
+import sys
 from rdkit import Chem, DataStructs
 from rdkit.Chem import MACCSkeys, rdFingerprintGenerator
 
@@ -23,6 +27,43 @@ def count_vector(fp):
 
 
 def fingerprint_case(input_row):
+    profile = input_row["Fingerprint"]["params"]
+    layered = profile.get("Layered") if isinstance(profile, dict) else None
+    if layered is None or layered["branched"] or layered["roots"] != "All":
+        return _fingerprint_case(input_row)
+    # Both pinned .1 and .6 Fingerprints.cpp:306-310 pass useBonds=false
+    # here, then use those atom indices as bond indices at :353/:364.
+    # Preserve that native call, including successful results and process
+    # failures; do not replace the profile with the safe rooted branch.
+    environment = os.environ.copy()
+    environment["OPENBLAS_NUM_THREADS"] = "1"
+    with subprocess.Popen(
+        [sys.executable, "-B", "-X", "faulthandler", os.path.abspath(__file__),
+         "--native-layered-worker"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=environment,
+    ) as process:
+        output, diagnostics = process.communicate(pickle.dumps(input_row))
+        if process.returncode < 0 or process.returncode >= 0x80000000:
+            failure = {"exit_code": process.returncode, "process_id": process.pid,
+                       "stderr": diagnostics.decode(errors="replace")}
+            print(f"Layered reference process failed: {input_row['Fingerprint']['case']['id']} "
+                  f"pid={process.pid} exit={process.returncode}", file=sys.stderr, flush=True)
+            return {"input": input_row,
+                    "output": {"Fingerprint": {"ReferenceProcessFailure": failure}}}
+        if process.returncode != 0:
+            raise RuntimeError(f"Layered reference transport exited {process.returncode}: "
+                               f"{diagnostics.decode(errors='replace')}")
+        if diagnostics:
+            sys.stderr.write(diagnostics.decode(errors="replace"))
+            sys.stderr.flush()
+        succeeded, value = pickle.loads(output)
+        if not succeeded:
+            raise value
+        return value
+
+
+def _fingerprint_case(input_row):
     row = input_row["Fingerprint"]
     mol = Chem.MolFromSmiles(row["case"]["smiles"])
     if mol is None:
@@ -98,3 +139,17 @@ def fingerprint_case(input_row):
         else:
             raise ValueError(f"unknown fingerprint profile: {kind}")
     return {"input": input_row, "output": {"Fingerprint": output}}
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--native-layered-worker"]:
+        raise SystemExit("only the isolated Layered worker entry is supported")
+    if os.name == "posix":
+        import resource
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    native_input = pickle.load(sys.stdin.buffer)
+    try:
+        response = (True, _fingerprint_case(native_input))
+    except Exception as error:
+        response = (False, error)
+    pickle.dump(response, sys.stdout.buffer)

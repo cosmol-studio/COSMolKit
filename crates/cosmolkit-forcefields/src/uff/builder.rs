@@ -2505,19 +2505,58 @@ pub(super) fn get_two_bit_cell(res: &[u8], pos: usize) -> Result<u8, UffBuilderE
 }
 
 pub(super) fn build_neighbor_matrix(topology: &TopologyBlock) -> Result<Vec<u8>, UffBuilderError> {
-    // BEGIN RDKIT CPP FUNCTION UFF::Tools::buildNeighborMatrix (Builder.cpp:91-130)
+    // BEGIN RECOVERY GEO-14 SOURCE build_neighbor_matrix
     // RDKit❗✔️: boost::shared_array<std::uint8_t> buildNeighborMatrix(const ROMol &mol) {
-    // RDKit❗✔️: enum { RELATION_1_2 = 0, RELATION_1_3 = 1, RELATION_1_4 = 2, RELATION_1_X = 3 };
     // RDKit❗✔️:   const std::uint8_t RELATION_1_X_INIT = RELATION_1_X | (RELATION_1_X << 2) |
     // RDKit❗✔️:                                          (RELATION_1_X << 4) |
     // RDKit❗✔️:                                          (RELATION_1_X << 6);
+    // RDKit❗✔️:   unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit❗✔️:   unsigned nTwoBitCells = (nAtoms * (nAtoms + 1) - 1) / 8 + 1;
+    // RDKit❗✔️:   boost::shared_array<std::uint8_t> res(new std::uint8_t[nTwoBitCells]);
+    // RDKit❗✔️:   std::memset(res.get(), RELATION_1_X_INIT, nTwoBitCells);
+    // RDKit❗✔️:   for (const auto bondi : mol.bonds()) {
+    // RDKit❗✔️:     setTwoBitCell(
+    // RDKit❗✔️:         res,
+    // RDKit❗✔️:         twoBitCellPos(nAtoms, bondi->getBeginAtomIdx(), bondi->getEndAtomIdx()),
+    // RDKit❗✔️:         RELATION_1_2);
+    // RDKit❗✔️:     unsigned int bondiBeginAtomIdx = bondi->getBeginAtomIdx();
+    // RDKit❗✔️:     unsigned int bondiEndAtomIdx = bondi->getEndAtomIdx();
+    // RDKit❗✔️:     for (const auto bondj : mol.bonds()) {
+    // RDKit❗✔️:       if (bondj == bondi) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       int idx1 = -1;
+    // RDKit❗✔️:       int idx3 = -1;
+    // RDKit❗✔️:       unsigned int bondjBeginAtomIdx = bondj->getBeginAtomIdx();
+    // RDKit❗✔️:       unsigned int bondjEndAtomIdx = bondj->getEndAtomIdx();
+    // RDKit❗✔️:       if (bondiBeginAtomIdx == bondjBeginAtomIdx) {
+    // RDKit❗✔️:         idx1 = bondiEndAtomIdx;
+    // RDKit❗✔️:         idx3 = bondjEndAtomIdx;
+    // RDKit❗✔️:       } else if (bondiBeginAtomIdx == bondjEndAtomIdx) {
+    // RDKit❗✔️:         idx1 = bondiEndAtomIdx;
+    // RDKit❗✔️:         idx3 = bondjBeginAtomIdx;
+    // RDKit❗✔️:       } else if (bondiEndAtomIdx == bondjBeginAtomIdx) {
+    // RDKit❗✔️:         idx1 = bondiBeginAtomIdx;
+    // RDKit❗✔️:         idx3 = bondjEndAtomIdx;
+    // RDKit❗✔️:       } else if (bondiEndAtomIdx == bondjEndAtomIdx) {
+    // RDKit❗✔️:         idx1 = bondiBeginAtomIdx;
+    // RDKit❗✔️:         idx3 = bondjBeginAtomIdx;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (idx1 > -1) {
+    // RDKit❗✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, idx1, idx3), RELATION_1_3);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RECOVERY GEO-14 SOURCE build_neighbor_matrix
+
     const RELATION_1_2: u8 = 0;
     const RELATION_1_3: u8 = 1;
     const RELATION_1_X: u8 = 3;
     let relation_1_x_init =
         RELATION_1_X | (RELATION_1_X << 2) | (RELATION_1_X << 4) | (RELATION_1_X << 6);
 
-    // RDKit❗✔️:   unsigned int nAtoms = mol.getNumAtoms();
     let n_atoms = topology.atoms.len();
     if n_atoms != 0 {
         // Validate source-width allocation and cell-position bounds before
@@ -2525,7 +2564,6 @@ pub(super) fn build_neighbor_matrix(topology: &TopologyBlock) -> Result<Vec<u8>,
         let _first_cell = two_bit_cell_pos(n_atoms, 0, 0)?;
     }
 
-    // RDKit❗✔️:   unsigned nTwoBitCells = (nAtoms * (nAtoms + 1) - 1) / 8 + 1;
     let source_n_atoms = u32::try_from(n_atoms)
         .map_err(|_| UffBuilderError::NeighborMatrixIndexOverflow { n_atoms })?;
     let source_next_n_atoms = source_n_atoms
@@ -2542,8 +2580,6 @@ pub(super) fn build_neighbor_matrix(topology: &TopologyBlock) -> Result<Vec<u8>,
     let n_two_bit_cells = usize::try_from(source_n_two_bit_cells)
         .map_err(|_| UffBuilderError::NeighborMatrixIndexOverflow { n_atoms })?;
 
-    // RDKit❗✔️:   boost::shared_array<std::uint8_t> res(new std::uint8_t[nTwoBitCells]);
-    // RDKit❗✔️:   std::memset(res.get(), RELATION_1_X_INIT, nTwoBitCells);
     let mut res = Vec::new();
     res.try_reserve_exact(n_two_bit_cells).map_err(|_| {
         UffBuilderError::NeighborMatrixAllocationFailed {
@@ -2552,75 +2588,44 @@ pub(super) fn build_neighbor_matrix(topology: &TopologyBlock) -> Result<Vec<u8>,
     })?;
     res.resize(n_two_bit_cells, relation_1_x_init);
 
-    // RDKit❗✔️:   for (ROMol::ConstBondIterator bondi = mol.beginBonds();
-    // RDKit❗✔️:        bondi != mol.endBonds(); ++bondi) {
-    for (bond_i_index, bond_i) in topology.bonds.iter().enumerate() {
-        // RDKit❗✔️:     setTwoBitCell(res,
-        // RDKit❗✔️:                   twoBitCellPos(nAtoms, (*bondi)->getBeginAtomIdx(),
-        // RDKit❗✔️:                                 (*bondi)->getEndAtomIdx()),
-        // RDKit❗✔️:                   RELATION_1_2);
+    for bond_i in &topology.bonds {
         set_two_bit_cell(
             &mut res,
             two_bit_cell_pos(n_atoms, bond_i.begin().index(), bond_i.end().index())?,
             RELATION_1_2,
         )?;
-        // RDKit❗✔️:     unsigned int bondiBeginAtomIdx = (*bondi)->getBeginAtomIdx();
         let bond_i_begin_atom_idx = bond_i.begin().index();
-        // RDKit❗✔️:     unsigned int bondiEndAtomIdx = (*bondi)->getEndAtomIdx();
         let bond_i_end_atom_idx = bond_i.end().index();
-        // RDKit❗✔️:     for (ROMol::ConstBondIterator bondj = bondi; ++bondj != mol.endBonds();) {
-        for bond_j in topology.bonds.iter().skip(bond_i_index + 1) {
-            // RDKit❗✔️:       int idx1 = -1;
-            // RDKit❗✔️:       int idx3 = -1;
+        for bond_j in &topology.bonds {
+            if std::ptr::eq(bond_j, bond_i) {
+                continue;
+            }
             let mut idx1 = None;
             let mut idx3 = None;
-            // RDKit❗✔️:       unsigned int bondjBeginAtomIdx = (*bondj)->getBeginAtomIdx();
             let bond_j_begin_atom_idx = bond_j.begin().index();
-            // RDKit❗✔️:       unsigned int bondjEndAtomIdx = (*bondj)->getEndAtomIdx();
             let bond_j_end_atom_idx = bond_j.end().index();
-            // RDKit❗✔️:       if (bondiBeginAtomIdx == bondjBeginAtomIdx) {
             if bond_i_begin_atom_idx == bond_j_begin_atom_idx {
-                // RDKit❗✔️:         idx1 = bondiEndAtomIdx;
                 idx1 = Some(bond_i_end_atom_idx);
-                // RDKit❗✔️:         idx3 = bondjEndAtomIdx;
                 idx3 = Some(bond_j_end_atom_idx);
-                // RDKit❗✔️:       } else if (bondiBeginAtomIdx == bondjEndAtomIdx) {
             } else if bond_i_begin_atom_idx == bond_j_end_atom_idx {
-                // RDKit❗✔️:         idx1 = bondiEndAtomIdx;
                 idx1 = Some(bond_i_end_atom_idx);
-                // RDKit❗✔️:         idx3 = bondjBeginAtomIdx;
                 idx3 = Some(bond_j_begin_atom_idx);
-                // RDKit❗✔️:       } else if (bondiEndAtomIdx == bondjBeginAtomIdx) {
             } else if bond_i_end_atom_idx == bond_j_begin_atom_idx {
-                // RDKit❗✔️:         idx1 = bondiBeginAtomIdx;
                 idx1 = Some(bond_i_begin_atom_idx);
-                // RDKit❗✔️:         idx3 = bondjEndAtomIdx;
                 idx3 = Some(bond_j_end_atom_idx);
-                // RDKit❗✔️:       } else if (bondiEndAtomIdx == bondjEndAtomIdx) {
             } else if bond_i_end_atom_idx == bond_j_end_atom_idx {
-                // RDKit❗✔️:         idx1 = bondiBeginAtomIdx;
                 idx1 = Some(bond_i_begin_atom_idx);
-                // RDKit❗✔️:         idx3 = bondjBeginAtomIdx;
                 idx3 = Some(bond_j_begin_atom_idx);
-                // RDKit❗✔️:       }
             }
-            // RDKit❗✔️:       if (idx1 > -1) {
             if let (Some(idx1), Some(idx3)) = (idx1, idx3) {
-                // RDKit❗✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, idx1, idx3), RELATION_1_3);
                 set_two_bit_cell(
                     &mut res,
                     two_bit_cell_pos(n_atoms, idx1, idx3)?,
                     RELATION_1_3,
                 )?;
-                // RDKit❗✔️:       }
             }
-            // RDKit❗✔️:     }
         }
-        // RDKit❗✔️:   }
     }
-    // RDKit❗✔️:   return res;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION UFF::Tools::buildNeighborMatrix
     // Complexity: O(A^2) packed initialization plus O(B^2) source bond-pair
     // comparisons; one output allocation and no allocation inside either loop.
     Ok(res)
@@ -3536,6 +3541,149 @@ pub(super) fn construct_force_field_with_automatic_typing_from_rows<'a>(
 
 #[cfg(test)]
 mod tests {
+
+    fn recovery_geo14_topology(n: usize, pairs: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| {
+                cosmolkit_model::Atom::from_spec(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::C),
+                )
+            })
+            .collect();
+        let bonds = pairs
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| {
+                cosmolkit_model::Bond::from_spec(
+                    cosmolkit_model::BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        cosmolkit_model::AtomId::new(x),
+                        cosmolkit_model::AtomId::new(y),
+                        cosmolkit_model::BondOrder::Single,
+                    ),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    #[test]
+    fn recovery_geo14_neighbor_matrix_preserves_triangle_write_order() {
+        // Complete packed bytes from the unmodified official 2026.03.6 C++
+        // twoBitCellPos/setTwoBitCell/buildNeighborMatrix bodies. No shortest-path
+        // oracle: source outer 0u8 writes interleave with 1u8.
+        let cases = [
+            ([(0, 1), (1, 2), (2, 0)], [199, 253]),
+            ([(0, 1), (2, 0), (1, 2)], [215, 252]),
+            ([(1, 2), (0, 1), (2, 0)], [199, 253]),
+            ([(1, 2), (2, 0), (0, 1)], [211, 253]),
+            ([(2, 0), (0, 1), (1, 2)], [215, 252]),
+            ([(2, 0), (1, 2), (0, 1)], [211, 253]),
+        ];
+        for (bonds, expected) in cases {
+            for reverse_endpoints in [false, true] {
+                let bonds = bonds.map(|(begin, end)| {
+                    if reverse_endpoints {
+                        (end, begin)
+                    } else {
+                        (begin, end)
+                    }
+                });
+                let mol = recovery_geo14_topology(3, &bonds);
+                let before = mol.clone();
+                let stored: Vec<_> = mol
+                    .bonds
+                    .iter()
+                    .map(|b| (b.begin().index(), b.end().index()))
+                    .collect();
+                assert_eq!(stored, bonds, "fixture must retain source bond order");
+                let matrix = build_neighbor_matrix(&mol).unwrap();
+                assert_eq!(matrix, expected, "bonds={bonds:?}");
+                for (i, &(begin, end)) in bonds.iter().enumerate() {
+                    let relation = if i == 2 { 0u8 } else { 1u8 };
+                    assert_eq!(
+                        get_two_bit_cell(&matrix, two_bit_cell_pos(3, begin, end).unwrap())
+                            .unwrap(),
+                        relation
+                    );
+                }
+                // Skipping the identical bond prevents any diagonal write.
+                for atom in 0..3 {
+                    assert_eq!(
+                        get_two_bit_cell(&matrix, two_bit_cell_pos(3, atom, atom).unwrap())
+                            .unwrap(),
+                        3u8
+                    );
+                }
+                assert_eq!(mol, before);
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_geo14_neighbor_matrix_matches_source_packed_paths_and_controls() {
+        // Independent C++ source outputs include padding bits, disconnected
+        // diagonal cells, four endpoint-sharing branches and repeated paths.
+        let cases: &[(usize, &[(usize, usize)], &[u8])] = &[
+            (1, &[], &[255]),                                        // single_atom
+            (2, &[(0, 1)], &[243]),                                  // single_bond
+            (4, &[(0, 1), (1, 2), (2, 3)], &[211, 211, 252]),        // chain
+            (4, &[(0, 1), (1, 2), (2, 3), (3, 0)], &[19, 211, 252]), // square
+            (
+                6,
+                &[(0, 1), (0, 2), (3, 0), (1, 4), (5, 1)],
+                &[3, 117, 193, 253, 127, 255],
+            ), // branch
+            (
+                4,
+                &[(0, 1), (1, 2), (2, 0), (1, 3), (3, 2)],
+                &[71, 215, 252],
+            ), // diamond
+            (
+                4,
+                &[(3, 2), (1, 3), (2, 0), (1, 2), (0, 1)],
+                &[83, 215, 253],
+            ), // diamond_reordered
+        ];
+        for &(n_atoms, bonds, expected) in cases {
+            let mol = recovery_geo14_topology(n_atoms, bonds);
+            assert_eq!(
+                build_neighbor_matrix(&mol).unwrap(),
+                expected,
+                "bonds={bonds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recovery_geo14_nonbonded_selector_preserves_exclusions_and_disconnected_pairs() {
+        for pairs in [[(0, 1), (1, 2), (2, 0)], [(2, 0), (1, 2), (0, 1)]] {
+            let mol = recovery_geo14_topology(4, &pairs);
+            let matrix = build_neighbor_matrix(&mol).unwrap();
+            for a in 0..3 {
+                for b in a + 1..3 {
+                    assert_ne!(
+                        get_two_bit_cell(&matrix, two_bit_cell_pos(4, a, b).unwrap()).unwrap(),
+                        3
+                    );
+                }
+            }
+            for a in 0..3 {
+                assert_eq!(
+                    get_two_bit_cell(&matrix, two_bit_cell_pos(4, a, 3).unwrap()).unwrap(),
+                    3
+                );
+            }
+        }
+        let mol = recovery_geo14_topology(4, &[(0, 1), (1, 2), (2, 3)]);
+        let matrix = build_neighbor_matrix(&mol).unwrap();
+        assert_eq!(
+            get_two_bit_cell(&matrix, two_bit_cell_pos(4, 0, 3).unwrap()).unwrap(),
+            3
+        );
+    }
+
     use super::super::atom_typer::{UffAtomStateRef, UffTypingInput, get_atom_types};
     use super::super::convenience::{
         OptimizationOutcome, OptimizationStageError, SerialConformer, SerialUffOptimizationError,
@@ -5867,10 +6015,12 @@ mod tests {
 
     #[test]
     fn cf3d_bld_b12_cycle_overwrites_depend_on_source_bond_order_and_orientation() {
+        // .6 Builder.cpp90–132 scans all other bonds; the prior half-triangle
+        // .1 loop left the second byte at 0xfc. Preserve both ordered cases.
         let first_order = topology_with_bonds(3, &[(0, 1, false), (1, 2, false), (0, 2, false)]);
         assert_eq!(
             build_neighbor_matrix(&first_order).unwrap().as_slice(),
-            &[0xc7, 0xfc]
+            &[0xc7, 0xfd]
         );
 
         let reordered_reversed =
@@ -5879,7 +6029,7 @@ mod tests {
             build_neighbor_matrix(&reordered_reversed)
                 .unwrap()
                 .as_slice(),
-            &[0xd3, 0xfc]
+            &[0xd3, 0xfd]
         );
     }
 
@@ -12282,6 +12432,7 @@ mod tests {
             vec![AtomId::new(atom_index)],
             vec![BondId::new(bond_index)],
         )
+        .expect("valid distinct stereo members")
         .with_id(110 + component as u32)
         .with_write_id(210 + component as u32)
     }

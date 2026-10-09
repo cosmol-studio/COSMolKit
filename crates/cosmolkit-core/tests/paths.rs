@@ -276,6 +276,7 @@ fn branched_subgraphs_preserve_lifo_rows_range_keys_and_root_scope() {
             &hydrogen,
             1,
             &SubgraphSearchParams {
+                ignore_atoms: None,
                 use_hydrogens: true,
                 rooted_at_atom: None,
             }
@@ -489,7 +490,9 @@ fn detached_subset_coalesces_ids_remaps_state_and_clears_computed_props() {
             .with_atoms(atom_ids(&[0, 1])),
     ];
     input.stereo_groups = vec![
-        StereoGroup::new(StereoGroupKind::Or, atom_ids(&[0, 1]), bond_ids(&[0, 1])).with_id(7),
+        StereoGroup::new(StereoGroupKind::Or, atom_ids(&[0, 1]), bond_ids(&[0, 1]))
+            .expect("valid distinct stereo members")
+            .with_id(7),
     ];
     input.validate().unwrap();
     let snapshot = input.clone();
@@ -649,4 +652,340 @@ fn every_entry_rejects_invalid_detached_topology_before_graph_work() {
         subtopology_from_path(&invalid, &[BondId::new(0)], &SubtopologyParams::default()),
         Err(PathError::InvalidTopology(_))
     ));
+}
+
+#[test]
+fn search01_mask_applies_to_single_unique_and_range_before_root() {
+    let t = carbon_topology(
+        4,
+        &[
+            (0, 1, BondOrder::Single),
+            (1, 2, BondOrder::Single),
+            (1, 3, BondOrder::Single),
+        ],
+    );
+    let mask = [true, false, false, false];
+    let p = SubgraphSearchParams {
+        ignore_atoms: Some(&mask),
+        rooted_at_atom: Some(AtomId::new(1)),
+        ..Default::default()
+    };
+    assert_eq!(
+        all_subgraphs_of_length(&t, 1, &p).unwrap(),
+        vec![bond_ids(&[1]), bond_ids(&[2])]
+    );
+    assert_eq!(
+        all_subgraphs_of_length(&t, 2, &p).unwrap(),
+        vec![bond_ids(&[1, 2])]
+    );
+    assert_eq!(
+        all_subgraphs_in_range(&t, 1, 2, &p).unwrap()[&2],
+        vec![bond_ids(&[1, 2])]
+    );
+    let u = UniqueSubgraphParams {
+        ignore_atoms: Some(&mask),
+        rooted_at_atom: p.rooted_at_atom,
+        ..Default::default()
+    };
+    assert_eq!(
+        unique_subgraphs_of_length(&t, 2, &u).unwrap(),
+        vec![bond_ids(&[1, 2])]
+    );
+    let root_ignored = SubgraphSearchParams {
+        rooted_at_atom: Some(AtomId::new(0)),
+        ..p
+    };
+    assert!(
+        all_subgraphs_of_length(&t, 1, &root_ignored)
+            .unwrap()
+            .is_empty()
+    );
+}
+#[test]
+fn search01_mask_shape_is_checked_even_when_single_target_is_zero() {
+    let t = carbon_topology(2, &[(0, 1, BondOrder::Single)]);
+    let p = SubgraphSearchParams {
+        ignore_atoms: Some(&[]),
+        ..Default::default()
+    };
+    assert!(matches!(
+        all_subgraphs_of_length(&t, 0, &p),
+        Err(PathError::IgnoredAtomMaskLength {
+            actual: 0,
+            expected: 2
+        })
+    ));
+    assert!(matches!(
+        all_subgraphs_in_range(&t, 0, 0, &p),
+        Err(PathError::IgnoredAtomMaskLength { .. })
+    ));
+    let path = PathSearchParams {
+        ignore_atoms: Some(&[]),
+        ..Default::default()
+    };
+    assert!(matches!(
+        all_paths_of_length(&t, 0, &path),
+        Err(PathError::IgnoredAtomMaskLength { .. })
+    ));
+}
+#[test]
+fn search01_atom_seeds_extensions_and_fullgraph_shortest_distances() {
+    let t = carbon_topology(
+        4,
+        &[
+            (0, 1, BondOrder::Single),
+            (1, 2, BondOrder::Single),
+            (2, 3, BondOrder::Single),
+            (0, 3, BondOrder::Single),
+        ],
+    );
+    let mask = [false, true, false, false];
+    let p = PathSearchParams {
+        ignore_atoms: Some(&mask),
+        representation: PathRepresentation::Atoms,
+        ..Default::default()
+    };
+    assert_eq!(
+        all_paths_of_length(&t, 1, &p).unwrap(),
+        vec![
+            GraphPath::Atoms(atom_ids(&[0])),
+            GraphPath::Atoms(atom_ids(&[2])),
+            GraphPath::Atoms(atom_ids(&[3]))
+        ]
+    );
+    let rooted = PathSearchParams {
+        rooted_at_atom: Some(AtomId::new(0)),
+        only_shortest_paths: true,
+        ..p
+    };
+    assert_eq!(
+        all_paths_of_length(&t, 3, &rooted).unwrap(),
+        vec![GraphPath::Atoms(atom_ids(&[0, 3, 2]))]
+    );
+    let shortcut = carbon_topology(
+        5,
+        &[
+            (0, 1, BondOrder::Single),
+            (1, 2, BondOrder::Single),
+            (0, 4, BondOrder::Single),
+            (4, 3, BondOrder::Single),
+            (3, 2, BondOrder::Single),
+        ],
+    );
+    let shortcut_mask = [false, true, false, false, false];
+    let detour = PathSearchParams {
+        ignore_atoms: Some(&shortcut_mask),
+        representation: PathRepresentation::Atoms,
+        rooted_at_atom: Some(AtomId::new(0)),
+        ..Default::default()
+    };
+    assert_eq!(
+        all_paths_of_length(&shortcut, 4, &detour).unwrap(),
+        vec![GraphPath::Atoms(atom_ids(&[0, 4, 3, 2]))]
+    );
+    let shortest_detour = PathSearchParams {
+        only_shortest_paths: true,
+        ..detour
+    };
+    assert!(
+        all_paths_of_length(&shortcut, 4, &shortest_detour)
+            .unwrap()
+            .is_empty()
+    );
+    let ignored_root = PathSearchParams {
+        rooted_at_atom: Some(AtomId::new(1)),
+        ..p
+    };
+    assert!(
+        all_paths_of_length(&t, 1, &ignored_root)
+            .unwrap()
+            .is_empty()
+    );
+}
+#[test]
+fn search01_some_empty_mask_differs_from_none_only_for_nonempty_graph() {
+    let empty = carbon_topology(0, &[]);
+    let p = SubgraphSearchParams {
+        ignore_atoms: Some(&[]),
+        ..Default::default()
+    };
+    assert!(all_subgraphs_of_length(&empty, 1, &p).unwrap().is_empty());
+    let t = carbon_topology(3, &[(0, 1, BondOrder::Single), (1, 2, BondOrder::Single)]);
+    let no_ignored = [false; 3];
+    for size in 0..=3 {
+        assert_eq!(
+            all_subgraphs_of_length(&t, size, &Default::default()).unwrap(),
+            all_subgraphs_of_length(
+                &t,
+                size,
+                &SubgraphSearchParams {
+                    ignore_atoms: Some(&no_ignored),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+        );
+    }
+}
+
+#[test]
+fn detached_subset_uses_source_controller_replacement_and_stereo_parity() {
+    // RDKit .6 Subset::handleBondStereo: selected original controllers retain
+    // parity; each replaced controller toggles it; E/Z become CIS/TRANS.
+    // Direct model construction is independent of any SMILES corpus or oracle.
+    for (selected, controllers, swaps) in [
+        (vec![0, 1, 2], [0, 3], false),
+        (vec![1, 2, 3], [3, 2], true),
+        (vec![0, 1, 4], [0, 3], true),
+        (vec![1, 3, 4], [2, 3], false),
+    ] {
+        for (source_stereo, unswapped, swapped) in [
+            (BondStereo::E, BondStereo::Trans, BondStereo::Cis),
+            (BondStereo::Z, BondStereo::Cis, BondStereo::Trans),
+            (BondStereo::Cis, BondStereo::Cis, BondStereo::Trans),
+            (BondStereo::Trans, BondStereo::Trans, BondStereo::Cis),
+        ] {
+            for copy_as_query in [false, true] {
+                let mut input = carbon_topology(
+                    6,
+                    &[
+                        (0, 1, BondOrder::Single),
+                        (1, 2, BondOrder::Double),
+                        (2, 3, BondOrder::Single),
+                        (1, 4, BondOrder::Single),
+                        (2, 5, BondOrder::Single),
+                    ],
+                );
+                input.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+                input.bonds[1].set_stereo(source_stereo).unwrap();
+                input.validate().unwrap();
+                let snapshot = input.clone();
+                let result = subtopology_from_path(
+                    &input,
+                    &bond_ids(&selected),
+                    &SubtopologyParams { copy_as_query },
+                )
+                .unwrap();
+                assert_eq!(input, snapshot);
+                let row = result.mapping.bonds.old_to_new[1].unwrap().index();
+                let expected_stereo = if swaps { swapped } else { unswapped };
+                let expected_controllers =
+                    Some([AtomId::new(controllers[0]), AtomId::new(controllers[1])]);
+                match &result.subgraph {
+                    DetachedPathSubgraph::Concrete(subset) => {
+                        assert_eq!(subset.bonds[row].stereo(), expected_stereo);
+                        assert_eq!(subset.bonds[row].stereo_atoms(), expected_controllers);
+                        subset.validate().unwrap();
+                    }
+                    DetachedPathSubgraph::Query { graph, .. } => {
+                        assert_eq!(graph.bonds()[row].bond().stereo(), expected_stereo);
+                        assert_eq!(
+                            graph.bonds()[row].bond().stereo_atoms(),
+                            expected_controllers
+                        );
+                        assert_eq!(
+                            graph.bonds()[row].predicate(),
+                            &QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double))
+                        );
+                        graph.validate().unwrap();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn detached_subset_clears_all_defined_stereo_when_no_controller_can_be_copied() {
+    // Cover both native early returns: source degree < 3, and a degree >= 3
+    // alternate that is absent from atomMapping. Source clears E/Z as well.
+    for branched in [false, true] {
+        for selected in [vec![1], vec![1, 2]] {
+            for source_stereo in [
+                BondStereo::E,
+                BondStereo::Z,
+                BondStereo::Cis,
+                BondStereo::Trans,
+            ] {
+                for copy_as_query in [false, true] {
+                    let mut edges = vec![
+                        (0, 1, BondOrder::Single),
+                        (1, 2, BondOrder::Double),
+                        (2, 3, BondOrder::Single),
+                    ];
+                    if branched {
+                        edges.extend([(1, 4, BondOrder::Single), (2, 5, BondOrder::Single)]);
+                    }
+                    let mut input = carbon_topology(if branched { 6 } else { 4 }, &edges);
+                    input.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+                    input.bonds[1].set_stereo(source_stereo).unwrap();
+                    input.validate().unwrap();
+                    let snapshot = input.clone();
+                    let result = subtopology_from_path(
+                        &input,
+                        &bond_ids(&selected),
+                        &SubtopologyParams { copy_as_query },
+                    )
+                    .unwrap();
+                    assert_eq!(input, snapshot);
+                    let row = result.mapping.bonds.old_to_new[1].unwrap().index();
+                    match &result.subgraph {
+                        DetachedPathSubgraph::Concrete(subset) => {
+                            assert_eq!(subset.bonds[row].stereo(), BondStereo::None);
+                            assert_eq!(subset.bonds[row].stereo_atoms(), None);
+                            subset.validate().unwrap();
+                        }
+                        DetachedPathSubgraph::Query { graph, .. } => {
+                            assert_eq!(graph.bonds()[row].bond().stereo(), BondStereo::None);
+                            assert_eq!(graph.bonds()[row].bond().stereo_atoms(), None);
+                            graph.validate().unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn detached_subset_uses_the_first_source_alternate_before_testing_its_mapping() {
+    // getOtherAtomIdx returns the first source neighbor, not the first copied
+    // neighbor. Atom 4 precedes atom 5 but is omitted: source must clear stereo.
+    for copy_as_query in [false, true] {
+        let mut input = carbon_topology(
+            7,
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+                (1, 5, BondOrder::Single),
+                (2, 6, BondOrder::Single),
+            ],
+        );
+        input.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+        input.bonds[1].set_stereo(BondStereo::E).unwrap();
+        input.validate().unwrap();
+        let snapshot = input.clone();
+        let result = subtopology_from_path(
+            &input,
+            &bond_ids(&[1, 2, 4]),
+            &SubtopologyParams { copy_as_query },
+        )
+        .unwrap();
+        assert_eq!(input, snapshot);
+        let row = result.mapping.bonds.old_to_new[1].unwrap().index();
+        match &result.subgraph {
+            DetachedPathSubgraph::Concrete(subset) => {
+                assert_eq!(subset.bonds[row].stereo(), BondStereo::None);
+                assert_eq!(subset.bonds[row].stereo_atoms(), None);
+                subset.validate().unwrap();
+            }
+            DetachedPathSubgraph::Query { graph, .. } => {
+                assert_eq!(graph.bonds()[row].bond().stereo(), BondStereo::None);
+                assert_eq!(graph.bonds()[row].bond().stereo_atoms(), None);
+                graph.validate().unwrap();
+            }
+        }
+    }
 }

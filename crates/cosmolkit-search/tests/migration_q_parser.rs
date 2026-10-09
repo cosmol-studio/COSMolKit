@@ -3222,19 +3222,27 @@ fn q01_a_double_stereo_consumers_resolve_ring_source_indexes() {
 }
 
 #[test]
-fn q01_a_missing_valid_index_errors_and_out_of_window_skips() {
+fn q01_a_missing_explicit_index_uses_source_fallback_and_out_of_window_skips() {
     for record in [
         "Z:0", "C:0.0", "H:0.0", "w:0.0", "wU:0.0", "wD:0.0", "c:0", "t:0", "ctu:0",
     ] {
-        assert!(
-            matches!(
-                parse_smarts(&format!("C-1CC-1O |{record}|"), &Default::default()),
-                Err(SmartsParseError::CxLowering(
-                    cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 }
-                ))
-            ),
-            "valid source index hole: {record}"
-        );
+        // .6 uses idx-earlierRingBonds after the explicit-property scan.
+        // No property is below zero, so this source hole resolves physical row 0.
+        let graph = q01_a_retained(&format!("C-1CC-1O |{record}|"));
+        let bond = graph.bond(0).unwrap().bond();
+        match record {
+            "Z:0" => assert_eq!(bond.order(), BondOrder::Zero),
+            "C:0.0" => assert_eq!(bond.order(), BondOrder::Dative),
+            "H:0.0" => assert_eq!(bond.order(), BondOrder::Hydrogen),
+            "w:0.0" => assert_eq!(bond.direction(), BondDirection::Unknown),
+            "wU:0.0" => assert_eq!(bond.direction(), BondDirection::BeginWedge),
+            "wD:0.0" => assert_eq!(bond.direction(), BondDirection::BeginDash),
+            "c:0" => assert_eq!(bond.stereo(), BondStereo::Cis),
+            "t:0" => assert_eq!(bond.stereo(), BondStereo::Trans),
+            "ctu:0" => assert_eq!(bond.stereo(), BondStereo::Any),
+            _ => unreachable!(),
+        }
+        assert_eq!(q01_a_indexes(&graph), [1, 2, 4, 3]);
     }
     for record in [
         "Z:4", "C:0.4", "H:0.4", "w:0.4", "wU:0.4", "wD:0.4", "c:4", "t:4", "ctu:4",
@@ -3258,7 +3266,7 @@ fn q01_a_missing_valid_index_errors_and_out_of_window_skips() {
 }
 
 #[test]
-fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
+fn q01_a_source_fallback_completes_both_modes_and_consumes_full_cursor() {
     let params = SmartsParseParams {
         strict_cxsmiles: false,
         skip_cleanup: true,
@@ -3281,10 +3289,10 @@ fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
             graph.atom(0).unwrap().prop("atomLabel"),
             Some(&PropertyValue::String("kept".into()))
         );
-        assert_eq!(graph.name().unwrap().map(fixture_text), None);
+        assert_eq!(graph.name().unwrap().map(fixture_text), Some("suppressed"));
         assert_eq!(
             graph.prop("_CXSMILES_Data").map(fixture_value),
-            Some(format!("|$kept$ {record}").as_str())
+            Some(format!("|$kept$ {record}|").as_str())
         );
         match record {
             "Z:1,0" => assert_eq!(graph.bond(0).unwrap().bond().order(), BondOrder::Zero),
@@ -3304,13 +3312,19 @@ fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
             ),
             _ => assert!(graph.bond(0).unwrap().bond().stereo() != BondStereo::None),
         }
-        assert!(
-            matches!(
-                parse_smarts(&text, &Default::default()),
-                Err(SmartsParseError::CxLowering(
-                    cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 }
-                ))
-            ),
+        let strict = parse_smarts(
+            &text,
+            &SmartsParseParams {
+                skip_cleanup: true,
+                ..Default::default()
+            },
+        )
+        .expect("source fallback also succeeds strictly");
+        assert_eq!(strict.bonds(), graph.bonds(), "{record}");
+        assert_eq!(strict.name().unwrap(), graph.name().unwrap(), "{record}");
+        assert_eq!(
+            strict.prop("_CXSMILES_Data"),
+            graph.prop("_CXSMILES_Data"),
             "{record}"
         );
     }
@@ -3329,9 +3343,24 @@ fn q01_a_detached_cx_lowerer_uses_same_source_lookup() {
     }
     let mut missing = parse_source_case("C-C");
     let parsed = cosmolkit_cx::parse_cx_extensions("|Z:0|").unwrap();
+    cosmolkit_search::apply_cx_to_query_graph(&mut missing, &parsed)
+        .expect(".6 falls back to physical row without explicit metadata");
+    assert_eq!(missing.bond(0).unwrap().bond().order(), BondOrder::Zero);
+
+    // Retain structural-error coverage: two earlier explicit slots make the
+    // unsigned fallback subtraction wrap; it must never access a physical row.
+    let mut underflow = q01_a_retained("C-C-C-C");
+    for row in [0, 1] {
+        underflow.bonds_mut()[row]
+            .bond_mut()
+            .set_prop("_cxsmilesBondIdx", PropertyValue::UInt(0))
+            .unwrap();
+    }
+    let before = underflow.clone();
+    let parsed = cosmolkit_cx::parse_cx_extensions("|Z:1|").unwrap();
     assert!(matches!(
-        cosmolkit_search::apply_cx_to_query_graph(&mut missing, &parsed),
-        Err(cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 })
+        cosmolkit_search::apply_cx_to_query_graph(&mut underflow, &parsed),
+        Err(cosmolkit_search::CxQueryLoweringError::BondIndex { index: 1 })
     ));
-    assert_eq!(missing.bond(0).unwrap().bond().order(), BondOrder::Single);
+    assert_eq!(underflow, before);
 }

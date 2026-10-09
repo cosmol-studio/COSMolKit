@@ -401,8 +401,10 @@ mod scalar_api_tests {
             &mut self,
             _molecule: &mut InchiMolecule,
             mark_atoms_bonds: bool,
+            canonical: bool,
         ) -> Result<(), InchiToolkitError> {
             assert!(!mark_atoms_bonds);
+            assert!(!canonical);
             Ok(())
         }
 

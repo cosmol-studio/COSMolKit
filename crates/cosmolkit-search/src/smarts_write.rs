@@ -64,6 +64,9 @@ impl std::ops::BitOrAssign for QueryBoolFeatures {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SmartsWriteError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[cfg(feature = "smiles-integration")]
     #[error("source SMARTS traversal preparation failed: {0}")]
     Traversal(#[from] cosmolkit_smiles::SmartsTraversalError),
@@ -9222,6 +9225,7 @@ mod get_sorted_stereo_groups_source_tests {
             atoms.iter().copied().map(AtomId::new).collect(),
             bonds.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_id(read)
         .with_write_id(write)
     }
@@ -9318,10 +9322,10 @@ mod get_sorted_stereo_groups_source_tests {
     #[test]
     fn duplicate_members_and_sparse_zero_reverse_entries_survive() {
         let q = graph(
-            vec![group(StereoGroupKind::And, &[2, 0, 2, 1], &[], 4, 0)],
+            vec![group(StereoGroupKind::And, &[2, 0, 1], &[], 4, 0)],
             BondDirection::None,
         );
-        assert_eq!(sorted(&q, &[0, 0, 4])[0].1, vec![0, 0, 4, 4]);
+        assert_eq!(sorted(&q, &[0, 0, 4])[0].1, vec![0, 0, 4]);
     }
     #[test]
     fn bond_only_group_uses_actual_neighbor_wedge_direction() {
@@ -9397,6 +9401,7 @@ mod enhanced_stereo_block_source_tests {
             atoms.iter().copied().map(AtomId::new).collect(),
             bonds.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_id(read)
         .with_write_id(write)
     }
@@ -9507,9 +9512,9 @@ mod enhanced_stereo_block_source_tests {
     }
     #[test]
     fn duplicate_members_and_final_comma_follow_source_and_input_stays_unchanged() {
-        let q = graph(vec![group(StereoGroupKind::Or, &[0, 0], &[], 88, 0)]);
+        let q = graph(vec![group(StereoGroupKind::Or, &[0, 1], &[], 88, 0)]);
         let before = q.clone();
-        assert_eq!(write(&q, &[0, 1, 2]), "o1:0,0");
+        assert_eq!(write(&q, &[0, 1, 2]), "o1:0,1");
         assert_eq!(q, before);
     }
 }
@@ -11975,11 +11980,10 @@ mod complete_cx_source_tests {
         let mut q = atrop();
         cosmolkit_model::replace_query_stereo_groups(
             &mut q,
-            vec![StereoGroup::new(
-                StereoGroupKind::Absolute,
-                vec![],
-                vec![BondId::new(0)],
-            )],
+            vec![
+                StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(0)])
+                    .expect("valid distinct stereo members"),
+            ],
         )
         .unwrap();
         let atoms = q.atoms().to_vec();

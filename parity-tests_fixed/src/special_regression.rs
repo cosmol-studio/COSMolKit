@@ -12,6 +12,19 @@ pub(crate) fn validate(
     schema: registry::SpecialRegressionSchema,
 ) -> Result<Snapshot> {
     let fixture: Value = serde_json::from_slice(input).map_err(|e| e.to_string())?;
+    if matches!(
+        schema,
+        registry::SpecialRegressionSchema::ForcefieldOptimizers
+            | registry::SpecialRegressionSchema::MmffBuiltin
+    ) {
+        let rows: Vec<Value> = std::str::from_utf8(reference)
+            .map_err(|e| e.to_string())?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
+            .collect::<Result<_>>()?;
+        crate::forcefield_regression::validate(&fixture, &rows, count, schema)?;
+        return Ok(Snapshot { fixture, rows });
+    }
     if matches!(schema, registry::SpecialRegressionSchema::BioMmcifSwitches) {
         let rows: Vec<Value> = std::str::from_utf8(reference)
             .map_err(|e| e.to_string())?
@@ -52,6 +65,8 @@ pub(crate) fn validate(
     }
     let mut ids = Vec::new();
     let tables: &[&str] = match schema {
+        registry::SpecialRegressionSchema::ForcefieldOptimizers
+        | registry::SpecialRegressionSchema::MmffBuiltin => unreachable!("validated above"),
         registry::SpecialRegressionSchema::BioMmcifSwitches => unreachable!("validated above"),
         registry::SpecialRegressionSchema::MolAlign => unreachable!("validated above"),
         registry::SpecialRegressionSchema::StructureTags => &["cases", "octahedral_switch_cases"],

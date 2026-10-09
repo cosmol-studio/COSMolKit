@@ -54,11 +54,14 @@ fn empty_and_complete_parts_build_through_one_checked_boundary() {
                 .with_atoms(vec![AtomId::new(0)])
                 .with_bonds(vec![BondId::new(0)]),
         ],
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(1)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(1)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     let coordinates = CoordinateBlock {
@@ -248,11 +251,10 @@ fn typed_group_insertion_normalizes_sgroup_ids_and_rejects_bad_references() {
     assert_eq!(id, SubstanceGroupId::new(0));
     assert_eq!(builder.substance_groups()[0].id(), id);
     assert_eq!(
-        builder.add_stereo_group(StereoGroup::new(
-            StereoGroupKind::And,
-            vec![atom],
-            Vec::new(),
-        )),
+        builder.add_stereo_group(
+            StereoGroup::new(StereoGroupKind::And, vec![atom], Vec::new(),)
+                .expect("valid distinct stereo members")
+        ),
         Ok(0)
     );
     assert!(matches!(
@@ -260,7 +262,7 @@ fn typed_group_insertion_normalizes_sgroup_ids_and_rejects_bad_references() {
             StereoGroupKind::Or,
             vec![AtomId::new(8)],
             Vec::new(),
-        )),
+        ).expect("valid distinct stereo members")),
         Err(OperationError::InvalidTopology(
             TopologyValidationError::StereoGroupAtomOutOfRange { atom, atom_count: 1 }
         )) if atom == AtomId::new(8)

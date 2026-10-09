@@ -52,6 +52,7 @@ impl MolToInchiToolkit for MethaneToolkit {
         &mut self,
         molecule: &mut InchiMolecule,
         mark_atoms_bonds: bool,
+        _canonical: bool,
     ) -> Result<(), InchiToolkitError> {
         require_methane(molecule, "kekulize")?;
         if mark_atoms_bonds {

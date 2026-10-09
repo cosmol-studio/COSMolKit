@@ -1527,7 +1527,10 @@ pub(crate) fn correct_unmatched_chirality(
     Ok(())
 }
 
-fn new_group(source: &StereoGroup, atoms: Vec<AtomId>) -> StereoGroup {
+fn new_group(
+    source: &StereoGroup,
+    atoms: Vec<AtomId>,
+) -> Result<StereoGroup, ReactionProductError> {
     // RDKit❗🔝: StereoGroup::StereoGroup(StereoGroupType grouptype, std::vector<Atom *> &&atoms,
     // RDKit❗🔝:                          std::vector<Bond *> &&bonds, unsigned readId)
     // RDKit❗🔝:     : d_grouptype(grouptype),
@@ -1538,11 +1541,11 @@ fn new_group(source: &StereoGroup, atoms: Vec<AtomId>) -> StereoGroup {
     // copying named lvalue parameters into d_atoms/d_bonds.
     // The modeled optional source ID remains distinct; constructor write ID 0
     // and empty bond members reproduce the runner's explicit constructors.
-    let group = StereoGroup::new(source.kind(), atoms, Vec::new());
-    match source.id() {
+    let group = StereoGroup::new(source.kind(), atoms, Vec::new())?;
+    Ok(match source.id() {
         Some(id) => group.with_id(id),
         None => group,
-    }
+    })
 }
 
 pub(crate) fn copy_enhanced_groups(
@@ -1551,51 +1554,51 @@ pub(crate) fn copy_enhanced_groups(
     mapping: &ReactantProductMapping,
 ) -> Result<(), ReactionProductError> {
     // BEGIN RDKIT COMPLETE CPP FUNCTION: Code/GraphMol/ChemReactions/ReactionRunner.cpp :: copyEnhancedStereoGroups
-    // RDKit❗🔝: void copyEnhancedStereoGroups(const ROMol &reactant, RWMOL_SPTR product,
-    // RDKit❗🔝:                               const ReactantProductAtomMapping &mapping) {
-    // RDKit❗🔝:   std::vector<StereoGroup> new_stereo_groups;
-    // RDKit❗🔝:   for (const auto &sg : reactant.getStereoGroups()) {
-    // RDKit❗🔝:     std::vector<Atom *> atoms;
-    // RDKit❗🔝:     std::vector<Bond *> bonds;
-    // RDKit❗🔝:     for (const auto &reactantAtom : sg.getAtoms()) {
-    // RDKit❗🔝:       auto productAtoms = mapping.reactProdAtomMap.find(reactantAtom->getIdx());
-    // RDKit❗🔝:       if (productAtoms == mapping.reactProdAtomMap.end()) {
-    // RDKit❗🔝:         continue;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:
-    // RDKit❗🔝:       for (auto &productAtomIdx : productAtoms->second) {
-    // RDKit❗🔝:         auto productAtom = product->getAtomWithIdx(productAtomIdx);
-    // RDKit❗🔝:         // If chirality destroyed by the reaction, skip the atom
-    // RDKit❗🔝:         if (productAtom->getChiralTag() == Atom::CHI_UNSPECIFIED) {
-    // RDKit❗🔝:           continue;
-    // RDKit❗🔝:         }
-    // RDKit❗🔝:         // If chirality defined explicitly by the reaction, skip the atom
-    // RDKit❗🔝:         int flagVal = 0;
-    // RDKit❗🔝:         productAtom->getPropIfPresent(common_properties::molInversionFlag,
-    // RDKit❗🔝:                                       flagVal);
-    // RDKit❗🔝:         if (flagVal == 4) {
-    // RDKit❗🔝:           continue;
-    // RDKit❗🔝:         }
-    // RDKit❗🔝:         atoms.push_back(productAtom);
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (!atoms.empty()) {
-    // RDKit❗🔝:       new_stereo_groups.emplace_back(sg.getGroupType(), std::move(atoms),
-    // RDKit❗🔝:                                      std::move(bonds), sg.getReadId());
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:
-    // RDKit❗🔝:   // Although we have added storage, and canonicalization of Atropisomers,
-    // RDKit❗🔝:   // searching is not yet supported.  When it is, we will need to copy
-    // RDKit❗🔝:   // bond-part of the SG groups to the products as appropriate.
-    // RDKit❗🔝:
-    // RDKit❗🔝:   if (!new_stereo_groups.empty()) {
-    // RDKit❗🔝:     auto &existing_sg = product->getStereoGroups();
-    // RDKit❗🔝:     new_stereo_groups.insert(new_stereo_groups.end(), existing_sg.begin(),
-    // RDKit❗🔝:                              existing_sg.end());
-    // RDKit❗🔝:     product->setStereoGroups(std::move(new_stereo_groups));
-    // RDKit❗🔝:   }
-    // RDKit❗🔝: }
+    // RDKit❗✔️: void copyEnhancedStereoGroups(const ROMol &reactant, RWMOL_SPTR product,
+    // RDKit❗✔️:                               const ReactantProductAtomMapping &mapping) {
+    // RDKit❗✔️:   std::vector<StereoGroup> new_stereo_groups;
+    // RDKit❗✔️:   for (const auto &sg : reactant.getStereoGroups()) {
+    // RDKit❗✔️:     std::vector<Atom *> atoms;
+    // RDKit❗✔️:     std::vector<Bond *> bonds;
+    // RDKit❗✔️:     for (const auto &reactantAtom : sg.getAtoms()) {
+    // RDKit❗✔️:       auto productAtoms = mapping.reactProdAtomMap.find(reactantAtom->getIdx());
+    // RDKit❗✔️:       if (productAtoms == mapping.reactProdAtomMap.end()) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       for (auto &productAtomIdx : productAtoms->second) {
+    // RDKit❗✔️:         auto productAtom = product->getAtomWithIdx(productAtomIdx);
+    // RDKit❗✔️:         // If chirality destroyed by the reaction, skip the atom
+    // RDKit❗✔️:         if (productAtom->getChiralTag() == Atom::CHI_UNSPECIFIED) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         // If chirality defined explicitly by the reaction, skip the atom
+    // RDKit❗✔️:         int flagVal = 0;
+    // RDKit❗✔️:         productAtom->getPropIfPresent(common_properties::molInversionFlag,
+    // RDKit❗✔️:                                       flagVal);
+    // RDKit❗✔️:         if (flagVal == 4) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         atoms.push_back(productAtom);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (!atoms.empty()) {
+    // RDKit❗✔️:       new_stereo_groups.emplace_back(sg.getGroupType(), std::move(atoms),
+    // RDKit❗✔️:                                      std::move(bonds), sg.getReadId());
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Although we have added storage, and canonicalization of Atropisomers,
+    // RDKit❗✔️:   // searching is not yet supported.  When it is, we will need to copy
+    // RDKit❗✔️:   // bond-part of the SG groups to the products as appropriate.
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (!new_stereo_groups.empty()) {
+    // RDKit❗✔️:     auto &existing_sg = product->getStereoGroups();
+    // RDKit❗✔️:     new_stereo_groups.insert(new_stereo_groups.end(), existing_sg.begin(),
+    // RDKit❗✔️:                              existing_sg.end());
+    // RDKit❗✔️:     product->setStereoGroups(std::move(new_stereo_groups));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     // END RDKIT COMPLETE CPP FUNCTION
     // Cost improvement: new_group moves member vectors and the final append
     // moves existing groups rather than deep-copying their vectors as source.
@@ -1637,14 +1640,15 @@ pub(crate) fn copy_enhanced_groups(
             }
         }
         if !atoms.is_empty() {
-            groups.push(new_group(group, atoms));
+            groups.push(new_group(group, atoms)?);
         }
     }
     if !groups.is_empty() {
-        // Moving existing rows avoids the source's SG deep copies and retains
-        // exact source prepend order, IDs and bond membership.
-        groups.append(&mut product.topology.stereo_groups);
-        product.topology.stereo_groups = cosmolkit_model::merge_absolute_stereo_groups(groups);
+        // Stage source-copied existing groups before the new fallible constructor.
+        // No product group is drained if merged membership is rejected.
+        groups.extend(product.topology.stereo_groups.iter().cloned());
+        let checked = cosmolkit_model::merge_absolute_stereo_groups(groups)?;
+        product.topology.stereo_groups = checked;
     }
     Ok(())
 }
@@ -1768,7 +1772,7 @@ pub(crate) fn copy_template_groups(
         }
         // Marks from a dropped group deliberately persist, as in source.
         if keep && !atoms.is_empty() {
-            groups.push(new_group(group, atoms));
+            groups.push(new_group(group, atoms)?);
         }
     }
     if !groups.is_empty() {
@@ -1814,10 +1818,10 @@ pub(crate) fn copy_template_groups(
                         atoms.push(atom);
                     }
                 }
-                groups.push(new_group(group, atoms));
+                groups.push(new_group(group, atoms)?);
             }
         }
-        product.topology.stereo_groups = cosmolkit_model::merge_absolute_stereo_groups(groups);
+        product.topology.stereo_groups = cosmolkit_model::merge_absolute_stereo_groups(groups)?;
     }
     Ok(())
 }
@@ -3767,6 +3771,7 @@ mod complete_copy_enhanced_groups_source_tests {
             atoms.iter().map(|&i| AtomId::new(i)).collect(),
             bonds.iter().map(|&i| BondId::new(i)).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_write_id(write);
         if let Some(id) = id { g.with_id(id) } else { g }
     }
@@ -3791,7 +3796,7 @@ mod complete_copy_enhanced_groups_source_tests {
     fn mapped_group_members_preserve_source_atom_copy_order_duplicates_and_literal_flag_four_filter()
      {
         let mut r = topology(&[], ChiralTag::Unspecified);
-        r.stereo_groups = vec![group(StereoGroupKind::Or, &[0, 1, 0], &[7], Some(13), 77)];
+        r.stereo_groups = vec![group(StereoGroupKind::Or, &[0, 1], &[7], Some(13), 77)];
         let mut p = product(&[], ChiralTag::Other);
         for a in &mut p.topology.atoms {
             a.set_chiral_tag(ChiralTag::TetrahedralCw);
@@ -3812,22 +3817,19 @@ mod complete_copy_enhanced_groups_source_tests {
         let mut m = mapping();
         m.reactant_to_product.insert(0, vec![4, 2, 3, 4]);
         m.reactant_to_product.insert(1, vec![0]);
-        run(&r, &mut p, &m).unwrap();
-        assert_eq!(p.topology.stereo_groups.len(), 1);
-        let g = &p.topology.stereo_groups[0];
+        let before = p.topology.stereo_groups.clone();
+        let error = run(&r, &mut p, &m).unwrap_err();
+        assert!(matches!(
+            error,
+            ReactionProductError::StereoGroup(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(p.topology.stereo_groups, before);
         assert_eq!(
-            g.atoms(),
-            [
-                AtomId::new(4),
-                AtomId::new(4),
-                AtomId::new(0),
-                AtomId::new(4),
-                AtomId::new(4)
-            ]
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<cosmolkit_model::StereoGroupError>(),
+            Some(&cosmolkit_model::StereoGroupError::DuplicateAtom)
         );
-        assert!(g.bonds().is_empty());
-        assert_eq!(g.id(), Some(13));
-        assert_eq!(g.write_id(), 0);
     }
     #[test]
     fn every_flag_other_than_four_keeps_nonunspecified_atom_without_tetrahedral_restriction() {
@@ -3874,6 +3876,14 @@ mod complete_copy_enhanced_groups_source_tests {
     }
     #[test]
     fn new_nonabsolute_groups_prepend_and_existing_groups_keep_full_read_write_and_bond_state() {
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(5), AtomId::new(5)],
+                vec![BondId::new(4), BondId::new(2)]
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        );
         let mut r = topology(&[], ChiralTag::Unspecified);
         r.stereo_groups = vec![
             group(StereoGroupKind::Or, &[0], &[2], Some(7), 99),
@@ -3881,7 +3891,7 @@ mod complete_copy_enhanced_groups_source_tests {
         ];
         let mut p = product(&[], ChiralTag::SquarePlanar);
         p.topology.stereo_groups =
-            vec![group(StereoGroupKind::And, &[5, 5], &[4, 2], Some(91), 73)];
+            vec![group(StereoGroupKind::And, &[5, 6], &[4, 2], Some(91), 73)];
         let existing = p.topology.stereo_groups[0].clone();
         run(&r, &mut p, &mapping()).unwrap();
         assert_eq!(
@@ -3903,13 +3913,21 @@ mod complete_copy_enhanced_groups_source_tests {
     }
     #[test]
     fn absolute_groups_use_sole_source_reverse_concatenation_without_sorting_or_deduplication() {
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(7), AtomId::new(7), AtomId::new(6)],
+                vec![BondId::new(2), BondId::new(1)]
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        );
         let mut r = topology(&[], ChiralTag::Unspecified);
         r.stereo_groups = vec![group(StereoGroupKind::Absolute, &[0, 1], &[], Some(7), 9)];
         let mut p = product(&[], ChiralTag::Other);
         p.topology.atoms[1].set_chiral_tag(ChiralTag::Other);
         p.topology.stereo_groups = vec![
             group(StereoGroupKind::Or, &[8], &[2], Some(12), 33),
-            group(StereoGroupKind::Absolute, &[7, 7, 6], &[2, 1], Some(9), 22),
+            group(StereoGroupKind::Absolute, &[7, 6], &[2, 1], Some(9), 22),
         ];
         let mut m = mapping();
         m.reactant_to_product.insert(1, vec![1]);
@@ -3919,7 +3937,6 @@ mod complete_copy_enhanced_groups_source_tests {
         assert_eq!(
             g.atoms(),
             [
-                AtomId::new(7),
                 AtomId::new(7),
                 AtomId::new(6),
                 AtomId::new(0),
@@ -4014,6 +4031,23 @@ mod complete_copy_enhanced_groups_source_tests {
             Err(ReactionProductError::PropertyInt { .. })
         ));
         assert!(p.topology.stereo_groups.is_empty());
+    }
+
+    #[test]
+    fn recovery_chem29_final_abs_merge_failure_preserves_original_product_groups() {
+        let mut r = topology(&[], ChiralTag::Unspecified);
+        r.stereo_groups = vec![group(StereoGroupKind::Absolute, &[0], &[], Some(7), 9)];
+        let mut p = product(&[], ChiralTag::TetrahedralCw);
+        p.topology.stereo_groups = vec![group(StereoGroupKind::Absolute, &[0], &[], Some(8), 10)];
+        let before = p.topology.stereo_groups.clone();
+        let mut m = mapping();
+        m.reactant_to_product.insert(0, vec![0]);
+        let error = run(&r, &mut p, &m).unwrap_err();
+        assert!(matches!(
+            error,
+            ReactionProductError::StereoGroup(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(p.topology.stereo_groups, before);
     }
 }
 
@@ -4346,6 +4380,7 @@ mod complete_copy_template_groups_source_tests {
             atoms.iter().map(|&i| AtomId::new(i)).collect(),
             bonds.iter().map(|&i| BondId::new(i)).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_id(id)
         .with_write_id(write)
     }
@@ -4390,9 +4425,17 @@ mod complete_copy_template_groups_source_tests {
     #[test]
     fn template_member_order_expands_all_matching_product_atoms_without_filtering_or_deduplication()
     {
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)],
+                vec![BondId::new(4)]
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        );
         let q = template(
             &[Some(7), Some(8)],
-            vec![group(StereoGroupKind::Or, &[1, 0, 1], &[4], 13, 77)],
+            vec![group(StereoGroupKind::Or, &[1, 0], &[4], 13, 77)],
         );
         let mut p = mapped_product(&[Some(7), Some(8), Some(7)]);
         p.topology.atoms[0].set_chiral_tag(ChiralTag::Unspecified);
@@ -4402,16 +4445,34 @@ mod complete_copy_template_groups_source_tests {
         copy_template_groups(&mut p, &q, 0).unwrap();
         assert_eq!(
             p.topology.stereo_groups[0].atoms(),
-            [
-                AtomId::new(1),
-                AtomId::new(0),
-                AtomId::new(2),
-                AtomId::new(1)
-            ]
+            [AtomId::new(1), AtomId::new(0), AtomId::new(2)]
         );
         assert!(p.topology.stereo_groups[0].bonds().is_empty());
         assert_eq!(p.topology.stereo_groups[0].id(), Some(13));
         assert_eq!(p.topology.stereo_groups[0].write_id(), 0);
+    }
+    #[test]
+    fn recovery_chem29_template_distinct_members_with_repeated_map_reject_generated_duplicate_before_commit()
+     {
+        let q = template(
+            &[Some(7), Some(7)],
+            vec![group(StereoGroupKind::Or, &[1, 0], &[], 13, 77)],
+        );
+        let mut p = mapped_product(&[Some(7), Some(8), Some(7)]);
+        p.topology.stereo_groups = vec![group(StereoGroupKind::And, &[4], &[], 21, 23)];
+        let before = p.topology.clone();
+        let error = copy_template_groups(&mut p, &q, 0).unwrap_err();
+        assert!(matches!(
+            error,
+            ReactionProductError::StereoGroup(cosmolkit_model::StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(p.topology, before);
+        assert_eq!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<cosmolkit_model::StereoGroupError>(),
+            Some(&cosmolkit_model::StereoGroupError::DuplicateAtom)
+        );
     }
     #[test]
     fn zero_map_abandons_group_but_earlier_marks_still_remove_overlapping_existing_group() {
@@ -4472,21 +4533,18 @@ mod complete_copy_template_groups_source_tests {
             vec![group(StereoGroupKind::Or, &[0], &[], 13, 77)],
         );
         let mut p = mapped_product(&[Some(7)]);
-        let no_overlap = group(StereoGroupKind::And, &[3, 3], &[2, 1], 21, 88);
+        let no_overlap = group(StereoGroupKind::And, &[3], &[2, 1], 21, 88);
         p.topology.stereo_groups = vec![
             no_overlap.clone(),
-            group(StereoGroupKind::And, &[0, 0, 2, 2], &[4, 3], 22, 99),
-            group(StereoGroupKind::And, &[0, 0], &[5], 23, 66),
+            group(StereoGroupKind::And, &[0, 2], &[4, 3], 22, 99),
+            group(StereoGroupKind::And, &[0], &[5], 23, 66),
             group(StereoGroupKind::Or, &[], &[6], 24, 55),
         ];
         let bond_only = p.topology.stereo_groups[3].clone();
         copy_template_groups(&mut p, &q, 0).unwrap();
         assert_eq!(p.topology.stereo_groups.len(), 4);
         assert_eq!(p.topology.stereo_groups[1], no_overlap);
-        assert_eq!(
-            p.topology.stereo_groups[2].atoms(),
-            [AtomId::new(2), AtomId::new(2)]
-        );
+        assert_eq!(p.topology.stereo_groups[2].atoms(), [AtomId::new(2)]);
         assert!(p.topology.stereo_groups[2].bonds().is_empty());
         assert_eq!(p.topology.stereo_groups[2].id(), Some(22));
         assert_eq!(p.topology.stereo_groups[2].write_id(), 0);
@@ -4596,15 +4654,13 @@ mod complete_copy_template_groups_source_tests {
             ],
         );
         let mut p = mapped_product(&[Some(7), Some(8)]);
-        p.topology.stereo_groups =
-            vec![group(StereoGroupKind::Absolute, &[8, 8, 7], &[2, 1], 3, 9)];
+        p.topology.stereo_groups = vec![group(StereoGroupKind::Absolute, &[8, 7], &[2, 1], 3, 9)];
         copy_template_groups(&mut p, &q, 0).unwrap();
         assert_eq!(p.topology.stereo_groups.len(), 1);
         let g = &p.topology.stereo_groups[0];
         assert_eq!(
             g.atoms(),
             [
-                AtomId::new(8),
                 AtomId::new(8),
                 AtomId::new(7),
                 AtomId::new(1),

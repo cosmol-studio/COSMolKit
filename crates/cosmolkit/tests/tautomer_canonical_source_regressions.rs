@@ -6,13 +6,13 @@ use cosmolkit::{AtomId, BondId, Molecule, TautomerEnumerationStatus, TautomerPar
 use std::collections::BTreeSet;
 #[test]
 fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_rdkit() {
-    let molecule = Molecule::from_smiles(
+    let mut molecule = Molecule::from_smiles(
         "N[C@H](C(=O)N1CCCC1)[C@H]1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
     )
     .expect("parse CHEMBL23979 ring-stereo regression");
     let params = TautomerParams::default().with_reassign_stereo(false);
 
-    let result = molecule
+    let mut result = molecule
         .enumerate_tautomers_with_params(&params)
         .expect("enumerate CHEMBL23979 ring-stereo regression");
 
@@ -52,7 +52,10 @@ fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_r
     assert_eq!(
         result
             .iter()
-            .map(|candidate| candidate.tautomer_score().unwrap().total())
+            .map(|candidate| {
+                let mut value = candidate.clone();
+                value.tautomer_score().unwrap().total()
+            })
             .collect::<Vec<_>>(),
         [251, 250, 250, 255]
     );
@@ -68,10 +71,10 @@ fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_r
 
 #[test]
 fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724() {
-    let molecule =
+    let mut molecule =
         Molecule::from_smiles("COc1ccc(OC)c(/C=N/N=C(\\N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1").unwrap();
     let params = TautomerParams::default().with_reassign_stereo(false);
-    let result = molecule.enumerate_tautomers_with_params(&params).unwrap();
+    let mut result = molecule.enumerate_tautomers_with_params(&params).unwrap();
     assert_eq!(
         result
             .canonical_smiles()
@@ -109,7 +112,10 @@ fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724()
     assert_eq!(
         result
             .iter()
-            .map(|candidate| candidate.tautomer_score().unwrap().total())
+            .map(|candidate| {
+                let mut value = candidate.clone();
+                value.tautomer_score().unwrap().total()
+            })
             .collect::<Vec<_>>(),
         [509, 509, 513, 506, 509]
     );
@@ -149,21 +155,23 @@ fn score_params(
 }
 #[test]
 fn canonical_selection_iterable_computes_lexical_ties_and_matches_result_path() {
-    let inputs = ["CCC", "CC", "C"].map(|s| Molecule::from_smiles(s).unwrap());
+    let mut inputs = ["CCC", "CC", "C"].map(|s| Molecule::from_smiles(s).unwrap());
     let before = inputs.clone();
-    let result =
-        cosmolkit::canonical_tautomer_from_molecules_with_params(&inputs, &score_params(|_| Ok(9)))
-            .unwrap();
+    let mut result = cosmolkit::canonical_tautomer_from_molecules_with_params(
+        &mut inputs,
+        &score_params(|_| Ok(9)),
+    )
+    .unwrap();
     assert_eq!(
         result.to_smiles().unwrap(),
         cosmolkit::PropertyText::from("C")
     );
     assert_eq!(inputs, before);
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
-    let result = source.enumerate_tautomers().unwrap();
-    let iterable = result.iter().cloned().collect::<Vec<_>>();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut result = source.enumerate_tautomers().unwrap();
+    let mut iterable = result.iter().cloned().collect::<Vec<_>>();
     assert_eq!(
-        cosmolkit::canonical_tautomer_from_molecules(&iterable).unwrap(),
+        cosmolkit::canonical_tautomer_from_molecules(&mut iterable).unwrap(),
         result.canonical_tautomer().unwrap()
     );
 }
@@ -171,23 +179,23 @@ fn canonical_selection_iterable_computes_lexical_ties_and_matches_result_path() 
 fn iterable_empty_minimum_scores_and_single_score_skip_preserve_source_conditions() {
     use cosmolkit::{OperationError, TautomerRunError};
     assert!(matches!(
-        cosmolkit::canonical_tautomer_from_molecules(&[]),
+        cosmolkit::canonical_tautomer_from_molecules(&mut []),
         Err(OperationError::Tautomer(
             TautomerRunError::NoCanonicalTautomer
         ))
     ));
-    let inputs = ["C", "CC"].map(|s| Molecule::from_smiles(s).unwrap());
+    let mut inputs = ["C", "CC"].map(|s| Molecule::from_smiles(s).unwrap());
     assert!(matches!(
         cosmolkit::canonical_tautomer_from_molecules_with_params(
-            &inputs,
+            &mut inputs,
             &score_params(|_| Ok(i32::MIN))
         ),
         Err(OperationError::Tautomer(
             TautomerRunError::NoCanonicalTautomer
         ))
     ));
-    let result = cosmolkit::canonical_tautomer_from_molecules_with_params(
-        &inputs[..1],
+    let mut result = cosmolkit::canonical_tautomer_from_molecules_with_params(
+        &mut inputs[..1],
         &score_params(|_| panic!("source size-one branch skips scoring")),
     )
     .unwrap();
@@ -211,15 +219,15 @@ fn iterable_retains_duplicate_values_and_first_tie_identity_without_sorting() {
             .build()
             .unwrap()
     };
-    let inputs = [
+    let mut inputs = [
         tagged("first"),
         tagged("second"),
         Molecule::from_smiles("CC").unwrap(),
     ];
     let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed = calls.clone();
-    let result = cosmolkit::canonical_tautomer_from_molecules_with_params(
-        &inputs,
+    let mut result = cosmolkit::canonical_tautomer_from_molecules_with_params(
+        &mut inputs,
         &score_params(move |_| {
             observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(9)

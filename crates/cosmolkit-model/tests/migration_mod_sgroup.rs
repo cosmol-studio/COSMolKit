@@ -562,34 +562,40 @@ fn substance_group_remap_rejects_each_missing_reference_category() {
 fn stereo_group_mutation_and_remap_are_ordered_and_all_or_none() {
     let mut group = StereoGroup::new(
         StereoGroupKind::Or,
-        vec![atom(0), atom(1), atom(0)],
-        vec![bond(0), bond(1), bond(0)],
+        vec![atom(0), atom(1)],
+        vec![bond(0), bond(1)],
     )
+    .expect("valid distinct stereo members")
     .with_id(17);
-    group.push_atom(atom(2));
-    group.push_bond(bond(2));
+    group.push_atom(atom(2)).unwrap();
+    group.push_bond(bond(2)).unwrap();
     group.remove_atom(atom(0));
     group.remove_bond(bond(0));
     assert_eq!(group.id(), Some(17));
     assert_eq!(group.kind(), StereoGroupKind::Or);
-    assert_eq!(group.atoms(), &[atom(1), atom(0), atom(2)]);
-    assert_eq!(group.bonds(), &[bond(1), bond(0), bond(2)]);
+    assert_eq!(group.atoms(), &[atom(1), atom(2)]);
+    assert_eq!(group.bonds(), &[bond(1), bond(2)]);
     assert!(!group.is_empty());
-    assert!(StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![]).is_empty());
+    assert!(
+        StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![])
+            .expect("valid distinct stereo members")
+            .is_empty()
+    );
 
     let atom_map = [Some(atom(10)), Some(atom(11)), Some(atom(12))];
     let bond_map = [Some(bond(20)), Some(bond(21)), Some(bond(22))];
     assert_eq!(
-        group.remapped(&atom_map, &bond_map),
+        group.remapped(&atom_map, &bond_map).unwrap(),
         Some(
             StereoGroup::new(
                 StereoGroupKind::Or,
-                vec![atom(11), atom(10), atom(12)],
-                vec![bond(21), bond(20), bond(22)],
+                vec![atom(11), atom(12)],
+                vec![bond(21), bond(22)],
             )
+            .expect("valid distinct stereo members")
             .with_id(17)
         )
     );
-    assert_eq!(group.remapped(&atom_map[..2], &bond_map), None);
-    assert_eq!(group.remapped(&atom_map, &bond_map[..2]), None);
+    assert_eq!(group.remapped(&atom_map[..2], &bond_map).unwrap(), None);
+    assert_eq!(group.remapped(&atom_map, &bond_map[..2]).unwrap(), None);
 }

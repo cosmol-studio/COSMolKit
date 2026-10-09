@@ -82,3 +82,31 @@ fn query_roots_and_source_ranges_use_the_shared_enumerator() {
     );
     assert!(query_bond_paths_in_range(&query, 3, 2, &rooted).is_err());
 }
+#[test]
+fn search01_query_mask_keeps_real_hydrogen_and_zero_identity_gates() {
+    let query = graph();
+    let before = query.clone();
+    let mask = [true, false, false, false];
+    for use_hydrogens in [false, true] {
+        let p = SubgraphSearchParams {
+            ignore_atoms: Some(&mask),
+            use_hydrogens,
+            rooted_at_atom: Some(AtomId::new(1)),
+        };
+        let expected = if use_hydrogens {
+            vec![vec![BondId::new(1)], vec![BondId::new(2)]]
+        } else {
+            vec![vec![BondId::new(2)]]
+        };
+        assert_eq!(
+            query_subgraphs_in_range(&query, 1, 1, &p).unwrap()[&1],
+            expected
+        );
+        let expected: Vec<_> = expected.into_iter().map(GraphPath::Bonds).collect();
+        assert_eq!(
+            query_bond_paths_in_range(&query, 1, 1, &p).unwrap()[&1],
+            expected
+        );
+    }
+    assert_eq!(query, before);
+}

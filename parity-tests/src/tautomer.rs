@@ -84,7 +84,8 @@ pub fn parameters(profile: TautomerProfile) -> Result<TautomerParams, String> {
         .with_reassign_stereo(profile.reassign_stereo))
 }
 fn score(molecule: &Molecule) -> Result<Score, String> {
-    let score = molecule.tautomer_score().map_err(|e| e.to_string())?;
+    let mut subject = molecule.clone();
+    let score = subject.tautomer_score_().map_err(|e| e.to_string())?;
     Ok(Score {
         ring: score.ring(),
         substructure: score.substructure(),
@@ -157,8 +158,9 @@ fn state(molecule: &Molecule) -> Result<MoleculeState, String> {
 }
 pub fn enumerate(molecule: &Molecule, profile: TautomerProfile) -> Result<Outcome, String> {
     let before = molecule.clone();
-    let result = molecule
-        .enumerate_tautomers_with_params(&parameters(profile)?)
+    let mut subject = molecule.clone();
+    let mut result = subject
+        .enumerate_tautomers_with_params_(&parameters(profile)?)
         .map_err(|e| e.to_string())?;
     let canonical = result.canonical_tautomer().map_err(|e| e.to_string())?;
     let value = Enumeration {
@@ -200,8 +202,9 @@ pub fn enumerate(molecule: &Molecule, profile: TautomerProfile) -> Result<Outcom
 }
 pub fn canonicalize(molecule: &Molecule, profile: TautomerProfile) -> Result<Outcome, String> {
     let before = molecule.clone();
-    let canonical = molecule
-        .canonical_tautomer_with_params(&parameters(profile)?)
+    let mut subject = molecule.clone();
+    let canonical = subject
+        .canonical_tautomer_with_params_(&parameters(profile)?)
         .map_err(|e| e.to_string())?;
     let value = Canonicalization {
         canonical_smiles: smiles(&canonical)?,

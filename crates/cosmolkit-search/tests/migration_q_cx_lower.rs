@@ -234,7 +234,7 @@ fn q28_coordinate_dimension_requires_projected_z_above_source_tolerance() {
 #[test]
 fn q29_enhanced_stereo_projects_group_kinds_ids_and_valid_members() {
     let mut graph = parse_query("CCO");
-    let parsed = parse_cx_extensions("|a:0,99,a:0,o7:1,2,&3:2,o7:0,&3:1,o8:99|")
+    let parsed = parse_cx_extensions("|a:0,99,a:2,o7:1,2,&3:2,o7:0,&3:1,o8:99|")
         .expect("pinned enhanced stereo records");
     apply_cx_to_query_graph(&mut graph, &parsed).expect("source enhanced stereo projection");
 
@@ -243,21 +243,24 @@ fn q29_enhanced_stereo_projects_group_kinds_ids_and_valid_members() {
         &[
             StereoGroup::new(
                 StereoGroupKind::Absolute,
-                vec![AtomId::new(0), AtomId::new(0)],
+                vec![AtomId::new(0), AtomId::new(2)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(0),
             StereoGroup::new(
                 StereoGroupKind::Or,
                 vec![AtomId::new(1), AtomId::new(2), AtomId::new(0)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
             StereoGroup::new(
                 StereoGroupKind::And,
                 vec![AtomId::new(2), AtomId::new(1)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(3),
         ]
     );

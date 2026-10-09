@@ -2134,68 +2134,99 @@ impl<'a> EmbeddedFrag<'a> {
         use_templates: bool,
         templates: &mut CoordinateTemplates,
     ) -> Result<(), FragmentError> {
-        // RDKit❗❗: void EmbeddedFrag::embedFusedRings(const RDKit::VECT_INT_VECT &fusedRings,
-        // RDKit❗❗:                                    bool useRingTemplates) {
-        // RDKit❗❗:   PRECONDITION(dp_mol, "");
-        // RDKit❗❗:   RDKit::INT_VECT funion;
-        // RDKit❗❗:   if (useRingTemplates &&
-        // RDKit❗❗:       (fusedRings.size() > 1 ||
-        // RDKit❗❗:        (fusedRings.size() == 1 && fusedRings[0].size() > 8))) {
-        // RDKit❗❗:     RDKit::Union(fusedRings, funion);
-        // RDKit❗❗:     bool found_template = matchToTemplate(funion, fusedRings.size());
-        // RDKit❗❗:     if (found_template) {
-        // RDKit❗❗:       return;
-        // RDKit❗❗:     }
-        // RDKit❗❗:   }
-        // RDKit❗❗:   std::vector<RDGeom::INT_POINT2D_MAP> coords;
-        // RDKit❗❗:   coords.reserve(fusedRings.size());
-        // RDKit❗❗:   for (const auto &ring : fusedRings) {
-        // RDKit❗❗:     auto ring_coords = embedRing(ring);
-        // RDKit❗❗:     mirrorTransRingAtoms(*dp_mol, ring, ring_coords);
-        // RDKit❗❗:     coords.push_back(ring_coords);
-        // RDKit❗❗:   }
-        // RDKit❗❗:   RDKit::INT_VECT doneRings;
-        // RDKit❗❗:   if (useRingTemplates) {
-        // RDKit❗❗:     RDKit::INT_VECT coreRingsIds;
-        // RDKit❗❗:     auto coreRings = findCoreRings(fusedRings, coreRingsIds, *dp_mol);
-        // RDKit❗❗:     if (coreRings.size() > 1 && coreRings.size() < fusedRings.size()) {
-        // RDKit❗❗:       RDKit::Union(coreRings, funion);
-        // RDKit❗❗:       bool found_template = matchToTemplate(funion, coreRings.size());
-        // RDKit❗❗:       if (found_template) {
-        // RDKit❗❗:         doneRings = coreRingsIds;
-        // RDKit❗❗:       }
-        // RDKit❗❗:     }
-        // RDKit❗❗:   }
-        // RDKit❗❗:   if (doneRings.empty()) {
-        // RDKit❗❗:     auto firstRingId = pickFirstRingToEmbed(*dp_mol, fusedRings);
-        // RDKit❗❗:     this->initFromRingCoords(fusedRings[firstRingId], coords[firstRingId]);
-        // RDKit❗❗:     doneRings.push_back(firstRingId);
-        // RDKit❗❗:   }
-        // RDKit❗❗:   RDKit::Union(fusedRings, funion);
-        // RDKit❗❗:   while (d_eatoms.size() < funion.size()) {
-        // RDKit❗❗:     int nextId;
-        // RDKit❗❗:     auto commonAtomIds = findNextRingToEmbed(doneRings, fusedRings, nextId);
-        // RDKit❗❗:     RDGeom::Transform2D trans;
-        // RDKit❗❗:     EmbeddedFrag embRing;
-        // RDKit❗❗:     embRing.initFromRingCoords(fusedRings[nextId], coords[nextId]);
-        // RDKit❗❗:     RDKit::INT_VECT pinAtoms;
-        // RDKit❗❗:     if (commonAtomIds.size() == 1) {
-        // RDKit❗❗:       trans.assign(this->computeOneAtomTrans(commonAtomIds[0], embRing));
-        // RDKit❗❗:       embRing.Transform(trans);
-        // RDKit❗❗:       pinAtoms.push_back(commonAtomIds.front());
-        // RDKit❗❗:     } else {
-        // RDKit❗❗:       auto aid1 = commonAtomIds.front();
-        // RDKit❗❗:       auto aid2 = commonAtomIds.back();
-        // RDKit❗❗:       pinAtoms.push_back(aid1);
-        // RDKit❗❗:       pinAtoms.push_back(aid2);
-        // RDKit❗❗:       trans.assign(this->computeTwoAtomTrans(aid1, aid2, coords[nextId]));
-        // RDKit❗❗:       embRing.Transform(trans);
-        // RDKit❗❗:       reflectIfNecessaryDensity(embRing, aid1, aid2);
-        // RDKit❗❗:     }
-        // RDKit❗❗:     this->mergeRing(embRing, commonAtomIds.size(), pinAtoms);
-        // RDKit❗❗:     doneRings.push_back(nextId);
-        // RDKit❗❗:   }
-        // RDKit❗❗: }
+        // BEGIN RECOVERY DEP-02 SOURCE embed_fused_rings
+        // RDKit❗❌: void EmbeddedFrag::embedFusedRings(const RDKit::VECT_INT_VECT &fusedRings,
+        // RDKit❗❌:                                    bool useRingTemplates) {
+        // RDKit❗❌:   PRECONDITION(dp_mol, "");
+        // RDKit❗❌:   // Look for a template for the whole system. Failing that simplify the system
+        // RDKit❗❌:   // to a set of core atoms and  look for a template for those. If that fails,
+        // RDKit❗❌:   // start from a single ring. Then add rings one by one
+        // RDKit❗❌:
+        // RDKit❗❌:   RDKit::INT_VECT funion;
+        // RDKit❗❌:   // look for a template that matches the entire fused ring system
+        // RDKit❗❌:   // For single rings, only use templates for macrocycles (size > 8)
+        // RDKit❗❌:   if (useRingTemplates &&
+        // RDKit❗❌:       (fusedRings.size() > 1 ||
+        // RDKit❗❌:        (fusedRings.size() == 1 && fusedRings[0].size() > 8))) {
+        // RDKit❗❌:     RDKit::Union(fusedRings, funion);
+        // RDKit❗❌:     bool found_template = matchToTemplate(funion);
+        // RDKit❗❌:     if (found_template) {
+        // RDKit❗❌:       // we are done
+        // RDKit❗❌:       return;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   std::vector<RDGeom::INT_POINT2D_MAP> coords;
+        // RDKit❗❌:   coords.reserve(fusedRings.size());
+        // RDKit❗❌:
+        // RDKit❗❌:   for (const auto &ring : fusedRings) {
+        // RDKit❗❌:     auto ring_coords = embedRing(ring);
+        // RDKit❗❌:     mirrorTransRingAtoms(*dp_mol, ring, ring_coords);
+        // RDKit❗❌:     coords.push_back(ring_coords);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   RDKit::INT_VECT doneRings;
+        // RDKit❗❌:
+        // RDKit❗❌:   if (useRingTemplates) {
+        // RDKit❗❌:     RDKit::INT_VECT coreRingsIds;
+        // RDKit❗❌:     auto coreRings = findCoreRings(fusedRings, coreRingsIds, *dp_mol);
+        // RDKit❗❌:     if (coreRings.size() > 1 && coreRings.size() < fusedRings.size()) {
+        // RDKit❗❌:       // look for a template that matches the core ring system
+        // RDKit❗❌:       RDKit::Union(coreRings, funion);
+        // RDKit❗❌:       bool found_template = matchToTemplate(funion);
+        // RDKit❗❌:       if (found_template) {
+        // RDKit❗❌:         doneRings = coreRingsIds;
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // if not embed find a ring as a starting point
+        // RDKit❗❌:   if (doneRings.empty()) {
+        // RDKit❗❌:     // FIX for issue 197
+        // RDKit❗❌:     // find the ring with the max substituents
+        // RDKit❗❌:     // If there are multiple pick the largest
+        // RDKit❗❌:     auto firstRingId = pickFirstRingToEmbed(*dp_mol, fusedRings);
+        // RDKit❗❌:
+        // RDKit❗❌:     this->initFromRingCoords(fusedRings[firstRingId], coords[firstRingId]);
+        // RDKit❗❌:     doneRings.push_back(firstRingId);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   RDKit::Union(fusedRings, funion);
+        // RDKit❗❌:   // now loop over the remaining rings and attach them one at a time
+        // RDKit❗❌:   // the order is determined by how many atoms a ring has in common with
+        // RDKit❗❌:   // the atoms already embedded
+        // RDKit❗❌:   while (d_eatoms.size() < funion.size()) {  // ) {
+        // RDKit❗❌:     int nextId;
+        // RDKit❗❌:     // we will take the ring with maximum number of common atoms with
+        // RDKit❗❌:     // with atoms already done
+        // RDKit❗❌:     auto commonAtomIds = findNextRingToEmbed(doneRings, fusedRings, nextId);
+        // RDKit❗❌:
+        // RDKit❗❌:     RDGeom::Transform2D trans;
+        // RDKit❗❌:     EmbeddedFrag embRing;
+        // RDKit❗❌:     embRing.initFromRingCoords(fusedRings[nextId], coords[nextId]);
+        // RDKit❗❌:     RDKit::INT_VECT pinAtoms;
+        // RDKit❗❌:     // REVIEW: using the average position of the shared atoms and the
+        // RDKit❗❌:     // centroid vector, we can make this a single case.
+        // RDKit❗❌:     if (commonAtomIds.size() == 1) {
+        // RDKit❗❌:       trans.assign(this->computeOneAtomTrans(commonAtomIds[0], embRing));
+        // RDKit❗❌:       embRing.Transform(trans);
+        // RDKit❗❌:       pinAtoms.push_back(commonAtomIds.front());
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       // if the common atoms form a chain they are going to be in order - we try
+        // RDKit❗❌:       // to do that in findNextRingToEmbed we will therefore try to use the last
+        // RDKit❗❌:       // and the first atoms in the chain to fuse the rings - will hopefully fix
+        // RDKit❗❌:       // issue 177
+        // RDKit❗❌:       auto aid1 = commonAtomIds.front();
+        // RDKit❗❌:       auto aid2 = commonAtomIds.back();
+        // RDKit❗❌:       pinAtoms.push_back(aid1);
+        // RDKit❗❌:       pinAtoms.push_back(aid2);
+        // RDKit❗❌:       trans.assign(this->computeTwoAtomTrans(aid1, aid2, coords[nextId]));
+        // RDKit❗❌:       embRing.Transform(trans);
+        // RDKit❗❌:       reflectIfNecessaryDensity(embRing, aid1, aid2);
+        // RDKit❗❌:     }
+        // RDKit❗❌:     this->mergeRing(embRing, commonAtomIds.size(), pinAtoms);
+        // RDKit❗❌:     doneRings.push_back(nextId);
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY DEP-02 SOURCE embed_fused_rings
+
         // Behavior: source-order full/core template attempts, seed choice,
         // cyclic mirror, overlap preference, transform/reflection and merge.
         // Complexity: one geometry map per ring and repeated overlap scans as
@@ -2203,7 +2234,7 @@ impl<'a> EmbeddedFrag<'a> {
         let union = ring_union(fused_rings);
         if use_templates
             && (fused_rings.len() > 1 || fused_rings.first().is_some_and(|ring| ring.len() > 8))
-            && self.match_to_template(&union, fused_rings.len(), templates)?
+            && self.match_to_template(&union, templates)?
         {
             return Ok(());
         }
@@ -2226,7 +2257,7 @@ impl<'a> EmbeddedFrag<'a> {
                     .iter()
                     .map(|&index| fused_rings[index].clone())
                     .collect();
-                if self.match_to_template(&ring_union(&core_rings), core_ids.len(), templates)? {
+                if self.match_to_template(&ring_union(&core_rings), templates)? {
                     done = core_ids;
                 }
             }
@@ -2274,113 +2305,110 @@ impl<'a> EmbeddedFrag<'a> {
     pub(crate) fn match_to_template(
         &mut self,
         ring_system_atoms: &[usize],
-        ring_count: usize,
         templates: &mut CoordinateTemplates,
     ) -> Result<bool, FragmentError> {
-        // BEGIN RDKIT CPP FUNCTION EmbeddedFrag::matchToTemplate
-        // RDKit❗❗: bool EmbeddedFrag::matchToTemplate(const RDKit::INT_VECT &ringSystemAtoms,
-        // RDKit❗❗:                                    unsigned int ring_count) {
-        // RDKit❗❗:   CoordinateTemplates &coordinate_templates =
-        // RDKit❗❗:       CoordinateTemplates::getRingSystemTemplates();
-        // RDKit❗❗:
-        // RDKit❗❗:   // only look for an exact match to the ring system because our method of
-        // RDKit❗❗:   // completing rings from a template isn't reliably better than not using
-        // RDKit❗❗:   // a template at all
-        // RDKit❗❗:   if (!coordinate_templates.hasTemplateOfSize(ringSystemAtoms.size())) {
-        // RDKit❗❗:     return false;
-        // RDKit❗❗:   }
-        // RDKit❗❗:
-        // RDKit❗❗:   // make a mol out of the induced subgraph using the ring system atoms
-        // RDKit❗❗:   RDKit::RWMol rs_mol(*dp_mol, true);
-        // RDKit❗❗:
-        // RDKit❗❗:   boost::dynamic_bitset<> rs_atoms(dp_mol->getNumAtoms());
-        // RDKit❗❗:   for (auto aidx : ringSystemAtoms) {
-        // RDKit❗❗:     rs_atoms.set(aidx);
-        // RDKit❗❗:   }
-        // RDKit❗❗:
-        // RDKit❗❗:   constexpr int DUMMY_ATOMIC_NUM = 200;
-        // RDKit❗❗:   for (auto &at : rs_mol.atoms()) {
-        // RDKit❗❗:     if (!rs_atoms.test(at->getIdx())) {
-        // RDKit❗❗:       at->setAtomicNum(DUMMY_ATOMIC_NUM);
-        // RDKit❗❗:     }
-        // RDKit❗❗:   }
-        // RDKit❗❗:   auto numBonds = rs_mol.getNumBonds();
-        // RDKit❗❗:   for (auto bnd : rs_mol.bonds()) {
-        // RDKit❗❗:     if (!rs_atoms.test(bnd->getBeginAtomIdx()) ||
-        // RDKit❗❗:         !rs_atoms.test(bnd->getEndAtomIdx())) {
-        // RDKit❗❗:       --numBonds;
-        // RDKit❗❗:     }
-        // RDKit❗❗:   }
-        // RDKit❗❗:
-        // RDKit❗❗:   // find template that this mol matches to, if any
-        // RDKit❗❗:   RDKit::MatchVectType match;
-        // RDKit❗❗:   std::shared_ptr<RDKit::ROMol> template_mol(nullptr);
-        // RDKit❗❗:   for (const auto &mol :
-        // RDKit❗❗:        coordinate_templates.getMatchingTemplates(ringSystemAtoms.size())) {
-        // RDKit❗❗:     // To reduce how often we have to do substructure matches, check ring info
-        // RDKit❗❗:     // and bond count first
-        // RDKit❗❗:     if (mol->getNumBonds() != numBonds) {
-        // RDKit❗❗:       continue;
-        // RDKit❗❗:     } else if (mol->getRingInfo()->numRings() != ring_count) {
-        // RDKit❗❗:       continue;
-        // RDKit❗❗:     }
-        // RDKit❗❗:     // also check if the mol atoms have the same connectivity as the template
-        // RDKit❗❗: #ifdef _MSC_VER
-        // RDKit❗❗:     // MSVC++ doesn't like implicitly capturing constexpr variables, this is a
-        // RDKit❗❗:     // bug
-        // RDKit❗❗:     auto degreeCounts = [DUMMY_ATOMIC_NUM](const RDKit::ROMol &mol) {
-        // RDKit❗❗: #else
-        // RDKit❗❗:     // clang generates warnings if you explicitly capture a constexpr variable
-        // RDKit❗❗:     auto degreeCounts = [](const RDKit::ROMol &mol) {
-        // RDKit❗❗: #endif
-        // RDKit❗❗:       std::array<int, 5> degrees_count({0, 0, 0, 0, 0});
-        // RDKit❗❗:       for (auto atom : mol.atoms()) {
-        // RDKit❗❗:         if (atom->getAtomicNum() == DUMMY_ATOMIC_NUM) {
-        // RDKit❗❗:           continue;
-        // RDKit❗❗:         }
-        // RDKit❗❗:         auto degree = 0u;
-        // RDKit❗❗:         for (auto nbr : mol.atomNeighbors(atom)) {
-        // RDKit❗❗:           if (nbr->getAtomicNum() != DUMMY_ATOMIC_NUM) {
-        // RDKit❗❗:             ++degree;
-        // RDKit❗❗:             if (degree == 4) {
-        // RDKit❗❗:               break;
-        // RDKit❗❗:             }
-        // RDKit❗❗:           }
-        // RDKit❗❗:         }
-        // RDKit❗❗:         degrees_count[degree]++;
-        // RDKit❗❗:       }
-        // RDKit❗❗:       return degrees_count;
-        // RDKit❗❗:     };
-        // RDKit❗❗:     if (degreeCounts(rs_mol) != degreeCounts(*mol)) {
-        // RDKit❗❗:       continue;
-        // RDKit❗❗:     }
-        // RDKit❗❗:     RDKit::SubstructMatchParameters params;
-        // RDKit❗❗:     params.maxMatches = 1;
-        // RDKit❗❗:     auto matches = RDKit::SubstructMatch(rs_mol, *mol, params);
-        // RDKit❗❗:     if (!matches.empty()) {
-        // RDKit❗❗:       if (checkStereoChemistry(rs_mol, *mol, matches[0])) {
-        // RDKit❗❗:         match = matches[0];
-        // RDKit❗❗:         template_mol = mol;
-        // RDKit❗❗:         break;
-        // RDKit❗❗:       }
-        // RDKit❗❗:     }
-        // RDKit❗❗:   }
-        // RDKit❗❗:   if (!template_mol) {
-        // RDKit❗❗:     return false;
-        // RDKit❗❗:   }
-        // RDKit❗❗:
-        // RDKit❗❗:   // copy over new coordinates
-        // RDKit❗❗:   const auto &conf = template_mol->getConformer();
-        // RDKit❗❗:   for (auto &[template_aidx, rs_aidx] : match) {
-        // RDKit❗❗:     EmbeddedAtom new_at(rs_aidx, conf.getAtomPos(template_aidx));
-        // RDKit❗❗:     new_at.df_fixed = true;
-        // RDKit❗❗:     d_eatoms.emplace(rs_aidx, new_at);
-        // RDKit❗❗:   }
-        // RDKit❗❗:   this->setupNewNeighs();
-        // RDKit❗❗:   this->setupAttachmentPoints();
-        // RDKit❗❗:   return true;
-        // RDKit❗❗: }
-        // END RDKIT CPP FUNCTION EmbeddedFrag::matchToTemplate
+        // BEGIN RECOVERY DEP-02 SOURCE match_to_template
+        // RDKit❗❌: bool EmbeddedFrag::matchToTemplate(const RDKit::INT_VECT &ringSystemAtoms) {
+        // RDKit❗❌:   CoordinateTemplates &coordinate_templates =
+        // RDKit❗❌:       CoordinateTemplates::getRingSystemTemplates();
+        // RDKit❗❌:
+        // RDKit❗❌:   // only look for an exact match to the ring system because our method of
+        // RDKit❗❌:   // completing rings from a template isn't reliably better than not using
+        // RDKit❗❌:   // a template at all
+        // RDKit❗❌:   if (!coordinate_templates.hasTemplateOfSize(ringSystemAtoms.size())) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // make a mol out of the induced subgraph using the ring system atoms
+        // RDKit❗❌:   RDKit::RWMol rs_mol(*dp_mol, true);
+        // RDKit❗❌:
+        // RDKit❗❌:   boost::dynamic_bitset<> rs_atoms(dp_mol->getNumAtoms());
+        // RDKit❗❌:   for (auto aidx : ringSystemAtoms) {
+        // RDKit❗❌:     rs_atoms.set(aidx);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   constexpr int DUMMY_ATOMIC_NUM = 200;
+        // RDKit❗❌:   for (auto &at : rs_mol.atoms()) {
+        // RDKit❗❌:     if (!rs_atoms.test(at->getIdx())) {
+        // RDKit❗❌:       at->setAtomicNum(DUMMY_ATOMIC_NUM);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   auto numBonds = rs_mol.getNumBonds();
+        // RDKit❗❌:   for (auto bnd : rs_mol.bonds()) {
+        // RDKit❗❌:     if (!rs_atoms.test(bnd->getBeginAtomIdx()) ||
+        // RDKit❗❌:         !rs_atoms.test(bnd->getEndAtomIdx())) {
+        // RDKit❗❌:       --numBonds;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // find template that this mol matches to, if any
+        // RDKit❗❌:   RDKit::MatchVectType match;
+        // RDKit❗❌:   std::shared_ptr<RDKit::ROMol> template_mol(nullptr);
+        // RDKit❗❌:   for (const auto &mol :
+        // RDKit❗❌:        coordinate_templates.getMatchingTemplates(ringSystemAtoms.size())) {
+        // RDKit❗❌:     // To reduce how often we have to do substructure matches, check ring info
+        // RDKit❗❌:     // and bond count first
+        // RDKit❗❌:     if (mol->getNumBonds() != numBonds) {
+        // RDKit❗❌:       continue;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     // also check if the mol atoms have the same connectivity as the template
+        // RDKit❗❌: #ifdef _MSC_VER
+        // RDKit❗❌:     // MSVC++ doesn't like implicitly capturing constexpr variables, this is a
+        // RDKit❗❌:     // bug
+        // RDKit❗❌:     auto degreeCounts = [DUMMY_ATOMIC_NUM](const RDKit::ROMol &mol) {
+        // RDKit❗❌: #else
+        // RDKit❗❌:     // clang generates warnings if you explicitly capture a constexpr variable
+        // RDKit❗❌:     auto degreeCounts = [](const RDKit::ROMol &mol) {
+        // RDKit❗❌: #endif
+        // RDKit❗❌:       std::array<int, 5> degrees_count({0, 0, 0, 0, 0});
+        // RDKit❗❌:       for (auto atom : mol.atoms()) {
+        // RDKit❗❌:         if (atom->getAtomicNum() == DUMMY_ATOMIC_NUM) {
+        // RDKit❗❌:           continue;
+        // RDKit❗❌:         }
+        // RDKit❗❌:         auto degree = 0u;
+        // RDKit❗❌:         for (auto nbr : mol.atomNeighbors(atom)) {
+        // RDKit❗❌:           if (nbr->getAtomicNum() != DUMMY_ATOMIC_NUM) {
+        // RDKit❗❌:             ++degree;
+        // RDKit❗❌:             if (degree == 4) {
+        // RDKit❗❌:               break;
+        // RDKit❗❌:             }
+        // RDKit❗❌:           }
+        // RDKit❗❌:         }
+        // RDKit❗❌:         degrees_count[degree]++;
+        // RDKit❗❌:       }
+        // RDKit❗❌:       return degrees_count;
+        // RDKit❗❌:     };
+        // RDKit❗❌:     if (degreeCounts(rs_mol) != degreeCounts(*mol)) {
+        // RDKit❗❌:       continue;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     RDKit::SubstructMatchParameters params;
+        // RDKit❗❌:     params.maxMatches = 1;
+        // RDKit❗❌:     auto matches = RDKit::SubstructMatch(rs_mol, *mol, params);
+        // RDKit❗❌:     if (!matches.empty()) {
+        // RDKit❗❌:       if (checkStereoChemistry(rs_mol, *mol, matches[0])) {
+        // RDKit❗❌:         match = matches[0];
+        // RDKit❗❌:         template_mol = mol;
+        // RDKit❗❌:         break;
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   if (!template_mol) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // copy over new coordinates
+        // RDKit❗❌:   const auto &conf = template_mol->getConformer();
+        // RDKit❗❌:   for (auto &[template_aidx, rs_aidx] : match) {
+        // RDKit❗❌:     EmbeddedAtom new_at(rs_aidx, conf.getAtomPos(template_aidx));
+        // RDKit❗❌:     new_at.df_fixed = true;
+        // RDKit❗❌:     d_eatoms.emplace(rs_aidx, new_at);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   this->setupNewNeighs();
+        // RDKit❗❌:   this->setupAttachmentPoints();
+        // RDKit❗❌:   return true;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-02 SOURCE match_to_template
+
         // Behavior: source-order first acceptable candidate; exact parity is
         // still pending the owning template-match regression gate.
         // Complexity: the target keeps one O(V) sentinel vector instead of
@@ -2427,7 +2455,6 @@ impl<'a> EmbeddedFrag<'a> {
 
         for template in templates.matching_templates(ring_system_atoms.len()) {
             if template.query.num_bonds() != num_bonds
-                || template.rings.num_rings() != ring_count
                 || template_degree_counts(template) != target_degrees
             {
                 continue;
@@ -2680,37 +2707,66 @@ impl<'a> EmbeddedFrag<'a> {
         aid: usize,
         done_neighbors: &[usize],
     ) -> Result<(), FragmentError> {
+        // BEGIN RECOVERY DEP-01 SOURCE compute_nbrs_and_ang
         // RDKit❗✔️: void EmbeddedFrag::computeNbrsAndAng(unsigned int aid,
         // RDKit❗✔️:                                      const RDKit::INT_VECT &doneNbrs) {
+        // RDKit❗✔️:   //                                     const RDKit::ROMol *mol) {
         // RDKit❗✔️:   PRECONDITION(dp_mol, "");
         // RDKit❗✔️:   PRECONDITION(aid < dp_mol->getNumAtoms(), "");
+        // RDKit❗✔️:
         // RDKit❗✔️:   PRECONDITION(doneNbrs.size() >= 3, "");
-        // RDKit❗✔️:   std::list<DOUBLE_INT_PAIR> anglePairs;
-        // RDKit❗✔️:   double ang;
+        // RDKit❗✔️:   // we will find all the inter nbr angles, pick the one with the largest angle
+        // RDKit❗✔️:   // make those neighbors the nbr1 and nbr2 of aid
+        // RDKit❗✔️:   double ang = 0.;
+        // RDKit❗✔️:   std::vector<DOUBLE_INT_PAIR> anglePairs;
+        // RDKit❗✔️:   anglePairs.reserve(doneNbrs.size() * (doneNbrs.size() - 1) / 2);
         // RDKit❗✔️:   for (auto nbi1 = doneNbrs.begin(); nbi1 != doneNbrs.end(); ++nbi1) {
-        // RDKit❗✔️:     auto nbi3 = nbi1;
-        // RDKit❗✔️:     for (auto nbi2 = nbi3++; nbi2 != doneNbrs.end(); ++nbi2) {
+        // RDKit❗✔️:     for (auto nbi2 = std::next(nbi1); nbi2 != doneNbrs.end(); ++nbi2) {
         // RDKit❗✔️:       ang = computeAngle(d_eatoms[aid].loc, d_eatoms[*nbi1].loc,
         // RDKit❗✔️:                          d_eatoms[*nbi2].loc);
         // RDKit❗✔️:       auto nbrPair = std::make_pair((*nbi1), (*nbi2));
         // RDKit❗✔️:       anglePairs.emplace_back(ang, nbrPair);
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   anglePairs.sort([](auto pr1, auto pr2) { return pr1.first < pr2.first; });
+        // RDKit❗✔️:
+        // RDKit❗✔️:   std::ranges::sort(anglePairs, [](const auto &pr1, const auto &pr2) {
+        // RDKit❗✔️:     if (pr1.first == pr2.first) {
+        // RDKit❗✔️:       return pr1.second < pr2.second;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     return pr1.first < pr2.first;
+        // RDKit❗✔️:   });
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // more pain, more pain we unfortunately cannot right away pick the largest
+        // RDKit❗✔️:   // angle - it is possible that we pick an angle that is in a fused ring - see
+        // RDKit❗✔️:   // if I can explain this with a diagram
+        // RDKit❗✔️:   //        _     _
+        // RDKit❗✔️:   //       / B   C \                                this space
+        // RDKit❗✔️:   //      /   \ /   \                               intentionally left blank
+        // RDKit❗✔️:   //     |     A     |
+        // RDKit❗✔️:   //     |     |     |
+        // RDKit❗✔️:   //      \    D    /
+        // RDKit❗✔️:   //       \_/   \_/
+        // RDKit❗✔️:   //
+        // RDKit❗✔️:   //  Let's say we are sitting on A with nbrs B, C, D - it is possible that we
+        // RDKit❗✔️:   //  find ang(BAD) to be largest, but a new neighbor in this case will be added
+        // RDKit❗✔️:   //  inside the ring We want to find ang(BAC) instead - which we will this do
+        // RDKit❗✔️:   //  by checking that both our neighbors are not involved in more than one
+        // RDKit❗✔️:   //  ring. Bridged systems - don't even go there
         // RDKit❗✔️:   auto winner = anglePairs.back();
-        // RDKit❗✔️:   for (auto pr : boost::adaptors::reverse(anglePairs)) {
+        // RDKit❗✔️:   for (const auto &pr : boost::adaptors::reverse(anglePairs)) {
         // RDKit❗✔️:     if ((dp_mol->getRingInfo()->numAtomRings(pr.second.first) <= 1) &&
         // RDKit❗✔️:         (dp_mol->getRingInfo()->numAtomRings(pr.second.second) <= 1)) {
         // RDKit❗✔️:       winner = pr;
         // RDKit❗✔️:       break;
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   auto winPair = winner.second;
-        // RDKit❗✔️:   auto wnb1 = winPair.first;
-        // RDKit❗✔️:   auto wnb2 = winPair.second;
-        // RDKit❗✔️:   int nb2 = -1, nb1 = -1;
-        // RDKit❗✔️:   for (auto anglePair : anglePairs) {
-        // RDKit❗✔️:     auto nbrPair = anglePair.second;
+        // RDKit❗✔️:   const auto [wnb1, wnb2] = winner.second;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // now find the smallest angle that contains one of these nbrs
+        // RDKit❗✔️:   int nb2 = -1;
+        // RDKit❗✔️:   int nb1 = -1;
+        // RDKit❗✔️:   for (const auto &anglePair : anglePairs) {
+        // RDKit❗✔️:     const auto nbrPair = anglePair.second;
         // RDKit❗✔️:     if (wnb1 == nbrPair.first) {
         // RDKit❗✔️:       nb2 = wnb1;
         // RDKit❗✔️:       nb1 = nbrPair.second;
@@ -2729,6 +2785,8 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:       break;
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // now find the rotation between nb1 and nb2
         // RDKit❗✔️:   auto wAng = winner.first;
         // RDKit❗✔️:   d_eatoms[aid].rotDir = rotationDir(d_eatoms[aid].loc, d_eatoms[nb1].loc,
         // RDKit❗✔️:                                      d_eatoms[nb2].loc, wAng);
@@ -2736,6 +2794,8 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   d_eatoms[aid].nbr2 = nb2;
         // RDKit❗✔️:   d_eatoms[aid].angle = 2 * M_PI - wAng;
         // RDKit❗✔️: }
+        // END RECOVERY DEP-01 SOURCE compute_nbrs_and_ang
+
         if done_neighbors.len() < 3 {
             return Err(FragmentError::NotEnoughEmbeddedNeighbors {
                 atom: aid,
@@ -2747,9 +2807,9 @@ impl<'a> EmbeddedFrag<'a> {
             .get(&aid)
             .ok_or(FragmentError::AtomNotEmbedded { atom: aid })?
             .loc;
-        let mut pairs = Vec::new();
+        let mut pairs = Vec::with_capacity(done_neighbors.len() * (done_neighbors.len() - 1) / 2);
         for (i, &first) in done_neighbors.iter().enumerate() {
-            for &second in &done_neighbors[i..] {
+            for &second in &done_neighbors[i + 1..] {
                 let a = self
                     .atoms
                     .get(&first)
@@ -2763,7 +2823,15 @@ impl<'a> EmbeddedFrag<'a> {
                 pairs.push((compute_angle(center, a, b)?, first, second));
             }
         }
-        pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+        pairs.sort_unstable_by(|a, b| {
+            if a.0 == b.0 {
+                (a.1, a.2).cmp(&(b.1, b.2))
+            } else {
+                a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal)
+            }
+        });
+        #[cfg(test)]
+        recovery_dep01_tests::record_pairs(&pairs, pairs.capacity());
         let mut winner = *pairs.last().ok_or(FragmentError::InvalidAngle)?;
         for &pair in pairs.iter().rev() {
             if self.rings.num_atom_rings(AtomId::new(pair.1)) <= 1
@@ -3275,19 +3343,22 @@ impl<'a> EmbeddedFrag<'a> {
 
 impl EmbeddedFrag<'_> {
     fn collect_flip_side(&self, end_aid: usize, begin_aid: usize) -> Vec<usize> {
-        // RDKit❗✔️: void _recurseAtomOneSide(unsigned int endAid, unsigned int begAid,
-        // RDKit❗✔️:                          const RDKit::ROMol *mol, RDKit::INT_VECT &flipAids) {
-        // RDKit❗✔️:   PRECONDITION(mol, "");
-        // RDKit❗✔️:   flipAids.push_back(endAid);
-        // RDKit❗✔️:   for (auto nbr : mol->atomNeighbors(mol->getAtomWithIdx(endAid))) {
-        // RDKit❗✔️:     if (nbr->getIdx() != begAid &&
-        // RDKit❗✔️:         (std::find(flipAids.begin(), flipAids.end(),
-        // RDKit❗✔️:                    static_cast<int>(nbr->getIdx())) == flipAids.end())) {
-        // RDKit❗✔️:       _recurseAtomOneSide(nbr->getIdx(), begAid, mol, flipAids);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return;
-        // RDKit❗✔️: }
+        // BEGIN RECOVERY DEP-04 SOURCE collect_flip_side
+        // RDKit✔️✔️: void _recurseAtomOneSide(unsigned int endAid, unsigned int begAid,
+        // RDKit✔️✔️:                          const RDKit::ROMol *mol, RDKit::INT_VECT &flipAids) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "");
+        // RDKit✔️✔️:   flipAids.push_back(endAid);
+        // RDKit✔️✔️:   for (auto nbr : mol->atomNeighbors(mol->getAtomWithIdx(endAid))) {
+        // RDKit✔️✔️:     if (nbr->getIdx() != begAid &&
+        // RDKit✔️✔️:         (std::find(flipAids.begin(), flipAids.end(),
+        // RDKit✔️✔️:                    static_cast<int>(nbr->getIdx())) == flipAids.end())) {
+        // RDKit✔️✔️:       _recurseAtomOneSide(nbr->getIdx(), begAid, mol, flipAids);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return;
+        // RDKit✔️✔️: }
+        // END RECOVERY DEP-04 SOURCE collect_flip_side
+
         // Behavior: source neighbor order and visited-vector test, with the
         // opposite bond endpoint excluded at every recursive level.
         // Complexity: source O(path traversal * visited-vector length).
@@ -3309,6 +3380,9 @@ impl EmbeddedFrag<'_> {
         bond_id: usize,
         flip_end: bool,
     ) -> Result<(), FragmentError> {
+        #[cfg(test)]
+        recovery_dep04_tests::record(recovery_dep04_tests::Event::Bond(bond_id, flip_end));
+
         // RDKit❗✔️: void EmbeddedFrag::flipAboutBond(unsigned int bondId, bool flipEnd) {
         // RDKit❗✔️:   PRECONDITION(dp_mol, "");
         // RDKit❗✔️:   PRECONDITION(bondId < dp_mol->getNumBonds(), "");
@@ -3889,115 +3963,617 @@ impl EmbeddedFrag<'_> {
         Ok(())
     }
 
-    pub(crate) fn remove_collisions_bond_flip(&mut self) -> Result<(), FragmentError> {
-        // RDKit❗✔️: void EmbeddedFrag::removeCollisionsBondFlip() {
-        // RDKit❗✔️:   // try to remove collisions in a structure by flipping rotatable bonds along
-        // RDKit❗✔️:   // the shortest path between the colliding atoms. we will limit the number of
-        // RDKit❗✔️:   // times we are going to do this since we may fall into spiral where removing
-        // RDKit❗✔️:   // a collision may create a new one
-        // RDKit❗✔️:   auto dmat = RDKit::MolOps::getDistanceMat(*dp_mol);
-        // RDKit❗✔️:   auto colls = this->findCollisions(dmat);
-        // RDKit❗✔️:   std::map<int, unsigned int> doneBonds;
-        // RDKit❗✔️:   unsigned int iter = 0;
-        // RDKit❗✔️:   while (iter < MAX_COLL_ITERS && colls.size()) {
-        // RDKit❗✔️:     auto ncols = colls.size();
-        // RDKit❗✔️:     if (ncols > 0) {
-        // RDKit❗✔️:       // we have a collision
-        // RDKit❗✔️:       auto cAids = colls[0];
-        // RDKit❗✔️:       auto rotBonds = getRotatableBonds(*dp_mol, cAids.first, cAids.second);
-        // RDKit❗✔️:       auto prevDensity = this->totalDensity();
-        // RDKit❗✔️:       for (auto ri : rotBonds) {
-        // RDKit❗✔️:         auto doneBondsRiIt = doneBonds.find(ri);
-        // RDKit❗✔️:         if ((doneBondsRiIt == doneBonds.end()) ||
-        // RDKit❗✔️:             (doneBondsRiIt->second < NUM_BONDS_FLIPS)) {
-        // RDKit❗✔️:           if (doneBondsRiIt == doneBonds.end()) {
-        // RDKit❗✔️:             doneBonds[ri] = 1;
-        // RDKit❗✔️:           } else {
-        // RDKit❗✔️:             doneBondsRiIt->second += 1;
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:           flipAboutBond(ri);
-        // RDKit❗✔️:           colls = this->findCollisions(dmat);
-        // RDKit❗✔️:           auto newDensity = this->totalDensity();
-        // RDKit❗✔️:           if (colls.size() < ncols) {
-        // RDKit❗✔️:             doneBonds[ri] = NUM_BONDS_FLIPS;  // lock this rotatable bond
-        // RDKit❗✔️:             break;
-        // RDKit❗✔️:           } else if (colls.size() == ncols && newDensity < prevDensity) {
-        // RDKit❗✔️:             break;
-        // RDKit❗✔️:           } else {
-        // RDKit❗✔️:             // we made the wrong move earlier - reject the flip move it back
-        // RDKit❗✔️:             flipAboutBond(ri);
-        // RDKit❗✔️:             colls = this->findCollisions(dmat);
-        // RDKit❗✔️:             // and try the other end:
-        // RDKit❗✔️:             flipAboutBond(ri, false);
-        // RDKit❗✔️:             colls = this->findCollisions(dmat);
-        // RDKit❗✔️:             newDensity = this->totalDensity();
-        // RDKit❗✔️:             if (colls.size() < ncols) {
-        // RDKit❗✔️:               doneBonds[ri] = NUM_BONDS_FLIPS;  // lock this rotatable bond
-        // RDKit❗✔️:               break;
-        // RDKit❗✔️:             } else if (colls.size() == ncols && newDensity < prevDensity) {
-        // RDKit❗✔️:               break;
-        // RDKit❗✔️:             } else {
-        // RDKit❗✔️:               flipAboutBond(ri, false);
-        // RDKit❗✔️:               colls = this->findCollisions(dmat);
-        // RDKit❗✔️:             }
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     ++iter;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
-        // Behavior: source first-collision selection, three flips per bond,
-        // 15 global iterations, two trial orientations and exact rejection.
-        // Complexity: each trial recomputes collision/density as source.
+    fn is_spiro_center(&self, aid: usize) -> bool {
+        // BEGIN RECOVERY DEP-04 SOURCE is_spiro_center
+        // RDKit❗❌: bool isSpiroCenter(unsigned int aid, const RDKit::ROMol *mol) {
+        // RDKit❗❌:   PRECONDITION(mol, "");
+        // RDKit❗❌:   PRECONDITION(aid < mol->getNumAtoms(), "");
+        // RDKit❗❌:
+        // RDKit❗❌:   // Cheap check first: spiro center should have exactly 4 neighbors
+        // RDKit❗❌:   unsigned int degree = mol->getAtomWithIdx(aid)->getDegree();
+        // RDKit❗❌:   if (degree != 4) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Spiro atom must belong to exactly 2 rings
+        // RDKit❗❌:   unsigned int numRings = mol->getRingInfo()->numAtomRings(aid);
+        // RDKit❗❌:   if (numRings != 2) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Get the two rings containing this atom
+        // RDKit❗❌:   const auto &atomRings = mol->getRingInfo()->atomRings();
+        // RDKit❗❌:   std::vector<RDKit::INT_VECT> rings;
+        // RDKit❗❌:   for (const auto &ring : atomRings) {
+        // RDKit❗❌:     if (std::find(ring.begin(), ring.end(), static_cast<int>(aid)) !=
+        // RDKit❗❌:         ring.end()) {
+        // RDKit❗❌:       rings.push_back(ring);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   if (rings.size() != 2) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Use dynamic_bitset for efficient set operations
+        // RDKit❗❌:   boost::dynamic_bitset<> ring1(mol->getNumAtoms());
+        // RDKit❗❌:   boost::dynamic_bitset<> ring2(mol->getNumAtoms());
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto idx : rings[0]) {
+        // RDKit❗❌:     ring1.set(idx);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   for (auto idx : rings[1]) {
+        // RDKit❗❌:     ring2.set(idx);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Check that the two rings share ONLY this atom (spiro)
+        // RDKit❗❌:   boost::dynamic_bitset<> shared = ring1 & ring2;
+        // RDKit❗❌:   if (shared.count() != 1) {
+        // RDKit❗❌:     // Rings share more than just this atom - not a spiro
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Verify that each ring has exactly 2 neighbors of the spiro atom
+        // RDKit❗❌:   int ring1_neighbors = 0;
+        // RDKit❗❌:   int ring2_neighbors = 0;
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto nbr : mol->atomNeighbors(mol->getAtomWithIdx(aid))) {
+        // RDKit❗❌:     unsigned int nbrIdx = nbr->getIdx();
+        // RDKit❗❌:     bool in_ring1 = ring1.test(nbrIdx);
+        // RDKit❗❌:     bool in_ring2 = ring2.test(nbrIdx);
+        // RDKit❗❌:
+        // RDKit❗❌:     if (in_ring1 && !in_ring2) {
+        // RDKit❗❌:       ring1_neighbors++;
+        // RDKit❗❌:     } else if (in_ring2 && !in_ring1) {
+        // RDKit❗❌:       ring2_neighbors++;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       // Neighbor is in both rings or neither - not a spiro
+        // RDKit❗❌:       return false;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   if (ring1_neighbors != 2 || ring2_neighbors != 2) {
+        // RDKit❗❌:     return false;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   return true;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE is_spiro_center
 
+        if self.topology.adjacency.neighbors_of(aid).len() != 4
+            || self.rings.num_atom_rings(AtomId::new(aid)) != 2
+        {
+            return false;
+        }
+        let containing = self
+            .rings
+            .atom_rings()
+            .iter()
+            .filter(|ring| ring.contains(&AtomId::new(aid)))
+            .collect::<Vec<_>>();
+        if containing.len() != 2 {
+            return false;
+        }
+        let mut ring1 = vec![0u64; self.topology.atoms.len().div_ceil(64)];
+        let mut ring2 = vec![0u64; self.topology.atoms.len().div_ceil(64)];
+        for atom in containing[0] {
+            ring1[atom.index() / 64] |= 1u64 << (atom.index() % 64);
+        }
+        for atom in containing[1] {
+            ring2[atom.index() / 64] |= 1u64 << (atom.index() % 64);
+        }
+        if ring1
+            .iter()
+            .zip(&ring2)
+            .map(|(a, b)| (a & b).count_ones())
+            .sum::<u32>()
+            != 1
+        {
+            return false;
+        }
+        let (mut c1, mut c2) = (0, 0);
+        for neighbor in self.topology.adjacency.neighbors_of(aid) {
+            let n = neighbor.atom_index;
+            match (
+                ring1[n / 64] & (1u64 << (n % 64)) != 0,
+                ring2[n / 64] & (1u64 << (n % 64)) != 0,
+            ) {
+                (true, false) => c1 += 1,
+                (false, true) => c2 += 1,
+                _ => return false,
+            }
+        }
+        c1 == 2 && c2 == 2
+    }
+    fn rings_for_spiro_center(&self, aid: usize) -> [&[AtomId]; 2] {
+        // BEGIN RECOVERY DEP-04 SOURCE rings_for_spiro_center
+        // RDKit❗❌: std::vector<RDKit::INT_VECT> _getRingsForSpiroCenter(unsigned int spiroAid,
+        // RDKit❗❌:                                                      const RDKit::ROMol *mol) {
+        // RDKit❗❌:   PRECONDITION(mol, "");
+        // RDKit❗❌:   std::vector<RDKit::INT_VECT> result;
+        // RDKit❗❌:   const auto &atomRings = mol->getRingInfo()->atomRings();
+        // RDKit❗❌:
+        // RDKit❗❌:   // Collect the 2 rings containing this spiro atom
+        // RDKit❗❌:   for (const auto &ring : atomRings) {
+        // RDKit❗❌:     if (std::find(ring.begin(), ring.end(), static_cast<int>(spiroAid)) !=
+        // RDKit❗❌:         ring.end()) {
+        // RDKit❗❌:       result.push_back(ring);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   POSTCONDITION(result.size() == 2, "Spiro must have exactly 2 rings");
+        // RDKit❗❌:   return result;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE rings_for_spiro_center
+
+        // Borrowing preserves source ring order and avoids two copied ring vectors.
+        let mut it = self
+            .rings
+            .atom_rings()
+            .iter()
+            .filter(|ring| ring.contains(&AtomId::new(aid)));
+        let first = it.next().expect("validated spiro first ring");
+        let second = it.next().expect("validated spiro second ring");
+        assert!(it.next().is_none());
+        [first.as_slice(), second.as_slice()]
+    }
+    fn spiro_shortest_path(&self, src: usize, dst: usize) -> Vec<usize> {
+        // BEGIN RECOVERY DEP-04 SOURCE spiro_shortest_path
+        // RDKit❗❌: INT_LIST getShortestPath(const ROMol &mol, int aid1, int aid2) {
+        // RDKit❗❌:   int nats = mol.getNumAtoms();
+        // RDKit❗❌:   RANGE_CHECK(0, aid1, nats - 1);
+        // RDKit❗❌:   RANGE_CHECK(0, aid2, nats - 1);
+        // RDKit❗❌:   CHECK_INVARIANT(aid1 != aid2, "");
+        // RDKit❗❌:
+        // RDKit❗❌:   INT_VECT pred(nats, -1);  // set all atoms to unprocessed state
+        // RDKit❗❌:   pred[aid1] = -2;          // marks begin
+        // RDKit❗❌:   pred[aid2] = -3;          // marks end
+        // RDKit❗❌:
+        // RDKit❗❌:   std::deque<int> bfsQ;
+        // RDKit❗❌:
+        // RDKit❗❌:   bfsQ.push_back(aid1);
+        // RDKit❗❌:   bool done = false;
+        // RDKit❗❌:   ROMol::ADJ_ITER nbrIdx, endNbrs;
+        // RDKit❗❌:   while ((!done) && (bfsQ.size() > 0)) {
+        // RDKit❗❌:     int curAid = bfsQ.front();
+        // RDKit❗❌:     boost::tie(nbrIdx, endNbrs) =
+        // RDKit❗❌:         mol.getAtomNeighbors(mol.getAtomWithIdx(curAid));
+        // RDKit❗❌:     while (!done && nbrIdx != endNbrs) {
+        // RDKit❗❌:       switch (pred[*nbrIdx]) {
+        // RDKit❗❌:         case -1:
+        // RDKit❗❌:           pred[*nbrIdx] = curAid;
+        // RDKit❗❌:           bfsQ.push_back(rdcast<int>(*nbrIdx));
+        // RDKit❗❌:           break;
+        // RDKit❗❌:         case -3:  // end found
+        // RDKit❗❌:           pred[*nbrIdx] = curAid;
+        // RDKit❗❌:           done = true;
+        // RDKit❗❌:           break;
+        // RDKit❗❌:         default:  // already processed (or begin)
+        // RDKit❗❌:           break;
+        // RDKit❗❌:       }
+        // RDKit❗❌:       ++nbrIdx;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     bfsQ.pop_front();
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   INT_LIST res;
+        // RDKit❗❌:   if (done) {
+        // RDKit❗❌:     done = false;
+        // RDKit❗❌:     int prev = aid2;
+        // RDKit❗❌:     res.push_back(aid2);
+        // RDKit❗❌:     while (!done) {
+        // RDKit❗❌:       prev = pred[prev];
+        // RDKit❗❌:       if (prev != aid1) {
+        // RDKit❗❌:         res.push_front(prev);
+        // RDKit❗❌:       } else {
+        // RDKit❗❌:         done = true;
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:     res.push_front(aid1);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return res;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE spiro_shortest_path
+
+        // New spiro-only adjacency-discovery BFS. Existing bond-path BFS remains unchanged.
+        assert!(src < self.topology.atoms.len() && dst < self.topology.atoms.len() && src != dst);
+        assert!(self.topology.atoms.len() <= i32::MAX as usize);
+        let mut pred = vec![-1i32; self.topology.atoms.len()];
+        pred[src] = -2;
+        pred[dst] = -3;
+        let mut queue = std::collections::VecDeque::from([src as i32]);
+        let mut done = false;
+        while !done && !queue.is_empty() {
+            let cur = queue[0];
+            for neighbor in self.topology.adjacency.neighbors_of(cur as usize) {
+                let nbr = neighbor.atom_index;
+                match pred[nbr] {
+                    -1 => {
+                        pred[nbr] = cur;
+                        queue.push_back(nbr as i32);
+                    }
+                    -3 => {
+                        pred[nbr] = cur;
+                        done = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            queue.pop_front();
+        }
+        if !done {
+            return vec![];
+        }
+        let mut result = std::collections::VecDeque::from([dst]);
+        let mut previous = dst;
+        loop {
+            previous = pred[previous] as usize;
+            if previous == src {
+                break;
+            }
+            result.push_front(previous);
+        }
+        result.push_front(src);
+        result.into_iter().collect()
+    }
+    fn flip_about_spiro_center(&mut self, aid: usize) {
+        // BEGIN RECOVERY DEP-04 SOURCE EmbeddedAtom_Reflect
+        // RDKit❗❌:   void Reflect(const RDGeom::Point2D &loc1, const RDGeom::Point2D &loc2) {
+        // RDKit❗❌:     RDGeom::Point2D temp = loc + normal;
+        // RDKit❗❌:     loc = reflectPoint(loc, loc1, loc2);
+        // RDKit❗❌:     temp = reflectPoint(temp, loc1, loc2);
+        // RDKit❗❌:     normal = temp - loc;
+        // RDKit❗❌:     ccw = (!ccw);
+        // RDKit❗❌:   }
+        // END RECOVERY DEP-04 SOURCE EmbeddedAtom_Reflect
+
+        // BEGIN RECOVERY DEP-04 SOURCE flip_about_spiro_center
+        // RDKit❗❌: void EmbeddedFrag::flipAboutSpiroCenter(unsigned int spiroAid) {
+        // RDKit❗❌:   PRECONDITION(dp_mol, "");
+        // RDKit❗❌:   PRECONDITION(spiroAid < dp_mol->getNumAtoms(), "");
+        // RDKit❗❌:   // Note: Caller validates spiroAid is a spiro center, no need to check again
+        // RDKit❗❌:
+        // RDKit❗❌:   // Get the two rings
+        // RDKit❗❌:   auto rings = _getRingsForSpiroCenter(spiroAid, dp_mol);
+        // RDKit❗❌:   CHECK_INVARIANT(rings.size() == 2, "");
+        // RDKit❗❌:
+        // RDKit❗❌:   // Always flip the first ring
+        // RDKit❗❌:   const auto &targetRing = rings[0];
+        // RDKit❗❌:
+        // RDKit❗❌:   // Find the two neighbors of the spiro atom that are in the target ring
+        // RDKit❗❌:   // (must be bonded to the spiro atom, not just in the same ring)
+        // RDKit❗❌:   std::set<int> targetRingSet(targetRing.begin(), targetRing.end());
+        // RDKit❗❌:   std::vector<unsigned int> ringNeighbors;
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto nbr : dp_mol->atomNeighbors(dp_mol->getAtomWithIdx(spiroAid))) {
+        // RDKit❗❌:     unsigned int nbrIdx = nbr->getIdx();
+        // RDKit❗❌:     if (targetRingSet.contains(nbrIdx)) {
+        // RDKit❗❌:       ringNeighbors.push_back(nbrIdx);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   CHECK_INVARIANT(ringNeighbors.size() == 2,
+        // RDKit❗❌:                   "Spiro atom should have exactly 2 neighbors in each ring");
+        // RDKit❗❌:
+        // RDKit❗❌:   // Recursively collect all atoms on this side of the spiro
+        // RDKit❗❌:   // (includes the ring, fused rings, and all substituents - DRY approach using
+        // RDKit❗❌:   // bond flip logic) Start from one neighbor - it will find the other neighbor
+        // RDKit❗❌:   // through the ring
+        // RDKit❗❌:   RDKit::INT_VECT atomsToFlip;
+        // RDKit❗❌:   _recurseAtomOneSide(ringNeighbors[0], spiroAid, dp_mol, atomsToFlip);
+        // RDKit❗❌:
+        // RDKit❗❌:   // Define reflection axis: through spiro center and midpoint of its two
+        // RDKit❗❌:   // neighbors
+        // RDKit❗❌:   const auto &spiroLoc = d_eatoms.at(spiroAid).loc;
+        // RDKit❗❌:
+        // RDKit❗❌:   // Calculate midpoint of the two neighbors
+        // RDKit❗❌:   const auto &neighbor1Loc = d_eatoms.at(ringNeighbors[0]).loc;
+        // RDKit❗❌:   const auto &neighbor2Loc = d_eatoms.at(ringNeighbors[1]).loc;
+        // RDKit❗❌:   RDGeom::Point2D midpoint = (neighbor1Loc + neighbor2Loc) * 0.5;
+        // RDKit❗❌:
+        // RDKit❗❌:   // Check for fixed atoms (cannot flip if any atoms are fixed)
+        // RDKit❗❌:   for (auto aid : atomsToFlip) {
+        // RDKit❗❌:     if (d_eatoms.at(aid).df_fixed) {
+        // RDKit❗❌:       return;  // Cannot flip - has fixed atoms
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // Reflect all atoms on this side of the spiro (spiro center stays in place)
+        // RDKit❗❌:   for (auto aid : atomsToFlip) {
+        // RDKit❗❌:     d_eatoms[aid].Reflect(spiroLoc, midpoint);
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE flip_about_spiro_center
+
+        #[cfg(test)]
+        recovery_dep04_tests::record(recovery_dep04_tests::Event::Spiro(aid));
+        let [target, _] = self.rings_for_spiro_center(aid);
+        let target = target
+            .iter()
+            .map(|a| a.index())
+            .collect::<std::collections::BTreeSet<_>>();
+        let neighbors = self
+            .topology
+            .adjacency
+            .neighbors_of(aid)
+            .iter()
+            .map(|n| n.atom_index)
+            .filter(|n| target.contains(n))
+            .collect::<Vec<_>>();
+        assert_eq!(neighbors.len(), 2);
+        let side = self.collect_flip_side(neighbors[0], aid);
+        let center = self.atoms[&aid].loc;
+        let first = self.atoms[&neighbors[0]].loc;
+        let second = self.atoms[&neighbors[1]].loc;
+        let midpoint = [(first[0] + second[0]) * 0.5, (first[1] + second[1]) * 0.5];
+        if side.iter().any(|id| self.atoms[id].fixed) {
+            return;
+        }
+        for id in side {
+            let atom = self.atoms.get_mut(&id).expect("embedded component");
+            let temp = [atom.loc[0] + atom.normal[0], atom.loc[1] + atom.normal[1]];
+            atom.loc = reflect_point(atom.loc, center, midpoint);
+            let reflected = reflect_point(temp, center, midpoint);
+            atom.normal = [reflected[0] - atom.loc[0], reflected[1] - atom.loc[1]];
+            atom.ccw = !atom.ccw;
+        }
+    }
+    fn try_resolving_collision_with_bond_flip(
+        &mut self,
+        pair: (usize, usize),
+        ncols: usize,
+        previous_density: f64,
+        done: &mut BTreeMap<usize, usize>,
+        distance: &DenseMatrix,
+    ) -> Result<bool, FragmentError> {
+        // BEGIN RECOVERY DEP-04 SOURCE try_resolving_collision_with_bond_flip
+        // RDKit❗❌: bool EmbeddedFrag::tryResolvingCollisionWithBondFlip(
+        // RDKit❗❌:     const std::pair<unsigned int, unsigned int> &cAids, unsigned int ncols,
+        // RDKit❗❌:     double prevDensity, std::map<int, unsigned int> &doneBonds,
+        // RDKit❗❌:     const double *dmat) {
+        // RDKit❗❌:   auto rotBonds = getRotatableBonds(*dp_mol, cAids.first, cAids.second);
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto ri : rotBonds) {
+        // RDKit❗❌:     auto doneBondsRiIt = doneBonds.find(ri);
+        // RDKit❗❌:     if ((doneBondsRiIt == doneBonds.end()) ||
+        // RDKit❗❌:         (doneBondsRiIt->second < NUM_BONDS_FLIPS)) {
+        // RDKit❗❌:       if (doneBondsRiIt == doneBonds.end()) {
+        // RDKit❗❌:         doneBonds[ri] = 1;
+        // RDKit❗❌:       } else {
+        // RDKit❗❌:         doneBondsRiIt->second += 1;
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       flipAboutBond(ri);
+        // RDKit❗❌:       auto colls = this->findCollisions(dmat);
+        // RDKit❗❌:       auto newDensity = this->totalDensity();
+        // RDKit❗❌:       if (colls.size() < ncols) {
+        // RDKit❗❌:         doneBonds[ri] = NUM_BONDS_FLIPS;  // lock this rotatable bond
+        // RDKit❗❌:         return true;
+        // RDKit❗❌:       } else if (colls.size() == ncols && newDensity < prevDensity) {
+        // RDKit❗❌:         return true;
+        // RDKit❗❌:       } else {
+        // RDKit❗❌:         // we made the wrong move earlier - reject the flip move it back
+        // RDKit❗❌:         flipAboutBond(ri);
+        // RDKit❗❌:         // and try the other end:
+        // RDKit❗❌:         flipAboutBond(ri, false);
+        // RDKit❗❌:         colls = this->findCollisions(dmat);
+        // RDKit❗❌:         newDensity = this->totalDensity();
+        // RDKit❗❌:         if (colls.size() < ncols) {
+        // RDKit❗❌:           doneBonds[ri] = NUM_BONDS_FLIPS;  // lock this rotatable bond
+        // RDKit❗❌:           return true;
+        // RDKit❗❌:         } else if (colls.size() == ncols && newDensity < prevDensity) {
+        // RDKit❗❌:           return true;
+        // RDKit❗❌:         } else {
+        // RDKit❗❌:           flipAboutBond(ri, false);
+        // RDKit❗❌:         }
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return false;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE try_resolving_collision_with_bond_flip
+
+        #[cfg(test)]
+        recovery_dep04_tests::record(recovery_dep04_tests::Event::BondAttempt);
+        for bond in self.rotatable_bonds_on_shortest_path(pair.0, pair.1)? {
+            if done.get(&bond).is_some_and(|&count| count >= 3) {
+                continue;
+            }
+            *done.entry(bond).or_default() += 1;
+            self.flip_about_bond(bond, true)?;
+            let collisions = self.find_collisions(distance, true);
+            let density = self.total_density();
+            if collisions.len() < ncols {
+                done.insert(bond, 3);
+                return Ok(true);
+            } else if collisions.len() == ncols && density < previous_density {
+                return Ok(true);
+            }
+            self.flip_about_bond(bond, true)?;
+            self.flip_about_bond(bond, false)?;
+            let collisions = self.find_collisions(distance, true);
+            let density = self.total_density();
+            if collisions.len() < ncols {
+                done.insert(bond, 3);
+                return Ok(true);
+            } else if collisions.len() == ncols && density < previous_density {
+                return Ok(true);
+            }
+            self.flip_about_bond(bond, false)?;
+            // No refresh after either undo; preserve last-trial cached density.
+        }
+        Ok(false)
+    }
+    fn try_resolving_collision_with_spiro_flip(
+        &mut self,
+        pair: (usize, usize),
+        ncols: usize,
+        previous_density: f64,
+        done: &mut BTreeMap<usize, usize>,
+        centers: &[u64],
+        distance: &DenseMatrix,
+    ) -> Result<bool, FragmentError> {
+        // BEGIN RECOVERY DEP-04 SOURCE try_resolving_collision_with_spiro_flip
+        // RDKit❗❌: bool EmbeddedFrag::tryResolvingCollisionWithSpiroFlip(
+        // RDKit❗❌:     const std::pair<unsigned int, unsigned int> &cAids, unsigned int ncols,
+        // RDKit❗❌:     double prevDensity, std::map<int, unsigned int> &doneSpiros,
+        // RDKit❗❌:     const boost::dynamic_bitset<> &spiroCenters, const double *dmat) {
+        // RDKit❗❌:   // Find spiro centers on the path using our cached bitset (avoid expensive
+        // RDKit❗❌:   // re-checks)
+        // RDKit❗❌:   RDKit::INT_LIST path =
+        // RDKit❗❌:       RDKit::MolOps::getShortestPath(*dp_mol, cAids.first, cAids.second);
+        // RDKit❗❌:   std::vector<unsigned int> spiros;
+        // RDKit❗❌:   for (auto aid : path) {
+        // RDKit❗❌:     if (spiroCenters.test(aid)) {
+        // RDKit❗❌:       spiros.push_back(aid);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto spiroAid : spiros) {
+        // RDKit❗❌:     auto doneSpiroIt = doneSpiros.find(spiroAid);
+        // RDKit❗❌:
+        // RDKit❗❌:     // Skip if already flipped NUM_BONDS_FLIPS times
+        // RDKit❗❌:     if (doneSpiroIt != doneSpiros.end() &&
+        // RDKit❗❌:         doneSpiroIt->second >= NUM_BONDS_FLIPS) {
+        // RDKit❗❌:       continue;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     // Flip the first ring
+        // RDKit❗❌:     flipAboutSpiroCenter(spiroAid);
+        // RDKit❗❌:     auto colls = this->findCollisions(dmat);
+        // RDKit❗❌:     auto newDensity = this->totalDensity();
+        // RDKit❗❌:
+        // RDKit❗❌:     if (colls.size() < ncols) {
+        // RDKit❗❌:       // Success! Lock this spiro
+        // RDKit❗❌:       doneSpiros[spiroAid] = NUM_BONDS_FLIPS;
+        // RDKit❗❌:       return true;
+        // RDKit❗❌:     } else if (colls.size() == ncols && newDensity < prevDensity) {
+        // RDKit❗❌:       // Same collisions but better density - keep it
+        // RDKit❗❌:       if (doneSpiroIt == doneSpiros.end()) {
+        // RDKit❗❌:         doneSpiros[spiroAid] = 1;
+        // RDKit❗❌:       } else {
+        // RDKit❗❌:         doneSpiroIt->second++;
+        // RDKit❗❌:       }
+        // RDKit❗❌:       return true;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       // Didn't help - undo the flip
+        // RDKit❗❌:       flipAboutSpiroCenter(spiroAid);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return false;
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE try_resolving_collision_with_spiro_flip
+
+        #[cfg(test)]
+        recovery_dep04_tests::record(recovery_dep04_tests::Event::SpiroAttempt);
+        let spiros = self
+            .spiro_shortest_path(pair.0, pair.1)
+            .into_iter()
+            .filter(|&id| centers[id / 64] & (1u64 << (id % 64)) != 0)
+            .collect::<Vec<_>>();
+        for id in spiros {
+            let count = done.get(&id).copied();
+            if count.is_some_and(|n| n >= 3) {
+                continue;
+            }
+            self.flip_about_spiro_center(id);
+            let collisions = self.find_collisions(distance, true);
+            let density = self.total_density();
+            if collisions.len() < ncols {
+                done.insert(id, 3);
+                return Ok(true);
+            } else if collisions.len() == ncols && density < previous_density {
+                done.insert(id, count.unwrap_or(0) + 1);
+                return Ok(true);
+            }
+            self.flip_about_spiro_center(id);
+        }
+        Ok(false)
+    }
+
+    pub(crate) fn remove_collisions_bond_and_spiro_flip(&mut self) -> Result<(), FragmentError> {
+        // BEGIN RECOVERY DEP-04 SOURCE remove_collisions_bond_and_spiro_flip
+        // RDKit❗❌: void EmbeddedFrag::removeCollisionsBondAndSpiroFlip() {
+        // RDKit❗❌:   // Pre-compute which atoms are spiro centers (expensive check, so cache it)
+        // RDKit❗❌:   boost::dynamic_bitset<> spiroCenters(dp_mol->getNumAtoms());
+        // RDKit❗❌:   for (unsigned int aid = 0; aid < dp_mol->getNumAtoms(); ++aid) {
+        // RDKit❗❌:     if (isSpiroCenter(aid, dp_mol)) {
+        // RDKit❗❌:       spiroCenters.set(aid);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // try to remove collisions in a structure by flipping rotatable bonds and
+        // RDKit❗❌:   // spiro centers along the shortest path between the colliding atoms. we will
+        // RDKit❗❌:   // limit the number of times we are going to do this since we may fall into
+        // RDKit❗❌:   // spiral where removing a collision may create a new one
+        // RDKit❗❌:   auto dmat = RDKit::MolOps::getDistanceMat(*dp_mol);
+        // RDKit❗❌:   auto colls = this->findCollisions(dmat);
+        // RDKit❗❌:   std::map<int, unsigned int> doneBonds;
+        // RDKit❗❌:   std::map<int, unsigned int> doneSpiros;
+        // RDKit❗❌:   unsigned int iter = 0;
+        // RDKit❗❌:
+        // RDKit❗❌:   while (iter < MAX_COLL_ITERS && colls.size()) {
+        // RDKit❗❌:     auto ncols = colls.size();
+        // RDKit❗❌:     if (ncols > 0) {
+        // RDKit❗❌:       // we have a collision
+        // RDKit❗❌:       auto cAids = colls[0];
+        // RDKit❗❌:       auto prevDensity = this->totalDensity();
+        // RDKit❗❌:       bool resolved = false;
+        // RDKit❗❌:
+        // RDKit❗❌:       // Try bond flipping first
+        // RDKit❗❌:       resolved = tryResolvingCollisionWithBondFlip(cAids, ncols, prevDensity,
+        // RDKit❗❌:                                                    doneBonds, dmat);
+        // RDKit❗❌:
+        // RDKit❗❌:       // Try spiro flipping if bond flipping didn't resolve the collision
+        // RDKit❗❌:       if (!resolved) {
+        // RDKit❗❌:         resolved = tryResolvingCollisionWithSpiroFlip(
+        // RDKit❗❌:             cAids, ncols, prevDensity, doneSpiros, spiroCenters, dmat);
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       // Re-check collisions after flipping
+        // RDKit❗❌:       colls = this->findCollisions(dmat);
+        // RDKit❗❌:     }
+        // RDKit❗❌:     ++iter;
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY DEP-04 SOURCE remove_collisions_bond_and_spiro_flip
+
+        // Keep the existing global borrowed SymmSSSR, including disconnected components.
+        let mut spiro_centers = vec![0u64; self.topology.atoms.len().div_ceil(64)];
+        for aid in 0..self.topology.atoms.len() {
+            if self.is_spiro_center(aid) {
+                spiro_centers[aid / 64] |= 1u64 << (aid % 64);
+            }
+        }
         let distance = self.collision_distance_matrix()?;
         let mut collisions = self.find_collisions(&distance, true);
-        let mut done_bonds = BTreeMap::<usize, usize>::new();
+        let mut done_bonds = BTreeMap::new();
+        let mut done_spiros = BTreeMap::new();
         let mut iteration = 0;
         while iteration < 15 && !collisions.is_empty() {
-            let old_count = collisions.len();
-            let (first, second) = collisions[0];
-            let rotatable = self.rotatable_bonds_on_shortest_path(first, second)?;
-
-            let old_density = self.total_density();
-
-            for bond in rotatable {
-                if done_bonds.get(&bond).is_some_and(|&count| count >= 3) {
-                    continue;
-                }
-                *done_bonds.entry(bond).or_default() += 1;
-                self.flip_about_bond(bond, true)?;
-                collisions = self.find_collisions(&distance, true);
-                let new_density = self.total_density();
-
-                if collisions.len() < old_count {
-                    done_bonds.insert(bond, 3);
-
-                    break;
-                }
-                if collisions.len() == old_count && new_density < old_density {
-                    break;
-                }
-
-                self.flip_about_bond(bond, true)?;
-                collisions = self.find_collisions(&distance, true);
-                self.flip_about_bond(bond, false)?;
-                collisions = self.find_collisions(&distance, true);
-                let new_density = self.total_density();
-
-                if collisions.len() < old_count {
-                    done_bonds.insert(bond, 3);
-
-                    break;
-                }
-                if collisions.len() == old_count && new_density < old_density {
-                    break;
-                }
-
-                self.flip_about_bond(bond, false)?;
-                collisions = self.find_collisions(&distance, true);
+            #[cfg(test)]
+            recovery_dep04_tests::record(recovery_dep04_tests::Event::Outer(iteration));
+            let ncols = collisions.len();
+            let pair = collisions[0];
+            let density = self.total_density();
+            let resolved = self.try_resolving_collision_with_bond_flip(
+                pair,
+                ncols,
+                density,
+                &mut done_bonds,
+                &distance,
+            )?;
+            if !resolved {
+                self.try_resolving_collision_with_spiro_flip(
+                    pair,
+                    ncols,
+                    density,
+                    &mut done_spiros,
+                    &spiro_centers,
+                    &distance,
+                )?;
             }
+            collisions = self.find_collisions(&distance, true);
             iteration += 1;
         }
         Ok(())
@@ -4567,6 +5143,9 @@ impl EmbeddedFrag<'_> {
         distance: &DenseMatrix,
         include_bonds: bool,
     ) -> Vec<(usize, usize)> {
+        #[cfg(test)]
+        recovery_dep04_tests::record(recovery_dep04_tests::Event::Find);
+
         // RDKit❗✔️: std::vector<PAIR_I_I> EmbeddedFrag::findCollisions(const double *dmat,
         // RDKit❗✔️:                                                    bool includeBonds) {
         // RDKit❗✔️:   // find a pair of atoms that are too close to each other
@@ -17028,5 +17607,572 @@ mod reflection_alias_tests {
         println!("D2-REFLECT-ALIAS caller calls={calls} typed_error_calls={errors}");
         assert_eq!((calls, errors), (12, 4));
         assert!(issues.is_empty(), "{}", issues.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod recovery_dep04_tests {
+
+    use super::*;
+    use cosmolkit_core::RingFindType;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec, Element};
+    #[derive(Debug, Clone, PartialEq)]
+    pub(super) enum Event {
+        Find,
+        Bond(usize, bool),
+        Spiro(usize),
+        BondAttempt,
+        SpiroAttempt,
+        Outer(usize),
+    }
+    thread_local! {static TRACE:std::cell::RefCell<Option<Vec<Event>>>=const{std::cell::RefCell::new(None)};}
+    pub(super) fn record(e: Event) {
+        TRACE.with(|t| {
+            if let Some(v) = t.borrow_mut().as_mut() {
+                v.push(e);
+            }
+        });
+    }
+    struct Guard;
+    impl Guard {
+        fn start() -> Self {
+            TRACE.with(|t| {
+                assert!(t.borrow().is_none());
+                *t.borrow_mut() = Some(vec![]);
+            });
+            Self
+        }
+        fn take(&self) -> Vec<Event> {
+            TRACE.with(|t| std::mem::take(t.borrow_mut().as_mut().unwrap()))
+        }
+    }
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            TRACE.with(|t| *t.borrow_mut() = None);
+        }
+    }
+    fn graph(n: usize, edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn rings(t: &TopologyBlock, cycles: &[Vec<usize>]) -> RingInfo {
+        let mut r = RingInfo::new(RingFindType::SymmSssr, t.atoms.len(), t.bonds.len());
+        for cycle in cycles {
+            let ids = (0..cycle.len())
+                .map(|i| {
+                    t.bonds
+                        .iter()
+                        .position(|b| {
+                            let (a, z) = (b.begin().index(), b.end().index());
+                            let (x, y) = (cycle[i], cycle[(i + 1) % cycle.len()]);
+                            (a == x && z == y) || (a == y && z == x)
+                        })
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            r.add_ring(cycle, &ids).unwrap();
+        }
+        r
+    }
+    fn spiro(extended: bool) -> (TopologyBlock, RingInfo) {
+        let mut edges = vec![(0, 1), (1, 2), (2, 0), (0, 3), (3, 4), (4, 0)];
+        let mut cycles = vec![vec![0, 1, 2], vec![0, 3, 4]];
+        if extended {
+            edges.extend([(1, 5), (5, 6), (1, 7), (7, 2)]);
+            cycles.push(vec![1, 2, 7]);
+        }
+        let t = graph(if extended { 8 } else { 5 }, &edges);
+        let r = rings(&t, &cycles);
+        (t, r)
+    }
+    fn embedded<'a>(t: &'a TopologyBlock, r: &'a RingInfo, fixed: bool) -> EmbeddedFrag<'a> {
+        let locs = [
+            [0., 0.],
+            [2., 1.],
+            [2., -1.],
+            [-2., 2.],
+            [-2., -2.],
+            [4., 3.],
+            [5., 4.],
+            [3., 2.],
+        ];
+        EmbeddedFrag {
+            topology: t,
+            rings: r,
+            atoms: (0..t.atoms.len())
+                .map(|id| {
+                    let mut a = EmbeddedAtom::at(id, locs[id]);
+                    a.normal = [0.25, 0.75];
+                    a.ccw = id % 2 == 0;
+                    a.fixed = fixed;
+                    (id, a)
+                })
+                .collect(),
+            attachment_points: vec![],
+            done: false,
+        }
+    }
+    fn mask(n: usize, ids: &[usize]) -> Vec<u64> {
+        let mut m = vec![0; n.div_ceil(64)];
+        for &id in ids {
+            m[id / 64] |= 1u64 << (id % 64);
+        }
+        m
+    }
+    fn close(a: Point2, b: Point2) {
+        assert!(
+            (a[0] - b[0]).abs() < 1e-10 && (a[1] - b[1]).abs() < 1e-10,
+            "{a:?} {b:?}"
+        );
+    }
+    #[test]
+    fn recovery_dep04_spiro_detector_positive_and_fused_negative() {
+        let (t, r) = spiro(false);
+        let f = embedded(&t, &r, false);
+        assert!(f.is_spiro_center(0));
+        assert!(!(1..5).any(|i| f.is_spiro_center(i)));
+        let t = graph(4, &[(0, 1), (1, 2), (2, 0), (0, 3), (3, 2)]);
+        let r = rings(&t, &[vec![0, 1, 2], vec![0, 3, 2]]);
+        let f = embedded(&t, &r, false);
+        assert!(!f.is_spiro_center(0));
+    }
+    #[test]
+    fn recovery_dep04_spiro_detector_word64_and_cache_order() {
+        let t = graph(
+            69,
+            &[(64, 63), (63, 65), (65, 64), (64, 66), (66, 67), (67, 64)],
+        );
+        let r = rings(&t, &[vec![64, 63, 65], vec![64, 66, 67]]);
+        let f = EmbeddedFrag::from_single(64, &t, &r).unwrap();
+        assert!(f.is_spiro_center(64));
+        assert_eq!(
+            f.rings_for_spiro_center(64)[0],
+            [AtomId::new(64), AtomId::new(63), AtomId::new(65)]
+        );
+        assert_eq!(mask(69, &[64]), [0, 1]);
+    }
+    #[test]
+    fn recovery_dep04_full_dfs_side_normals_and_second_flip() {
+        let (t, r) = spiro(true);
+        let mut f = embedded(&t, &r, false);
+        let before = f.atoms.clone();
+        f.flip_about_spiro_center(0);
+        for id in [1, 2, 5, 6, 7] {
+            close(f.atoms[&id].loc, [before[&id].loc[0], -before[&id].loc[1]]);
+            close(f.atoms[&id].normal, [0.25, -0.75]);
+            assert_eq!(f.atoms[&id].ccw, !before[&id].ccw);
+            assert_eq!(f.atoms[&id].neighs, before[&id].neighs);
+        }
+        for id in [0, 3, 4] {
+            assert_eq!(f.atoms[&id], before[&id]);
+        }
+        f.flip_about_spiro_center(0);
+        for id in 0..8 {
+            close(f.atoms[&id].loc, before[&id].loc);
+            close(f.atoms[&id].normal, before[&id].normal);
+        }
+    }
+    #[test]
+    fn recovery_dep04_first_cached_ring_selects_other_side() {
+        let (t, _) = spiro(false);
+        let r = rings(&t, &[vec![0, 3, 4], vec![0, 1, 2]]);
+        let mut f = embedded(&t, &r, false);
+        let before = f.atoms.clone();
+        f.flip_about_spiro_center(0);
+        for id in [0, 1, 2] {
+            assert_eq!(f.atoms[&id], before[&id]);
+        }
+        for id in [3, 4] {
+            close(f.atoms[&id].loc, [before[&id].loc[0], -before[&id].loc[1]]);
+        }
+    }
+    #[test]
+    fn recovery_dep04_fixed_descendant_veto_whole_flip() {
+        let (t, r) = spiro(true);
+        for id in [1, 2, 5, 6, 7] {
+            let mut f = embedded(&t, &r, false);
+            f.atoms.get_mut(&id).unwrap().fixed = true;
+            let before = f.atoms.clone();
+            f.flip_about_spiro_center(0);
+            assert_eq!(f.atoms, before);
+        }
+    }
+    #[test]
+    fn recovery_dep04_fixed_center_other_side_do_not_veto() {
+        let (t, r) = spiro(true);
+        for id in [0, 3, 4] {
+            let mut f = embedded(&t, &r, false);
+            f.atoms.get_mut(&id).unwrap().fixed = true;
+            f.flip_about_spiro_center(0);
+            close(f.atoms[&1].loc, [2., -1.]);
+            assert!(f.atoms[&id].fixed);
+        }
+    }
+    #[test]
+    fn recovery_dep04_shortest_path_adjacency_order_and_discovery() {
+        let t = graph(5, &[(0, 2), (0, 1), (1, 3), (2, 3)]);
+        let r = rings(&t, &[]);
+        let f = EmbeddedFrag::from_single(0, &t, &r).unwrap();
+        assert_eq!(f.spiro_shortest_path(0, 3), [0, 2, 3]);
+        assert_eq!(f.spiro_shortest_path(0, 2), [0, 2]);
+        assert!(f.spiro_shortest_path(0, 4).is_empty());
+    }
+    #[test]
+    fn recovery_dep04_bond_reject_trace_no_refresh_after_undo() {
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, true);
+        for a in f.atoms.values_mut() {
+            a.loc = [0., 0.];
+        }
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let mut done = BTreeMap::new();
+        let g = Guard::start();
+        assert!(
+            !f.try_resolving_collision_with_bond_flip((0, 3), n, density, &mut done, &d)
+                .unwrap()
+        );
+        assert_eq!(done, BTreeMap::from([(1, 1)]));
+        assert_eq!(
+            g.take(),
+            [
+                Event::BondAttempt,
+                Event::Bond(1, true),
+                Event::Find,
+                Event::Bond(1, true),
+                Event::Bond(1, false),
+                Event::Find,
+                Event::Bond(1, false)
+            ]
+        );
+    }
+    #[test]
+    fn recovery_dep04_bond_fewer_locks_three() {
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, true);
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let mut done = BTreeMap::new();
+        assert!(
+            f.try_resolving_collision_with_bond_flip((0, 3), n + 1, density, &mut done, &d)
+                .unwrap()
+        );
+        assert_eq!(done[&1], 3);
+    }
+    #[test]
+    fn recovery_dep04_bond_equal_density_keep_preincrement_and_skip() {
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, true);
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let mut done = BTreeMap::new();
+        assert!(
+            f.try_resolving_collision_with_bond_flip((0, 3), n, density + 1., &mut done, &d)
+                .unwrap()
+        );
+        assert_eq!(done[&1], 1);
+        done.insert(1, 3);
+        let g = Guard::start();
+        assert!(
+            !f.try_resolving_collision_with_bond_flip((0, 3), n + 1, density, &mut done, &d)
+                .unwrap()
+        );
+        assert_eq!(g.take(), [Event::BondAttempt]);
+    }
+    #[test]
+    fn recovery_dep04_bond_last_trial_density_retained() {
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        for (id, p) in [(0, [0., 1.]), (1, [1., 0.]), (2, [2., 0.]), (3, [3., 2.])] {
+            f.atoms.get_mut(&id).unwrap().loc = p;
+        }
+        let before = f.atoms.clone();
+        let d = f.collision_distance_matrix().unwrap();
+        assert!(
+            !f.try_resolving_collision_with_bond_flip((0, 3), 0, 0., &mut BTreeMap::new(), &d)
+                .unwrap()
+        );
+        for id in 0..4 {
+            close(f.atoms[&id].loc, before[&id].loc);
+        }
+        let last = 2. * (0.5 + 0.2 + 1. / 18. + 1. + 0.125 + 0.2);
+        assert!((f.total_density() - last).abs() < 1e-10);
+        f.find_collisions(&d, true);
+        assert!((f.total_density() - 4.25).abs() < 1e-10);
+    }
+    #[test]
+    fn recovery_dep04_spiro_reject_fixed_noop_counter_unchanged() {
+        let (t, r) = spiro(false);
+        let mut f = embedded(&t, &r, true);
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let before = f.atoms.clone();
+        let mut done = BTreeMap::new();
+        let g = Guard::start();
+        for _ in 0..2 {
+            assert!(
+                !f.try_resolving_collision_with_spiro_flip(
+                    (1, 3),
+                    n,
+                    density,
+                    &mut done,
+                    &mask(5, &[0]),
+                    &d
+                )
+                .unwrap()
+            );
+            assert!(done.is_empty());
+            assert_eq!(
+                g.take(),
+                [
+                    Event::SpiroAttempt,
+                    Event::Spiro(0),
+                    Event::Find,
+                    Event::Spiro(0)
+                ]
+            );
+            assert_eq!(f.atoms, before);
+        }
+    }
+    #[test]
+    fn recovery_dep04_spiro_fewer_locks_three() {
+        let (t, r) = spiro(false);
+        let mut f = embedded(&t, &r, true);
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let mut done = BTreeMap::new();
+        assert!(
+            f.try_resolving_collision_with_spiro_flip(
+                (1, 3),
+                n + 1,
+                density,
+                &mut done,
+                &mask(5, &[0]),
+                &d
+            )
+            .unwrap()
+        );
+        assert_eq!(done[&0], 3);
+    }
+    #[test]
+    fn recovery_dep04_spiro_equal_density_increments_and_skip() {
+        let (t, r) = spiro(false);
+        let mut f = embedded(&t, &r, true);
+        let d = f.collision_distance_matrix().unwrap();
+        let n = f.find_collisions(&d, true).len();
+        let density = f.total_density();
+        let mut done = BTreeMap::new();
+        for count in 1..=3 {
+            assert!(
+                f.try_resolving_collision_with_spiro_flip(
+                    (1, 3),
+                    n,
+                    density + 1.,
+                    &mut done,
+                    &mask(5, &[0]),
+                    &d
+                )
+                .unwrap()
+            );
+            assert_eq!(done[&0], count);
+        }
+        let g = Guard::start();
+        assert!(
+            !f.try_resolving_collision_with_spiro_flip(
+                (1, 3),
+                n,
+                density + 1.,
+                &mut done,
+                &mask(5, &[0]),
+                &d
+            )
+            .unwrap()
+        );
+        assert_eq!(g.take(), [Event::SpiroAttempt]);
+    }
+    #[test]
+    fn recovery_dep04_outer_empty_only_initial_find() {
+        let t = graph(1, &[]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        let g = Guard::start();
+        f.remove_collisions_bond_and_spiro_flip().unwrap();
+        assert_eq!(g.take(), [Event::Find]);
+    }
+    #[test]
+    fn recovery_dep04_outer_fixed_rejects_fifteen_first_collision_iterations() {
+        let (t, r) = spiro(false);
+        let mut f = embedded(&t, &r, true);
+        for a in f.atoms.values_mut() {
+            a.loc = [0., 0.];
+        }
+        let g = Guard::start();
+        f.remove_collisions_bond_and_spiro_flip().unwrap();
+        let events = g.take();
+        let mut expected = vec![Event::Find];
+        for i in 0..15 {
+            expected.extend([
+                Event::Outer(i),
+                Event::BondAttempt,
+                Event::SpiroAttempt,
+                Event::Spiro(0),
+                Event::Find,
+                Event::Spiro(0),
+                Event::Find,
+            ]);
+        }
+        assert_eq!(events, expected);
+    }
+    #[test]
+    fn recovery_dep04_public_real_spiro_layout_and_random_branch() {
+        let t = graph(5, &[(0, 1), (1, 2), (2, 0), (0, 3), (3, 4), (4, 0)]);
+        let props = cosmolkit_model::MoleculeProperties::default();
+        let out = crate::compute_2d_coordinates(&t, &props, &Default::default()).unwrap();
+        for i in 0..5 {
+            for j in i + 1..5 {
+                if t.bonds.iter().any(|b| {
+                    (b.begin().index() == i && b.end().index() == j)
+                        || (b.begin().index() == j && b.end().index() == i)
+                }) {
+                    continue;
+                }
+                let a = out.coordinates()[i];
+                let b = out.coordinates()[j];
+                assert!(((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt() > 0.35);
+            }
+        }
+        let g = Guard::start();
+        let params = crate::Compute2DCoordinatesParams {
+            samples: 1,
+            flips_per_sample: 1,
+            ..Default::default()
+        };
+        crate::compute_2d_coordinates(&t, &props, &params).unwrap();
+        assert!(
+            !g.take()
+                .iter()
+                .any(|e| matches!(e, Event::Outer(_) | Event::SpiroAttempt | Event::Spiro(_)))
+        );
+    }
+}
+
+#[cfg(test)]
+mod recovery_dep01_tests {
+
+    use super::*;
+    use cosmolkit_core::RingFindType;
+    use cosmolkit_model::{Atom, AtomSpec, Element};
+    type Pairs = (Vec<(f64, usize, usize)>, usize);
+    thread_local! {static CAPTURE:std::cell::RefCell<Option<Pairs>>=const{std::cell::RefCell::new(None)};}
+    pub(super) fn record_pairs(p: &[(f64, usize, usize)], capacity: usize) {
+        CAPTURE.with(|v| *v.borrow_mut() = Some((p.to_vec(), capacity)));
+    }
+    fn fixture_topology() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..4)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn fragment<'a>(
+        topology: &'a TopologyBlock,
+        rings: &'a RingInfo,
+        locs: [Point2; 4],
+    ) -> EmbeddedFrag<'a> {
+        EmbeddedFrag {
+            topology,
+            rings,
+            atoms: locs
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| (i, EmbeddedAtom::at(i, p)))
+                .collect(),
+            attachment_points: vec![],
+            done: false,
+        }
+    }
+    #[test]
+    fn recovery_dep01_unique_pairs_reserve_equal_angle_lexicographic_tuple() {
+        let topo = fixture_topology();
+        let rings = RingInfo::new(RingFindType::Sssr, 4, 0);
+        let mut frag = fragment(&topo, &rings, [[0., 0.], [1., 0.], [1., 0.], [1., 0.]]);
+        frag.compute_nbrs_and_ang(0, &[3, 1, 2]).unwrap();
+        CAPTURE.with(|c| {
+            let b = c.borrow();
+            let (rows, capacity) = b.as_ref().unwrap();
+            assert_eq!(rows, &vec![(0., 1, 2), (0., 3, 1), (0., 3, 2)]);
+            assert!(*capacity >= 3);
+            assert!(rows.iter().all(|r| r.1 != r.2));
+        });
+        let atom = &frag.atoms[&0];
+        assert_eq!((atom.nbr1, atom.nbr2), (Some(1), Some(2)));
+        assert_eq!(atom.angle, 2. * PI);
+        assert_eq!(atom.rot_dir, -1);
+    }
+    #[test]
+    fn recovery_dep01_reverse_ring_guard_and_all_fused_fallback() {
+        let topo = fixture_topology();
+        for (counts, expected) in [
+            ([0, 1, 1, 2], (Some(2), Some(1))),
+            ([0, 2, 2, 2], (Some(1), Some(2))),
+        ] {
+            let mut rings = RingInfo::new(RingFindType::Sssr, 4, 1);
+            // Controlled cache-membership seam only; not a claim of natural cycle perception.
+            for atom in 0..4 {
+                for _ in 0..counts[atom] {
+                    rings.add_ring(&[atom], &[0]).unwrap();
+                }
+            }
+            let mut frag = fragment(&topo, &rings, [[0., 0.], [1., 0.], [1., 0.], [1., 0.]]);
+            frag.compute_nbrs_and_ang(0, &[3, 1, 2]).unwrap();
+            assert_eq!((frag.atoms[&0].nbr1, frag.atoms[&0].nbr2), expected);
+        }
+    }
+    #[test]
+    fn recovery_dep01_nonzero_angles_never_choose_self_pair() {
+        let topo = fixture_topology();
+        let rings = RingInfo::new(RingFindType::Sssr, 4, 0);
+        let mut frag = fragment(&topo, &rings, [[0., 0.], [0., 1.], [-1., 0.], [1., 0.]]);
+        frag.compute_nbrs_and_ang(0, &[3, 1, 2]).unwrap();
+        CAPTURE.with(|c| {
+            let b = c.borrow();
+            let rows = &b.as_ref().unwrap().0;
+            assert_eq!(
+                rows.iter().map(|r| (r.1, r.2)).collect::<Vec<_>>(),
+                [(1, 2), (3, 1), (3, 2)]
+            );
+            assert_eq!(rows[0].0, PI / 2.);
+            assert_eq!(rows[2].0, PI);
+        });
+        assert_eq!(
+            (frag.atoms[&0].nbr1, frag.atoms[&0].nbr2),
+            (Some(1), Some(2))
+        );
+        assert_eq!(frag.atoms[&0].angle, PI);
     }
 }

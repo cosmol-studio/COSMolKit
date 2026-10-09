@@ -194,7 +194,8 @@ fn canonical_reports_append_ids_copy_params_and_commit_inplace_after_validation(
     assert_eq!(value.conf_id(), 10);
     assert_eq!(value.molecule().num_3d_conformers(), 3);
     assert_eq!(value.params().random_seed, 42);
-    assert_eq!(value.params().failures.len(), 12);
+    // RDKit .6 EmbedFailureCauses::END_OF_ENUM is 15.
+    assert_eq!(value.params().failures.len(), 15);
     assert!(params.failures.is_empty());
     preserved_other_blocks(value.molecule(), &source);
     let mut inplace = source.clone();

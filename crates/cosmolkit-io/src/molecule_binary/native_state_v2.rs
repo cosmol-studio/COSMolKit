@@ -682,7 +682,7 @@ fn read_stereo(r: &mut PickleReader<'_>) -> Result<StereoGroup, PickleError> {
     let write_id = r.read_u32()?;
     let kind = read_stereo_group_kind(r)?;
     let mut s =
-        StereoGroup::new(kind, read_atom_ids(r)?, read_bond_ids(r)?).with_write_id(write_id);
+        StereoGroup::new(kind, read_atom_ids(r)?, read_bond_ids(r)?)?.with_write_id(write_id);
     if let Some(id) = id {
         s = s.with_id(id);
     }
@@ -889,4 +889,75 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
     };
     result.validate()?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod recovery_chem29_native_codec {
+    use super::*;
+    use cosmolkit_model::StereoGroupError;
+    fn malformed(atoms: &[AtomId], bonds: &[BondId]) -> Vec<u8> {
+        let mut w = PickleWriter::new();
+        w.write_bool(true);
+        w.write_u32(7);
+        w.write_u32(9);
+        write_stereo_group_kind(&mut w, StereoGroupKind::Or);
+        atom_ids(&mut w, atoms);
+        bond_ids(&mut w, bonds);
+        w.into_inner().unwrap()
+    }
+    #[test]
+    fn wire_duplicate_atoms_and_bonds_retain_typed_constructor_cause() {
+        for (atoms, bonds, expected) in [
+            (
+                vec![AtomId::new(0), AtomId::new(0)],
+                vec![BondId::new(0), BondId::new(0)],
+                StereoGroupError::DuplicateAtom,
+            ),
+            (
+                vec![AtomId::new(0)],
+                vec![BondId::new(0), BondId::new(0)],
+                StereoGroupError::DuplicateBond,
+            ),
+        ] {
+            let bytes = malformed(&atoms, &bonds);
+            let mut reader = PickleReader::new(&bytes);
+            let error = read_stereo(&mut reader).unwrap_err();
+            assert_eq!(error, PickleError::StereoGroup(expected));
+            assert_eq!(
+                std::error::Error::source(&error)
+                    .unwrap()
+                    .downcast_ref::<StereoGroupError>(),
+                Some(&expected)
+            );
+        }
+    }
+    #[test]
+    fn truncated_member_array_precedes_duplicate_constructor_and_valid_ids_roundtrip() {
+        let mut bytes = malformed(&[AtomId::new(0), AtomId::new(0)], &[BondId::new(0)]);
+        bytes.pop();
+        let mut reader = PickleReader::new(&bytes);
+        // The unchanged bounded-vector reader rejects the truncated bond
+        // array before the duplicate atom constructor is reached.
+        assert_eq!(
+            read_stereo(&mut reader),
+            Err(PickleError::InvalidArchive(
+                "invalid bounded count: 1".into()
+            ))
+        );
+        let original = StereoGroup::new(
+            StereoGroupKind::And,
+            vec![AtomId::new(1), AtomId::new(0)],
+            vec![BondId::new(0)],
+        )
+        .unwrap()
+        .with_id(7)
+        .with_write_id(9);
+        let mut w = PickleWriter::new();
+        stereo(&mut w, &original);
+        let bytes = w.into_inner().unwrap();
+        assert_eq!(
+            read_stereo(&mut PickleReader::new(&bytes)).unwrap(),
+            original
+        );
+    }
 }

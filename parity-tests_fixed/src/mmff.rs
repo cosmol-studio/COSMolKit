@@ -79,6 +79,7 @@ pub struct MmffInput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
     Coverage(bool),
+    TimedOut(crate::uff::PreparationTimeout),
     Optimized {
         status: i32,
         energy_bits: Option<u64>,
@@ -115,6 +116,11 @@ pub fn validate_reference(
         return Err("MMFF reference changed recipe identity".into());
     }
     match (&prepared.preparation, prepared.profile, output) {
+        (
+            Some(GeometryPreparation::TimedOut(preparation)),
+            Profile::Optimization { .. } | Profile::ConformerOptimization { .. },
+            Observation::TimedOut(observation),
+        ) if preparation.limit_seconds == 60 && preparation == observation => return Ok(()),
         (None, Profile::Coverage { .. }, Observation::Coverage(_)) => return Ok(()),
         (None, Profile::Coverage { .. }, Observation::Error { detail, .. })
             if !detail.is_empty() =>
@@ -314,6 +320,9 @@ pub fn run(row: &MmffInput) -> Result<Record, String> {
             .ok_or("MMFF common geometry was not prepared")?
         {
             GeometryPreparation::Ready(geometry) => geometry,
+            GeometryPreparation::TimedOut(_) => {
+                return Err("reference preparation timed out; comparison must be skipped".into());
+            }
             GeometryPreparation::Rejected {
                 stage: failed_stage,
                 detail,

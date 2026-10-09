@@ -33,8 +33,17 @@ existing writer generator. Random traversal is off. Batch tests are unchanged.
 
 UFF and MMFF single-/multi-conformer optimization use at most **two iterations**.
 MMFF covers both MMFF94 and MMFF94s; multi-conformer inputs contain two conformers.
-Both libraries receive the same prepared coordinates. MMFF energy/coordinate
-comparison uses the existing public MMFF suite's absolute tolerance of `1e-6`;
+Both libraries receive the same prepared coordinates.
+UFF/MMFF optimization geometry preparation has a user-selected 60-second
+deadline: RDKit's native timeout is backed by a supervised process deadline.
+Timed-out inputs remain in the references and reports, with their case IDs and
+timeout mechanism, and are excluded from comparison. Reports distinguish
+total rows, actual comparisons, mismatches and timeouts; timeouts never count
+as matches, and a task with zero actual comparisons fails. Other preparation
+errors retain their existing comparisons. Geometry, seeds and optimization
+parameters are unchanged for completed inputs.
+
+MMFF energy/coordinate comparison uses the existing public MMFF suite's absolute tolerance of `1e-6`;
 UFF retains its exact-bit comparison. Parameter-availability queries are included.
 `mmff_force_field_smiles` and `uff_force_field_smiles` test the owned persistent
 evaluators separately: fixed-seed arbitrary initial coordinates, at most two
@@ -63,6 +72,12 @@ MACCS compares raw 167-bit and public 166-bit results; Layered also compares
 seeded atom counts. Fuzzy operations pair each molecule with the next (wrapping
 at the end), use Morgan counts, and sample signed counts and 32-/64-bit indices.
 No separate fingerprint-pairs corpus is needed. Results compare exactly.
+The upstream unrooted-linear Layered branch is executed in an isolated
+process because the pinned source can crash while treating atom-path indices
+as bond indices. Every original case and seeded profile is retained. Native
+process failures retain their exit code, process ID and diagnostics as explicit
+failing reference observations; they are never matches or timeout exclusions.
+Successful native results keep the existing exact comparison.
 
 ## Special regressions
 
@@ -73,12 +88,21 @@ cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolk
 
 For one special regression, replace `all` with `structure_tags`,
 `tautomer_long_conjugated`, `tautomer_focused`, `molalign_focused`, or
-`bio_mmcif_switches`, then use the same name as
+`bio_mmcif_switches`, `forcefield_optimizers`, or `mmff_builtin`, then use the same name as
 Cargo's test filter. The focused tautomer matrix keeps 18 inputs, eight profiles
 and all 136 valid enumeration branches; it is not part of ordinary crate tests.
 MolAlign retains its 14 fixed boundary calls, including typed errors, through
 the same preparation and comparison workflow; no external oracle directory
 environment variable is needed.
+
+`forcefield_optimizers` retains 20 fixed MMFF and four fixed UFF counterexamples.
+It compares parameter availability, initial energy/gradient and zero-step status,
+then single- and two-conformer optimization with **at most two iterations**.
+All energy, gradient and coordinate fields compare **bitexact**; status and
+counts compare exactly. The original seed and CXSMILES input geometry are retained.
+`mmff_builtin` retains all 2,052 rows of the four upstream dative/hypervalent
+matrices, comparing availability and every MMFF94/MMFF94s atom type.
+These references are regenerated with the current pin, not copied from old goldens.
 
 `bio_mmcif_switches` reuses the existing `bio/sample.pdb` and `bio/sample.cif`
 inputs. It compares exact mmCIF output bytes with pinned Gemmi for its 32

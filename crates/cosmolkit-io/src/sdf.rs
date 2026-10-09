@@ -20,6 +20,7 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SdfReadError {
+    StereoGroup(cosmolkit_model::StereoGroupError),
     MissingCapability(&'static str),
     MolPost(crate::MolPostError),
     QueryRecord,
@@ -60,6 +61,7 @@ impl std::fmt::Display for SdfReadError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingCapability(capability) => write!(formatter, "MOL/SDF reading requires the disabled {capability} capability"),
+            Self::StereoGroup(error) => std::fmt::Display::fmt(error, formatter),
             Self::MolPost(error) => write!(formatter, "MolBlock finalization before SDF properties failed: {error}"),
             Self::QueryRecord => formatter.write_str("query-bearing SDF record cannot be represented as a concrete molecule; use a query-preserving record reader"),
             Self::Empty => formatter.write_str("empty molfile block"),
@@ -83,6 +85,7 @@ impl std::fmt::Display for SdfReadError {
 impl std::error::Error for SdfReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::StereoGroup(error) => Some(error),
             Self::MolPost(error) => Some(error),
             Self::Topology(error) => Some(error),
             Self::Coordinates(error) => Some(error),
@@ -103,6 +106,12 @@ impl std::error::Error for SdfReadError {
             | Self::PropertyListCount { .. }
             | Self::RecordIndexOutOfRange { .. } => None,
         }
+    }
+}
+
+impl From<cosmolkit_model::StereoGroupError> for SdfReadError {
+    fn from(error: cosmolkit_model::StereoGroupError) -> Self {
+        Self::StereoGroup(error)
     }
 }
 
@@ -12143,9 +12152,11 @@ mod tests {
         );
         let expected_roundtrip_stereo_groups = vec![
             StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![])
+                .expect("valid distinct stereo members")
                 .with_id(0)
                 .with_write_id(0),
             StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(1)], vec![])
+                .expect("valid distinct stereo members")
                 .with_id(1)
                 .with_write_id(0),
         ];

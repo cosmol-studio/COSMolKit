@@ -21,6 +21,12 @@ mod coordinate_input;
 #[cfg(feature = "cap-depict")]
 mod depict;
 mod error;
+#[cfg(feature = "cap-hashing")]
+mod scaffolds;
+#[cfg(feature = "cap-hashing")]
+pub(crate) use runtime::registry::{
+    MurckoDecomposeAccess, MurckoScaffoldAccess, NetScaffoldAccess,
+};
 #[cfg(feature = "cap-hydrogens")]
 mod hydrogens;
 #[cfg(feature = "cap-kekulize")]
@@ -130,6 +136,7 @@ mod tautomer;
 #[cfg(feature = "cap-tautomer")]
 pub(crate) use runtime::registry::{
     CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess,
+    WithAssignedSymmSssrAccess, WithInstalledTautomerScoreCacheAccess,
 };
 
 #[cfg(feature = "cap-transforms")]

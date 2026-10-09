@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "rdkit_version": "2026.03.1",
-  "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
+  "rdkit_version": "2026.03.6",
+  "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985",
   "cases": [
     {
       "case_id": "explicit-map-weighted-translation",
@@ -713,7 +713,7 @@
     }
   ],
   "reference": {
-    "version": "2026.3.1",
-    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8"
+    "version": "2026.3.6",
+    "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985"
   }
 }

@@ -24,6 +24,9 @@ pub(crate) fn run_pyerr(py: Python<'_>, source: &ck::TautomerRunError) -> PyErr 
         E::Match(..) => "Match",
         E::MatchContext(..) => "MatchContext",
         E::Topology(..) => "Topology",
+        E::Coordinates(..) => "Coordinates",
+        E::SourceCacheCommit => "SourceCacheCommit",
+        E::ScoreCacheTargetMismatch => "ScoreCacheTargetMismatch",
         E::AtomProperty(..) => "AtomProperty",
         E::MoleculeProperty(..) => "MoleculeProperty",
         E::BondValue(..) => "BondValue",
@@ -184,7 +187,7 @@ impl TautomerScore {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerMoleculeView {
     inner: ck::TautomerMoleculeView<'static>,
 }
@@ -270,7 +273,7 @@ impl TautomerMoleculeView {
             .map_err(|error| run_pyerr(py, &error))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
-    fn tautomer_score(&self, py: Python<'_>) -> PyResult<TautomerScore> {
+    fn tautomer_score(&mut self, py: Python<'_>) -> PyResult<TautomerScore> {
         self.inner
             .tautomer_score()
             .map(|inner| TautomerScore { inner })
@@ -278,17 +281,30 @@ impl TautomerMoleculeView {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerProgress {
     inner: ck::TautomerProgress<'static>,
+    score_entries: Vec<(ck::PropertyText, Py<TautomerMoleculeView>)>,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerProgress {
-    fn to_owned(&self) -> Self {
-        Self {
+    fn to_owned(&self, py: Python<'_>) -> PyResult<Self> {
+        let score_entries = self
+            .score_entries
+            .iter()
+            .map(|(key, value)| {
+                let snapshot = value.bind(py).try_borrow()?.inner.to_owned();
+                Ok((
+                    key.clone(),
+                    Py::new(py, TautomerMoleculeView { inner: snapshot })?,
+                ))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self {
             inner: self.inner.to_owned(),
-        }
+            score_entries,
+        })
     }
     fn len(&self) -> usize {
         self.inner.len()
@@ -319,18 +335,39 @@ impl TautomerProgress {
             .map(|id| id.index())
             .collect()
     }
-    fn entries(&self, py: Python<'_>) -> PyResult<Vec<(String, TautomerMoleculeView)>> {
-        self.inner
-            .entries()
+    fn entries(&mut self, py: Python<'_>) -> PyResult<Vec<(String, Py<TautomerMoleculeView>)>> {
+        self.score_entries
+            .iter()
             .map(|(key, value)| {
                 Ok((
                     crate::canonical_sdf::decode_source_text(py, key)?,
-                    TautomerMoleculeView {
-                        inner: value.to_owned(),
-                    },
+                    value.clone_ref(py),
                 ))
             })
             .collect()
+    }
+}
+impl TautomerProgress {
+    fn from_live(py: Python<'_>, progress: &mut ck::TautomerProgress<'_>) -> PyResult<Self> {
+        let inner = progress.to_owned();
+        let score_entries = progress
+            .entries()
+            .map(|(key, value)| {
+                Ok((
+                    key.clone(),
+                    Py::new(
+                        py,
+                        TautomerMoleculeView {
+                            inner: value.to_owned(),
+                        },
+                    )?,
+                ))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self {
+            inner,
+            score_entries,
+        })
     }
 }
 
@@ -356,53 +393,102 @@ fn retain_failure(failure: &CallbackFailure, error: PyErr) -> ck::TautomerRunErr
 impl ck::TautomerEnumerationCallback for PyCallback {
     fn should_continue(
         &self,
-        source: ck::TautomerMoleculeView<'_>,
-        progress: ck::TautomerProgress<'_>,
+        mut source: ck::TautomerMoleculeView<'_>,
+        mut progress: ck::TautomerProgress<'_>,
     ) -> Result<bool, ck::TautomerRunError> {
+        // BEGIN RDKIT CPP FUNCTION PyTautomerEnumeratorCallback::operator()
+        // RDKit❗❌:   bool operator()(
+        // RDKit❗❌:       const ROMol &mol,
+        // RDKit❗❌:       const MolStandardize::TautomerEnumeratorResult &res) override {
+        // RDKit❗❌:     PyTautomerEnumeratorResult pyRes(res);
+        // RDKit❗❌:     return getCallbackOverride()(boost::ref(mol), boost::ref(pyRes));
+        // RDKit❗❌:   }
+        // END RDKIT CPP FUNCTION PyTautomerEnumeratorCallback::operator()
+        // Python may retain invocation snapshots. Only completed score-cache
+        // writes are transported back into the actual restricted loans.
+        // Source result-map copies share ROMol pointers; detached snapshots
+        // alone would lose the .6 scoreRings state change.
         Python::attach(|py| {
-            let result = (|| -> PyResult<bool> {
-                let source = Py::new(
-                    py,
-                    TautomerMoleculeView {
-                        inner: source.to_owned(),
-                    },
-                )?;
-                let progress = Py::new(
-                    py,
-                    TautomerProgress {
-                        inner: progress.to_owned(),
-                    },
-                )?;
-                // RDKit✔️❌:     return getCallbackOverride()(boost::ref(mol), boost::ref(pyRes));
-                // Python retention requires one detached read-only source snapshot;
-                // progress owns its entries, as the pinned wrapper copies pyRes.
-                self.callable
+            let source_value = Py::new(
+                py,
+                TautomerMoleculeView {
+                    inner: source.to_owned(),
+                },
+            )
+            .map_err(|error| retain_failure(&self.failure, error))?;
+            let progress_value = TautomerProgress::from_live(py, &mut progress)
+                .and_then(|value| Py::new(py, value))
+                .map_err(|error| retain_failure(&self.failure, error))?;
+            let result = self
+                .callable
+                .bind(py)
+                .call1((source_value.clone_ref(py), progress_value.clone_ref(py)))
+                .and_then(|value| value.is_truthy())
+                .map_err(|error| retain_failure(&self.failure, error));
+            {
+                let snapshot = source_value
                     .bind(py)
-                    .call1((source, progress))?
-                    .is_truthy()
-            })();
-            result.map_err(|error| retain_failure(&self.failure, error))
+                    .try_borrow()
+                    .map_err(|error| retain_failure(&self.failure, error.into()))?;
+                source.retain_score_cache_from(&snapshot.inner)?;
+            }
+            let snapshot = progress_value
+                .bind(py)
+                .try_borrow()
+                .map_err(|error| retain_failure(&self.failure, error.into()))?;
+            let mut actual = progress.entries();
+            if actual.len() != snapshot.score_entries.len() {
+                return Err(ck::TautomerRunError::ScoreCacheTargetMismatch);
+            }
+            for ((key, mut target), (saved_key, value)) in
+                actual.by_ref().zip(&snapshot.score_entries)
+            {
+                if key != saved_key {
+                    return Err(ck::TautomerRunError::ScoreCacheTargetMismatch);
+                }
+                let saved = value
+                    .bind(py)
+                    .try_borrow()
+                    .map_err(|error| retain_failure(&self.failure, error.into()))?;
+                target.retain_score_cache_from(&saved.inner)?;
+            }
+            result
         })
     }
 }
 impl ck::TautomerScorer for PyScorer {
-    fn score(&self, molecule: ck::TautomerMoleculeView<'_>) -> Result<i32, ck::TautomerRunError> {
-        // RDKit✔️❌:   int operator()(const ROMol &m) {
-        // RDKit✔️❌:     return python::extract<int>(dp_obj(boost::ref(m)));
-        // RDKit✔️❌:   }
-        // The same callable and signed-int extraction are preserved. A detached
-        // snapshot adds O(V+E) copying so Python can retain its read-only view.
+    fn score(
+        &self,
+        mut molecule: ck::TautomerMoleculeView<'_>,
+    ) -> Result<i32, ck::TautomerRunError> {
+        // BEGIN RDKIT CPP FUNCTION pyobjFunctor::operator()
+        // RDKit❗❌:   int operator()(const ROMol &m) {
+        // RDKit❗❌:     return python::extract<int>(dp_obj(boost::ref(m)));
+        // RDKit❗❌:   }
+        // END RDKIT CPP FUNCTION pyobjFunctor::operator()
+        // Preserve one scorer call and signed extraction. The existing graph
+        // snapshot cost is explicit; actual cache publication precedes a later
+        // Python/extraction error and never recomputes the score.
         Python::attach(|py| {
-            let result = (|| -> PyResult<i32> {
-                let value = Py::new(
-                    py,
-                    TautomerMoleculeView {
-                        inner: molecule.to_owned(),
-                    },
-                )?;
-                self.callable.bind(py).call1((value,))?.extract()
-            })();
-            result.map_err(|error| retain_failure(&self.failure, error))
+            let value = Py::new(
+                py,
+                TautomerMoleculeView {
+                    inner: molecule.to_owned(),
+                },
+            )
+            .map_err(|error| retain_failure(&self.failure, error))?;
+            let result = self
+                .callable
+                .bind(py)
+                .call1((value.clone_ref(py),))
+                .and_then(|result| result.extract::<i32>())
+                .map_err(|error| retain_failure(&self.failure, error));
+            let snapshot = value
+                .bind(py)
+                .try_borrow()
+                .map_err(|error| retain_failure(&self.failure, error.into()))?;
+            molecule.retain_score_cache_from(&snapshot.inner)?;
+            result
         })
     }
 }
@@ -701,7 +787,7 @@ pub(crate) fn canonical(
     .map(|inner| Molecule { inner })
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerEnumeration {
     inner: ck::TautomerEnumeration,
 }
@@ -847,18 +933,28 @@ fn canonical_tautomer_from_iterable(
     molecules: &Bound<'_, PyAny>,
     params: Option<&TautomerParams>,
 ) -> PyResult<Molecule> {
+    // Preserve input order and repeated handles while lending shared values.
+    // The facade owns the isolated COW candidates used by scoring.
     let values = molecules
         .try_iter()?
-        .map(|value| -> PyResult<ck::Molecule> {
-            let value = value?;
-            let molecule = value.extract::<PyRef<'_, Molecule>>()?;
-            Ok(molecule.inner.clone())
-        })
+        .map(|value| -> PyResult<Py<Molecule>> { Ok(value?.extract::<Py<Molecule>>()?) })
         .collect::<PyResult<Vec<_>>>()?;
     let (params, failure) = invocation(py, params);
+    let host_failure = failure.clone();
+    let with_candidate =
+        |index: usize, action: &mut dyn FnMut(&ck::Molecule) -> Result<(), ck::OperationError>| {
+            let value = values[index].bind(py).try_borrow().map_err(|error| {
+                ck::OperationError::Tautomer(retain_failure(&host_failure, error.into()))
+            })?;
+            action(&value.inner)
+        };
     operation_result(
         py,
-        ck::canonical_tautomer_from_molecules_with_params(&values, &params),
+        ck::canonical_tautomer_from_molecule_hosts_with_params(
+            values.len(),
+            with_candidate,
+            &params,
+        ),
         failure,
     )
     .map(|inner| Molecule { inner })
@@ -887,4 +983,128 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "python-embed-tests"))]
+mod recovery_search06_python_cache_tests {
+    use super::*;
+    use std::ffi::CString;
+    #[test]
+    fn recovery_search06_python_iterable_repeated_object_preserves_original() {
+        Python::initialize();
+        Python::attach(|py| {
+            let source = ck::Molecule::from_smiles_with_params(
+                "c1ccccc1",
+                &ck::SmilesParseParams {
+                    sanitize: false,
+                    remove_hs: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                source.num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+            let value = Py::new(py, Molecule { inner: source }).unwrap();
+            let inputs = PyList::new(py, [value.clone_ref(py), value.clone_ref(py)]).unwrap();
+            canonical_tautomer_from_iterable(py, inputs.as_any(), None).unwrap();
+            assert!(matches!(
+                value.bind(py).borrow().inner.num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+        });
+    }
+    #[test]
+    fn recovery_search06_python_scorer_error_preserves_all_inputs() {
+        Python::initialize();
+        Python::attach(|py| {
+            let code=CString::new("def score(m):\n    try:\n        m.tautomer_score()\n    except ValueError:\n        pass\n    raise ValueError('after score')\n").unwrap();
+            let filename = CString::new("search06-local.rs-inline").unwrap();
+            let name = CString::new("search06_local").unwrap();
+            let module =
+                PyModule::from_code(py, code.as_c_str(), filename.as_c_str(), name.as_c_str())
+                    .unwrap();
+            let callable = module.getattr("score").unwrap().unbind();
+            let mut params = ck::TautomerParams::default();
+            let failure: CallbackFailure = Default::default();
+            params.set_scorer(Some(Arc::new(PyScorer {
+                callable,
+                failure: failure.clone(),
+            })));
+            let cold = || {
+                ck::Molecule::from_smiles_with_params(
+                    "c1ccccc1",
+                    &ck::SmilesParseParams {
+                        sanitize: false,
+                        remove_hs: false,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+            };
+            let mut inputs = [cold(), cold()];
+            let result = ck::canonical_tautomer_from_molecules_with_params(&mut inputs, &params);
+            assert!(matches!(
+                result,
+                Err(ck::OperationError::Tautomer(
+                    ck::TautomerRunError::Callback(_)
+                ))
+            ));
+            assert!(failure.lock().unwrap().is_some());
+            assert!(matches!(
+                inputs[0].num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+            assert!(matches!(
+                inputs[1].num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+        });
+    }
+    #[test]
+    fn recovery_search06_python_callback_error_preserves_source_and_retains_view() {
+        Python::initialize();
+        Python::attach(|py| {
+            let code=CString::new("saved = []\ndef callback(source, progress):\n    try:\n        source.tautomer_score()\n    except ValueError:\n        pass\n    first = progress.entries()\n    again = progress.entries()\n    assert first[0][1] is again[0][1]\n    try:\n        first[0][1].tautomer_score()\n    except ValueError:\n        pass\n    saved.append(first[0][1])\n    raise ValueError('after source and entry scores')\n").unwrap();
+            let filename = CString::new("search06-callback.rs-inline").unwrap();
+            let name = CString::new("search06_callback").unwrap();
+            let module =
+                PyModule::from_code(py, code.as_c_str(), filename.as_c_str(), name.as_c_str())
+                    .unwrap();
+            let callable = module.getattr("callback").unwrap().unbind();
+            let failure: CallbackFailure = Default::default();
+            let mut params = ck::TautomerParams::default();
+            params.set_callback(Some(Arc::new(PyCallback {
+                callable,
+                failure: failure.clone(),
+            })));
+            let mut source = ck::Molecule::from_smiles_with_params(
+                "CC(=O)c1ccccc1",
+                &ck::SmilesParseParams {
+                    sanitize: false,
+                    remove_hs: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                source.num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+            let result = source.enumerate_tautomers_with_params(&params);
+            assert!(matches!(
+                result,
+                Err(ck::OperationError::Tautomer(
+                    ck::TautomerRunError::Callback(_)
+                ))
+            ));
+            assert!(failure.lock().unwrap().is_some());
+            assert!(matches!(
+                source.num_rings(),
+                Err(ck::DescriptorReadError::MissingInitializedRings)
+            ));
+            assert_eq!(module.getattr("saved").unwrap().len().unwrap(), 1);
+        });
+    }
 }

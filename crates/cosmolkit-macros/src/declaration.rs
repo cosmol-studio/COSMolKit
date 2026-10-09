@@ -90,6 +90,7 @@ pub(crate) enum CipStatePolicy {
     TautomerSourceTransition,
     StereoisomerSourceTransition,
     ReactionSourceTransition,
+    ScaffoldSourceTransition,
 }
 
 #[derive(Clone, Debug)]
@@ -856,6 +857,39 @@ fn validate_cip_transition(
     may_mutate: &[MoleculeBlock],
     auto_remap: &[MoleculeBlock],
 ) -> syn::Result<()> {
+    if cip_state == CipStatePolicy::ScaffoldSourceTransition {
+        let blocks = [
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ];
+        let valid = matches!(
+            operation.to_string().as_str(),
+            "murcko_scaffold" | "net_scaffold" | "murcko_decompose"
+        ) && operation == method
+            && output == MoleculeOutput::Single
+            && kind == OperationKind::Strong
+            && topology_edit == TopologyEditKind::Compacting
+            && mapping == MappingRequirement::Required
+            && access.read.is_empty()
+            && access.write.len() == blocks.len()
+            && may_mutate.len() == blocks.len()
+            && blocks
+                .iter()
+                .all(|b| access.write.contains(b) && may_mutate.contains(b))
+            && auto_remap.len() == 2
+            && auto_remap.contains(&MoleculeBlock::Coordinates)
+            && auto_remap.contains(&MoleculeBlock::Properties);
+        return if valid {
+            Ok(())
+        } else {
+            Err(syn::Error::new(
+                operation.span(),
+                "scaffold source transition requires an exact strong compacting scaffold operation and four write-owned blocks",
+            ))
+        };
+    }
     if cip_state == CipStatePolicy::ReactionSourceTransition {
         let product = matches!(
             (operation.to_string().as_str(), method.to_string().as_str()),
@@ -1714,6 +1748,7 @@ fn parse_cip_state(value: &Ident) -> syn::Result<CipStatePolicy> {
         "tautomer_source_transition" => Ok(CipStatePolicy::TautomerSourceTransition),
         "stereoisomer_source_transition" => Ok(CipStatePolicy::StereoisomerSourceTransition),
         "reaction_source_transition" => Ok(CipStatePolicy::ReactionSourceTransition),
+        "scaffold_source_transition" => Ok(CipStatePolicy::ScaffoldSourceTransition),
         other => Err(syn::Error::new_spanned(
             value,
             format!("unknown CIP state policy '{other}'"),
@@ -1840,5 +1875,145 @@ fn parse_bio_parity(value: &Ident) -> syn::Result<BioParity> {
             value,
             format!("unknown Bio parity policy '{other}'"),
         )),
+    }
+}
+
+#[cfg(test)]
+mod scaffold_contract_tests {
+    use super::*;
+
+    #[test]
+    fn scaffold_transition_requires_exact_name_and_compacting_authority() {
+        let blocks = vec![
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ];
+        let access = AccessFields {
+            read: vec![],
+            write: blocks.clone(),
+        };
+        let remap = [MoleculeBlock::Coordinates, MoleculeBlock::Properties];
+        let check = |name: &str,
+                     method: &str,
+                     output,
+                     kind,
+                     edit,
+                     mapping,
+                     access: &AccessFields,
+                     mutated: &[MoleculeBlock],
+                     remap: &[MoleculeBlock]| {
+            validate_cip_transition(
+                &format_ident!("{name}"),
+                &format_ident!("{method}"),
+                output,
+                access,
+                CipStatePolicy::ScaffoldSourceTransition,
+                kind,
+                edit,
+                mapping,
+                mutated,
+                remap,
+            )
+        };
+        for name in ["murcko_scaffold", "net_scaffold", "murcko_decompose"] {
+            assert!(
+                check(
+                    name,
+                    name,
+                    MoleculeOutput::Single,
+                    OperationKind::Strong,
+                    TopologyEditKind::Compacting,
+                    MappingRequirement::Required,
+                    &access,
+                    &blocks,
+                    &remap
+                )
+                .is_ok()
+            );
+        }
+        for (name, method, output, kind, edit, mapping) in [
+            (
+                "other",
+                "other",
+                MoleculeOutput::Single,
+                OperationKind::Strong,
+                TopologyEditKind::Compacting,
+                MappingRequirement::Required,
+            ),
+            (
+                "net_scaffold",
+                "other",
+                MoleculeOutput::Single,
+                OperationKind::Strong,
+                TopologyEditKind::Compacting,
+                MappingRequirement::Required,
+            ),
+            (
+                "net_scaffold",
+                "net_scaffold",
+                MoleculeOutput::Multiple,
+                OperationKind::Strong,
+                TopologyEditKind::Compacting,
+                MappingRequirement::Required,
+            ),
+            (
+                "net_scaffold",
+                "net_scaffold",
+                MoleculeOutput::Single,
+                OperationKind::Weak,
+                TopologyEditKind::Compacting,
+                MappingRequirement::Required,
+            ),
+            (
+                "net_scaffold",
+                "net_scaffold",
+                MoleculeOutput::Single,
+                OperationKind::Strong,
+                TopologyEditKind::Reconstruction,
+                MappingRequirement::Required,
+            ),
+            (
+                "net_scaffold",
+                "net_scaffold",
+                MoleculeOutput::Single,
+                OperationKind::Strong,
+                TopologyEditKind::Compacting,
+                MappingRequirement::None,
+            ),
+        ] {
+            assert!(
+                check(
+                    name, method, output, kind, edit, mapping, &access, &blocks, &remap
+                )
+                .is_err()
+            );
+        }
+        let mut borrowed = access.clone();
+        borrowed.read.push(MoleculeBlock::Topology);
+        let mut missing = access.clone();
+        missing.write.pop();
+        for (access, mutated, remap) in [
+            (&borrowed, blocks.as_slice(), remap.as_slice()),
+            (&missing, blocks.as_slice(), remap.as_slice()),
+            (&access, &blocks[..3], remap.as_slice()),
+            (&access, blocks.as_slice(), &remap[..1]),
+        ] {
+            assert!(
+                check(
+                    "net_scaffold",
+                    "net_scaffold",
+                    MoleculeOutput::Single,
+                    OperationKind::Strong,
+                    TopologyEditKind::Compacting,
+                    MappingRequirement::Required,
+                    access,
+                    mutated,
+                    remap
+                )
+                .is_err()
+            );
+        }
     }
 }

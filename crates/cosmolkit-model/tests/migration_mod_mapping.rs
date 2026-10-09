@@ -504,11 +504,14 @@ fn removal_mapping_covers_bonds_sgroups_stereo_and_adjacency_references() {
                 .with_atoms(vec![atom_id(2)])
                 .with_parent(SubstanceGroupId::new(0)),
         ],
-        stereo_groups: vec![StereoGroup::new(
-            StereoGroupKind::Or,
-            vec![atom_id(1), atom_id(4)],
-            vec![bond_id(0)],
-        )],
+        stereo_groups: vec![
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![atom_id(1), atom_id(4)],
+                vec![bond_id(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     };
     assert_eq!(topology.validate(), Ok(()));
 

@@ -161,7 +161,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cosmolkit"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-batch",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-alignment"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-batch"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-io",
  "cosmolkit-model",
@@ -212,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-bio"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-types",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-conformer"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-core",
@@ -232,6 +232,7 @@ dependencies = [
  "cosmolkit-search",
  "cosmolkit-smiles",
  "libc",
+ "serde",
  "serde_json",
  "thiserror",
  "web-time",
@@ -239,11 +240,12 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-ringdecomposer",
  "cosmolkit-types",
+ "libc",
  "serde",
  "serde_json",
  "thiserror",
@@ -251,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-cx"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -259,7 +261,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-depict"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -273,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-descriptors"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -285,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-fingerprints"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -297,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-forcefields"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-io",
@@ -309,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -319,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-io"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-bio",
  "cosmolkit-core",
@@ -336,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -354,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-model"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-types",
  "serde_json",
@@ -395,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit",
  "cosmolkit-macros",
@@ -411,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-reaction"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -424,27 +426,28 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-search"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
  "cosmolkit-model",
  "cosmolkit-smiles",
  "cosmolkit-types",
+ "libc",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-smiles"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -455,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-stereo"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-conformer",
  "cosmolkit-core",
@@ -468,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-tautomer"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -482,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-types"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -491,7 +494,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-wasm"
-version = "0.5.0-rc.19"
+version = "0.5.0-rc.20"
 dependencies = [
  "cosmolkit",
  "cosmolkit-macros",

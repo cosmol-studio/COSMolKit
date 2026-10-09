@@ -224,12 +224,18 @@ impl ic::MolToInchiToolkit for Toolkit {
         }
         Ok(())
     }
-    fn kekulize(&mut self, graph: &mut InchiMolecule, mark_atoms_bonds: bool) -> Result<(), Error> {
+    fn kekulize(
+        &mut self,
+        graph: &mut InchiMolecule,
+        mark_atoms_bonds: bool,
+        canonical: bool,
+    ) -> Result<(), Error> {
         let (topology, _) = model(graph)?;
         let value = core::kekulize(
             &topology,
             &core::KekulizeParams {
                 mark_atoms_bonds,
+                canonical,
                 ..Default::default()
             },
         )
@@ -444,6 +450,71 @@ fn chirality(value: crate::ChiralTag) -> ic::InchiChiralTag {
 mod tests {
     use super::*;
     use ic::MolToInchiToolkit;
+
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_6_inchi03_toolkit_preserves_explicit_kekulize_policy() {
+        let source = crate::Molecule::from_smiles("c1ccccc1").unwrap();
+        let original = source.clone();
+        let adapter = graph(
+            source.topology(),
+            source.coordinate_block_runtime(),
+            source.derived_cache_runtime().valence_assignment(),
+        )
+        .unwrap();
+        for canonical in [false, true] {
+            let mut working = adapter.clone();
+            MolToInchiToolkit::kekulize(&mut Toolkit::default(), &mut working, false, canonical)
+                .unwrap();
+            use ic::InchiBondType::{Double, Single};
+            let expected = if canonical {
+                vec![Single, Double, Single, Double, Single, Double]
+            } else {
+                vec![Double, Single, Double, Single, Double, Single]
+            };
+            assert_eq!(
+                working
+                    .bonds()
+                    .iter()
+                    .map(|b| b.bond_type)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert!(working.atoms().iter().all(|a| a.is_aromatic));
+            assert!(working.bonds().iter().all(|b| b.is_aromatic));
+        }
+        assert_eq!(source, original);
+    }
+
+    #[cfg(all(feature = "cap-smiles", feature = "cap-kekulize"))]
+    #[test]
+    fn rdkit_2026_03_6_inchi03_public_kekulize_default_remains_canonical() {
+        let source = crate::Molecule::from_smiles("c1ccccc1").unwrap();
+        let before = source.clone();
+        let default = source.with_kekulized_bonds().unwrap();
+        let explicit = source
+            .with_kekulized_bonds_with_params(&core::KekulizeParams::default())
+            .unwrap();
+        let noncanonical = source
+            .with_kekulized_bonds_with_params(&core::KekulizeParams {
+                canonical: false,
+                ..Default::default()
+            })
+            .unwrap();
+        let orders =
+            |mol: &crate::Molecule| mol.bonds().iter().map(|b| b.order()).collect::<Vec<_>>();
+        use crate::BondOrder::{Double, Single};
+        assert_eq!(
+            orders(&default),
+            vec![Single, Double, Single, Double, Single, Double]
+        );
+        assert_eq!(default, explicit);
+        assert_eq!(
+            orders(&noncanonical),
+            vec![Double, Single, Double, Single, Double, Single]
+        );
+        assert_eq!(source, before);
+    }
 
     #[test]
     fn no_implicit_hydrogens_does_not_require_an_implicit_cache() {

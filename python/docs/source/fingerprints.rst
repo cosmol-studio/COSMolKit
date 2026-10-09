@@ -15,6 +15,32 @@ compatibility claim. The Python ``Fingerprint`` object is a sparse view over
 the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
 is not a dense floating-point neural embedding.
 
+Scaffold molecules
+------------------
+
+These value-returning transforms leave the original molecule unchanged:
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   mol = ck.Molecule.from_smiles("O=C1CCCCC1")
+   mol.murcko_scaffold().to_smiles()   # "C1CCCCC1"
+   mol.net_scaffold().to_smiles()      # "*=C1CCCCC1"
+   mol.murcko_decompose().to_smiles()  # "O=C1CCCCC1"
+
+``murcko_scaffold`` follows RDKit MolHash ``MurckoScaffold``: repeatedly remove
+terminal atoms and transfer their bond-order contribution to hydrogen counts.
+``net_scaffold`` follows MolHash ``ExtendedMurcko``: retain ring/linker atoms
+and replace their directly attached substituents with dummy atoms.
+``murcko_decompose`` follows ChemTransforms ``MurckoDecompose``: retain rings,
+their shortest-path linkers, and atoms double-bonded to retained atoms.
+
+The MolHash transforms require calculated hydrogen counts, and
+``murcko_decompose`` requires initialized ring information for nonempty input.
+Default SMILES parsing supplies both. Missing source state raises a typed
+operation error; these methods do not silently sanitize unprepared input.
+
 Topological Torsion fingerprints
 --------------------------------
 

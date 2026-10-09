@@ -2,6 +2,21 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
+    pub fn murcko_scaffold(&self) -> Result<Self, ck::OperationError> {
+        self.inner.borrow().murcko_scaffold().map(|inner| Self {
+            inner: std::cell::RefCell::new(inner),
+        })
+    }
+    pub fn net_scaffold(&self) -> Result<Self, ck::OperationError> {
+        self.inner.borrow().net_scaffold().map(|inner| Self {
+            inner: std::cell::RefCell::new(inner),
+        })
+    }
+    pub fn murcko_decompose(&self) -> Result<Self, ck::OperationError> {
+        self.inner.borrow().murcko_decompose().map(|inner| Self {
+            inner: std::cell::RefCell::new(inner),
+        })
+    }
     pub fn molecular_hash(&self) -> Result<u64, ck::MoleculeHashError> {
         // COSMolKit❗✔️: pub fn molecular_hash(&self) -> Result<u64, MoleculeHashError> {
         self.inner.borrow().molecular_hash()

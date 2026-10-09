@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "version": "2026.3.6",
+    "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985"
+  },
+  "source": "crates/cosmolkit/tests/{mmff,uff}_numerical_parity.rs fixed counterexamples; original one-based smiles_small rows",
+  "parameters": {
+    "max_iterations": 2,
+    "seed": 61453,
+    "nonbonded_threshold": 100,
+    "ignore_interfragment_interactions": true,
+    "num_threads": 1,
+    "multi_conformers": 2,
+    "mmff_variant": "MMFF94"
+  },
+  "comparison": "bitexact",
+  "cases": [
+    {
+      "case_id": "mmff_row_17",
+      "source_row": 17,
+      "forcefield": "mmff",
+      "smiles": "[13CH3:7][C@H](F)Cl"
+    },
+    {
+      "case_id": "mmff_row_18",
+      "source_row": 18,
+      "forcefield": "mmff",
+      "smiles": "F[C@](Cl)(Br)I"
+    },
+    {
+      "case_id": "mmff_row_19",
+      "source_row": 19,
+      "forcefield": "mmff",
+      "smiles": "C[C@H](O)[C@@H](C)O"
+    },
+    {
+      "case_id": "mmff_row_21",
+      "source_row": 21,
+      "forcefield": "mmff",
+      "smiles": "F[C@@H]1O[C@H](Cl)S1"
+    },
+    {
+      "case_id": "mmff_row_22",
+      "source_row": 22,
+      "forcefield": "mmff",
+      "smiles": "O[C@](C)(Cl)[C@@](O)(Cl)C"
+    },
+    {
+      "case_id": "mmff_row_48",
+      "source_row": 48,
+      "forcefield": "mmff",
+      "smiles": "CC(F)(Cl)Br"
+    },
+    {
+      "case_id": "mmff_row_49",
+      "source_row": 49,
+      "forcefield": "mmff",
+      "smiles": "FC(Cl)(Br)I"
+    },
+    {
+      "case_id": "mmff_row_50",
+      "source_row": 50,
+      "forcefield": "mmff",
+      "smiles": "CC(F)Cl"
+    },
+    {
+      "case_id": "mmff_row_51",
+      "source_row": 51,
+      "forcefield": "mmff",
+      "smiles": "CC(Cl)Br"
+    },
+    {
+      "case_id": "mmff_row_72",
+      "source_row": 72,
+      "forcefield": "mmff",
+      "smiles": "COc1c(O)ccc2OC(=C\\c(c3[C@@H](C(F)(F)F)O)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C"
+    },
+    {
+      "case_id": "mmff_row_73",
+      "source_row": 73,
+      "forcefield": "mmff",
+      "smiles": "COc1c(O)ccc2OC(=C\\c(c3C(=O)C)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C"
+    },
+    {
+      "case_id": "mmff_row_76",
+      "source_row": 76,
+      "forcefield": "mmff",
+      "smiles": "CCOC(=O)c1sc2nc(C)c3c(c2c1N)[C@H](C)[C@H]1[C@@H]2CC=C4C[C@@H](O)CC[C@@]4(C)[C@@H]2CC[C@]31C"
+    },
+    {
+      "case_id": "mmff_row_78",
+      "source_row": 78,
+      "forcefield": "mmff",
+      "smiles": "C[C@@H](NC(=O)c1cc2c3ccccc3n(C)c2s1)c1ccco1"
+    },
+    {
+      "case_id": "mmff_row_79",
+      "source_row": 79,
+      "forcefield": "mmff",
+      "smiles": "COc1c(O)ccc2OC(=C\\c(c3[C@@H](C(F)(F)F)O)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C"
+    },
+    {
+      "case_id": "mmff_row_90",
+      "source_row": 90,
+      "forcefield": "mmff",
+      "smiles": "CCOC(=O)c1c(N/C=C\\2/C(=NC(=NC2=O)S)O)scc1c1ccc(cc1)Br"
+    },
+    {
+      "case_id": "mmff_row_99",
+      "source_row": 99,
+      "forcefield": "mmff",
+      "smiles": "COc1c(O)ccc2OC(=C\\\\c(c3C(=O)C)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C"
+    },
+    {
+      "case_id": "mmff_row_103",
+      "source_row": 103,
+      "forcefield": "mmff",
+      "smiles": "O=C(C1=C(C2CC2)N(C3=C4C=CC=NC4=CC=C3)N=C1)NC(N)=N.[H]Cl.[H]O[H]"
+    },
+    {
+      "case_id": "mmff_row_104",
+      "source_row": 104,
+      "forcefield": "mmff",
+      "smiles": "CCC1=NN2C(SC(C(N3CCN(C)CC3)C3=C(Cl)C=C(Cl)C=C3)=C2O)=N1"
+    },
+    {
+      "case_id": "mmff_row_123",
+      "source_row": 123,
+      "forcefield": "mmff",
+      "smiles": "[#6]-[#8]-[#6]-1-[#6](-[#8])-[#6]-[#6]C2([#6]-[#8]2)[#6]-1[C@@]1([#6])[#8]-[#6]1-[#6]\\[#6]=[#6](\\[#6])-[#6]"
+    },
+    {
+      "case_id": "mmff_row_129",
+      "source_row": 129,
+      "forcefield": "mmff",
+      "smiles": "N=[N+]=NCC1OC(N2:C:N:C3:C(N):N:C:N:C:3:2)C(O)C1O"
+    },
+    {
+      "case_id": "uff_row_34",
+      "source_row": 34,
+      "forcefield": "uff",
+      "smiles": "CCCC1CCC(c2ccc(OCC)cc2)CC1"
+    },
+    {
+      "case_id": "uff_row_47",
+      "source_row": 47,
+      "forcefield": "uff",
+      "smiles": "c1cc[se]c1"
+    },
+    {
+      "case_id": "uff_row_81",
+      "source_row": 81,
+      "forcefield": "uff",
+      "smiles": "CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12"
+    },
+    {
+      "case_id": "uff_row_113",
+      "source_row": 113,
+      "forcefield": "uff",
+      "smiles": "CC(C)C[C@H](NC(=O)CNC(=O)c1cc(Cl)ccc1Cl)B1OC(=O)C(CC(O)=O)(CC(O)=O)O1"
+    }
+  ]
+}

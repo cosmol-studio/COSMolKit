@@ -42,6 +42,7 @@ pub struct CxParseProgress {
     // Native terminal diagnostic; output follows successful replay of all
     // earlier source effects. Syntax scanning alone cannot decide that order.
     source_warning: Option<Vec<u8>>,
+    enhanced_stereo_duplicate_atom: Option<u32>,
 }
 
 impl CxParseProgress {
@@ -59,12 +60,25 @@ impl CxParseProgress {
             complete,
             error,
             source_warning: None,
+            enhanced_stereo_duplicate_atom: None,
         }
     }
 
     pub(crate) fn with_source_warning(mut self, warning: Option<Vec<u8>>) -> Self {
         self.source_warning = warning;
         self
+    }
+
+    pub(crate) fn with_enhanced_stereo_duplicate_atom(mut self, atom: Option<u32>) -> Self {
+        self.enhanced_stereo_duplicate_atom = atom;
+        self
+    }
+
+    /// Native parser duplicate identity; excludes constructor-level duplicates.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn enhanced_stereo_duplicate_atom(&self) -> Option<u32> {
+        self.enhanced_stereo_duplicate_atom
     }
 
     /// Emit the captured terminal source diagnostic only after earlier graph
@@ -373,4 +387,82 @@ pub struct CxPolymerSGroup {
 pub struct CxVariableAttachment {
     pub atom: usize,
     pub endpoints: Vec<usize>,
+}
+
+#[cfg(test)]
+mod recovery_chem29_cx {
+    use super::*;
+    use crate::parse_cx_extensions_progress_with_atom_window;
+    #[test]
+    fn duplicate_valid_members_stop_before_completion_with_exact_warning() {
+        for text in ["|a:0,0,o2:1|", "|o7:0,0,&2:1|", "|&7:0,0,a:1|"] {
+            let p = parse_cx_extensions_progress_with_atom_window(text, 0, 2);
+            assert!(!p.is_complete());
+            assert_eq!(p.enhanced_stereo_duplicate_atom(), Some(0));
+            assert_eq!(
+                &text[..p.consumed()],
+                text.split(",0").next().unwrap().to_owned() + ",0"
+            );
+            assert!(
+                !p.checkpoints()
+                    .iter()
+                    .any(|c| c.phase == CxProgressPhase::Complete)
+            );
+            // Exact source payload is a private captured diagnostic, not printed during syntax scan.
+            assert_eq!(
+                p.source_warning.as_deref(),
+                Some(b"Atom 0 appears more than once in stereo group specification!\n".as_slice())
+            );
+        }
+    }
+    #[test]
+    fn invalid_duplicate_members_and_wrapped_empty_window_are_ignored() {
+        let p = parse_cx_extensions_progress_with_atom_window("|a:99,99,0|", 0, 2);
+        assert!(p.is_complete());
+        assert_eq!(p.enhanced_stereo_duplicate_atom(), None);
+        let p = parse_cx_extensions_progress_with_atom_window("|o2:10,10,11|", 10, 2);
+        assert!(!p.is_complete());
+        assert_eq!(p.enhanced_stereo_duplicate_atom(), Some(10));
+        let p = parse_cx_extensions_progress_with_atom_window(
+            "|a:4294967295,4294967295,0,0|",
+            u32::MAX,
+            2,
+        );
+        assert!(p.is_complete());
+        assert_eq!(p.enhanced_stereo_duplicate_atom(), None);
+    }
+    #[test]
+    fn completed_prefix_survives_failed_group_and_suffix_is_unscanned() {
+        let text = "|o1:0,&2:1,1,a:0|";
+        let p = parse_cx_extensions_progress_with_atom_window(text, 0, 2);
+        assert_eq!(p.records().len(), 2);
+        assert_eq!(p.enhanced_stereo_duplicate_atom(), Some(1));
+        let complete = p
+            .checkpoints()
+            .iter()
+            .filter(|c| c.phase == CxProgressPhase::Complete)
+            .collect::<Vec<_>>();
+        assert_eq!(complete.len(), 1);
+        assert_eq!(complete[0].record_index, 0);
+        assert_eq!(&text[..p.consumed()], "|o1:0,&2:1,1");
+    }
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn greater_than_u32_lexical_baseline_is_not_rewritten_or_wrapped() {
+        let text = "|a:4294967296,4294967296|";
+        let p = parse_cx_extensions_progress_with_atom_window(text, 0, 2);
+        // The unchanged read_int owner rejects overflow after consuming its
+        // full digit run, before the new accepted-member duplicate check.
+        assert!(!p.is_complete());
+        assert_eq!(p.consumed(), 3 + "4294967296".len());
+        assert_eq!(p.error().map(|error| error.offset), Some(3));
+        assert_eq!(p.enhanced_stereo_duplicate_atom(), None);
+        assert_eq!(p.source_warning, None);
+        let CxRecord::EnhancedStereo(group) = &p.records()[0] else {
+            panic!("enhanced record")
+        };
+        assert!(group.atoms.is_empty());
+        assert_eq!(p.checkpoints().len(), 1);
+        assert_eq!(p.checkpoints()[0].phase, CxProgressPhase::Begin);
+    }
 }

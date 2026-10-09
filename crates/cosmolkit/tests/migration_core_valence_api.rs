@@ -36,11 +36,14 @@ fn molecule() -> Molecule {
             ),
         ],
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(1)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(1)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     Molecule::from_parts(

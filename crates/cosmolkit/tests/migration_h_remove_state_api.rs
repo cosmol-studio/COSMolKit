@@ -93,6 +93,7 @@ fn stateful_source() -> Molecule {
             vec![AtomId::new(0), AtomId::new(2)],
             vec![BondId::new(1)],
         )
+        .expect("valid distinct stereo members")
         .with_id(23),
     ];
     let topology =

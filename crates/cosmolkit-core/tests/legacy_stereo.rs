@@ -192,6 +192,7 @@ fn mol_post_legacy_closure_cleans_atrop_groups_before_general_groups() {
                 vec![AtomId::new(0), AtomId::new(1)],
                 vec![],
             )
+            .expect("valid distinct stereo members")
             .with_id(17),
         ],
     );

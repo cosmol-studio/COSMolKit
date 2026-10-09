@@ -1595,103 +1595,140 @@ fn aromaticity_helper_with_query_state(
     query_state: Option<QueryStateRef<'_>>,
     cached_valence: Option<&ValenceAssignment>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
-    // BEGIN RDKIT CPP FUNCTION aromaticityHelper
-    // RDKit✔️✔️: int aromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings,
-    // RDKit✔️✔️:                       unsigned int minRingSize, unsigned int maxRingSize,
-    // RDKit✔️✔️:                       bool includeFused) {
-    // RDKit✔️✔️:   int narom = 0;
-    // RDKit✔️✔️:   int natoms = mol.getNumAtoms();
-    // RDKit✔️✔️:   boost::dynamic_bitset<> acands(natoms);
-    // RDKit✔️✔️:   boost::dynamic_bitset<> aseen(natoms);
-    // RDKit✔️✔️:   VECT_EDON_TYPE edon(natoms);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   VECT_INT_VECT cRings;
-    // RDKit✔️✔️:   for (auto &sring : srings) {
-    // RDKit✔️✔️:     size_t ringSz = sring.size();
-    // RDKit✔️✔️:     if ((minRingSize && ringSz < minRingSize) ||
-    // RDKit✔️✔️:         (maxRingSize && ringSz > maxRingSize)) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     bool allAromatic = true;
-    // RDKit✔️✔️:     bool allDummy = true;
-    // RDKit✔️✔️:     for (auto firstIdx : sring) {
-    // RDKit✔️✔️:       const auto at = mol.getAtomWithIdx(firstIdx);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       if (allDummy && !isAtomDummy(at)) {
-    // RDKit✔️✔️:         allDummy = false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       if (aseen[firstIdx]) {
-    // RDKit✔️✔️:         if (!acands[firstIdx]) {
-    // RDKit✔️✔️:           allAromatic = false;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       aseen[firstIdx] = 1;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       edon[firstIdx] = getAtomDonorTypeArom(at);
-    // RDKit✔️✔️:       acands[firstIdx] = isAtomCandForArom(at, edon[firstIdx]);
-    // RDKit✔️✔️:       if (!acands[firstIdx]) {
-    // RDKit✔️✔️:         allAromatic = false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (allAromatic && !allDummy) {
-    // RDKit✔️✔️:       cRings.push_back(sring);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   VECT_INT_VECT brings;
-    // RDKit✔️✔️:   RingUtils::convertToBonds(cRings, brings, mol);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<Bond *> bondsByIdx;
-    // RDKit✔️✔️:   bondsByIdx.reserve(mol.getNumBonds());
-    // RDKit✔️✔️:   for (auto b : mol.bonds()) {
-    // RDKit✔️✔️:     bondsByIdx.push_back(b);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (!includeFused) {
-    // RDKit✔️✔️:     INT_INT_VECT_MAP neighMap;
-    // RDKit✔️✔️:     for (size_t ri = 0; ri < cRings.size(); ++ri) {
-    // RDKit✔️✔️:       INT_VECT fused;
-    // RDKit✔️✔️:       fused.push_back(ri);
-    // RDKit✔️✔️:       const unsigned int maxFused = 6;
-    // RDKit✔️✔️:       const unsigned int minRingSize = 0;
-    // RDKit✔️✔️:       applyHuckelToFused(mol, cRings, brings, fused, edon, neighMap, narom,
-    // RDKit✔️✔️:                          maxFused, bondsByIdx, minRingSize);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     INT_INT_VECT_MAP neighMap;
-    // RDKit✔️✔️:     RingUtils::makeRingNeighborMap(brings, neighMap, maxFusedAromaticRingSize,
-    // RDKit✔️✔️:                                    1);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     INT_VECT doneRs;
-    // RDKit✔️✔️:     int curr = 0;
-    // RDKit✔️✔️:     auto cnrs = rdcast<int>(cRings.size());
-    // RDKit✔️✔️:     boost::dynamic_bitset<> fusDone(cnrs);
-    // RDKit✔️✔️:     INT_VECT fused;
-    // RDKit✔️✔️:     while (curr < cnrs) {
-    // RDKit✔️✔️:       fused.clear();
-    // RDKit✔️✔️:       RingUtils::pickFusedRings(curr, neighMap, fused, fusDone);
-    // RDKit✔️✔️:       applyHuckelToFused(mol, cRings, brings, fused, edon, neighMap, narom, 6,
-    // RDKit✔️✔️:                          bondsByIdx);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       int rix;
-    // RDKit✔️✔️:       for (rix = 0; rix < cnrs; ++rix) {
-    // RDKit✔️✔️:         if (!fusDone[rix]) {
-    // RDKit✔️✔️:           curr = rix;
-    // RDKit✔️✔️:           break;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       if (rix == cnrs) {
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   mol.setProp(common_properties::numArom, narom, true);
-    // RDKit✔️✔️:   return narom;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION aromaticityHelper
+    // BEGIN RDKit 2026.03.6 COMPLETE aromaticityHelper
+    // RDKit❗❌: int aromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings,
+    // RDKit❗❌:                       unsigned int minRingSize, unsigned int maxRingSize,
+    // RDKit❗❌:                       bool includeFused) {
+    // RDKit❗❌:   int narom = 0;
+    // RDKit❗❌:   // loop over all the atoms in the rings that can be candidates
+    // RDKit❗❌:   // for aromaticity
+    // RDKit❗❌:   // Atoms are candidates if
+    // RDKit❗❌:   //   - it is part of ring
+    // RDKit❗❌:   //   - has one or more electron to donate or has empty p-orbitals
+    // RDKit❗❌:   int natoms = mol.getNumAtoms();
+    // RDKit❗❌:   boost::dynamic_bitset<> acands(natoms);
+    // RDKit❗❌:   boost::dynamic_bitset<> aseen(natoms);
+    // RDKit❗❌:   VECT_EDON_TYPE edon(natoms);
+    // RDKit❗❌:
+    // RDKit❗❌:   VECT_INT_VECT cRings;  // holder for rings that are candidates for aromaticity
+    // RDKit❗❌:   for (auto &sring : srings) {
+    // RDKit❗❌:     size_t ringSz = sring.size();
+    // RDKit❗❌:     // test ring size:
+    // RDKit❗❌:     if ((minRingSize && ringSz < minRingSize) ||
+    // RDKit❗❌:         (maxRingSize && ringSz > maxRingSize)) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     bool allAromatic = true;
+    // RDKit❗❌:     bool allDummy = true;
+    // RDKit❗❌:     for (auto firstIdx : sring) {
+    // RDKit❗❌:       const auto at = mol.getAtomWithIdx(firstIdx);
+    // RDKit❗❌:
+    // RDKit❗❌:       if (allDummy && !isAtomDummy(at)) {
+    // RDKit❗❌:         allDummy = false;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       if (aseen[firstIdx]) {
+    // RDKit❗❌:         if (!acands[firstIdx]) {
+    // RDKit❗❌:           allAromatic = false;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       aseen[firstIdx] = 1;
+    // RDKit❗❌:
+    // RDKit❗❌:       // Check if this atom can donate electrons or has empty orbitals.
+    // RDKit❗❌:       ElectronDonorType donorType = getAtomDonorTypeArom(at);
+    // RDKit❗❌:
+    // RDKit❗❌:       // Fix: Prevent aliphatic ether oxygens and sulfurs in macrocycles
+    // RDKit❗❌:       // (>= 9 members, this is what we use as the definition of macrocycle
+    // RDKit❗❌:       // elsewhere) from being falsely flagged as aromatic. In these large
+    // RDKit❗❌:       // rings, they act as simple bridges, not pi donors like in small rings
+    // RDKit❗❌:       // (e.g., furan).
+    // RDKit❗❌:       if (donorType == TwoElectronDonorType && ringSz >= 9) {
+    // RDKit❗❌:         if ((at->getAtomicNum() == 8 || at->getAtomicNum() == 16) &&
+    // RDKit❗❌:             at->getDegree() == 2 && at->getFormalCharge() == 0) {
+    // RDKit❗❌:           if (std::ranges::none_of(mol.atomBonds(at), [](const Bond *bond) {
+    // RDKit❗❌:                 return bond->getBondType() == Bond::DOUBLE ||
+    // RDKit❗❌:                        bond->getBondType() == Bond::TRIPLE;
+    // RDKit❗❌:               })) {
+    // RDKit❗❌:             donorType = NoElectronDonorType;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       edon[firstIdx] = donorType;
+    // RDKit❗❌:       acands[firstIdx] = isAtomCandForArom(at, donorType);
+    // RDKit❗❌:       if (!acands[firstIdx]) {
+    // RDKit❗❌:         allAromatic = false;
+    // RDKit❗❌:         // we can't break out of the loop over the rest of the ring here because
+    // RDKit❗❌:         // we still need to set edon and acands for the other atoms in the ring.
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (allAromatic && !allDummy) {
+    // RDKit❗❌:       cRings.push_back(sring);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // first convert all rings to bonds ids
+    // RDKit❗❌:   VECT_INT_VECT brings;
+    // RDKit❗❌:   RingUtils::convertToBonds(cRings, brings, mol);
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<Bond *> bondsByIdx;
+    // RDKit❗❌:   bondsByIdx.reserve(mol.getNumBonds());
+    // RDKit❗❌:   for (auto b : mol.bonds()) {
+    // RDKit❗❌:     bondsByIdx.push_back(b);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (!includeFused) {
+    // RDKit❗❌:     // now loop over all the candidate rings and check the
+    // RDKit❗❌:     // huckel rule - skipping fused systems
+    // RDKit❗❌:     INT_INT_VECT_MAP neighMap;
+    // RDKit❗❌:     for (size_t ri = 0; ri < cRings.size(); ++ri) {
+    // RDKit❗❌:       INT_VECT fused;
+    // RDKit❗❌:       fused.push_back(ri);
+    // RDKit❗❌:       const unsigned int maxFused = 6;
+    // RDKit❗❌:       const unsigned int minRingSize = 0;
+    // RDKit❗❌:       applyHuckelToFused(mol, cRings, brings, fused, edon, neighMap, narom,
+    // RDKit❗❌:                          maxFused, bondsByIdx, minRingSize);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     // make the neighbor map for the rings
+    // RDKit❗❌:     // i.e. a ring is a neighbor a another candidate ring if
+    // RDKit❗❌:     // shares at least one bond
+    // RDKit❗❌:     // useful to figure out fused systems
+    // RDKit❗❌:     INT_INT_VECT_MAP neighMap;
+    // RDKit❗❌:     RingUtils::makeRingNeighborMap(brings, neighMap, maxFusedAromaticRingSize,
+    // RDKit❗❌:                                    1);
+    // RDKit❗❌:
+    // RDKit❗❌:     // now loop over all the candidate rings and check the
+    // RDKit❗❌:     // huckel rule - of course paying attention to fused systems.
+    // RDKit❗❌:     INT_VECT doneRs;
+    // RDKit❗❌:     int curr = 0;
+    // RDKit❗❌:     auto cnrs = rdcast<int>(cRings.size());
+    // RDKit❗❌:     boost::dynamic_bitset<> fusDone(cnrs);
+    // RDKit❗❌:     INT_VECT fused;
+    // RDKit❗❌:     while (curr < cnrs) {
+    // RDKit❗❌:       fused.clear();
+    // RDKit❗❌:       RingUtils::pickFusedRings(curr, neighMap, fused, fusDone);
+    // RDKit❗❌:       applyHuckelToFused(mol, cRings, brings, fused, edon, neighMap, narom, 6,
+    // RDKit❗❌:                          bondsByIdx);
+    // RDKit❗❌:
+    // RDKit❗❌:       int rix;
+    // RDKit❗❌:       for (rix = 0; rix < cnrs; ++rix) {
+    // RDKit❗❌:         if (!fusDone[rix]) {
+    // RDKit❗❌:           curr = rix;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (rix == cnrs) {
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   mol.setProp(common_properties::numArom, narom, true);
+    // RDKit❗❌:
+    // RDKit❗❌:   return narom;
+    // RDKit❗❌: }
+    // END RDKit 2026.03.6 COMPLETE aromaticityHelper
     // BEGIN RDKIT CPP FUNCTION Atom::getValence/getTotalValence
     // RDKit❗❗: unsigned int Atom::getValence(ValenceType which) const {
     // RDKit❗❗:   if (!dp_mol) {
@@ -1768,6 +1805,12 @@ fn aromaticity_helper_with_query_state(
                 true,
                 query_state,
             )?;
+            donors[atom_id.index()] = adjust_macrocycle_bridge_donor(
+                topology,
+                atom_id,
+                source_ring.len(),
+                donors[atom_id.index()],
+            )?;
             candidates[atom_id.index()] = is_atom_candidate(
                 topology,
                 rings,
@@ -1830,6 +1873,48 @@ fn aromaticity_helper_with_query_state(
         topology: working,
         aromatic_ring_count,
     })
+}
+
+fn adjust_macrocycle_bridge_donor(
+    topology: &TopologyBlock,
+    atom_id: AtomId,
+    ring_size: usize,
+    donor: ElectronDonorType,
+) -> Result<ElectronDonorType, AromaticityError> {
+    // BEGIN RDKit 2026.03.6 COMPLETE aromaticityHelper macrocycle donor conditional
+    // RDKit✔️✔️:       if (donorType == TwoElectronDonorType && ringSz >= 9) {
+    // RDKit✔️✔️:         if ((at->getAtomicNum() == 8 || at->getAtomicNum() == 16) &&
+    // RDKit✔️✔️:             at->getDegree() == 2 && at->getFormalCharge() == 0) {
+    // RDKit✔️✔️:           if (std::ranges::none_of(mol.atomBonds(at), [](const Bond *bond) {
+    // RDKit✔️✔️:                 return bond->getBondType() == Bond::DOUBLE ||
+    // RDKit✔️✔️:                        bond->getBondType() == Bond::TRIPLE;
+    // RDKit✔️✔️:               })) {
+    // RDKit✔️✔️:             donorType = NoElectronDonorType;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // END RDKit 2026.03.6 COMPLETE aromaticityHelper macrocycle donor conditional
+    // RDKit✔️✔️: Source conditional is inside aromaticityHelper above. First visit
+    // only, after size filtering; no ring minimum/cache recomputation or early break.
+    if donor == ElectronDonorType::Two && ring_size >= 9 {
+        let atom = atom(topology, atom_id)?;
+        let neighbors = topology.adjacency.neighbors_of(atom_id.index());
+        if matches!(atom.atomic_number(), 8 | 16)
+            && neighbors.len() == 2
+            && atom.formal_charge() == 0
+        {
+            for neighbor in neighbors {
+                if matches!(
+                    bond(topology, neighbor.bond)?.order(),
+                    BondOrder::Double | BondOrder::Triple
+                ) {
+                    return Ok(donor);
+                }
+            }
+            return Ok(ElectronDonorType::None);
+        }
+    }
+    Ok(donor)
 }
 
 fn mdl_aromaticity_helper(
@@ -4205,5 +4290,212 @@ mod tests {
             ))
         ));
         assert_eq!(impossible, snapshot);
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem01 {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+    fn topology(elements: &[Element], edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(*e)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, (a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(*a), AtomId::new(*b), *o),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn rings_graph(
+        count: usize,
+        oxygens: &[usize],
+        rings: &[&[usize]],
+        doubles: &[(usize, usize)],
+        exo: &[usize],
+    ) -> TopologyBlock {
+        let mut elements = (0..count)
+            .map(|i| {
+                if oxygens.contains(&i) {
+                    Element::O
+                } else {
+                    Element::C
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        let mut edges = vec![];
+        for ring in rings {
+            for (&a, &b) in ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .take(ring.len())
+            {
+                let pair = (a.min(b), a.max(b));
+                if seen.insert(pair) {
+                    edges.push((
+                        a,
+                        b,
+                        if doubles.contains(&pair) {
+                            BondOrder::Double
+                        } else {
+                            BondOrder::Single
+                        },
+                    ));
+                }
+            }
+        }
+        for &a in exo {
+            let b = elements.len();
+            elements.push(Element::C);
+            edges.push((a, b, BondOrder::Double));
+        }
+        topology(&elements, &edges)
+    }
+    fn assign(
+        t: &TopologyBlock,
+        ordered: &[&[usize]],
+        min: usize,
+        max: usize,
+    ) -> AromaticityAssignment {
+        let mut r = RingInfo::new(
+            crate::RingFindType::OtherOrUnknown,
+            t.atoms.len(),
+            t.bonds.len(),
+        );
+        for ring in ordered {
+            let bs = ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .take(ring.len())
+                .map(|(&a, &b)| {
+                    t.adjacency
+                        .neighbors_of(a)
+                        .iter()
+                        .find(|n| n.atom_index == b)
+                        .unwrap()
+                        .bond
+                        .index()
+                })
+                .collect::<Vec<_>>();
+            r.add_ring(ring, &bs).unwrap();
+        }
+        aromaticity_helper_with_query_state(t, &r, min, max, false, None, None).unwrap()
+    }
+    fn flags(a: &AromaticityAssignment) -> Vec<bool> {
+        a.topology.atoms.iter().map(Atom::is_aromatic).collect()
+    }
+    #[test]
+    fn source_predicate_gate_matrix() {
+        for element in [Element::O, Element::S] {
+            for charge in [-1, 0, 1] {
+                for size in [8, 9, 10] {
+                    for orders in [
+                        [BondOrder::Single, BondOrder::Single],
+                        [BondOrder::Single, BondOrder::Double],
+                        [BondOrder::Single, BondOrder::Triple],
+                        [BondOrder::Single, BondOrder::Aromatic],
+                    ] {
+                        let mut t = topology(
+                            &[element, Element::C, Element::C],
+                            &[(0, 1, orders[0]), (0, 2, orders[1])],
+                        );
+                        t.atoms[0] = Atom::from_spec(
+                            AtomId::new(0),
+                            AtomSpec::new(element).with_formal_charge(charge),
+                        );
+                        for donor in [
+                            ElectronDonorType::None,
+                            ElectronDonorType::Vacant,
+                            ElectronDonorType::One,
+                            ElectronDonorType::Two,
+                            ElectronDonorType::OneOrTwo,
+                            ElectronDonorType::Any,
+                        ] {
+                            let excluded = donor == ElectronDonorType::Two
+                                && size >= 9
+                                && charge == 0
+                                && !orders
+                                    .iter()
+                                    .any(|o| matches!(o, BondOrder::Double | BondOrder::Triple));
+                            assert_eq!(
+                                adjust_macrocycle_bridge_donor(&t, AtomId::new(0), size, donor)
+                                    .unwrap(),
+                                if excluded {
+                                    ElectronDonorType::None
+                                } else {
+                                    donor
+                                }
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        for degree in [0, 1, 3] {
+            let elements = vec![Element::O; degree + 1];
+            let edges = (1..=degree)
+                .map(|i| (0, i, BondOrder::Single))
+                .collect::<Vec<_>>();
+            let t = topology(&elements, &edges);
+            assert_eq!(
+                adjust_macrocycle_bridge_donor(&t, AtomId::new(0), 9, ElectronDonorType::Two)
+                    .unwrap(),
+                ElectronDonorType::Two
+            );
+        }
+    }
+    #[test]
+    fn first_accepted_ring_order_and_size_filters() {
+        let small = &[0, 1, 2, 3, 4, 5, 6, 7][..];
+        let large = &[0, 1, 8, 2, 3, 4, 5, 6, 7][..];
+        let t = rings_graph(9, &[0, 4], &[small, large], &[(1, 2), (5, 6)], &[3, 7, 8]);
+        let a = assign(&t, &[small, large], 0, 0);
+        assert_eq!(flags(&a), [vec![true; 8], vec![false; 4]].concat());
+        assert!(
+            flags(&assign(&t, &[large, small], 0, 0))
+                .iter()
+                .all(|x| !*x)
+        );
+        assert_eq!(assign(&t, &[large, small], 0, 8), a);
+        assert_eq!(assign(&t, &[large, small], 8, 8), a);
+        for min in [9, 10] {
+            assert!(
+                flags(&assign(&t, &[small, large], min, 0))
+                    .iter()
+                    .all(|x| !*x)
+            );
+        }
+    }
+    #[test]
+    fn rejected_ring_still_caches_later_atoms() {
+        let first = &[0, 1, 2, 3, 4, 5, 6, 7, 8][..];
+        let later = &[2, 3, 4, 5, 6, 9, 10, 11][..];
+        let t = rings_graph(
+            12,
+            &[0, 4, 10],
+            &[first, later],
+            &[(2, 3), (5, 6), (7, 8)],
+            &[1, 9, 11],
+        );
+        assert_eq!(
+            flags(&assign(&t, &[later], 0, 0)),
+            vec![
+                false, false, true, true, true, true, true, false, false, true, true, true, false,
+                false, false
+            ]
+        );
+        let a = assign(&t, &[first, later], 0, 0);
+        assert!(flags(&a).iter().all(|x| !*x));
+        assert_eq!(a.aromatic_ring_count, 0);
     }
 }

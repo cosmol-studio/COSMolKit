@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 #[test]
 fn canonical_methods_return_ordered_source_values_and_keep_source_immutable() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let before = source.clone();
     let result = source.enumerate_tautomers().unwrap();
     assert_eq!(
@@ -19,7 +19,10 @@ fn canonical_methods_return_ordered_source_values_and_keep_source_immutable() {
     assert_eq!(
         result
             .iter()
-            .map(|m| m.tautomer_score().unwrap().total())
+            .map(|m| {
+                let mut value = m.clone();
+                value.tautomer_score().unwrap().total()
+            })
             .collect::<Vec<_>>(),
         [1, 5]
     );
@@ -39,7 +42,7 @@ impl TautomerEnumerationCallback for Cancel {
     fn should_continue(
         &self,
         source: TautomerMoleculeView<'_>,
-        result: TautomerProgress<'_>,
+        mut result: TautomerProgress<'_>,
     ) -> Result<bool, TautomerRunError> {
         assert_eq!(source.num_atoms(), 4);
         assert_eq!(source.to_smiles()?, PropertyText::from("CC(C)=O"));
@@ -52,7 +55,7 @@ impl TautomerEnumerationCallback for Cancel {
 }
 #[test]
 fn callback_inspects_borrowed_progress_and_cancels_before_apply() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let before = source.clone();
     let callback = Arc::new(Cancel {
         calls: Mutex::new(Vec::new()),
@@ -102,7 +105,7 @@ impl TautomerScorer for Failure {
 }
 #[test]
 fn callback_and_scorer_errors_preserve_source_and_structured_error() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let before = source.clone();
     let mut params = TautomerParams::default();
     params.set_callback(Some(Arc::new(Failure)));
@@ -133,7 +136,7 @@ impl TautomerScorer for FavorEnol {
 }
 #[test]
 fn custom_scorer_and_terms_use_canonical_public_configuration() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let mut params = TautomerParams::default();
     params.set_scorer(Some(Arc::new(FavorEnol)));
     assert_eq!(
@@ -154,7 +157,7 @@ fn custom_scorer_and_terms_use_canonical_public_configuration() {
 }
 #[test]
 fn limits_and_current_v1_custom_catalogs_keep_source_defaults() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let current = TautomerParams::default();
     let v1 = TautomerParams::v1().unwrap();
     assert_eq!(current.transform_count(), 37);
@@ -207,7 +210,7 @@ fn rich_result_collection_projection_matches_every_molecule_and_modified_set() {
             TautomerParams::default().with_max_tautomers(2),
         ),
     ] {
-        let source = Molecule::from_smiles(text).unwrap();
+        let mut source = Molecule::from_smiles(text).unwrap();
         let before = source.clone();
         let rich = source.enumerate_tautomers_with_params(&params).unwrap();
         let projected = rich.iter().cloned().collect::<Vec<_>>();
@@ -227,7 +230,7 @@ fn rich_result_collection_projection_matches_every_molecule_and_modified_set() {
 }
 #[test]
 fn rich_result_optional_projections_and_failed_operation_preserve_caller_values() {
-    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let mut source = Molecule::from_smiles("CC(C)=O").unwrap();
     let rich = source.enumerate_tautomers().unwrap();
     let molecules = rich.iter().cloned().collect::<Vec<_>>();
     let mut atoms_only = std::collections::BTreeSet::from([AtomId::new(99)]);
@@ -239,7 +242,7 @@ fn rich_result_optional_projections_and_failed_operation_preserve_caller_values(
     assert_eq!(bonds_only, *rich.modified_bonds());
     assert_eq!(molecules, rich.iter().cloned().collect::<Vec<_>>());
     assert_eq!(molecules, (&rich).into_iter().cloned().collect::<Vec<_>>());
-    let invalid = Molecule::from_smiles_with_params(
+    let mut invalid = Molecule::from_smiles_with_params(
         "c1cccc1",
         &SmilesParseParams {
             sanitize: false,

@@ -3942,7 +3942,8 @@ mod tests {
             StereoGroupKind::Absolute,
             vec![AtomId::new(5), AtomId::new(2)],
             Vec::new(),
-        );
+        )
+        .expect("valid distinct stereo members");
 
         assert_eq!(
             get_all_atom_ids_for_stereo_group(&molecule, &group, &WedgeAssignments::default())
@@ -3970,7 +3971,8 @@ mod tests {
                 edge(3, 5, BondOrder::Single).with_direction(BondDirection::Unknown),
             ],
         );
-        let group = StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(2)]);
+        let group = StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(2)])
+            .expect("valid distinct stereo members");
         let assignments = assignment_map(vec![(
             1,
             WedgeInfo::Atropisomer {
@@ -4020,7 +4022,8 @@ mod tests {
             StereoGroupKind::Or,
             vec![AtomId::new(9)],
             vec![BondId::new(2), BondId::new(3)],
-        );
+        )
+        .expect("valid distinct stereo members");
         let assignments = assignment_map(vec![
             (
                 4,

@@ -36,6 +36,10 @@ pub enum PdbPostprocessError {
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
     #[error("PDB basic cleanup valence calculation failed: {0}")]
     Valence(#[from] cosmolkit_core::ValenceError),
+    #[error("PDB proximity source bond edit failed: {0}")]
+    TopologyEdit(#[from] cosmolkit_model::TopologyEditError),
+    #[error("PDB proximity source unsigned property read failed: {0}")]
+    PropertyUInt(#[from] cosmolkit_core::PropertyUIntReadError),
 }
 
 /// Controls RDKit's chemistry-owned PDB graph finalization.
@@ -143,6 +147,92 @@ impl<'a> DetachedPdbEditor<'a> {
         }
         self.rebuild_working_adjacency();
         Some(bond)
+    }
+
+    fn commit_proximity_bond_deletions(
+        &mut self,
+        remove: &[bool],
+    ) -> Result<(), PdbPostprocessError> {
+        // BEGIN RECOVERY IO-04 SOURCE clearComputedProps
+        // RDKit❗❌: void ROMol::clearComputedProps(bool includeRings) const {
+        // RDKit❗❌:   // the SSSR information:
+        // RDKit❗❌:   if (includeRings) {
+        // RDKit❗❌:     this->dp_ringInfo->reset();
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   RDProps::clearComputedProps();
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto atom : atoms()) {
+        // RDKit❗❌:     atom->clearComputedProps();
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   for (auto bond : bonds()) {
+        // RDKit❗❌:     bond->clearComputedProps();
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY IO-04 SOURCE clearComputedProps
+
+        // BEGIN RECOVERY IO-04 SOURCE commitBatchEdit
+        // RDKit❗❌: void RWMol::commitBatchEdit() {
+        // RDKit❗❌:   if (!(dp_delBonds || dp_delAtoms)) {
+        // RDKit❗❌:     return;
+        // RDKit❗❌:   } else if (dp_delBonds->none() && dp_delAtoms->none()) {
+        // RDKit❗❌:     // no need to reset ring info & calculated properties,
+        // RDKit❗❌:     // since nothing gets removed
+        // RDKit❗❌:     dp_delBonds.reset();
+        // RDKit❗❌:     dp_delAtoms.reset();
+        // RDKit❗❌:     return;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   batchRemoveBonds();
+        // RDKit❗❌:   batchRemoveAtoms();
+        // RDKit❗❌:
+        // RDKit❗❌:   // remove ring info
+        // RDKit❗❌:   dp_ringInfo->reset();
+        // RDKit❗❌:
+        // RDKit❗❌:   // fix properties
+        // RDKit❗❌:   clearComputedProps(true);
+        // RDKit❗❌:   dp_delBonds.reset();
+        // RDKit❗❌:   dp_delAtoms.reset();
+        // RDKit❗❌: }
+        // END RECOVERY IO-04 SOURCE commitBatchEdit
+
+        // This editor borrows actual detached topology and readonly coordinates.
+        // It has no bookmark, molecule-property or RingInfo carrier: None below
+        // denotes absent modeled state, not an invented native empty bookmark map.
+        // Source atom deletion is empty, so conformers and atom IDs do not change.
+        // The existing model owner performs source-order stereo/SG deletion and
+        // retained-bond alias remapping; this adapter never duplicates that logic.
+        // Model Vec erasures/stereo row scans add O(k*E) work and CSR rebuilding;
+        // existing coordinate/neighbor clones remain qualified in the caller.
+        if remove.len() != self.topology.bonds.len() {
+            return Err(PdbPostprocessError::InvalidState(
+                "proximity deletion mask length does not match bond count".to_string(),
+            ));
+        }
+        if !remove.iter().any(|removed| *removed) {
+            return Ok(());
+        }
+        cosmolkit_model::batch_remove_bonds_source::<PdbPostprocessError>(
+            self.topology,
+            Some(remove),
+            None,
+            &mut |value| {
+                cosmolkit_core::property_value_to_uint(value).map_err(PdbPostprocessError::from)
+            },
+        )?;
+        self.rebuild_working_adjacency();
+        // Native commit clears molecule properties, then atoms, then bonds.
+        // This detached boundary carries only atoms/bonds; clear their actual
+        // computed properties in that order, retaining source prefix on error.
+        for atom in &mut self.topology.atoms {
+            atom.clear_computed_props()?;
+        }
+        for bond in &mut self.topology.bonds {
+            bond.clear_computed_props()
+                .map_err(cosmolkit_model::TopologyEditError::InvalidBond)?;
+        }
+        Ok(())
     }
 
     fn rebuild_working_adjacency(&mut self) {
@@ -285,71 +375,136 @@ fn distance3(a: [f64; 3], b: [f64; 3]) -> f32 {
     (dx * dx + dy * dy + dz * dz).sqrt() as f32
 }
 
-fn cleanup_multivalent_hydrogens_like_rdkit(builder: &mut DetachedPdbEditor<'_>, flags: u32) {
-    // BEGIN RDKIT CPP FUNCTION ConnectTheDots_Large cleanup pass
-    // RDKit✔️✔️:   // Cleanup pass
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < count; i++) {
-    // RDKit✔️✔️:     Atom *atom = mol->getAtomWithIdx(i);
-    // RDKit✔️✔️:     unsigned int elem = atom->getAtomicNum();
-    // RDKit✔️✔️:     // detect multivalent Hs, which could happen with ConnectTheDots
-    // RDKit✔️✔️:     if (elem == 1 && atom->getDegree() > 1) {
-    // RDKit✔️✔️:       // if there's an H neighbor and a non-H neighbor, remove the bond to the H
-    // RDKit✔️✔️:       if (flags & ctdQUICKREMOVE_H_H_CONTACTS) {
-    // RDKit✔️✔️:         Bond *bondToH = nullptr;
-    // RDKit✔️✔️:         Bond *bondToNonH = nullptr;
-    // RDKit✔️✔️:         for (auto bond : mol->atomBonds(atom)) {
-    // RDKit✔️✔️:           if (bond->getOtherAtom(atom)->getAtomicNum() == 1) {
-    // RDKit✔️✔️:             bondToH = bond;
-    // RDKit✔️✔️:           } else {
-    // RDKit✔️✔️:             bondToNonH = bond;
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         if (bondToH && bondToNonH) {
-    // RDKit✔️✔️:           mol->removeBond(bondToH->getBeginAtomIdx(), bondToH->getEndAtomIdx());
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       // if we now have a degree of 1, we're done
-    // RDKit✔️✔️:       if (atom->getDegree() == 1) {
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       auto *atom_info = (AtomPDBResidueInfo *)(atom->getMonomerInfo());
-    // RDKit✔️✔️:       // cut all but shortest Bond
-    // RDKit✔️✔️:       RDGeom::Point3D p = conf->getAtomPos(i);
-    // RDKit✔️✔️:       RDKit::RWMol::ADJ_ITER nbr, end_nbr;
-    // RDKit✔️✔️:       boost::tie(nbr, end_nbr) = mol->getAtomNeighbors(atom);
-    // RDKit✔️✔️:       float best = 10000;
-    // RDKit✔️✔️:       unsigned int best_idx = mol->getNumAtoms() + 1;
-    // RDKit✔️✔️:       while (nbr != end_nbr) {
-    // RDKit✔️✔️:         RDGeom::Point3D pn = conf->getAtomPos(*nbr);
-    // RDKit✔️✔️:         float d = (p - pn).length();
-    // RDKit✔️✔️:         auto *n_info =
-    // RDKit✔️✔️:             (AtomPDBResidueInfo *)(mol->getAtomWithIdx(*nbr)->getMonomerInfo());
-    // RDKit✔️✔️:         if (d < best &&
-    // RDKit✔️✔️:             ((!atom_info || !n_info) ||
-    // RDKit✔️✔️:              atom_info->getResidueNumber() == n_info->getResidueNumber())) {
-    // RDKit✔️✔️:           best = d;
-    // RDKit✔️✔️:           best_idx = *nbr;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         ++nbr;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       // iterate again and remove all but closest
-    // RDKit✔️✔️:       boost::tie(nbr, end_nbr) = mol->getAtomNeighbors(atom);
-    // RDKit✔️✔️:       while (nbr != end_nbr) {
-    // RDKit✔️✔️:         if (*nbr == best_idx) {
-    // RDKit✔️✔️:           Bond *bond = mol->getBondBetweenAtoms(i, *nbr);
-    // RDKit✔️✔️:           bond->setBondType(Bond::SINGLE);  // make sure this one is single
-    // RDKit✔️✔️:         } else {
-    // RDKit✔️✔️:           mol->removeBond(i, *nbr);
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         ++nbr;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // END RDKIT CPP FUNCTION ConnectTheDots_Large cleanup pass
+fn cleanup_multivalent_hydrogens_like_rdkit(
+    builder: &mut DetachedPdbEditor<'_>,
+    flags: u32,
+) -> Result<(), PdbPostprocessError> {
+    // BEGIN RECOVERY IO-04 SOURCE beginBatchEdit
+    // RDKit❗❌: void RWMol::beginBatchEdit() {
+    // RDKit❗❌:   if (dp_delAtoms || dp_delBonds) {
+    // RDKit❗❌:     throw ValueErrorException("Attempt to re-enter batchEdit mode");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   dp_delAtoms.reset(new boost::dynamic_bitset<>(getNumAtoms()));
+    // RDKit❗❌:   dp_delBonds.reset(new boost::dynamic_bitset<>(getNumBonds()));
+    // RDKit❗❌: }
+    // END RECOVERY IO-04 SOURCE beginBatchEdit
+
+    // BEGIN RECOVERY IO-04 SOURCE ConnectTheDots_Large
+    // RDKit❗❌: static void ConnectTheDots_Large(RWMol *mol, unsigned int flags) {
+    // RDKit❗❌:   int HashTable[HASHSIZE];
+    // RDKit❗❌:   memset(HashTable, -1, sizeof(HashTable));
+    // RDKit❗❌:
+    // RDKit❗❌:   unsigned int count = mol->getNumAtoms();
+    // RDKit❗❌:   auto *tmp = (ProximityEntry *)malloc(count * sizeof(ProximityEntry));
+    // RDKit❗❌:   CHECK_INVARIANT(tmp, "bad allocation");
+    // RDKit❗❌:   PeriodicTable *table = PeriodicTable::getTable();
+    // RDKit❗❌:   Conformer *conf = &mol->getConformer();
+    // RDKit❗❌:
+    // RDKit❗❌:   for (unsigned int i = 0; i < count; i++) {
+    // RDKit❗❌:     Atom *atom = mol->getAtomWithIdx(i);
+    // RDKit❗❌:     unsigned int elem = atom->getAtomicNum();
+    // RDKit❗❌:     RDGeom::Point3D p = conf->getAtomPos(i);
+    // RDKit❗❌:     ProximityEntry *tmpi = tmp + i;
+    // RDKit❗❌:     tmpi->x = (float)p.x;
+    // RDKit❗❌:     tmpi->y = (float)p.y;
+    // RDKit❗❌:     tmpi->z = (float)p.z;
+    // RDKit❗❌:     tmpi->r = (float)table->getRcovalent(elem);
+    // RDKit❗❌:     tmpi->atm = i;
+    // RDKit❗❌:     tmpi->elem = elem;
+    // RDKit❗❌:
+    // RDKit❗❌:     int hash = HASHX * (int)(p.x / MAXDIST) + HASHY * (int)(p.y / MAXDIST) +
+    // RDKit❗❌:                HASHZ * (int)(p.z / MAXDIST);
+    // RDKit❗❌:
+    // RDKit❗❌:     for (int dx = -HASHX; dx <= HASHX; dx += HASHX) {
+    // RDKit❗❌:       for (int dy = -HASHY; dy <= HASHY; dy += HASHY) {
+    // RDKit❗❌:         for (int dz = -HASHZ; dz <= HASHZ; dz += HASHZ) {
+    // RDKit❗❌:           int probe = hash + dx + dy + dz;
+    // RDKit❗❌:           int list = HashTable[probe & HASHMASK];
+    // RDKit❗❌:           while (list != -1) {
+    // RDKit❗❌:             ProximityEntry *tmpj = &tmp[list];
+    // RDKit❗❌:             if (tmpj->hash == probe && IsBonded(tmpi, tmpj, flags) &&
+    // RDKit❗❌:                 !mol->getBondBetweenAtoms(tmpi->atm, tmpj->atm) &&
+    // RDKit❗❌:                 !IsBlacklistedPair(atom, mol->getAtomWithIdx(tmpj->atm))) {
+    // RDKit❗❌:               mol->addBond(tmpi->atm, tmpj->atm, Bond::SINGLE);
+    // RDKit❗❌:             }
+    // RDKit❗❌:             list = tmpj->next;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     int list = hash & HASHMASK;
+    // RDKit❗❌:     tmpi->next = HashTable[list];
+    // RDKit❗❌:     HashTable[list] = i;
+    // RDKit❗❌:     tmpi->hash = hash;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // Cleanup pass
+    // RDKit❗❌:   for (unsigned int i = 0; i < count; i++) {
+    // RDKit❗❌:     Atom *atom = mol->getAtomWithIdx(i);
+    // RDKit❗❌:     unsigned int elem = atom->getAtomicNum();
+    // RDKit❗❌:     // detect multivalent Hs, which could happen with ConnectTheDots
+    // RDKit❗❌:     if (elem == 1 && atom->getDegree() > 1) {
+    // RDKit❗❌:       // if there's an H neighbor and a non-H neighbor, remove the bond to the H
+    // RDKit❗❌:       if (flags & ctdQUICKREMOVE_H_H_CONTACTS) {
+    // RDKit❗❌:         Bond *bondToH = nullptr;
+    // RDKit❗❌:         Bond *bondToNonH = nullptr;
+    // RDKit❗❌:         for (auto bond : mol->atomBonds(atom)) {
+    // RDKit❗❌:           if (bond->getOtherAtom(atom)->getAtomicNum() == 1) {
+    // RDKit❗❌:             bondToH = bond;
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             bondToNonH = bond;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (bondToH && bondToNonH) {
+    // RDKit❗❌:           mol->removeBond(bondToH->getBeginAtomIdx(), bondToH->getEndAtomIdx());
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // if we now have a degree of 1, we're done
+    // RDKit❗❌:       if (atom->getDegree() == 1) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       auto *atom_info = (AtomPDBResidueInfo *)(atom->getMonomerInfo());
+    // RDKit❗❌:       // cut all but shortest Bond
+    // RDKit❗❌:       RDGeom::Point3D p = conf->getAtomPos(i);
+    // RDKit❗❌:       RDKit::RWMol::ADJ_ITER nbr, end_nbr;
+    // RDKit❗❌:       boost::tie(nbr, end_nbr) = mol->getAtomNeighbors(atom);
+    // RDKit❗❌:       float best = 10000;
+    // RDKit❗❌:       unsigned int best_idx = mol->getNumAtoms() + 1;
+    // RDKit❗❌:       while (nbr != end_nbr) {
+    // RDKit❗❌:         RDGeom::Point3D pn = conf->getAtomPos(*nbr);
+    // RDKit❗❌:         float d = (p - pn).length();
+    // RDKit❗❌:         auto *n_info =
+    // RDKit❗❌:             (AtomPDBResidueInfo *)(mol->getAtomWithIdx(*nbr)->getMonomerInfo());
+    // RDKit❗❌:         if (d < best &&
+    // RDKit❗❌:             ((!atom_info || !n_info) ||
+    // RDKit❗❌:              atom_info->getResidueNumber() == n_info->getResidueNumber())) {
+    // RDKit❗❌:           best = d;
+    // RDKit❗❌:           best_idx = *nbr;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         ++nbr;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // iterate again and remove all but closest
+    // RDKit❗❌:       boost::tie(nbr, end_nbr) = mol->getAtomNeighbors(atom);
+    // RDKit❗❌:       mol->beginBatchEdit();
+    // RDKit❗❌:       while (nbr != end_nbr) {
+    // RDKit❗❌:         if (*nbr == best_idx) {
+    // RDKit❗❌:           Bond *bond = mol->getBondBetweenAtoms(i, *nbr);
+    // RDKit❗❌:           bond->setBondType(Bond::SINGLE);  // make sure this one is single
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           mol->removeBond(i, *nbr);
+    // RDKit❗❌:         }
+    // RDKit❗❌:         ++nbr;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       mol->commitBatchEdit();
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   free(tmp);
+    // RDKit❗❌: }
+    // END RECOVERY IO-04 SOURCE ConnectTheDots_Large
+
     let Some(conformer) = builder.conformers_3d().first() else {
-        return;
+        return Ok(());
     };
     let coords = conformer.coordinates().to_vec();
     let count = builder.atoms().len();
@@ -405,18 +560,21 @@ fn cleanup_multivalent_hydrogens_like_rdkit(builder: &mut DetachedPdbEditor<'_>,
             }
         }
         let neighbors = builder.neighbor_bonds(atom_id).to_vec();
+        let mut remove = vec![false; builder.bonds().len()];
         for bond_id in neighbors {
             let Some(bond) = builder.bond(bond_id).cloned() else {
                 continue;
             };
             let other = other_atom_for_bond(&bond, atom_id);
             if other.index() == best_idx {
-                let _ = builder.set_bond_order(bond_id, BondOrder::Single);
+                builder.set_bond_order(bond_id, BondOrder::Single)?;
             } else {
-                builder.remove_bond_between_atoms(atom_id, other);
+                remove[bond_id.index()] = true;
             }
         }
+        builder.commit_proximity_bond_deletions(&remove)?;
     }
+    Ok(())
 }
 
 fn connect_the_dots_like_rdkit(
@@ -533,7 +691,7 @@ fn connect_the_dots_like_rdkit(
         hash_table[list] = i as i32;
         tmp.push(stored);
     }
-    cleanup_multivalent_hydrogens_like_rdkit(builder, flags);
+    cleanup_multivalent_hydrogens_like_rdkit(builder, flags)?;
     Ok(())
 }
 
@@ -1511,5 +1669,352 @@ mod residue_property_failure_tests {
             apply_standard_pdb_residue_chirality_detached(&mut topology).unwrap();
             assert_eq!(topology, before);
         }
+    }
+}
+
+#[cfg(test)]
+mod recovery_io04_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomPdbResidueInfo, AtomSpec, BondStereo, Conformer3D, PropertyValue, StereoGroup,
+        StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    };
+    use cosmolkit_types::Element;
+
+    fn fixture(
+        elements: &[Element],
+        edges: &[(usize, usize, BondOrder)],
+        points: &[[f64; 3]],
+    ) -> (TopologyBlock, CoordinateBlock) {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(i, element)| Atom::from_spec(AtomId::new(i), AtomSpec::new(*element)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b, order))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), order),
+                )
+            })
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let coordinates = CoordinateBlock {
+            conformers_3d: vec![Conformer3D::new(0, points.to_vec(), true)],
+            ..Default::default()
+        };
+        (topology, coordinates)
+    }
+    fn cleanup(topology: &mut TopologyBlock, coordinates: &CoordinateBlock, flags: u32) {
+        let mut editor = DetachedPdbEditor::new(topology, coordinates);
+        cleanup_multivalent_hydrogens_like_rdkit(&mut editor, flags).unwrap();
+        editor.finish();
+        topology.validate().unwrap();
+    }
+    fn rows(topology: &TopologyBlock) -> Vec<(usize, usize, usize, BondOrder)> {
+        topology
+            .bonds
+            .iter()
+            .map(|b| {
+                (
+                    b.id().index(),
+                    b.begin().index(),
+                    b.end().index(),
+                    b.order(),
+                )
+            })
+            .collect()
+    }
+    fn residue(topology: &mut TopologyBlock, index: usize, number: i32) {
+        topology.atoms[index] = Atom::from_spec(
+            AtomId::new(index),
+            AtomSpec::new(if topology.atoms[index].atomic_number() == 1 {
+                Element::H
+            } else {
+                Element::C
+            })
+            .with_pdb_residue_info(AtomPdbResidueInfo::new(
+                " X  ",
+                index as i32 + 1,
+                "LIG",
+                number,
+                "A",
+                true,
+            )),
+        );
+    }
+
+    #[test]
+    fn recovery_io04_per_h_deferred_ids_preserve_interleaved_and_later_h_bonds() {
+        let (mut graph, coordinates) = fixture(
+            &[
+                Element::H,
+                Element::C,
+                Element::O,
+                Element::C,
+                Element::H,
+                Element::C,
+                Element::C,
+            ],
+            &[
+                (0, 1, BondOrder::Double),
+                (1, 3, BondOrder::Single),
+                (0, 2, BondOrder::Triple),
+                (0, 3, BondOrder::Double),
+                (4, 5, BondOrder::Double),
+                (4, 6, BondOrder::Triple),
+            ],
+            &[
+                [0., 0., 0.],
+                [3., 0., 0.],
+                [2., 0., 0.],
+                [1., 0., 0.],
+                [20., 0., 0.],
+                [23., 0., 0.],
+                [21., 0., 0.],
+            ],
+        );
+        let original_coordinates = coordinates.clone();
+        cleanup(&mut graph, &coordinates, 0);
+        assert_eq!(
+            rows(&graph),
+            vec![
+                (0, 1, 3, BondOrder::Single),
+                (1, 0, 3, BondOrder::Single),
+                (2, 4, 6, BondOrder::Single)
+            ]
+        );
+        assert_eq!(coordinates, original_coordinates);
+    }
+
+    #[test]
+    fn recovery_io04_f32_first_tie_and_residue_filter_precede_deferred_commit() {
+        for reversed in [false, true] {
+            let edges = if reversed {
+                vec![(0, 1, BondOrder::Triple), (0, 2, BondOrder::Double)]
+            } else {
+                vec![(0, 2, BondOrder::Double), (0, 1, BondOrder::Triple)]
+            };
+            let (mut graph, coordinates) = fixture(
+                &[Element::H, Element::C, Element::C],
+                &edges,
+                &[[0., 0., 0.], [1., 0., 0.], [1.00000003, 0., 0.]],
+            );
+            assert_eq!(distance3([0.; 3], [1.00000003, 0., 0.]), 1.0_f32);
+            cleanup(&mut graph, &coordinates, 0);
+            assert_eq!(
+                rows(&graph),
+                vec![(0, 0, if reversed { 1 } else { 2 }, BondOrder::Single)]
+            );
+        }
+        for neighbor_has_info in [false, true] {
+            let (mut graph, coordinates) = fixture(
+                &[Element::H, Element::C, Element::C],
+                &[(0, 2, BondOrder::Double), (0, 1, BondOrder::Triple)],
+                &[[0., 0., 0.], [1., 0., 0.], [0.5, 0., 0.]],
+            );
+            residue(&mut graph, 0, 1);
+            residue(&mut graph, 1, 1);
+            if neighbor_has_info {
+                residue(&mut graph, 2, 2);
+            }
+            cleanup(&mut graph, &coordinates, 0);
+            assert_eq!(
+                rows(&graph),
+                vec![(
+                    0,
+                    0,
+                    if neighbor_has_info { 1 } else { 2 },
+                    BondOrder::Single
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn recovery_io04_no_eligible_neighbor_deletes_all_and_quick_hh_degree_one_skips_single_reset() {
+        for mismatch in [false, true] {
+            let points = if mismatch {
+                vec![[0.; 3], [1., 0., 0.], [2., 0., 0.]]
+            } else {
+                vec![[0.; 3], [10000., 0., 0.], [10001., 0., 0.]]
+            };
+            let (mut graph, coordinates) = fixture(
+                &[Element::H, Element::C, Element::C],
+                &[(0, 1, BondOrder::Double), (0, 2, BondOrder::Triple)],
+                &points,
+            );
+            if mismatch {
+                residue(&mut graph, 0, 1);
+                residue(&mut graph, 1, 2);
+                residue(&mut graph, 2, 2);
+            }
+            cleanup(&mut graph, &coordinates, 0);
+            assert!(graph.bonds.is_empty());
+        }
+        let (mut graph, coordinates) = fixture(
+            &[Element::H, Element::H, Element::C],
+            &[(0, 2, BondOrder::Double), (0, 1, BondOrder::Single)],
+            &[[0.; 3], [0.1, 0., 0.], [4., 0., 0.]],
+        );
+        cleanup(&mut graph, &coordinates, CTD_QUICKREMOVE_H_H_CONTACTS);
+        assert_eq!(rows(&graph), vec![(0, 0, 2, BondOrder::Double)]);
+        let (mut graph, mut coordinates) = fixture(
+            &[Element::H, Element::C, Element::C],
+            &[(0, 1, BondOrder::Double), (0, 2, BondOrder::Triple)],
+            &[[0.; 3], [1., 0., 0.], [2., 0., 0.]],
+        );
+        coordinates.conformers_3d.clear();
+        let before = graph.clone();
+        cleanup(&mut graph, &coordinates, 0);
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn recovery_io04_shared_model_remaps_groups_clears_incident_stereo_and_actual_computed_rows() {
+        let (mut graph, coordinates) = fixture(
+            &[Element::H, Element::C, Element::C, Element::C],
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (0, 3, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+            ],
+            &[[0.; 3], [3., 0., 0.], [4., 0., 0.], [1., 0., 0.]],
+        );
+        graph.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+        graph.bonds[1].set_stereo(BondStereo::Cis).unwrap();
+        graph.substance_groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_bonds(vec![BondId::new(0)]),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                .with_bonds(vec![BondId::new(1)]),
+        ];
+        graph.stereo_groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![],
+                vec![BondId::new(0), BondId::new(1)],
+            )
+            .unwrap(),
+        ];
+        graph.atoms[0]
+            .set_computed_prop("atom_cache", PropertyValue::UInt(1))
+            .unwrap();
+        graph.bonds[1]
+            .set_computed_prop("bond_cache", PropertyValue::UInt(2))
+            .unwrap();
+        let original_coordinates = coordinates.clone();
+        cleanup(&mut graph, &coordinates, 0);
+        assert_eq!(
+            rows(&graph),
+            vec![
+                (0, 1, 2, BondOrder::Double),
+                (1, 0, 3, BondOrder::Single),
+                (2, 2, 3, BondOrder::Single)
+            ]
+        );
+        assert_eq!(graph.bonds[0].stereo(), BondStereo::None);
+        assert_eq!(graph.bonds[0].stereo_atoms(), None);
+        assert_eq!(graph.substance_groups.len(), 1);
+        assert_eq!(graph.substance_groups[0].bonds(), &[BondId::new(0)]);
+        assert_eq!(graph.stereo_groups[0].bonds(), &[BondId::new(0)]);
+        assert!(graph.atoms[0].prop("atom_cache").is_none());
+        assert!(graph.bonds[0].prop("bond_cache").is_none());
+        assert_eq!(coordinates, original_coordinates);
+    }
+
+    #[test]
+    fn recovery_io04_source_property_failure_retains_delete_and_clear_prefix() {
+        let (mut graph, coordinates) = fixture(
+            &[Element::H, Element::C, Element::C],
+            &[(0, 1, BondOrder::Double), (0, 2, BondOrder::Triple)],
+            &[[0.; 3], [1., 0., 0.], [2., 0., 0.]],
+        );
+        graph.atoms[0]
+            .set_computed_prop("clear_first", PropertyValue::UInt(1))
+            .unwrap();
+        graph.atoms[1]
+            .set_prop("__computedProps", PropertyValue::Int(7))
+            .unwrap();
+        graph.bonds[0]
+            .set_computed_prop("not_reached", PropertyValue::UInt(2))
+            .unwrap();
+        let mut editor = DetachedPdbEditor::new(&mut graph, &coordinates);
+        let error = cleanup_multivalent_hydrogens_like_rdkit(&mut editor, 0).unwrap_err();
+        assert!(matches!(
+            &error,
+            PdbPostprocessError::AtomProperty(
+                cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+            )
+        ));
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<cosmolkit_model::AtomPropertyError>()
+                .is_some()
+        );
+        assert_eq!(editor.bonds().len(), 1);
+        assert_eq!(editor.bonds()[0].order(), BondOrder::Single);
+        assert!(editor.atoms()[0].prop("clear_first").is_none());
+        assert!(editor.bonds()[0].prop("not_reached").is_some());
+    }
+
+    #[test]
+    fn recovery_io04_uint_failure_and_mask_shape_are_typed_without_hidden_rollback() {
+        let (mut graph, coordinates) = fixture(
+            &[Element::H, Element::C, Element::C, Element::C],
+            &[
+                (0, 1, BondOrder::Double),
+                (0, 2, BondOrder::Triple),
+                (0, 3, BondOrder::Triple),
+            ],
+            &[[0.; 3], [1., 0., 0.], [2., 0., 0.], [3., 0., 0.]],
+        );
+        graph.substance_groups.push(
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_bonds(vec![BondId::new(1)]),
+        );
+        graph.substance_groups[0]
+            .set_prop("PARENT", PropertyValue::UInt(10))
+            .unwrap();
+        graph.substance_groups[0]
+            .set_prop("index", PropertyValue::Bool(false))
+            .unwrap();
+        let mut editor = DetachedPdbEditor::new(&mut graph, &coordinates);
+        let error = cleanup_multivalent_hydrogens_like_rdkit(&mut editor, 0).unwrap_err();
+        assert!(matches!(&error, PdbPostprocessError::PropertyUInt(_)));
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<cosmolkit_core::PropertyUIntReadError>()
+                .is_some()
+        );
+        assert_eq!(
+            editor.bonds().len(),
+            2,
+            "source high bond deleted before lower SG conversion failure"
+        );
+        assert_eq!(
+            editor.bonds()[0].order(),
+            BondOrder::Single,
+            "selection occurs before commit error"
+        );
+        let before = editor.topology.clone();
+        assert!(matches!(
+            editor.commit_proximity_bond_deletions(&[]),
+            Err(PdbPostprocessError::InvalidState(_))
+        ));
+        assert_eq!(*editor.topology, before);
+        editor
+            .commit_proximity_bond_deletions(&[false, false])
+            .unwrap();
+        assert_eq!(
+            *editor.topology, before,
+            "no-delete commit reads no malformed SG/computed properties"
+        );
     }
 }

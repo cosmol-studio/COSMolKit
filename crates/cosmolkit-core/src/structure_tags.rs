@@ -41,6 +41,9 @@ pub struct StructureTagAssignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StereoError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
     #[error("duplicate 3D conformer id {id}")]
@@ -926,7 +929,9 @@ fn validate_valence(
 }
 
 #[doc(hidden)]
-pub fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
+pub fn cleanup_stereo_groups(
+    topology: &mut TopologyBlock,
+) -> Result<(), cosmolkit_model::StereoGroupError> {
     // Complete pinned source: Chirality.cpp::cleanupStereoGroups.
     // RDKit✔️✔️: void cleanupStereoGroups(ROMol &mol) {
     // RDKit✔️✔️:   std::vector<StereoGroup> newsgs;
@@ -984,7 +989,7 @@ pub fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
         } else if !atoms.is_empty() {
             // The pinned constructor receives getReadId() only; write ID
             // remains at its zero default on this reconstruction path.
-            let mut replacement = StereoGroup::new(group.kind(), atoms, bonds);
+            let mut replacement = StereoGroup::new(group.kind(), atoms, bonds)?;
             if let Some(id) = group.id() {
                 replacement = replacement.with_id(id);
             }
@@ -992,6 +997,7 @@ pub fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
         }
     }
     topology.stereo_groups = groups;
+    Ok(())
 }
 
 /// Remove source-invalid chirality markers from detached topology state.
@@ -1127,7 +1133,7 @@ pub fn cleanup_chirality(
         }
     }
     if need_cleanup_stereo_groups {
-        cleanup_stereo_groups(&mut result);
+        cleanup_stereo_groups(&mut result)?;
     }
     result.validate()?;
     Ok(result)
@@ -1628,6 +1634,7 @@ mod cf3d_sgids_core_3_tests {
                     vec![AtomId::new(1), AtomId::new(2)],
                     vec![],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(17)
                 .with_write_id(9),
                 StereoGroup::new(
@@ -1635,15 +1642,17 @@ mod cf3d_sgids_core_3_tests {
                     vec![AtomId::new(2), AtomId::new(0), AtomId::new(1)],
                     vec![],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(7)
                 .with_write_id(6),
                 StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+                    .expect("valid distinct stereo members")
                     .with_id(0)
                     .with_write_id(3),
             ],
         );
 
-        cleanup_stereo_groups(&mut topology);
+        cleanup_stereo_groups(&mut topology).unwrap();
         assert_eq!(topology.stereo_groups.len(), 2);
         let unchanged = &topology.stereo_groups[0];
         assert_eq!(unchanged.kind(), StereoGroupKind::Absolute);
@@ -1670,6 +1679,7 @@ mod cf3d_sgids_core_3_tests {
                     vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
                     vec![],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(17)
                 .with_write_id(9),
                 StereoGroup::new(
@@ -1677,6 +1687,7 @@ mod cf3d_sgids_core_3_tests {
                     vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
                     vec![],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(0)
                 .with_write_id(6),
                 StereoGroup::new(
@@ -1684,9 +1695,11 @@ mod cf3d_sgids_core_3_tests {
                     vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
                     vec![],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(7)
                 .with_write_id(4),
                 StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(2)], vec![])
+                    .expect("valid distinct stereo members")
                     .with_id(5)
                     .with_write_id(11),
             ],

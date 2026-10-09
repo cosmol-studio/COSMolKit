@@ -539,7 +539,7 @@ fn parse_bond_line(
     line: &str,
     correspondence: &[Option<AtomId>],
 ) -> Result<Option<BondSpec>, Mol2ReadError> {
-    // RDKit source: Mol2FileParser.cpp lines 646-720
+    // RDKit source: Release_2026_03_6 Mol2FileParser.cpp::ParseMol2FileBondLine
     // RDKit✔️✔️:   tokenizer tokens(bondLine, sep);
     // RDKit✔️✔️:   tokenizer::const_iterator itemIt = tokens.begin();
     // RDKit✔️✔️:   if (itemIt == tokens.end()) {
@@ -561,8 +561,7 @@ fn parse_bond_line(
         let token =
             token.ok_or_else(|| Mol2ReadError::Parse("no info in mol2 bond line".to_owned()))?;
         let index = parse_unsigned(token)
-            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 bonds.".to_owned()))?
-            .wrapping_sub(1);
+            .ok_or_else(|| Mol2ReadError::Parse("Cannot process mol2 bonds.".to_owned()))?;
         usize::try_from(index).map_err(|_| Mol2ReadError::Parse("index mismatch".to_owned()))
     };
     let begin_index = index(tokens.next())?;
@@ -570,15 +569,28 @@ fn parse_bond_line(
     let bond_type = tokens
         .next()
         .ok_or_else(|| Mol2ReadError::Parse("no info in mol2 bond line".to_owned()))?;
-    // RDKit❗✔️:   if (!(idx1 < idxCorresp.size() || idx2 < idxCorresp.size())) {
-    // RDKit❗✔️:     throw FileParseException("index mismatch");
-    // RDKit❗✔️:   }
-    let begin = correspondence
-        .get(begin_index)
-        .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_owned()))?;
-    let end = correspondence
-        .get(end_index)
-        .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_owned()))?;
+    // RDKit✔️✔️:   if (idx1 == 0 || idx2 == 0) {
+    // RDKit✔️✔️:     throw FileParseException("Mol2 bond index starts at 1, not 0.");
+    // RDKit✔️✔️:   }
+    if begin_index == 0 || end_index == 0 {
+        return Err(Mol2ReadError::Parse(
+            "Mol2 bond index starts at 1, not 0.".to_owned(),
+        ));
+    }
+    // RDKit✔️✔️:   // adjust the numbering
+    // RDKit✔️✔️:   idx1--;
+    // RDKit✔️✔️:   idx2--;
+    let begin_index = begin_index - 1;
+    let end_index = end_index - 1;
+    // RDKit✔️✔️:   if (idx1 >= idxCorresp.size() || idx2 >= idxCorresp.size()) {
+    // RDKit✔️✔️:     throw FileParseException("index mismatch");
+    // RDKit✔️✔️:   }
+    // Both bounds precede either omitted-atom slot; all checks are constant-time.
+    if begin_index >= correspondence.len() || end_index >= correspondence.len() {
+        return Err(Mol2ReadError::Parse("index mismatch".to_owned()));
+    }
+    let begin = &correspondence[begin_index];
+    let end = &correspondence[end_index];
     let (Some(begin), Some(end)) = (*begin, *end) else {
         // RDKit✔️✔️:   if (idxCorresp[idx1] < 0 || idxCorresp[idx2] < 0) {
         // RDKit✔️✔️:     return nullptr;
@@ -1832,4 +1844,87 @@ fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
 fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
     String::from_utf8(value.into_bytes())
         .expect("original writer fixture must retain exact UTF-8 bytes")
+}
+
+#[cfg(test)]
+mod rdkit_2026_03_6_io01_tests {
+    use super::*;
+
+    // Source-derived branch cases; no corpus or external oracle is required.
+    fn io01_assert_parse_error(line: &str, map: &[Option<AtomId>], expected: &str) {
+        let error = parse_bond_line(line, map).unwrap_err();
+        assert_eq!(error, Mol2ReadError::Parse(expected.to_string()), "{line}");
+        assert_eq!(error.to_string(), format!("MOL2 parse failed: {expected}"));
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_io01_zero_endpoints_precede_bounds_and_missing_slots() {
+        let map = [None, Some(AtomId::new(10))];
+        for line in [
+            "1 0 1 1",
+            "1 1 0 1",
+            "1 0 0 1",
+            "1 0 3 1",
+            "1 3 0 1",
+            "1 0 4294967295 nc",
+            "1 4294967295 0 weird",
+            "1 0 2 1",
+            "1 2 0 1",
+        ] {
+            io01_assert_parse_error(line, &map, "Mol2 bond index starts at 1, not 0.");
+        }
+        io01_assert_parse_error("1 0 0 1", &[], "Mol2 bond index starts at 1, not 0.");
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_io01_both_bounds_are_checked_before_either_missing_slot() {
+        for map in [
+            [None, Some(AtomId::new(10))],
+            [Some(AtomId::new(10)), None],
+            [None, None],
+        ] {
+            for line in [
+                "1 1 3 1",
+                "1 3 1 1",
+                "1 2 3 1",
+                "1 3 2 1",
+                "1 3 4 1",
+                "1 4294967295 1 nc",
+                "1 1 4294967295 weird",
+            ] {
+                io01_assert_parse_error(line, &map, "index mismatch");
+            }
+        }
+        io01_assert_parse_error("1 1 1 1", &[], "index mismatch");
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_io01_token_errors_precede_zero_validation() {
+        let map = [Some(AtomId::new(10)), Some(AtomId::new(20))];
+        for line in ["", "1", "1 0", "1 0 0", "1 0 2"] {
+            io01_assert_parse_error(line, &map, "no info in mol2 bond line");
+        }
+        for line in ["1 X 0 1", "1 0 X 1", "1 4294967296 0 1", "1 0 4294967296 1"] {
+            io01_assert_parse_error(line, &map, "Cannot process mol2 bonds.");
+        }
+        // A present unsupported type is considered only after valid endpoints.
+        io01_assert_parse_error("1 0 2 weird", &map, "Mol2 bond index starts at 1, not 0.");
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_io01_last_slot_and_in_range_missing_slot_controls() {
+        let map = [Some(AtomId::new(10)), None, Some(AtomId::new(20))];
+        for line in ["1 1 2 1", "1 2 3 1", "1 2 2 weird", "1 3 2 nc"] {
+            assert_eq!(parse_bond_line(line, &map).unwrap(), None, "{line}");
+        }
+        for (line, begin, end) in [
+            ("1 1 3 2", AtomId::new(10), AtomId::new(20)),
+            ("1 3 1 2", AtomId::new(20), AtomId::new(10)),
+        ] {
+            let parsed = parse_bond_line(line, &map).unwrap().unwrap();
+            assert_eq!(parsed.begin(), begin);
+            assert_eq!(parsed.end(), end);
+            assert_eq!(parsed.order(), BondOrder::Double);
+        }
+    }
 }

@@ -2259,3 +2259,52 @@ fn typed_custom_symbol_and_supplemental_label_use_source_string_conversion() {
         "C7"
     );
 }
+
+#[test]
+fn writer_kekulized_explicit_hydrogens_preserve_source_np_charge_and_component_state() {
+    // Fixed source-defined boundaries, independent of the corpus/oracle:
+    // neutral aromatic N/P exchange explicit H for implicit H in
+    // KekulizeFragment; charged N is excluded, negative N has no H,
+    // and an aliphatic radical retains its explicit H unchanged.
+    let fixtures: &[(&str, &[(&str, usize)])] = &[
+        ("c1cc[nH]c1", &[("[NH]", 1)]),
+        ("[pH]1cccc1", &[("[PH]", 1)]),
+        ("[nH+]1ccccc1", &[("[NH+]", 1)]),
+        ("[n-]1cccc1", &[("[N-]", 1)]),
+        ("C[NH]", &[("[NH]", 1)]),
+        ("c1cc[nH]c1.C.[pH]1cccc1", &[("[NH]", 1), ("[PH]", 1)]),
+    ];
+    for &(input, expected_tokens) in fixtures {
+        let record = parse_smiles(input, &SmilesParseParams::default()).expect(input);
+        let original = record.clone();
+        for canonical in [false, true] {
+            for do_isomeric_smiles in [false, true] {
+                for root in [
+                    None,
+                    Some(cosmolkit_model::AtomId::new(0)),
+                    Some(cosmolkit_model::AtomId::new(
+                        record.topology.atoms.len() - 1,
+                    )),
+                ] {
+                    let text = write_smiles_with_params(
+                        &record,
+                        &SmilesWriteParams {
+                            kekule: true,
+                            all_hydrogens_explicit: true,
+                            canonical,
+                            isomeric_smiles: do_isomeric_smiles,
+                            rooted_at_atom: root,
+                            ..SmilesWriteParams::default()
+                        },
+                    )
+                    .expect("source cache transported through writer");
+                    let text = std::str::from_utf8(text.as_bytes()).expect("SMILES UTF-8");
+                    for &(token, count) in expected_tokens {
+                        assert_eq!(text.matches(token).count(), count, "{input}: {text}");
+                    }
+                    assert_eq!(record, original, "writer must preserve caller state");
+                }
+            }
+        }
+    }
+}

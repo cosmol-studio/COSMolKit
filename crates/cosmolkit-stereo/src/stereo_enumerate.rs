@@ -2187,17 +2187,20 @@ mod tests {
         .unwrap();
         fixture_add_stereo_group(
             &mut builder,
-            StereoGroup::new(StereoGroupKind::Absolute, vec![assigned], Vec::new()),
+            StereoGroup::new(StereoGroupKind::Absolute, vec![assigned], Vec::new())
+                .expect("valid distinct stereo members"),
         )
         .unwrap();
         fixture_add_stereo_group(
             &mut builder,
-            StereoGroup::new(StereoGroupKind::Or, vec![assigned, unassigned], Vec::new()),
+            StereoGroup::new(StereoGroupKind::Or, vec![assigned, unassigned], Vec::new())
+                .expect("valid distinct stereo members"),
         )
         .unwrap();
         fixture_add_stereo_group(
             &mut builder,
-            StereoGroup::new(StereoGroupKind::And, vec![begin_controller], Vec::new()),
+            StereoGroup::new(StereoGroupKind::And, vec![begin_controller], Vec::new())
+                .expect("valid distinct stereo members"),
         )
         .unwrap();
         (
@@ -2495,12 +2498,14 @@ mod tests {
         let second = tetrahedral_center(&mut builder, ChiralTag::TetrahedralCcw, Some("S"));
         fixture_add_stereo_group(
             &mut builder,
-            StereoGroup::new(StereoGroupKind::Absolute, vec![first], Vec::new()),
+            StereoGroup::new(StereoGroupKind::Absolute, vec![first], Vec::new())
+                .expect("valid distinct stereo members"),
         )
         .unwrap();
         fixture_add_stereo_group(
             &mut builder,
-            StereoGroup::new(StereoGroupKind::Or, vec![first, second], Vec::new()),
+            StereoGroup::new(StereoGroupKind::Or, vec![first, second], Vec::new())
+                .expect("valid distinct stereo members"),
         )
         .unwrap();
         let source = checked_record(builder);
@@ -2576,11 +2581,14 @@ mod tests {
         source.topology.bonds[0]
             .set_computed_prop("drop_bond", "computed")
             .unwrap();
-        source.topology.stereo_groups.push(StereoGroup::new(
-            StereoGroupKind::Or,
-            vec![AtomId::new(1), AtomId::new(3)],
-            Vec::new(),
-        ));
+        source.topology.stereo_groups.push(
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1), AtomId::new(3)],
+                Vec::new(),
+            )
+            .expect("valid distinct stereo members"),
+        );
         let source_before = source.clone();
         let source_rings =
             cosmolkit_core::symmetrized_sssr(&source.topology, &Default::default()).unwrap();

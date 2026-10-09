@@ -35,11 +35,14 @@ fn complete_molecule() -> Molecule {
                 .with_atoms(vec![AtomId::new(0), AtomId::new(2)])
                 .with_bonds(vec![BondId::new(1)]),
         ],
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(1)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(1)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     let coordinates = CoordinateBlock {

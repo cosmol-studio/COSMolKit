@@ -46,7 +46,9 @@ fn enumeration_initialization_updates_only_missing_valence_and_symm_sssr_caches(
 }
 #[test]
 fn enumeration_initialization_canonical_kekulizes_aromatic_input_without_clearing_flags() {
-    let (_, state) = initialize(&fixture("c1ccccc1"));
+    let (_, mut state) = initialize(&fixture("c1ccccc1"));
+    assert!(state.candidates[b"c1ccccc1".as_slice()].kekulized.is_none());
+    get_cached_kekulized(state.candidates.get_mut(b"c1ccccc1".as_slice()).unwrap()).unwrap();
     assert_eq!(
         state
             .candidates
@@ -136,7 +138,7 @@ fn enumeration_initialization_inserts_one_unfinished_candidate_in_key_order() {
     assert_eq!(state.candidates.len(), 1);
     let value = &state.candidates[b"CC(=O)O".as_slice()];
     assert!(value.tautomer.is_some());
-    assert!(value.kekulized.is_some());
+    assert!(value.kekulized.is_none());
     assert_eq!(value.num_modified_atoms, 0);
     assert_eq!(value.num_modified_bonds, 0);
     assert!(!value.done);
@@ -155,7 +157,7 @@ fn enumeration_initialization_reports_invalid_aromatic_input_as_a_structured_err
         },
     )
     .unwrap();
-    let error = initialize_candidates_with_key(
+    let (_, mut state) = initialize_candidates_with_key(
         TautomerRecordView {
             topology: &parsed.topology,
             coordinates: &parsed.coordinates,
@@ -165,7 +167,9 @@ fn enumeration_initialization_reports_invalid_aromatic_input_as_a_structured_err
         },
         "c1cccc1".into(),
     )
-    .unwrap_err();
+    .unwrap();
+    let error =
+        get_cached_kekulized(state.candidates.get_mut(b"c1cccc1".as_slice()).unwrap()).unwrap_err();
     assert!(matches!(error, TautomerRunError::Kekulize(_)));
 }
 #[test]

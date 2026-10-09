@@ -476,13 +476,18 @@ fn apply_cx_post_base_stereochemistry(
         prepared_record.topology = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
             topology, valence, &rings, true, false,
         )
-        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        .map_err(|error| match error {
+            cosmolkit_core::LegacyStereoError::StereoGroup(cause) => {
+                SmilesParseError::StereoGroup(cause)
+            }
+            other => SmilesParseError::WriterStereo(other.to_string()),
+        })?;
         prepared_record
             .properties
             .set_computed_prop("_StereochemDone", 1_i32)
             .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     }
-    cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology);
+    cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology)?;
     Ok(())
 }
 
@@ -4285,7 +4290,9 @@ mod tests {
         read_id: u32,
         write_id: u32,
     ) -> (StereoGroup, Vec<usize>) {
-        let mut group = StereoGroup::new(kind, Vec::new(), Vec::new()).with_id(read_id);
+        let mut group = StereoGroup::new(kind, Vec::new(), Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(read_id);
         set_stereo_group_write_id(&mut group, write_id);
         (group, Vec::new())
     }
@@ -4297,7 +4304,9 @@ mod tests {
         atoms: Vec<AtomId>,
         bonds: Vec<BondId>,
     ) -> StereoGroup {
-        let mut group = StereoGroup::new(kind, atoms, bonds).with_id(read_id);
+        let mut group = StereoGroup::new(kind, atoms, bonds)
+            .expect("valid distinct stereo members")
+            .with_id(read_id);
         set_stereo_group_write_id(&mut group, write_id);
         group
     }
@@ -4993,6 +5002,7 @@ mod tests {
                 vec![AtomId::new(1), AtomId::new(6)],
                 Vec::new(),
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
         ];
         input

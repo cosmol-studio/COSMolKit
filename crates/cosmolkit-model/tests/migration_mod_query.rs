@@ -681,11 +681,10 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
             true,
         ))
         .unwrap();
-    graph.add_stereo_group(StereoGroup::new(
-        StereoGroupKind::Absolute,
-        vec![AtomId::new(0)],
-        Vec::new(),
-    ));
+    graph.add_stereo_group(
+        StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new())
+            .expect("valid distinct stereo members"),
+    );
 
     assert_eq!(graph.num_atoms(), 2);
     assert_eq!(graph.num_bonds(), 1);
@@ -835,11 +834,10 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(1)],
-            Vec::new(),
-        )],
+        vec![
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(1)], Vec::new())
+                .expect("valid distinct stereo members"),
+        ],
     );
     assert!(matches!(
         stereo_group_atom_error,
@@ -852,11 +850,10 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            Vec::new(),
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(0)])
+                .expect("valid distinct stereo members"),
+        ],
     );
     assert!(matches!(
         stereo_group_bond_error,

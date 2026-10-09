@@ -40,6 +40,8 @@ fn main() {
             assert!(
                 [
                     "all",
+                    "forcefield_optimizers",
+                    "mmff_builtin",
                     "bio_mmcif_switches",
                     "structure_tags",
                     "tautomer_long_conjugated",
@@ -50,6 +52,8 @@ fn main() {
                 "unknown special regression: {name}"
             );
             for key in [
+                "forcefield_optimizers",
+                "mmff_builtin",
                 "bio_mmcif_switches",
                 "structure_tags",
                 "tautomer_long_conjugated",

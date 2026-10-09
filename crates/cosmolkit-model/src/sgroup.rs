@@ -1224,10 +1224,46 @@ pub struct StereoGroup {
     bonds: Vec<BondId>,
 }
 
+/// Rejected duplicate membership in one enhanced stereo group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum StereoGroupError {
+    #[error("Duplicate atom in StereoGroup")]
+    DuplicateAtom,
+    #[error("Duplicate bond in StereoGroup")]
+    DuplicateBond,
+}
+
 impl StereoGroup {
     #[must_use]
-    pub fn new(kind: StereoGroupKind, atoms: Vec<AtomId>, bonds: Vec<BondId>) -> Self {
-        Self {
+    pub fn new(
+        kind: StereoGroupKind,
+        atoms: Vec<AtomId>,
+        bonds: Vec<BondId>,
+    ) -> Result<Self, StereoGroupError> {
+        // BEGIN COMPLETE RDKit .6 StereoGroup rvalue constructor
+        // RDKit✔️🔝: StereoGroup::StereoGroup(StereoGroupType grouptype, std::vector<Atom *> &&atoms,
+        // RDKit✔️🔝:                          std::vector<Bond *> &&bonds, unsigned readId)
+        // RDKit✔️🔝:     : d_grouptype(grouptype), d_atoms(atoms), d_bonds(bonds), d_readId{readId} {
+        // RDKit✔️🔝:   checkForDupes(d_atoms, "atom");
+        // RDKit✔️🔝:   checkForDupes(d_bonds, "bond");
+        // RDKit✔️🔝: }
+        // END COMPLETE RDKit .6 StereoGroup rvalue constructor
+        // BEGIN COMPLETE RDKit .6 StereoGroup const-reference constructor
+        // RDKit✔️🔝: StereoGroup::StereoGroup(StereoGroupType grouptype,
+        // RDKit✔️🔝:                          const std::vector<Atom *> &atoms,
+        // RDKit✔️🔝:                          const std::vector<Bond *> &bonds, unsigned readId)
+        // RDKit✔️🔝:     : d_grouptype(grouptype),
+        // RDKit✔️🔝:       d_atoms(std::move(atoms)),
+        // RDKit✔️🔝:       d_bonds(std::move(bonds)),
+        // RDKit✔️🔝:       d_readId{readId} {
+        // RDKit✔️🔝:   checkForDupes(d_atoms, "atom");
+        // RDKit✔️🔝:   checkForDupes(d_bonds, "bond");
+        // RDKit✔️🔝: }
+        // END COMPLETE RDKit .6 StereoGroup const-reference constructor
+        // Both C++ named vector parameters are copied into members. Owned Rust
+        // vectors move after the same prefix validation, avoiding that copy.
+        Self::validate_member_rows(&atoms, &bonds)?;
+        Ok(Self {
             // RDKit❗✔️: d_readId{readId} {}
             // Keep the model's absent-ID state distinct from explicit zero.
             id: None,
@@ -1236,7 +1272,7 @@ impl StereoGroup {
             kind,
             atoms,
             bonds,
-        }
+        })
     }
 
     /// Sets the source/read identifier without changing the output/write ID.
@@ -1287,12 +1323,50 @@ impl StereoGroup {
         &self.bonds
     }
 
-    pub fn push_atom(&mut self, atom: AtomId) {
-        self.atoms.push(atom);
+    pub(crate) fn validate_members(&self) -> Result<(), StereoGroupError> {
+        Self::validate_member_rows(&self.atoms, &self.bonds)
     }
 
-    pub fn push_bond(&mut self, bond: BondId) {
+    fn validate_member_rows(atoms: &[AtomId], bonds: &[BondId]) -> Result<(), StereoGroupError> {
+        // BEGIN COMPLETE RDKit .6 checkForDupes<T>
+        // RDKit✔️✔️: template <typename T>
+        // RDKit✔️✔️: void checkForDupes(const std::vector<T *> &vec, const std::string &typeName) {
+        // RDKit✔️✔️:   for (auto it = vec.cbegin(); it != vec.cend(); ++it) {
+        // RDKit✔️✔️:     if (std::find(vec.cbegin(), it, *it) != it) {
+        // RDKit✔️✔️:       throw ValueErrorException("Duplicate " + typeName + " in StereoGroup");
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // END COMPLETE RDKit .6 checkForDupes<T>
+        // Same ordered prefix searches: O(A²+B²) comparisons, O(1) scratch.
+        // Constructors check all atoms before any bonds, matching exception order.
+        for (index, atom) in atoms.iter().enumerate() {
+            if atoms[..index].contains(atom) {
+                return Err(StereoGroupError::DuplicateAtom);
+            }
+        }
+        for (index, bond) in bonds.iter().enumerate() {
+            if bonds[..index].contains(bond) {
+                return Err(StereoGroupError::DuplicateBond);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn push_atom(&mut self, atom: AtomId) -> Result<(), StereoGroupError> {
+        if self.atoms.contains(&atom) {
+            return Err(StereoGroupError::DuplicateAtom);
+        }
+        self.atoms.push(atom);
+        Ok(())
+    }
+
+    pub fn push_bond(&mut self, bond: BondId) -> Result<(), StereoGroupError> {
+        if self.bonds.contains(&bond) {
+            return Err(StereoGroupError::DuplicateBond);
+        }
         self.bonds.push(bond);
+        Ok(())
     }
 
     pub fn remove_atom(&mut self, atom: AtomId) {
@@ -1358,7 +1432,7 @@ impl StereoGroup {
         &self,
         atom_map: &[Option<AtomId>],
         bond_map: &[Option<BondId>],
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, StereoGroupError> {
         let atoms: Option<Vec<_>> = self
             .atoms
             .iter()
@@ -1375,14 +1449,16 @@ impl StereoGroup {
         // RDKit✔️✔️:                                    stereo_group.getReadId()});
         // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
         // END RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
-        Some(Self {
-            id: self.id,
-            // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
-            write_id: self.write_id,
-            kind: self.kind,
-            atoms: atoms?,
-            bonds: bonds?,
-        })
+        let Some(atoms) = atoms else {
+            return Ok(None);
+        };
+        let Some(bonds) = bonds else {
+            return Ok(None);
+        };
+        let mut remapped = Self::new(self.kind, atoms, bonds)?;
+        remapped.id = self.id;
+        remapped.write_id = self.write_id;
+        Ok(Some(remapped))
     }
 }
 
@@ -1407,7 +1483,8 @@ mod stereo_write_id_tests {
 
     #[test]
     fn stereo_write_id_default_and_explicit_values_are_independent_from_read_id() {
-        let default_group = StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], vec![]);
+        let default_group = StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], vec![])
+            .expect("valid distinct stereo members");
         assert_eq!(stereo_group_write_id(&default_group), 0);
         assert_eq!(default_group.id(), None);
 
@@ -1431,6 +1508,7 @@ mod stereo_write_id_tests {
             vec![AtomId::new(0)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(7);
         set_stereo_group_write_id(&mut group, 19);
 
@@ -1445,14 +1523,21 @@ mod stereo_write_id_tests {
 
         let remapped = group
             .remapped(&[Some(AtomId::new(3))], &[Some(BondId::new(4))])
+            .expect("distinct remapped members")
             .expect("all group members have mappings");
         assert_eq!(remapped.id(), Some(7));
         assert_eq!(stereo_group_write_id(&remapped), 19);
         assert_eq!(remapped.atoms(), &[AtomId::new(3)]);
         assert_eq!(remapped.bonds(), &[BondId::new(4)]);
 
-        assert_eq!(group.remapped(&[None], &[Some(BondId::new(4))]), None);
-        assert_eq!(group.remapped(&[Some(AtomId::new(3))], &[None]), None);
+        assert_eq!(
+            group.remapped(&[None], &[Some(BondId::new(4))]).unwrap(),
+            None
+        );
+        assert_eq!(
+            group.remapped(&[Some(AtomId::new(3))], &[None]).unwrap(),
+            None
+        );
     }
 }
 
@@ -1463,7 +1548,8 @@ mod cf3d_sgids_model_1_tests {
 
     #[test]
     fn cf3d_sgids_model_1_default_and_setters_keep_identity_axes_independent() {
-        let default = StereoGroup::new(StereoGroupKind::Or, vec![], vec![]);
+        let default = StereoGroup::new(StereoGroupKind::Or, vec![], vec![])
+            .expect("valid distinct stereo members");
         assert_eq!(default.id(), None);
         assert_eq!(default.write_id(), 0);
 
@@ -1493,7 +1579,8 @@ mod cf3d_sgids_model_1_tests {
                     StereoGroupKind::And,
                     vec![AtomId::new(0), AtomId::new(1)],
                     vec![BondId::new(0)],
-                );
+                )
+                .expect("valid distinct stereo members");
                 if let Some(read_id) = read_id {
                     source = source.with_id(read_id);
                 }
@@ -1505,7 +1592,10 @@ mod cf3d_sgids_model_1_tests {
                 assert_eq!(cloned.write_id(), write_id);
                 assert_eq!(cloned, source);
 
-                let remapped = source.remapped(&atom_map, &bond_map).unwrap();
+                let remapped = source
+                    .remapped(&atom_map, &bond_map)
+                    .expect("distinct remapped members")
+                    .unwrap();
                 assert_eq!(remapped.id(), read_id);
                 assert_eq!(remapped.write_id(), write_id);
                 assert_eq!(remapped.atoms(), &[AtomId::new(4), AtomId::new(2)]);
@@ -1520,7 +1610,9 @@ mod cf3d_sgids_model_1_tests {
 /// Source assignment merges multiple ABS groups, retaining non-ABS order and
 /// source's reverse concatenation of ABS members without sorting/deduplication.
 #[doc(hidden)]
-pub fn merge_absolute_stereo_groups(groups: Vec<StereoGroup>) -> Vec<StereoGroup> {
+pub fn merge_absolute_stereo_groups(
+    groups: Vec<StereoGroup>,
+) -> Result<Vec<StereoGroup>, StereoGroupError> {
     // RDKit❗✔️: void ROMol::setStereoGroups(std::vector<StereoGroup> stereo_groups) {
     // RDKit❗✔️:   auto is_abs = [](const auto &sg) {
     // RDKit❗✔️:     return sg.getGroupType() == StereoGroupType::STEREO_ABSOLUTE;
@@ -1559,7 +1651,7 @@ pub fn merge_absolute_stereo_groups(groups: Vec<StereoGroup>) -> Vec<StereoGroup
         .filter(|g| g.kind == StereoGroupKind::Absolute)
         .count();
     if count <= 1 {
-        return groups;
+        return Ok(groups);
     }
     let mut atoms = Vec::new();
     let mut bonds = Vec::new();
@@ -1572,8 +1664,8 @@ pub fn merge_absolute_stereo_groups(groups: Vec<StereoGroup>) -> Vec<StereoGroup
             result.push(group);
         }
     }
-    result.push(StereoGroup::new(StereoGroupKind::Absolute, atoms, bonds));
-    result
+    result.push(StereoGroup::new(StereoGroupKind::Absolute, atoms, bonds)?);
+    Ok(result)
 }
 
 /// Source graph insertion of enhanced groups, including ordered ABS merging.
@@ -1583,7 +1675,7 @@ pub fn insert_stereo_groups(
     incoming: &[StereoGroup],
     atom_offset: usize,
     bond_offset: usize,
-) -> Vec<StereoGroup> {
+) -> Result<Vec<StereoGroup>, StereoGroupError> {
     // RDKit❗❌: void insertStereoGroups(RWMol &mol, const ROMol &other,
     // RDKit❗❌:                         unsigned int origNumAtoms, unsigned int origNumBonds) {
     // RDKit❗❌:   if (other.getStereoGroups().empty()) {
@@ -1640,7 +1732,7 @@ pub fn insert_stereo_groups(
     // RDKit❗❌:   }
     // RDKit❗❌:   mol.setStereoGroups(new_groups);
     // RDKit❗❌: }
-    // Source group order, duplicate member multiplicity, forward ABS append,
+    // Source group order, forward ABS append and checked duplicate membership,
     // existing read/write IDs and incoming write-ID reset to zero are retained.
     // Stable detached IDs replace owning-pointer resolution; usize offsets do
     // not reproduce unsigned32 overflow, retained for final source-width review.
@@ -1649,7 +1741,7 @@ pub fn insert_stereo_groups(
     // whereas native returns immediately; overall cost marker records this
     // existing boundary loss. No sorting/deduplication or heuristic ID repair.
     if incoming.is_empty() {
-        return existing.to_vec();
+        return Ok(existing.to_vec());
     }
     let mut abs_atoms = Vec::new();
     let mut abs_bonds = Vec::new();
@@ -1677,7 +1769,7 @@ pub fn insert_stereo_groups(
             abs_atoms.extend(atoms);
             abs_bonds.extend(bonds);
         } else {
-            let mut group_copy = StereoGroup::new(group.kind, atoms, bonds);
+            let mut group_copy = StereoGroup::new(group.kind, atoms, bonds)?;
             if let Some(id) = group.id {
                 group_copy = group_copy.with_id(id);
             }
@@ -1689,7 +1781,7 @@ pub fn insert_stereo_groups(
             StereoGroupKind::Absolute,
             abs_atoms,
             abs_bonds,
-        ));
+        )?);
     }
     merge_absolute_stereo_groups(result)
 }
@@ -1710,17 +1802,26 @@ mod source_insert_stereo_groups_complete_tests {
             atoms.iter().copied().map(AtomId::new).collect(),
             bonds.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
         .with_id(read)
         .with_write_id(write)
     }
 
     #[test]
     fn empty_incoming_preserves_multiple_abs_groups_without_assignment_merge() {
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0), AtomId::new(0)],
+                Vec::new()
+            ),
+            Err(StereoGroupError::DuplicateAtom)
+        );
         let existing = vec![
             group(StereoGroupKind::Absolute, &[2], &[1], 7, 8),
-            group(StereoGroupKind::Absolute, &[0, 0], &[], 9, 10),
+            group(StereoGroupKind::Absolute, &[0, 1], &[], 9, 10),
         ];
-        let result = insert_stereo_groups(&existing, &[], 100, 200);
+        let result = insert_stereo_groups(&existing, &[], 100, 200).unwrap();
         assert_eq!(result, existing);
         assert_ne!(result.as_ptr(), existing.as_ptr());
         assert_eq!(result[0].write_id(), 8);
@@ -1730,16 +1831,16 @@ mod source_insert_stereo_groups_complete_tests {
     #[test]
     fn nonempty_insertion_keeps_member_order_duplicates_and_independent_id_rules() {
         let existing = vec![
-            group(StereoGroupKind::Absolute, &[2, 2], &[1], 3, 4),
+            group(StereoGroupKind::Absolute, &[2, 3], &[1], 3, 4),
             group(StereoGroupKind::And, &[1], &[0], 5, 6),
             group(StereoGroupKind::Absolute, &[0], &[2], 7, 8),
         ];
         let incoming = vec![
             group(StereoGroupKind::Or, &[1, 0], &[2, 0], 9, 10),
-            group(StereoGroupKind::Absolute, &[0, 1, 0], &[1], 11, 12),
+            group(StereoGroupKind::Absolute, &[0, 1, 2], &[1], 11, 12),
             group(StereoGroupKind::And, &[], &[], 13, 14),
         ];
-        let result = insert_stereo_groups(&existing, &incoming, 10, 20);
+        let result = insert_stereo_groups(&existing, &incoming, 10, 20).unwrap();
         assert_eq!(result.len(), 4);
         assert_eq!(result[0], existing[1]);
         assert_eq!(result[1].kind(), StereoGroupKind::Or);
@@ -1758,11 +1859,11 @@ mod source_insert_stereo_groups_complete_tests {
             result[3].atoms(),
             [
                 AtomId::new(2),
-                AtomId::new(2),
+                AtomId::new(3),
                 AtomId::new(0),
                 AtomId::new(10),
                 AtomId::new(11),
-                AtomId::new(10)
+                AtomId::new(12)
             ]
         );
         assert_eq!(
@@ -1776,12 +1877,24 @@ mod source_insert_stereo_groups_complete_tests {
     #[test]
     fn nonempty_empty_abs_input_drops_empty_abs_groups_and_keeps_bond_only_abs() {
         let empty = group(StereoGroupKind::Absolute, &[], &[], 5, 6);
-        assert!(insert_stereo_groups(&[empty.clone()], &[empty.clone()], 3, 4).is_empty());
-        let bond_only = group(StereoGroupKind::Absolute, &[], &[0, 0], 7, 8);
-        let result = insert_stereo_groups(&[empty], &[bond_only], 3, 4);
+        assert!(
+            insert_stereo_groups(&[empty.clone()], &[empty.clone()], 3, 4)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                Vec::new(),
+                vec![BondId::new(0), BondId::new(0)]
+            ),
+            Err(StereoGroupError::DuplicateBond)
+        );
+        let bond_only = group(StereoGroupKind::Absolute, &[], &[0, 1], 7, 8);
+        let result = insert_stereo_groups(&[empty], &[bond_only], 3, 4).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].atoms().is_empty());
-        assert_eq!(result[0].bonds(), [BondId::new(4), BondId::new(4)]);
+        assert_eq!(result[0].bonds(), [BondId::new(4), BondId::new(5)]);
         assert_eq!(result[0].id(), None);
         assert_eq!(result[0].write_id(), 0);
     }
@@ -2098,4 +2211,196 @@ pub(crate) fn remove_source_groups_referencing_atom<E: From<crate::TopologyEditE
         |g| g.adjust_source_removed_atom(atom),
         uint_reader,
     )
+}
+
+#[cfg(test)]
+mod recovery_chem29_model {
+    use super::*;
+    use crate::{
+        Atom, AtomSpec, Element, QueryAtom, QueryGraph, QueryGraphError, TopologyBlock,
+        TopologyValidationError,
+    };
+    use std::error::Error;
+    fn atom(i: usize) -> AtomId {
+        AtomId::new(i)
+    }
+    fn bond(i: usize) -> BondId {
+        BondId::new(i)
+    }
+    fn group(atoms: &[usize], bonds: &[usize]) -> StereoGroup {
+        StereoGroup::new(
+            StereoGroupKind::Or,
+            atoms.iter().copied().map(atom).collect(),
+            bonds.iter().copied().map(bond).collect(),
+        )
+        .unwrap()
+        .with_id(7)
+        .with_write_id(9)
+    }
+    #[test]
+    fn duplicate_atoms_precede_duplicate_bonds_and_source_text_is_exact() {
+        let error = StereoGroup::new(
+            StereoGroupKind::And,
+            vec![atom(1), atom(0), atom(1)],
+            vec![bond(0), bond(0)],
+        )
+        .unwrap_err();
+        assert_eq!(error, StereoGroupError::DuplicateAtom);
+        assert_eq!(error.to_string(), "Duplicate atom in StereoGroup");
+        let error = StereoGroup::new(
+            StereoGroupKind::And,
+            vec![atom(1), atom(0)],
+            vec![bond(0), bond(0)],
+        )
+        .unwrap_err();
+        assert_eq!(error, StereoGroupError::DuplicateBond);
+        assert_eq!(error.to_string(), "Duplicate bond in StereoGroup");
+    }
+    #[test]
+    fn append_rejection_preserves_members_and_both_identifiers() {
+        let mut value = group(&[1, 0], &[2, 0]);
+        let before = value.clone();
+        assert_eq!(
+            value.push_atom(atom(1)),
+            Err(StereoGroupError::DuplicateAtom)
+        );
+        assert_eq!(value, before);
+        assert_eq!(
+            value.push_bond(bond(0)),
+            Err(StereoGroupError::DuplicateBond)
+        );
+        assert_eq!(value, before);
+        value.push_atom(atom(2)).unwrap();
+        value.push_bond(bond(1)).unwrap();
+        assert_eq!(value.atoms(), [atom(1), atom(0), atom(2)]);
+        assert_eq!(value.bonds(), [bond(2), bond(0), bond(1)]);
+        assert_eq!((value.id(), value.write_id()), (Some(7), 9));
+    }
+    #[test]
+    fn remap_rejects_noninjective_members_after_all_or_none_selection() {
+        let value = group(&[0, 1], &[0, 1]);
+        let before = value.clone();
+        let aa = [Some(atom(2)), Some(atom(2))];
+        let bb = [Some(bond(3)), Some(bond(3))];
+        assert_eq!(
+            value.remapped(&aa, &bb),
+            Err(StereoGroupError::DuplicateAtom)
+        );
+        assert_eq!(
+            value.remapped(&[Some(atom(2)), Some(atom(3))], &bb),
+            Err(StereoGroupError::DuplicateBond)
+        );
+        assert_eq!(value.remapped(&aa, &[Some(bond(3)), None]), Ok(None));
+        assert_eq!(value, before);
+        let valid = value
+            .remapped(
+                &[Some(atom(2)), Some(atom(3))],
+                &[Some(bond(3)), Some(bond(4))],
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!((valid.id(), valid.write_id()), (Some(7), 9));
+    }
+    #[test]
+    fn private_invalid_fixture_reaches_both_model_validators_as_typed_leaf() {
+        // Only this defining model module can fabricate the invalid private state.
+        // No unchecked constructor, exported helper or unsafe operation exists.
+        let invalid = StereoGroup {
+            id: Some(7),
+            write_id: 9,
+            kind: StereoGroupKind::Or,
+            atoms: vec![atom(0), atom(0)],
+            bonds: vec![],
+        };
+        let topology = TopologyBlock {
+            atoms: vec![Atom::from_spec(atom(0), AtomSpec::new(Element::C))],
+            stereo_groups: vec![invalid.clone()],
+            ..Default::default()
+        };
+        let error = topology.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            TopologyValidationError::StereoGroup(StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<StereoGroupError>(),
+            Some(&StereoGroupError::DuplicateAtom)
+        );
+        let error = QueryGraph::from_parts(
+            vec![QueryAtom::new(atom(0), AtomSpec::new(Element::C))],
+            vec![],
+            std::iter::empty::<(crate::PropertyText, crate::PropertyValue)>(),
+            vec![],
+            vec![],
+            vec![invalid],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            QueryGraphError::StereoGroup(StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<StereoGroupError>(),
+            Some(&StereoGroupError::DuplicateAtom)
+        );
+    }
+    #[test]
+    fn merged_absolute_groups_are_checked_without_sorting_or_deduplication() {
+        let abs = |atoms| StereoGroup::new(StereoGroupKind::Absolute, atoms, vec![]).unwrap();
+        let a = abs(vec![atom(0)]);
+        let b = abs(vec![atom(0)]);
+        assert_eq!(
+            merge_absolute_stereo_groups(vec![a, b]),
+            Err(StereoGroupError::DuplicateAtom)
+        );
+        let nonabs = group(&[4], &[]);
+        let result = merge_absolute_stereo_groups(vec![
+            abs(vec![atom(2)]),
+            nonabs.clone(),
+            abs(vec![atom(1)]),
+        ])
+        .unwrap();
+        assert_eq!(result[0], nonabs);
+        assert_eq!(result[1].atoms(), [atom(1), atom(2)]);
+        assert_eq!((result[1].id(), result[1].write_id()), (None, 0));
+    }
+    #[test]
+    fn insertion_collision_rejects_without_changing_either_input() {
+        let existing =
+            vec![StereoGroup::new(StereoGroupKind::Absolute, vec![atom(1)], vec![]).unwrap()];
+        let incoming =
+            vec![StereoGroup::new(StereoGroupKind::Absolute, vec![atom(0)], vec![]).unwrap()];
+        let old_existing = existing.clone();
+        let old_incoming = incoming.clone();
+        assert_eq!(
+            insert_stereo_groups(&existing, &incoming, 1, 0),
+            Err(StereoGroupError::DuplicateAtom)
+        );
+        assert_eq!(existing, old_existing);
+        assert_eq!(incoming, old_incoming);
+    }
+    #[test]
+    fn query_replacement_stages_absolute_merge_before_existing_graph_commit() {
+        let mut graph = QueryGraph::from_parts(
+            vec![QueryAtom::new(atom(0), AtomSpec::new(Element::C))],
+            vec![],
+            std::iter::empty::<(crate::PropertyText, crate::PropertyValue)>(),
+            vec![],
+            vec![],
+            vec![group(&[0], &[])],
+        )
+        .unwrap();
+        let before = graph.clone();
+        let abs = || StereoGroup::new(StereoGroupKind::Absolute, vec![atom(0)], vec![]).unwrap();
+        let error = crate::replace_query_stereo_groups(&mut graph, vec![abs(), abs()]).unwrap_err();
+        assert!(matches!(
+            error,
+            QueryGraphError::StereoGroup(StereoGroupError::DuplicateAtom)
+        ));
+        assert_eq!(graph, before);
+        assert_eq!(
+            error.source().unwrap().downcast_ref::<StereoGroupError>(),
+            Some(&StereoGroupError::DuplicateAtom)
+        );
+    }
 }

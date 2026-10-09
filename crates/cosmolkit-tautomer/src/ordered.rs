@@ -18,7 +18,7 @@ pub(crate) type SmilesTautomerMap<M> =
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TautomerExpandedProduct<M> {
     pub(crate) tautomer: M,
-    pub(crate) kekulized: M,
+    pub(crate) kekulized: Option<M>,
     pub(crate) canonical_smiles: cosmolkit_model::PropertyText,
     pub(crate) modified_atoms: BTreeSet<AtomId>,
     pub(crate) modified_bonds: BTreeSet<BondId>,
@@ -86,6 +86,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
     state: &mut TautomerExpansionState<M>,
     transforms: &[TautomerTransform],
     options: TautomerParams,
+    mut get_kekulized: impl FnMut(&mut TautomerCandidate<M>) -> Result<M, E>,
     mut find_matches: impl FnMut(&M, &TautomerTransform) -> Result<Vec<SubstructMatchResult>, E>,
     mut apply_match: impl FnMut(
         &M,
@@ -95,7 +96,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         &BTreeSet<BondId>,
         &dyn Fn(&cosmolkit_model::PropertyText) -> bool,
     ) -> Result<TautomerExpansionAttempt<M>, E>,
-    mut callback: impl FnMut(&TautomerExpansionState<M>) -> Result<bool, E>,
+    mut callback: impl FnMut(&mut TautomerExpansionState<M>) -> Result<bool, E>,
 ) -> Result<TautomerExpansionPass, TautomerExpansionError<E>> {
     // RDKit✔️✔️:   bool completed = false;
     // RDKit✔️✔️:   bool bailOut = false;
@@ -132,17 +133,9 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         // RDKit✔️✔️:       if (smilesTautomerPair.second.d_done) {
         // RDKit✔️✔️:         continue;
         // RDKit✔️✔️:       }
-        let (done, kekulized) = {
-            let candidate = &state.candidates[&current_key];
-            (candidate.done, candidate.kekulized.clone())
-        };
-        if done {
+        if state.candidates[&current_key].done {
             continue;
         }
-        let kekulized =
-            kekulized.ok_or_else(|| TautomerExpansionError::MissingKekulizedBranch {
-                canonical_smiles: current_key.clone(),
-            })?;
 
         // RDKit✔️✔️:       // tautomer not yet done
         // RDKit✔️✔️:       for (const auto &transform : transforms) {
@@ -155,10 +148,17 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
             }
 
             // RDKit✔️✔️:         // kmol is the kekulized version of the tautomer
-            // RDKit✔️✔️:         const auto &kmol = smilesTautomerPair.second.kekulized;
+            // RDKit❗✔️:         const auto &kmol = smilesTautomerPair.second.getKekulized();
             // RDKit✔️✔️:         std::vector<MatchVectType> matches;
             // RDKit✔️✔️:         unsigned int matched =
             // RDKit✔️✔️:             SubstructMatch(*kmol, *(transform.Mol), matches);
+            let kekulized = get_kekulized(
+                state
+                    .candidates
+                    .get_mut(&current_key)
+                    .expect("retained current key"),
+            )
+            .map_err(TautomerExpansionError::Backend)?;
             let matches =
                 find_matches(&kekulized, transform).map_err(TautomerExpansionError::Backend)?;
 
@@ -247,9 +247,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
 
                         // RDKit✔️✔️:           res.d_tautomers[tsmiles] = Tautomer(
                         // RDKit✔️✔️:               std::move(product),
-                        // RDKit✔️✔️:               std::move(kekulized_product),
-                        // RDKit✔️✔️:               res.d_modifiedAtoms.count(),
-                        // RDKit✔️✔️:               res.d_modifiedBonds.count());
+                        // RDKit❗✔️:               numModifiedAtoms, numModifiedBonds);
                         if state.candidates.contains_key(&canonical_smiles) {
                             return Err(TautomerExpansionError::DuplicateProductKey {
                                 canonical_smiles,
@@ -259,7 +257,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                             canonical_smiles,
                             TautomerCandidate {
                                 tautomer: Some(product.tautomer),
-                                kekulized: Some(product.kekulized),
+                                kekulized: product.kekulized,
                                 num_modified_atoms: state.modified_atoms.len(),
                                 num_modified_bonds: state.modified_bonds.len(),
                                 done: false,
@@ -556,7 +554,7 @@ mod tests {
     fn expansion_product(key: &str, tag: usize) -> TautomerExpansionAttempt<String> {
         TautomerExpansionAttempt::Product(TautomerExpandedProduct {
             tautomer: format!("{key}-tautomer"),
-            kekulized: key.to_owned(),
+            kekulized: Some(key.to_owned()),
             canonical_smiles: key.into(),
             modified_atoms: BTreeSet::from([AtomId::new(tag)]),
             modified_bonds: BTreeSet::from([BondId::new(tag)]),
@@ -573,6 +571,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default(),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |handle, _| {
                 visited.push(handle.clone());
                 Ok::<_, &'static str>(match handle.as_str() {
@@ -610,6 +616,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default(),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |handle, _| {
                 visited.push(handle.clone());
                 Ok::<_, &'static str>(Vec::new())
@@ -636,6 +650,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default(),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |handle, _| {
                 Ok::<_, &'static str>(if handle == "m" {
                     vec![expansion_match(0), expansion_match(1)]
@@ -687,6 +709,14 @@ mod tests {
                 &mut state,
                 &transforms,
                 TautomerParams::default().with_max_transforms(limit),
+                |candidate| {
+                    Ok::<_, &'static str>(
+                        candidate
+                            .kekulized
+                            .clone()
+                            .expect("fixed cached backend handle"),
+                    )
+                },
                 |_, _| Ok::<_, &'static str>(vec![expansion_match(0)]),
                 |_, _, _, _, _, _| {
                     applications += 1;
@@ -718,6 +748,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default().with_max_transforms(2),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |_, _| Ok::<_, &'static str>(vec![expansion_match(0)]),
             |_, transform, _, _, _, _| {
                 applied.push(fixed_key_text(transform.name()).to_owned());
@@ -748,6 +786,14 @@ mod tests {
                 &mut state,
                 &transforms,
                 TautomerParams::default().with_max_tautomers(limit),
+                |candidate| {
+                    Ok::<_, &'static str>(
+                        candidate
+                            .kekulized
+                            .clone()
+                            .expect("fixed cached backend handle"),
+                    )
+                },
                 |_, _| Ok::<_, &'static str>(vec![expansion_match(0)]),
                 |_, _, _, _, _, _| Ok::<_, &'static str>(expansion_product("z", 0)),
                 |_| {
@@ -772,6 +818,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default().with_max_tautomers(2),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |_, _| Ok::<_, &'static str>(vec![expansion_match(0), expansion_match(1)]),
             |_, _, _, _, _, _| {
                 applications += 1;
@@ -800,6 +854,14 @@ mod tests {
                 &mut state,
                 &transforms,
                 TautomerParams::default(),
+                |candidate| {
+                    Ok::<_, &'static str>(
+                        candidate
+                            .kekulized
+                            .clone()
+                            .expect("fixed cached backend handle"),
+                    )
+                },
                 |_, _| Ok::<_, &'static str>(vec![expansion_match(0)]),
                 |_, _, _, _, _, _| {
                     applications += 1;
@@ -840,6 +902,14 @@ mod tests {
             &mut state,
             &transforms,
             TautomerParams::default().with_max_transforms(1),
+            |candidate| {
+                Ok::<_, &'static str>(
+                    candidate
+                        .kekulized
+                        .clone()
+                        .expect("fixed cached backend handle"),
+                )
+            },
             |handle, _| {
                 matched_handles.push(handle.clone());
                 Ok::<_, &'static str>(vec![expansion_match(0)])

@@ -782,9 +782,11 @@ fn cleanup_replaces_group_atoms_with_unique_atrop_bonds_and_preserves_other_grou
         vec![AtomId::new(1), AtomId::new(2)],
         vec![],
     )
+    .expect("valid distinct stereo members")
     .with_id(17);
-    let unaffected =
-        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![]).with_id(19);
+    let unaffected = StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+        .expect("valid distinct stereo members")
+        .with_id(19);
     let mut topology = axial(
         BondDirection::None,
         BondDirection::None,
@@ -811,7 +813,8 @@ fn stereo_group_atom_expansion_uses_existing_and_generated_wedges_once() {
         BondDirection::None,
         BondStereo::AtropCw,
     );
-    let group = StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(1)]);
+    let group = StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(1)])
+        .expect("valid distinct stereo members");
     let wedges = wedge_original_and_source_cached_geometry_control(
         &topology,
         &sssr(&topology),
@@ -1062,7 +1065,8 @@ fn structured_validation_rejects_coordinates_rings_assignments_and_group_ids() {
             bond_count: 3,
         })
     );
-    let bad_group = StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(99)]);
+    let bad_group = StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(99)])
+        .expect("valid distinct stereo members");
     assert_eq!(
         stereo_group_atom_ids(&topology, &bad_group, &Default::default(),),
         Err(AtropisomerError::StereoGroupBondOutOfRange {

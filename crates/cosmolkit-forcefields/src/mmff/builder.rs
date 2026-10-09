@@ -12,11 +12,11 @@ use super::torsion_angle::TorsionAngleContrib;
 use crate::kernel::{ForceField, ForceFieldKernelError};
 use crate::uff::builder::{
     DEFAULT_TORSION_BOND_SMARTS, NonbondedFragmentMappingError, TorsionBondQueryError,
-    prepare_nonbonded_fragment_mapping, source_torsion_bond_index, torsion_bond_matches,
+    source_torsion_bond_index, torsion_bond_matches,
 };
 use cosmolkit_core::{
-    FragmentCoordinateView, RingFindingError, RingSearchParams, ValenceError, ValenceModel,
-    assign_valence_for_topology, find_sssr,
+    RingFindingError, RingSearchParams, ValenceError, ValenceModel, assign_valence_for_topology,
+    find_sssr,
 };
 use cosmolkit_model::{
     Conformer2D, Conformer3D, CoordinateDimension, Hybridization, MoleculeProperties, TopologyBlock,
@@ -37,6 +37,8 @@ pub(crate) enum MmffBuilderError {
     TorsionBondQuery(#[from] TorsionBondQueryError),
     #[error(transparent)]
     Fragment(#[from] NonbondedFragmentMappingError),
+    #[error(transparent)]
+    Components(#[from] cosmolkit_core::PathError),
     #[error(transparent)]
     Valence(#[from] ValenceError),
     #[error(transparent)]
@@ -908,12 +910,185 @@ pub(crate) fn add_nonbonded(
     mol: &TopologyBlock,
     mmff_mol_properties: &MmffMolProperties,
     field: &mut ForceField<'_>,
-    conformer_context: &MmffConformerContext<'_>,
-    molecule_properties: &MoleculeProperties,
+    _conformer_context: &MmffConformerContext<'_>,
+    _molecule_properties: &MoleculeProperties,
     neighbor_matrix: &[u8],
     non_bonded_thresh: f64,
     ignore_interfrag_interactions: bool,
 ) -> Result<(), MmffBuilderError> {
+    // BEGIN RECOVERY GEO-04 SOURCE add_nonbonded
+    // RDKit✔️❌: unsigned int getMolFrags(const ROMol &mol, INT_VECT &mapping) {
+    // RDKit✔️❌:   unsigned int natms = mol.getNumAtoms();
+    // RDKit✔️❌:   mapping.resize(natms);
+    // RDKit✔️❌:   return natms ? boost::connected_components(mol.getTopology(), &mapping[0])
+    // RDKit✔️❌:                : 0;
+    // RDKit✔️❌: };
+    // END RECOVERY GEO-04 SOURCE add_nonbonded
+
+    // BEGIN RECOVERY GEO-04 SOURCE add_nonbonded
+    // RDKit❗❌: void addNonbonded(const ROMol &mol, int confId,
+    // RDKit❗❌:                   MMFFMolProperties *mmffMolProperties,
+    // RDKit❗❌:                   ForceFields::ForceField *field,
+    // RDKit❗❌:                   boost::shared_array<std::uint8_t> neighborMatrix,
+    // RDKit❗❌:                   double nonBondedThresh, bool ignoreInterfragInteractions) {
+    // RDKit❗❌:   PRECONDITION(field, "bad ForceField");
+    // RDKit❗❌:   PRECONDITION(mmffMolProperties, "bad MMFFMolProperties");
+    // RDKit❗❌:   PRECONDITION(mmffMolProperties->isValid(),
+    // RDKit❗❌:                "missing atom types - invalid force-field");
+    // RDKit❗❌:
+    // RDKit❗❌:   INT_VECT fragMapping;
+    // RDKit❗❌:   if (ignoreInterfragInteractions) {
+    // RDKit❗❌:     MolOps::getMolFrags(mol, fragMapping);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   // FIX: need a solution for the verbosity here
+    // RDKit❗❌:   // std::ostream &oStream = mmffMolProperties->getMMFFOStream();
+    // RDKit❗❌:   std::stringstream vdwStream;
+    // RDKit❗❌:   std::stringstream eleStream;
+    // RDKit❗❌:   double totalVdWEnergy = 0.0;
+    // RDKit❗❌:   double totalEleEnergy = 0.0;
+    // RDKit❗❌:   if (mmffMolProperties->getMMFFVerbosity()) {
+    // RDKit❗❌:     if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:       vdwStream
+    // RDKit❗❌:           << "\n"
+    // RDKit❗❌:              "V A N   D E R   W A A L S\n\n"
+    // RDKit❗❌:              "------ATOMS------   ATOM TYPES                               "
+    // RDKit❗❌:              "  WELL\n"
+    // RDKit❗❌:              "  I        J          I    J    DISTANCE   ENERGY     R*     "
+    // RDKit❗❌:              " DEPTH\n"
+    // RDKit❗❌:              "-------------------------------------------------------------"
+    // RDKit❗❌:              "-------"
+    // RDKit❗❌:           << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:       eleStream << "\n"
+    // RDKit❗❌:                    "E L E C T R O S T A T I C\n\n"
+    // RDKit❗❌:                    "------ATOMS------   ATOM TYPES\n"
+    // RDKit❗❌:                    "  I        J          I    J    DISTANCE   ENERGY\n"
+    // RDKit❗❌:                    "--------------------------------------------------"
+    // RDKit❗❌:                 << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit❗❌:   auto contrib = std::make_unique<NonbondedContrib>(field);
+    // RDKit❗❌:   bool hasContrib = false;
+    // RDKit❗❌:   for (unsigned int i = 0; i < nAtoms; ++i) {
+    // RDKit❗❌:     for (unsigned int j = i + 1; j < nAtoms; ++j) {
+    // RDKit❗❌:       std::uint8_t cell =
+    // RDKit❗❌:           getTwoBitCell(neighborMatrix, twoBitCellPos(nAtoms, i, j));
+    // RDKit❗❌: #if 1
+    // RDKit❗❌:       if (ignoreInterfragInteractions && (fragMapping[i] != fragMapping[j])) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌: #else
+    // RDKit❗❌:       if (ignoreInterfragInteractions && cell) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌: #endif
+    // RDKit❗❌:       if (cell >= RELATION_1_4) {
+    // RDKit❗❌:         bool is1_4 = (cell == RELATION_1_4);
+    // RDKit❗❌:         double dist = (conf.getAtomPos(i) - conf.getAtomPos(j)).length();
+    // RDKit❗❌:         if (dist > nonBondedThresh) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         MMFFVdWRijstarEps *vdwConstants = nullptr;
+    // RDKit❗❌:         MMFFVdWRijstarEps mmffVdWConstants;
+    // RDKit❗❌:         if (mmffMolProperties->getMMFFVdWTerm() &&
+    // RDKit❗❌:             mmffMolProperties->getMMFFVdWParams(i, j, mmffVdWConstants)) {
+    // RDKit❗❌:           vdwConstants = &mmffVdWConstants;
+    // RDKit❗❌:           hasContrib = true;
+    // RDKit❗❌:           if (mmffMolProperties->getMMFFVerbosity()) {
+    // RDKit❗❌:             const Atom *iAtom = mol.getAtomWithIdx(i);
+    // RDKit❗❌:             const Atom *jAtom = mol.getAtomWithIdx(j);
+    // RDKit❗❌:             const double vdWEnergy = MMFF::Utils::calcVdWEnergy(
+    // RDKit❗❌:                 dist, mmffVdWConstants.R_ij_star, mmffVdWConstants.epsilon);
+    // RDKit❗❌:             if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:               unsigned int iAtomType = mmffMolProperties->getMMFFAtomType(i);
+    // RDKit❗❌:               unsigned int jAtomType = mmffMolProperties->getMMFFAtomType(j);
+    // RDKit❗❌:               vdwStream << std::left << std::setw(2) << iAtom->getSymbol()
+    // RDKit❗❌:                         << " #" << std::setw(5) << i + 1 << std::setw(2)
+    // RDKit❗❌:                         << jAtom->getSymbol() << " #" << std::setw(5) << j + 1
+    // RDKit❗❌:                         << std::right << std::setw(5) << iAtomType
+    // RDKit❗❌:                         << std::setw(5) << jAtomType << "  " << std::fixed
+    // RDKit❗❌:                         << std::setprecision(3) << std::setw(9) << dist
+    // RDKit❗❌:                         << std::setw(10) << vdWEnergy << std::setw(9)
+    // RDKit❗❌:                         << mmffVdWConstants.R_ij_star << std::setw(9)
+    // RDKit❗❌:                         << mmffVdWConstants.epsilon << std::endl;
+    // RDKit❗❌:             }
+    // RDKit❗❌:             totalVdWEnergy += vdWEnergy;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:         bool hasEle = false;
+    // RDKit❗❌:         double dielConst = 0;
+    // RDKit❗❌:         std::uint8_t dielModel = 0;
+    // RDKit❗❌:         double chargeTerm = 0.0;
+    // RDKit❗❌:
+    // RDKit❗❌:         if (mmffMolProperties->getMMFFEleTerm() &&
+    // RDKit❗❌:             !isDoubleZero(mmffMolProperties->getMMFFPartialCharge(i)) &&
+    // RDKit❗❌:             !isDoubleZero(mmffMolProperties->getMMFFPartialCharge(j))) {
+    // RDKit❗❌:           dielConst = mmffMolProperties->getMMFFDielectricConstant();
+    // RDKit❗❌:           dielModel = mmffMolProperties->getMMFFDielectricModel();
+    // RDKit❗❌:           chargeTerm = mmffMolProperties->getMMFFPartialCharge(i) *
+    // RDKit❗❌:                        mmffMolProperties->getMMFFPartialCharge(j) / dielConst;
+    // RDKit❗❌:           hasEle = true;
+    // RDKit❗❌:           hasContrib = true;
+    // RDKit❗❌:
+    // RDKit❗❌:           if (mmffMolProperties->getMMFFVerbosity()) {
+    // RDKit❗❌:             const unsigned int iAtomType =
+    // RDKit❗❌:                 mmffMolProperties->getMMFFAtomType(i);
+    // RDKit❗❌:             const unsigned int jAtomType =
+    // RDKit❗❌:                 mmffMolProperties->getMMFFAtomType(j);
+    // RDKit❗❌:             const Atom *iAtom = mol.getAtomWithIdx(i);
+    // RDKit❗❌:             const Atom *jAtom = mol.getAtomWithIdx(j);
+    // RDKit❗❌:             const double eleEnergy = MMFF::Utils::calcEleEnergy(
+    // RDKit❗❌:                 i, j, dist, chargeTerm, dielModel, is1_4);
+    // RDKit❗❌:             if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:               eleStream << std::left << std::setw(2) << iAtom->getSymbol()
+    // RDKit❗❌:                         << " #" << std::setw(5) << i + 1 << std::setw(2)
+    // RDKit❗❌:                         << jAtom->getSymbol() << " #" << std::setw(5) << j + 1
+    // RDKit❗❌:                         << std::right << std::setw(5) << iAtomType
+    // RDKit❗❌:                         << std::setw(5) << jAtomType << "  " << std::fixed
+    // RDKit❗❌:                         << std::setprecision(3) << std::setw(9) << dist
+    // RDKit❗❌:                         << std::setw(10) << eleEnergy << std::endl;
+    // RDKit❗❌:             }
+    // RDKit❗❌:             totalEleEnergy += eleEnergy;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (vdwConstants || hasEle) {
+    // RDKit❗❌:           contrib->addTerm(i, j, vdwConstants, hasEle, chargeTerm, dielModel,
+    // RDKit❗❌:                            is1_4);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (hasContrib) {
+    // RDKit❗❌:     field->contribs().push_back(ForceFields::ContribPtr(contrib.release()));
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (mmffMolProperties->getMMFFVerbosity()) {
+    // RDKit❗❌:     std::ostream &oStream = mmffMolProperties->getMMFFOStream();
+    // RDKit❗❌:     oStream << vdwStream.str();
+    // RDKit❗❌:     if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:       oStream << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     oStream << "TOTAL VAN DER WAALS ENERGY     =" << std::right << std::setw(16)
+    // RDKit❗❌:             << std::fixed << std::setprecision(4) << totalVdWEnergy
+    // RDKit❗❌:             << std::endl;
+    // RDKit❗❌:
+    // RDKit❗❌:     oStream << eleStream.str();
+    // RDKit❗❌:     if (mmffMolProperties->getMMFFVerbosity() == MMFF_VERBOSITY_HIGH) {
+    // RDKit❗❌:       oStream << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     oStream << "TOTAL ELECTROSTATIC ENERGY     =" << std::right << std::setw(16)
+    // RDKit❗❌:             << std::fixed << std::setprecision(4) << totalEleEnergy
+    // RDKit❗❌:             << std::endl;
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RECOVERY GEO-04 SOURCE add_nonbonded
+
     // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::addNonbonded (Builder.cpp:923-1087)
     // RDKit❗✔️: void addNonbonded(const ROMol &mol, int confId,
     // RDKit❗✔️:                   MMFFMolProperties *mmffMolProperties,
@@ -933,27 +1108,11 @@ pub(crate) fn add_nonbonded(
 
     // RDKit❗✔️:   INT_VECT fragMapping;
     // RDKit❗✔️:   if (ignoreInterfragInteractions) {
-    // RDKit❗✔️:     std::vector<ROMOL_SPTR> molFrags =
-    // RDKit❗✔️:         MolOps::getMolFrags(mol, true, &fragMapping);
+    // RDKit✔️❌:     MolOps::getMolFrags(mol, fragMapping);
+    // The shared component reader retains topology validation; it no longer
+    // constructs or sanitizes fragment molecules in this MMFF path.
     let frag_mapping = if ignore_interfrag_interactions {
-        let selected_rows = field
-            .positions()
-            .iter()
-            .map(|row| &row[..])
-            .collect::<Vec<_>>();
-        let coordinate_view = FragmentCoordinateView::from_split_conformers(
-            conformer_context.two_d,
-            conformer_context.before,
-            conformer_context.selected_id,
-            conformer_context.selected_is_3d,
-            conformer_context.selected_props,
-            &selected_rows,
-            conformer_context.after,
-            conformer_context.source_dimension,
-            conformer_context.source_order,
-        )
-        .map_err(NonbondedFragmentMappingError::CoordinateView)?;
-        prepare_nonbonded_fragment_mapping(mol, &coordinate_view, molecule_properties, true)?
+        Some(cosmolkit_core::connected_components(mol)?.atom_to_component)
     } else {
         None
     };
@@ -1227,6 +1386,154 @@ pub(crate) fn add_torsions(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recovery_geo04_component_only_filter_true_false_retains_input_and_properties() {
+        let mol = disconnected_two_fragment_chain();
+        let before = mol.clone();
+        let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 5, 1, 5]);
+        props.atom_properties[0].partial_charge = 0.2;
+        props.atom_properties[3].partial_charge = -0.4;
+        let prepared_before = props.topology.clone();
+        let rows_before = props.atom_properties.clone();
+        let rings_before = format!("{:?}", props.acquired_rings);
+        let matrix = manual_neighbor_matrix(
+            mol.num_atoms(),
+            &[
+                (0, 1, RELATION_1_2),
+                (0, 2, RELATION_1_3),
+                (1, 2, RELATION_1_3),
+                (2, 3, RELATION_1_2),
+                (0, 3, RELATION_1_X),
+            ],
+        );
+        for ignore in [true, false] {
+            let mut xyz = vec![[0., 0., 0.], [1., 0., 0.], [4., 0., 0.], [5.2, 0., 0.]];
+            let saved = xyz.clone();
+            let mut ff = force_field_with_positions(&mut xyz);
+            add_test_nonbonded(&mol, &props, &mut ff, &matrix, 100., ignore).unwrap();
+            assert_eq!(contribution_count(&ff), usize::from(!ignore));
+            drop(ff);
+            assert_eq!(xyz, saved);
+            assert_eq!(mol.topology, before.topology);
+            assert_eq!(mol.coordinates, before.coordinates);
+            assert_eq!(props.topology, prepared_before);
+            assert_eq!(props.atom_properties, rows_before);
+            assert_eq!(format!("{:?}", props.acquired_rings), rings_before);
+        }
+    }
+    #[test]
+    fn recovery_geo04_empty_mapping_does_not_construct_or_sanitize_fragments() {
+        let mol = TestInput::default();
+        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[]);
+        for ignore in [true, false] {
+            let mut ff = ForceField::new(3);
+            add_test_nonbonded(&mol, &props, &mut ff, &[], 100., ignore).unwrap();
+            assert_eq!(contribution_count(&ff), 0);
+        }
+    }
+    #[test]
+    fn recovery_geo04_cyclophosphazene_real_prepared_topology_avoids_resanitization() {
+        let coords = vec![
+            [-1.9679178438263512, 0.06501933396668852, 0.2318556655774167],
+            [
+                -1.2870415146719985,
+                -1.1138528007192885,
+                -0.45330478992081424,
+            ],
+            [
+                -0.07610941497225288,
+                -0.7133563312769238,
+                -1.1394053195507454,
+            ],
+            [
+                0.9628830936673626,
+                0.15867706898686026,
+                -0.018946143647439066,
+            ],
+            [1.6330989839206675, -0.8505286127365924, 0.9500970269927843],
+            [3.3779492789256627, -0.9762034834974178, 1.1583707807321888],
+            [
+                4.2739351980141524,
+                0.024304148038091507,
+                0.27999096800530554,
+            ],
+            [3.5215266817965696, 1.17250056404822, -0.8219571396283375],
+            [1.9471749670526877, 1.1890601549425626, -0.9203077878450037],
+            [-0.04438234454860655, 1.203959600091369, 1.0175722328947092],
+            [-1.1456304805801985, 0.3554134732360463, 1.4586758538640412],
+            [
+                -1.9408654473202545,
+                0.9315023818548197,
+                -0.44078545245099715,
+            ],
+            [
+                -3.0023668649046935,
+                -0.25772011275153844,
+                0.47420721141019845,
+            ],
+            [-1.006038839243608, -1.8287265700842767, 0.34393189183555634],
+            [
+                -2.0222155835651643,
+                -1.5579518622976638,
+                -1.1158769554603865,
+            ],
+            [
+                -0.3328542741811532,
+                -0.11657546359560493,
+                -1.9403517162350428,
+            ],
+            [-0.48726033066400415, 1.9506131930735, 0.42671975168502096],
+            [-1.704915070277625, 0.946308800017227, 2.2203034867666487],
+            [-0.6989701946210073, -0.5824434812960613, 1.8984112102341233],
+        ];
+        let raw =
+            cosmolkit_smiles::parse_smiles("C1CNP2(=NP=NP=N2)NC1", &Default::default()).unwrap();
+        let sanitized =
+            cosmolkit_core::sanitize_topology(&raw.topology, &Default::default()).unwrap();
+        let hydrogenated = cosmolkit_core::add_hydrogens_impl(
+            sanitized.topology,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let input_before = hydrogenated.topology.clone();
+        let scalar_before = hydrogenated.final_valence.clone();
+        let mut input = TestInput {
+            topology: hydrogenated.topology,
+            coordinates: Default::default(),
+        };
+        input
+            .coordinates
+            .conformers_3d
+            .push(Conformer3D::new(0, coords, true));
+        let props = MmffMolProperties::new(&input.topology, false, "MMFF94", 0).unwrap();
+        assert!(props.is_valid());
+        assert!(props.acquired_rings.is_some());
+        let prepared_before = props.topology.clone();
+        let atom_before = props.atom_properties.clone();
+        let cache_before = format!("{:?}", props.acquired_rings);
+        // The builder takes the MMFF-prepared topology, matching the source mutable preparation boundary.
+        let prepared = TestInput {
+            topology: props.topology.clone(),
+            coordinates: input.coordinates.clone(),
+        };
+        for ignore in [true, false] {
+            let mut rows = Vec::new();
+            let mut field =
+                construct_test_field(&prepared, &props, 100., -1, ignore, &mut rows).unwrap();
+            field.initialize().unwrap();
+            assert_eq!(field.positions().len(), 19);
+            assert!(field.calc_energy_current(None).unwrap().is_finite());
+            assert_eq!(field.minimize(1000, 1e-4, 1e-6).unwrap(), 0);
+            assert_eq!(input.topology, input_before);
+            assert_eq!(hydrogenated.final_valence, scalar_before);
+            assert_eq!(props.topology, prepared_before);
+            assert_eq!(props.atom_properties, atom_before);
+            assert_eq!(format!("{:?}", props.acquired_rings), cache_before);
+        }
+    }
+
     use super::*;
     use crate::geometry::Point3;
     use crate::kernel::{cf3d_bld_b05_calc_energy, cf3d_frag_accept_contribution_identities};

@@ -135,6 +135,12 @@ def molecular(row):
         if mol is None:
             raise ValueError("RDKit MolFromSmiles returned None")
         stage = "Operation"
+        if name in ("MurckoScaffold", "NetScaffold"):
+            from rdkit.Chem import rdMolHash
+            function = rdMolHash.HashFunction.MurckoScaffold if name == "MurckoScaffold" else rdMolHash.HashFunction.ExtendedMurcko
+            return {"Text": rdMolHash.MolHash(mol, function)}
+        if name == "MurckoDecompose":
+            return {"Text": Chem.MolToSmiles(Chem.MurckoDecompose(mol))}
         if name == "SvgDefault":
             drawer = rdMolDraw2D.MolDraw2DSVG(300, 300, -1, -1, True)
             rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
@@ -246,7 +252,7 @@ def molecular(row):
 common_geometry = {}
 common_conformer_geometry = {}
 
-def prepare_forcefield_geometry(row, first_case_id=None, label="UFF"):
+def prepare_forcefield_geometry(row, first_case_id=None, label="UFF", timeout_seconds=0):
     name, options = next(iter(row["profile"].items()))
     stage = "Parse"
     if name in ("Optimization", "ConformerOptimization") and row["preparation"] is None:
@@ -266,7 +272,11 @@ def prepare_forcefield_geometry(row, first_case_id=None, label="UFF"):
                 params.randomSeed = 61453
                 params.useRandomCoords = True
                 params.numThreads = 1
+                params.timeout = timeout_seconds
+                params.trackFailures = timeout_seconds > 0
                 if AllChem.EmbedMolecule(seed_mol, params) != 0:
+                    if timeout_seconds and params.GetFailureCounts()[int(AllChem.EmbedFailureCauses.EXCEEDED_TIMEOUT)]:
+                        raise TimeoutError(f"{label} common geometry exceeded {timeout_seconds}s: {preparation_case_id}")
                     raise ValueError(f"{label} common geometry embedding failed: {preparation_case_id}")
                 # Use the source writer's default Kekule representation.
                 # The non-Kekule MolBlock loses pyrrolic [nH] on source reread;
@@ -533,6 +543,10 @@ def generate_num_heavy_atoms(corpus, parameters, threads, progress=None):
     return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
+def generate_scaffolds(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
+
+
 def generate_total_atom_count(corpus, parameters, threads, progress=None):
     return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
@@ -710,6 +724,9 @@ def generate_substructure_match(corpus,parameters,threads,progress=None):
     return _generate(corpus,parameters,threads,_search_case, progress=progress)
 
 GENERATORS = {
+    "generate_murcko_scaffold": generate_scaffolds,
+    "generate_net_scaffold": generate_scaffolds,
+    "generate_murcko_decompose": generate_scaffolds,
     "generate_substructure_match":generate_substructure_match,
     "generate_fuzzy_and": generate_fuzzy_and,
     "generate_fuzzy_or": generate_fuzzy_or,

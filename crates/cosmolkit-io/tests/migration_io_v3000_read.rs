@@ -453,16 +453,13 @@ fn v3k_sg_bond_refs_reject_declared_xbcorr_count_above_the_bond_table() {
     ));
     let MolBlockRecord::Concrete { topology, .. } =
         v3k_sg_member_record("ATOMS=(3 10 20 30) XBCORR=(3 1 1 2)", false)
-            .expect("non-strict over-limit array warns and returns empty")
+            .expect("non-strict over-limit array drops its complete SGroup")
     else {
         panic!("ordinary SGroup carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups.len(), 1);
-    assert!(
-        topology.substance_groups[0]
-            .crossing_bond_correspondence()
-            .is_empty()
-    );
+    // .6 ParseV3000ParseLabel always requests strict array errors; the outer
+    // non-strict catch marks the complete SGroup invalid before publication.
+    assert!(topology.substance_groups.is_empty());
 }
 
 #[test]
@@ -947,22 +944,41 @@ fn v3k_sg_identity_formatted_signs_and_malformed_boundaries_are_explicit() {
     );
     assert_eq!(topology.substance_groups[0].external_id(), Some(7));
 
-    // The pinned C++ destinations are uninitialized on no conversion and its
-    // overflow failbit prevents later header extraction. COSMolKit rejects
-    // those undefined/uninitialized cases instead of fabricating IDs/types.
-    for row in [
-        "not-an-id DAT 0 LABEL=x",
-        "4294967296 DAT 0 LABEL=x",
-        "1 DAT not-an-id LABEL=x",
-        "1 DAT 4294967296 LABEL=x",
+    // .6 initializes both unsigned destinations. failbit blocks later
+    // extraction; only badbit invokes header recovery. Strict type validation
+    // still rejects an empty type after sequence conversion fails.
+    for (row, sequence, kind, external_id, strict_errors) in [
+        ("not-an-id DAT 0 LABEL=x", 0, "", None, true),
+        ("4294967296 DAT 0 LABEL=x", u32::MAX, "", None, true),
+        ("1 DAT not-an-id LABEL=x", 1, "DAT", None, false),
+        ("1 DAT 4294967296 LABEL=x", 1, "DAT", Some(u32::MAX), false),
     ] {
         for strict_parsing in [true, false] {
-            assert!(
-                matches!(
-                    v3k_sg_identity_record(&[row], 1, strict_parsing),
-                    Err(SdfReadError::Parse(_))
-                ),
-                "row={row:?}, strict={strict_parsing}"
+            let result = v3k_sg_identity_record(&[row], 1, strict_parsing);
+            if strict_parsing && strict_errors {
+                assert!(
+                    matches!(result, Err(SdfReadError::Parse(message))
+                    if message.contains("Unsupported SGroup type ''")),
+                    "row={row:?}"
+                );
+                continue;
+            }
+            let MolBlockRecord::Concrete { topology, .. } = result.expect("initialized header")
+            else {
+                panic!("ordinary SGroup carrier must remain concrete");
+            };
+            assert_eq!(topology.substance_groups.len(), 1, "row={row:?}");
+            let group = &topology.substance_groups[0];
+            assert_eq!(group.rdkit_sequence_id(), Some(sequence), "row={row:?}");
+            assert_eq!(group.external_id(), external_id, "row={row:?}");
+            assert_eq!(
+                group.props().get(b"TYPE".as_slice()),
+                Some(&PropertyValue::from(kind))
+            );
+            assert_eq!(
+                group.label(),
+                None,
+                "failbit suppresses later labels: {row:?}"
             );
         }
     }
@@ -1058,31 +1074,38 @@ fn v3k_sg_parent_resolves_forward_unsorted_sequence_to_compact_typed_id() {
 }
 
 #[test]
-fn v3k_sg_parent_missing_target_errors_strictly_and_drops_complete_child_non_strictly() {
+fn v3k_sg_parent_missing_target_preserves_raw_property_without_dangling_typed_id() {
+    // ParseV3000ParseLabel stores PARENT as UInt; publication does not validate
+    // or remove independent groups by following that source property.
     let rows = ["1 DAT 0 LABEL=sibling", "2 DAT 0 PARENT=99 LABEL=child"];
-    assert!(matches!(
-        v3k_sg_identity_record(&rows, 2, true),
-        Err(SdfReadError::Parse(message))
-            if message.contains("SGroup 2 references missing parent SGroup 99")
-    ));
-    let MolBlockRecord::Concrete { topology, .. } =
-        v3k_sg_identity_record(&rows, 2, false).expect("non-strict missing parent")
-    else {
-        panic!("ordinary SGroup carrier must remain concrete");
-    };
-    assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(
-        topology.substance_groups[0].label().map(fixture_text),
-        Some("sibling")
-    );
-    assert_eq!(topology.substance_groups[0].id().index(), 0);
+    for strict_parsing in [true, false] {
+        let MolBlockRecord::Concrete { topology, .. } =
+            v3k_sg_identity_record(&rows, 2, strict_parsing).expect("raw source parent")
+        else {
+            panic!("ordinary SGroup carrier must remain concrete");
+        };
+        assert_eq!(topology.substance_groups.len(), 2);
+        assert_eq!(
+            topology.substance_groups[0].label().map(fixture_text),
+            Some("sibling")
+        );
+        assert_eq!(topology.substance_groups[0].id().index(), 0);
+        let child = &topology.substance_groups[1];
+        assert_eq!(child.label().map(fixture_text), Some("child"));
+        assert_eq!(child.id().index(), 1);
+        assert_eq!(child.parent(), None);
+        assert_eq!(
+            child.props().get(b"PARENT".as_slice()),
+            Some(&PropertyValue::UInt(99))
+        );
+    }
 }
 
 #[test]
-fn v3k_sg_parent_dropped_parent_cascades_without_removing_independent_siblings() {
-    // PATOMS invalidates sequence 1 because atom bookmark 2 is absent. The
-    // canonical no-dangling boundary then drops its child and grandchild as
-    // complete groups in non-strict mode, retaining the independent sibling.
+fn v3k_sg_parent_dropped_parent_preserves_children_and_independent_siblings() {
+    // PATOMS invalidates sequence 1 because atom bookmark 2 is absent.
+    // Source publication drops that row independently; surviving descendants
+    // retain their raw UInt PARENT properties, and only live typed links resolve.
     let rows = [
         "1 DAT 0 ATOMS=(1 1) PATOMS=(1 2) LABEL=invalid-parent",
         "2 DAT 0 PARENT=1 LABEL=child",
@@ -1093,15 +1116,31 @@ fn v3k_sg_parent_dropped_parent_cascades_without_removing_independent_siblings()
         v3k_sg_identity_record(&rows, 4, true),
         Err(SdfReadError::Parse(_))
     ));
-    let MolBlockRecord::Concrete { topology, .. } =
-        v3k_sg_identity_record(&rows, 4, false).expect("cascading non-strict removal")
+    let MolBlockRecord::Concrete { topology, .. } = v3k_sg_identity_record(&rows, 4, false)
+        .expect("independent non-strict invalid-row removal")
     else {
         panic!("ordinary SGroup carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(topology.substance_groups[0].rdkit_sequence_id(), Some(4));
+    assert_eq!(topology.substance_groups.len(), 3);
+    let child = &topology.substance_groups[0];
+    assert_eq!(child.rdkit_sequence_id(), Some(2));
+    assert_eq!(child.label().map(fixture_text), Some("child"));
+    assert_eq!(child.parent(), None);
     assert_eq!(
-        topology.substance_groups[0].label().map(fixture_text),
+        child.props().get(b"PARENT".as_slice()),
+        Some(&PropertyValue::UInt(1))
+    );
+    let grandchild = &topology.substance_groups[1];
+    assert_eq!(grandchild.rdkit_sequence_id(), Some(3));
+    assert_eq!(grandchild.label().map(fixture_text), Some("grandchild"));
+    assert_eq!(grandchild.parent(), Some(child.id()));
+    assert_eq!(
+        grandchild.props().get(b"PARENT".as_slice()),
+        Some(&PropertyValue::UInt(2))
+    );
+    assert_eq!(topology.substance_groups[2].rdkit_sequence_id(), Some(4));
+    assert_eq!(
+        topology.substance_groups[2].label().map(fixture_text),
         Some("sibling")
     );
 }
@@ -1276,57 +1315,28 @@ fn v3k_sg_brackets_preserve_all_xyz_components_and_append_in_source_order() {
 }
 
 #[test]
-fn v3k_sg_formatted_double_brkxyz_preserves_stream_failure_destination_reuse() {
-    // Pinned RDKit 2026.03.1 calls ParseV3000Array<double>, whose single
-    // `double value` destination is reused for every formatted extraction.
-    // In the fixed libstdc++ environment an incomplete exponent assigns zero
-    // and failbit, while overflow assigns DBL_MAX and failbit; later sentry
-    // failures leave that assigned destination unchanged.
-    for (value, expected) in [
-        ("1e 2 3 4 5 6 7 8 9", [0.0; 9]),
-        ("1e+ 2 3 4 5 6 7 8 9", [0.0; 9]),
-        (
-            "1 2 1e 4 5 6 7 8 9",
-            [1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ),
-        ("1e309 2 3 4 5 6 7 8 9", [f64::MAX; 9]),
-        (
-            "1 2 1e309 4 5 6 7 8 9",
-            [
-                1.0,
-                2.0,
-                f64::MAX,
-                f64::MAX,
-                f64::MAX,
-                f64::MAX,
-                f64::MAX,
-                f64::MAX,
-                f64::MAX,
-            ],
-        ),
+fn v3k_sg_formatted_double_brkxyz_rejects_each_failed_extraction_before_reuse() {
+    // .6 ParseV3000Array checks stream.fail() before appending every value;
+    // malformed exponents and overflow never publish reused destinations.
+    for value in [
+        "1e 2 3 4 5 6 7 8 9",
+        "1e+ 2 3 4 5 6 7 8 9",
+        "1 2 1e 4 5 6 7 8 9",
+        "1e309 2 3 4 5 6 7 8 9",
+        "1 2 1e309 4 5 6 7 8 9",
     ] {
-        for strict_parsing in [true, false] {
-            let labels = format!("ATOMS=(1 1) BRKXYZ=(9 {value}) LABEL=unreached");
-            let MolBlockRecord::Concrete { topology, .. } =
-                v3k_sg_array_record(&labels, strict_parsing)
-                    .expect("source-formatted BRKXYZ extraction")
-            else {
-                panic!("ordinary SGroup carrier must remain concrete");
-            };
-            let group = &topology.substance_groups[0];
-            let actual = group.display().unwrap().brackets()[0]
-                .points()
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<Vec<_>>();
-            assert_eq!(actual, expected, "value={value:?}, strict={strict_parsing}");
-            assert_eq!(
-                group.label().map(fixture_text),
-                None,
-                "failbit stops following labels"
-            );
-        }
+        let labels = format!("ATOMS=(1 1) BRKXYZ=(9 {value}) LABEL=unreached");
+        assert!(
+            matches!(v3k_sg_array_record(&labels, true),
+            Err(SdfReadError::Parse(message)) if message == "invalid value in V3000 array"),
+            "value={value:?}"
+        );
+        let MolBlockRecord::Concrete { topology, .. } =
+            v3k_sg_array_record(&labels, false).expect("invalid group is discarded")
+        else {
+            panic!("ordinary SGroup carrier must remain concrete");
+        };
+        assert!(topology.substance_groups.is_empty(), "value={value:?}");
     }
 }
 
@@ -1578,28 +1588,45 @@ fn v3k_sg_sap_resolves_aidx_zero_and_explicit_nonsequential_bookmarks() {
 }
 
 #[test]
-fn v3k_sg_sap_preserves_formatted_conversion_and_label_last_byte_behavior() {
-    // The count is deliberately ignored; stream.get() discards any opening
-    // byte; toInt does not accept leading '+'. Missing ')' still causes the
-    // source pop_back to remove the last label byte, after which parsing
-    // continues at the next outer label.
+fn v3k_sg_sap_preserves_conversion_and_validates_parentheses_before_label_truncation() {
+    // .6 adds opening/closing gates before the existing pop_back. Preserve
+    // the old malformed inputs as strict errors and non-strict whole-row drops.
+    for (labels, message) in [
+        ("SAP=[7 +10 +20 PP)", "Missing parentheses for SAP field"),
+        ("SAP=(3 10 20 AP SAP=(3 20 0 AB))", "Invalid SAP field"),
+        (
+            "SAP=[7 +10 +20 PP) SAP=(3 10 20 AP SAP=(3 20 0 AB))",
+            "Missing parentheses for SAP field",
+        ),
+    ] {
+        assert!(
+            matches!(v3k_sg_sap_record(labels, true),
+            Err(SdfReadError::Parse(actual)) if actual == message),
+            "{labels}"
+        );
+        let MolBlockRecord::Concrete { topology, .. } =
+            v3k_sg_sap_record(labels, false).expect("invalid SAP drops complete group")
+        else {
+            panic!("concrete record expected");
+        };
+        assert!(topology.substance_groups.is_empty(), "{labels}");
+    }
+    // Count is still ignored, unsigned '+10' is accepted, toInt('+20')
+    // still yields zero, and exactly one final ')' byte is removed.
     let MolBlockRecord::Concrete { topology, .. } =
-        v3k_sg_sap_record("SAP=[7 +10 +20 PP) SAP=(3 10 20 AP SAP=(3 20 0 AB))", true)
+        v3k_sg_sap_record("SAP=(7 +10 +20 PP) SAP=(3 20 0 AB))", true)
             .expect("source-valid formatted SAP edge behavior")
     else {
         panic!("concrete record expected");
     };
     let points = topology.substance_groups[0].attach_points();
-    assert_eq!(points.len(), 3);
+    assert_eq!(points.len(), 2);
     assert_eq!(points[0].atom, AtomId::new(0));
     assert_eq!(points[0].leaving_atom, None);
     assert_eq!(points[0].label.as_ref().map(fixture_text), Some("PP"));
-    assert_eq!(points[1].atom, AtomId::new(0));
-    assert_eq!(points[1].leaving_atom, Some(AtomId::new(1)));
-    assert_eq!(points[1].label.as_ref().map(fixture_text), Some("A"));
-    assert_eq!(points[2].atom, AtomId::new(1));
-    assert_eq!(points[2].leaving_atom, None);
-    assert_eq!(points[2].label.as_ref().map(fixture_text), Some("AB)"));
+    assert_eq!(points[1].atom, AtomId::new(1));
+    assert_eq!(points[1].leaving_atom, None);
+    assert_eq!(points[1].label.as_ref().map(fixture_text), Some("AB)"));
 }
 
 #[test]
@@ -1914,8 +1941,8 @@ fn v3k_sg_arrays_zero_and_max_counts_preserve_typed_state_in_both_modes() {
 
 #[test]
 fn v3k_sg_arrays_over_limit_counts_follow_strict_warning_boundary() {
-    // SGroupWarnOrThrow throws in strict mode and returns an empty vector in
-    // non-strict mode without consuming the declared elements.
+    // .6 label dispatch always passes true to ParseV3000Array. Strict mode
+    // propagates its error; non-strict mode drops the complete invalid SGroup.
     assert!(matches!(
         v3k_sg_array_record("ATOMS=(3 1 2 1)", true),
         Err(SdfReadError::Parse(message)) if message == "invalid count value"
@@ -1925,8 +1952,7 @@ fn v3k_sg_arrays_over_limit_counts_follow_strict_warning_boundary() {
     else {
         panic!("ordinary SGroup carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups.len(), 1);
-    assert!(topology.substance_groups[0].atoms().is_empty());
+    assert!(topology.substance_groups.is_empty());
 
     assert!(v3k_sg_array_record("BRKXYZ=(10 1 2 3 4 5 6 7 8 9 10)", true).is_err());
     let MolBlockRecord::Concrete { topology, .. } =
@@ -2632,15 +2658,14 @@ fn v3k_collections_distinguish_recognized_errors_from_nonmatching_rows() {
 
 #[test]
 fn v3k_collections_preserve_source_array_extraction_and_bounds() {
-    // The source permits a zero declared count and ignores extra values. At
-    // EOF after one initialized value, formatted extraction retains that value
-    // for the remaining declared rows. COSMolKit rejects only the source's
-    // undefined first-uninitialized extraction and invalid typed row bounds.
+    // Zero count and extra values remain accepted. .6 rejects duplicate atom
+    // membership strictly; non-strict mode warns and keeps its first occurrence,
+    // including when source formatted extraction reuses a value after EOF.
     let record = v3k_collections_record(
         &["M  V30 10 C 0 0 0 0", "M  V30 20 N 1 0 0 0"],
         &[concat!(
             "MDLV30/STEABS ATOMS=(0 )\n",
-            "MDLV30/STEREL1 ATOMS=(3 2)\n",
+            "MDLV30/STEREL1 ATOMS=(1 2)\n",
             "MDLV30/STERAC2 ATOMS=(1 1 2)"
         )],
         true,
@@ -2656,7 +2681,7 @@ fn v3k_collections_preserve_source_array_extraction_and_bounds() {
             .iter()
             .map(|atom| atom.index())
             .collect::<Vec<_>>(),
-        vec![1, 1, 1]
+        vec![1]
     );
     assert_eq!(
         topology.stereo_groups[2]
@@ -2666,6 +2691,20 @@ fn v3k_collections_preserve_source_array_extraction_and_bounds() {
             .collect::<Vec<_>>(),
         vec![0]
     );
+
+    let duplicate = "MDLV30/STEREL1 ATOMS=(3 2)";
+    let atom_rows = ["M  V30 10 C 0 0 0 0", "M  V30 20 N 1 0 0 0"];
+    assert!(
+        matches!(v3k_collections_record(&atom_rows, &[duplicate], true),
+        Err(SdfReadError::Parse(message)) if message.contains("Atom 2 appears more than once"))
+    );
+    let MolBlockRecord::Concrete { topology, .. } =
+        v3k_collections_record(&atom_rows, &[duplicate], false).expect("duplicate warning")
+    else {
+        panic!("ordinary collection record must remain concrete");
+    };
+    assert_eq!(topology.stereo_groups.len(), 1);
+    assert_eq!(topology.stereo_groups[0].atoms(), &[AtomId::new(1)]);
 
     for atoms in ["1 ", "1 0", "1 3", "1 4294967295"] {
         let line = format!("MDLV30/STEREL1 ATOMS=({atoms})");
@@ -3036,13 +3075,11 @@ fn v3k_ctab_end_truncated_or_malformed_envelopes_never_succeed_empty() {
 
 #[test]
 fn review_collection_formatted_unsigned_extraction() {
-    // RDKit 2026.03.1 parseEnhancedStereo: stringstream >> unsigned int.
-    // Expected rows verified against the pinned wheel with sanitize=False.
+    // .6 parseEnhancedStereo keeps formatted unsigned extraction, adding
+    // strict duplicate rejection and non-strict first-occurrence retention.
     for (text, expected) in [
         ("1 1x", vec![0]),
         ("2 1+2", vec![0, 1]),
-        ("2 1", vec![0, 0]),
-        ("2 1 ", vec![0, 0]),
         ("1 -4294967295", vec![0]),
         ("1 +1", vec![0]),
         ("1 01", vec![0]),
@@ -3061,6 +3098,27 @@ fn review_collection_formatted_unsigned_extraction() {
             .map(|id| id.index())
             .collect();
         assert_eq!(actual, expected, "{text:?}");
+    }
+    for text in ["2 1", "2 1 "] {
+        let line = format!("MDLV30/STEREL1 ATOMS=({text})");
+        assert!(
+            matches!(review_collection_record(&[&line]), Err(SdfReadError::Parse(message))
+            if message.contains("Atom 1 appears more than once")),
+            "{text:?}"
+        );
+        let MolBlockRecord::Concrete { topology, .. } = v3k_collections_record(
+            &["M  V30 1 C 0 0 0 0", "M  V30 2 N 1 0 0 0"],
+            &[&line],
+            false,
+        )
+        .expect("non-strict duplicate warning") else {
+            panic!("concrete record expected");
+        };
+        assert_eq!(
+            topology.stereo_groups[0].atoms(),
+            &[AtomId::new(0)],
+            "{text:?}"
+        );
     }
     for text in [
         "2 1x",

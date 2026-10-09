@@ -646,56 +646,94 @@ fn compute_initial_coordinates<'a>(
     coordinate_map: Option<&PointMap>,
     use_ring_templates: bool,
 ) -> Result<Vec<EmbeddedFrag<'a>>, DepictError> {
-    // RDKit❗✔️: void computeInitialCoords(RDKit::ROMol &mol,
-    // RDKit❗✔️:                           const RDGeom::INT_POINT2D_MAP *coordMap,
-    // RDKit❗✔️:                           std::list<EmbeddedFrag> &efrags,
-    // RDKit❗✔️:                           bool useRingTemplates) {
-    // RDKit❗✔️:   std::vector<int> atomRanks;
-    // RDKit❗✔️:   atomRanks.resize(mol.getNumAtoms());
-    // RDKit❗✔️:   for (auto i = 0u; i < mol.getNumAtoms(); ++i) {
-    // RDKit❗✔️:     atomRanks[i] = getAtomDepictRank(mol.getAtomWithIdx(i));
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   RDKit::VECT_INT_VECT arings;
-    // RDKit❗✔️:   bool includeDativeBonds = true;
-    // RDKit❗✔️:   RDKit::MolOps::symmetrizeSSSR(mol, arings, includeDativeBonds);
-    // RDKit❗✔️:   RDKit::MolOps::assignStereochemistry(mol, false);
-    // RDKit❗✔️:   efrags.clear();
-    // RDKit❗✔️:   bool preSpec = false;
-    // RDKit❗✔️:   if ((coordMap) && (coordMap->size() > 1)) {
-    // RDKit❗✔️:     EmbeddedFrag efrag(&mol, *coordMap);
-    // RDKit❗✔️:     efrags.push_back(efrag);
-    // RDKit❗✔️:     preSpec = true;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (arings.size() > 0) {
-    // RDKit❗✔️:     DepictorLocal::embedFusedSystems(mol, arings, efrags, coordMap,
-    // RDKit❗✔️:                                      useRingTemplates);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   DepictorLocal::embedNontetrahedralStereo(mol, efrags, atomRanks);
-    // RDKit❗✔️:   DepictorLocal::embedCisTransSystems(mol, efrags);
-    // RDKit❗✔️:   auto nratms = DepictorLocal::getNonEmbeddedAtoms(mol, efrags);
-    // RDKit❗✔️:   std::list<EmbeddedFrag>::iterator mri;
-    // RDKit❗✔️:   if (preSpec) { mri = efrags.begin(); }
-    // RDKit❗✔️:   else { mri = DepictorLocal::_findLargestFrag(efrags); }
-    // RDKit❗✔️:   while ((mri != efrags.end()) || (nratms.size() > 0)) {
-    // RDKit❗✔️:     if (mri == efrags.end()) {
-    // RDKit❗✔️:       auto mrank = static_cast<int>(RDKit::MAX_INT);
-    // RDKit❗✔️:       RDKit::INT_LIST_I mnri;
-    // RDKit❗✔️:       for (auto nri = nratms.begin(); nri != nratms.end(); ++nri) {
-    // RDKit❗✔️:         auto rank = atomRanks.at(*nri);
-    // RDKit❗✔️:         rank *= mol.getNumAtoms();
-    // RDKit❗✔️:         rank += *nri;
-    // RDKit❗✔️:         if (rank < mrank) { mrank = rank; mnri = nri; }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       EmbeddedFrag efrag((*mnri), &mol);
-    // RDKit❗✔️:       nratms.erase(mnri);
-    // RDKit❗✔️:       efrags.push_back(efrag);
-    // RDKit❗✔️:       mri = efrags.end(); --mri;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     mri->markDone();
-    // RDKit❗✔️:     mri->expandEfrag(nratms, efrags);
-    // RDKit❗✔️:     mri = DepictorLocal::_findLargestFrag(efrags);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
+    // BEGIN RECOVERY DEP-04 SOURCE compute_initial_coordinates
+    // RDKit❗❌: void computeInitialCoords(RDKit::ROMol &mol,
+    // RDKit❗❌:                           const RDGeom::INT_POINT2D_MAP *coordMap,
+    // RDKit❗❌:                           std::list<EmbeddedFrag> &efrags,
+    // RDKit❗❌:                           bool useRingTemplates) {
+    // RDKit❗❌:   std::vector<int> atomRanks;
+    // RDKit❗❌:   atomRanks.resize(mol.getNumAtoms());
+    // RDKit❗❌:   for (auto i = 0u; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:     atomRanks[i] = getAtomDepictRank(mol.getAtomWithIdx(i));
+    // RDKit❗❌:   }
+    // RDKit❗❌:   RDKit::VECT_INT_VECT arings;
+    // RDKit❗❌:
+    // RDKit❗❌:   // first find all the rings
+    // RDKit❗❌:   bool includeDativeBonds = true;
+    // RDKit❗❌:   RDKit::MolOps::symmetrizeSSSR(mol, arings, includeDativeBonds);
+    // RDKit❗❌:
+    // RDKit❗❌:   // do stereochemistry
+    // RDKit❗❌:   RDKit::MolOps::assignStereochemistry(mol, false);
+    // RDKit❗❌:
+    // RDKit❗❌:   efrags.clear();
+    // RDKit❗❌:
+    // RDKit❗❌:   // user-specified coordinates exist
+    // RDKit❗❌:   bool preSpec = false;
+    // RDKit❗❌:   // first embed any atoms for which the coordinates have been specified.
+    // RDKit❗❌:   if ((coordMap) && (coordMap->size() > 1)) {
+    // RDKit❗❌:     EmbeddedFrag efrag(&mol, *coordMap);
+    // RDKit❗❌:     // add this to the list of embedded fragments
+    // RDKit❗❌:     efrags.push_back(efrag);
+    // RDKit❗❌:     preSpec = true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (arings.size() > 0) {
+    // RDKit❗❌:     // first deal with the fused rings
+    // RDKit❗❌:     DepictorLocal::embedFusedSystems(mol, arings, efrags, coordMap,
+    // RDKit❗❌:                                      useRingTemplates);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // do non-tetrahedral stereo
+    // RDKit❗❌:   DepictorLocal::embedNontetrahedralStereo(mol, efrags, atomRanks);
+    // RDKit❗❌:
+    // RDKit❗❌:   // deal with any cis/trans systems
+    // RDKit❗❌:   DepictorLocal::embedCisTransSystems(mol, efrags);
+    // RDKit❗❌:   // now get the atoms that are not yet embedded in either a cis/trans system
+    // RDKit❗❌:   // or a ring system (or simply the first atom)
+    // RDKit❗❌:   auto nratms = DepictorLocal::getNonEmbeddedAtoms(mol, efrags);
+    // RDKit❗❌:   std::list<EmbeddedFrag>::iterator mri;
+    // RDKit❗❌:   if (preSpec) {
+    // RDKit❗❌:     // if the user specified coordinates on some of the atoms use that as
+    // RDKit❗❌:     // as the starting fragment and it should be at the beginning of the vector
+    // RDKit❗❌:     mri = efrags.begin();
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     // otherwise - find the largest fragment that was embedded
+    // RDKit❗❌:     mri = DepictorLocal::_findLargestFrag(efrags);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   while ((mri != efrags.end()) || (nratms.size() > 0)) {
+    // RDKit❗❌:     if (mri == efrags.end()) {
+    // RDKit❗❌:       // we are out of embedded fragments, if there are any
+    // RDKit❗❌:       // non embedded atoms use them to start a fragment
+    // RDKit❗❌:       auto mrank = RDKit::MAX_INT;
+    // RDKit❗❌:       auto mnri = nratms.end();
+    // RDKit❗❌:       for (auto nri = nratms.begin(); nri != nratms.end(); ++nri) {
+    // RDKit❗❌:         auto rank = atomRanks.at(*nri);
+    // RDKit❗❌:         rank *= mol.getNumAtoms();
+    // RDKit❗❌:         // use the atom index as well so that we at least
+    // RDKit❗❌:         // get reproducible depictions in cases where things
+    // RDKit❗❌:         // have identical ranks.
+    // RDKit❗❌:         rank += *nri;
+    // RDKit❗❌:         if (rank < mrank) {
+    // RDKit❗❌:           mrank = rank;
+    // RDKit❗❌:           mnri = nri;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       EmbeddedFrag efrag((*mnri), &mol);
+    // RDKit❗❌:       nratms.erase(mnri);
+    // RDKit❗❌:       efrags.push_back(efrag);
+    // RDKit❗❌:       mri = efrags.end();
+    // RDKit❗❌:       --mri;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     mri->markDone();
+    // RDKit❗❌:     mri->expandEfrag(nratms, efrags);
+    // RDKit❗❌:     mri = DepictorLocal::_findLargestFrag(efrags);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // at this point any remaining efrags should belong individual fragments in
+    // RDKit❗❌:   // the molecule
+    // RDKit❗❌: }
+    // END RECOVERY DEP-04 SOURCE compute_initial_coordinates
+
     // Behavior review: the caller supplies source-shaped cache, SymmSSSR and
     // cleanIt=false stereo preparation. This preserves helper append order,
     // first-largest ties, wrapped signed ranks and disconnected expansion.
@@ -787,45 +825,83 @@ pub fn compute_2d_coordinates(
     properties: &MoleculeProperties,
     params: &Compute2DCoordinatesParams,
 ) -> Result<Conformer2D, DepictError> {
-    // RDKit❗✔️: unsigned int compute2DCoords(RDKit::ROMol &mol,
-    // RDKit❗✔️:                              const Compute2DCoordParameters &params) {
-    // RDKit❗✔️:   if (mol.needsUpdatePropertyCache()) {
-    // RDKit❗✔️:     mol.updatePropertyCache(false);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: #ifdef RDK_BUILD_COORDGEN_SUPPORT
-    // RDKit❗✔️:   if (!params.forceRDKit && preferCoordGen) {
-    // RDKit❗✔️:     RDKit::CoordGen::CoordGenParams coordgen_params;
-    // RDKit❗✔️:     if (params.coordMap) { coordgen_params.coordMap = *params.coordMap; }
-    // RDKit❗✔️:     auto cid = RDKit::CoordGen::addCoords(mol, &coordgen_params);
-    // RDKit❗✔️:     return cid;
-    // RDKit❗✔️:   };
-    // RDKit❗✔️: #endif
-    // RDKit❗✔️:   RDKit::ROMol cp(mol);
-    // RDKit❗✔️:   std::list<EmbeddedFrag> efrags;
-    // RDKit❗✔️:   computeInitialCoords(cp, params.coordMap, efrags, params.useRingTemplates);
-    // RDKit❗✔️:   for (auto &eri : efrags) {
-    // RDKit❗✔️:     if ((params.nSamples > 0) && (params.nFlipsPerSample > 0)) {
-    // RDKit❗✔️:       eri.randomSampleFlipsAndPermutations(params.nFlipsPerSample,
-    // RDKit❗✔️:           params.nSamples, params.sampleSeed, nullptr, 0.0,
-    // RDKit❗✔️:           params.permuteDeg4Nodes);
-    // RDKit❗✔️:     } else { eri.removeCollisionsBondFlip(); }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   for (auto &eri : efrags) {
-    // RDKit❗✔️:     eri.removeCollisionsOpenAngles();
-    // RDKit❗✔️:     eri.removeCollisionsShortenBonds();
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (!params.coordMap || !params.coordMap->size()) {
-    // RDKit❗✔️:     if (params.canonOrient && efrags.size()) {
-    // RDKit❗✔️:       for (auto &eri : efrags) { eri.canonicalizeOrientation(); }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   DepictorLocal::_shiftCoords(efrags);
-    // RDKit❗✔️:   auto cid = copyCoordinate(mol, efrags, params.clearConfs);
-    // RDKit❗✔️:   if ((params.coordMap) && (params.coordMap->size() == 1)) {
-    // RDKit❗✔️:     // translate every copied conformer row to the singleton anchor
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return cid;
-    // RDKit❗✔️: }
+    // BEGIN RECOVERY DEP-04 SOURCE compute_2d_coordinates
+    // RDKit❗❌: unsigned int compute2DCoords(RDKit::ROMol &mol,
+    // RDKit❗❌:                              const Compute2DCoordParameters &params) {
+    // RDKit❗❌:   if (mol.needsUpdatePropertyCache()) {
+    // RDKit❗❌:     mol.updatePropertyCache(false);
+    // RDKit❗❌:   }
+    // RDKit❗❌: #ifdef RDK_BUILD_COORDGEN_SUPPORT
+    // RDKit❗❌:   // default to use CoordGen if we have it installed
+    // RDKit❗❌:   if (!params.forceRDKit && preferCoordGen) {
+    // RDKit❗❌:     RDKit::CoordGen::CoordGenParams coordgen_params;
+    // RDKit❗❌:     if (params.coordMap) {
+    // RDKit❗❌:       coordgen_params.coordMap = *params.coordMap;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     auto cid = RDKit::CoordGen::addCoords(mol, &coordgen_params);
+    // RDKit❗❌:     return cid;
+    // RDKit❗❌:   };
+    // RDKit❗❌: #endif
+    // RDKit❗❌:
+    // RDKit❗❌:   RDKit::ROMol cp(mol);
+    // RDKit❗❌:   // storage for pieces of a molecule/s that are embedded in 2D
+    // RDKit❗❌:   std::list<EmbeddedFrag> efrags;
+    // RDKit❗❌:   computeInitialCoords(cp, params.coordMap, efrags, params.useRingTemplates);
+    // RDKit❗❌:
+    // RDKit❗❌: #if 1
+    // RDKit❗❌:   // perform random sampling here to improve the density
+    // RDKit❗❌:   for (auto &eri : efrags) {
+    // RDKit❗❌:     // either sample the 2D space by randomly flipping rotatable
+    // RDKit❗❌:     // bonds in the structure or flip only bonds along the shortest
+    // RDKit❗❌:     // path between colliding atoms - don't do both
+    // RDKit❗❌:     if ((params.nSamples > 0) && (params.nFlipsPerSample > 0)) {
+    // RDKit❗❌:       eri.randomSampleFlipsAndPermutations(
+    // RDKit❗❌:           params.nFlipsPerSample, params.nSamples, params.sampleSeed, nullptr,
+    // RDKit❗❌:           0.0, params.permuteDeg4Nodes);
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       eri.removeCollisionsBondAndSpiroFlip();
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   for (auto &eri : efrags) {
+    // RDKit❗❌:     // if there are any remaining collisions
+    // RDKit❗❌:     eri.removeCollisionsOpenAngles();
+    // RDKit❗❌:     eri.removeCollisionsShortenBonds();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!params.coordMap || !params.coordMap->size()) {
+    // RDKit❗❌:     if (params.canonOrient && efrags.size()) {
+    // RDKit❗❌:       // if we do not have any prespecified coordinates - canonicalize
+    // RDKit❗❌:       // the orientation of the fragment so that the longest axes fall
+    // RDKit❗❌:       // along the x-axis etc.
+    // RDKit❗❌:       for (auto &eri : efrags) {
+    // RDKit❗❌:         eri.canonicalizeOrientation();
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   DepictorLocal::_shiftCoords(efrags);
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   // create a conformation on the molecule and copy the coordinates
+    // RDKit❗❌:   auto cid = copyCoordinate(mol, efrags, params.clearConfs);
+    // RDKit❗❌:
+    // RDKit❗❌:   // special case for a single-atom coordMap template
+    // RDKit❗❌:   if ((params.coordMap) && (params.coordMap->size() == 1)) {
+    // RDKit❗❌:     auto &conf = mol.getConformer(cid);
+    // RDKit❗❌:     auto cRef = params.coordMap->begin();
+    // RDKit❗❌:     const auto &confPos = conf.getAtomPos(cRef->first);
+    // RDKit❗❌:     auto refPos = cRef->second;
+    // RDKit❗❌:     refPos.x -= confPos.x;
+    // RDKit❗❌:     refPos.y -= confPos.y;
+    // RDKit❗❌:     for (auto i = 0u; i < conf.getNumAtoms(); ++i) {
+    // RDKit❗❌:       auto confPos = conf.getAtomPos(i);
+    // RDKit❗❌:       confPos.x += refPos.x;
+    // RDKit❗❌:       confPos.y += refPos.y;
+    // RDKit❗❌:       conf.setAtomPos(i, confPos);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   return cid;
+    // RDKit❗❌: }
+    // END RECOVERY DEP-04 SOURCE compute_2d_coordinates
+
     // Behavior review: CK fixes `preferCoordGen=false`, the pinned upstream
     // default; no silent alternate algorithm is selected. `force_rdkit` is
     // consequently accepted but does not change this fixed route. Runtime
@@ -852,25 +928,6 @@ pub fn compute_2d_coordinates(
     .map_err(DepictError::RingFinding)?;
     let copied_topology = topology.clone();
 
-    // BEGIN RDKIT CPP FUNCTION MolOps::assignStereochemistry presence boundary
-    // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
-    // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
-    // RDKit✔️🔝:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
-    // RDKit✔️🔝:     return;
-    // RDKit✔️🔝:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   if (mol.needsUpdatePropertyCache()) {
-    // RDKit❗✔️:     mol.updatePropertyCache(false);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❌❌:   if (!Chirality::getUseLegacyStereoPerception()) {
-    // RDKit❌❌:     Chirality::stereoPerception(mol, cleanIt, flagPossibleStereoCenters);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION MolOps::assignStereochemistry presence boundary
     // Pinned Chirality.cpp:2889-2905; MolOps.h defaults force=false and
     // flagPossibleStereoCenters=false. The fixed source profile is legacy.
     // Behavior: presence alone returns the existing copied topology. Values,
@@ -907,7 +964,7 @@ pub fn compute_2d_coordinates(
                 params.permute_degree_four,
             )?;
         } else {
-            fragment.remove_collisions_bond_flip()?;
+            fragment.remove_collisions_bond_and_spiro_flip()?;
         }
     }
 
@@ -924,15 +981,6 @@ pub fn compute_2d_coordinates(
 
     translate_single_coordinate_constraint(&working, &mut fragments, coordinate_map)?;
 
-    // RDKit❗✔️: auto *conf = new RDKit::Conformer(mol.getNumAtoms());
-    // RDKit❗✔️: conf->set3D(false);
-    // RDKit❗✔️: for (const auto &efrag : efrags) {
-    // RDKit❗✔️:   for (const auto &eai : efrag.GetEmbeddedAtoms()) {
-    // RDKit❗✔️:     const auto &cr = eai.second.loc;
-    // RDKit❗✔️:     RDGeom::Point3D fcr(cr.x, cr.y, 0.0);
-    // RDKit❗✔️:     conf->setAtomPos(eai.first, fcr);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
     // Behavior review: rows start at source default origin and are overwritten
     // in fragment/map order; detached ID zero is provisional for the runtime.
     // Complexity review: one atom-sized allocation and ordered fragment copy.

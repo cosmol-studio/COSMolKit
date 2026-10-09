@@ -68,6 +68,7 @@ impl TopologicalFingerprintParams {
     ) -> Self {
         Self {
             inner: ck::TopologicalFingerprintParams {
+                ignore_atoms: None,
                 min_path,
                 max_path,
                 fp_size,

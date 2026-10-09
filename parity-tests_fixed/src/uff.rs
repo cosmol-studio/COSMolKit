@@ -71,10 +71,25 @@ pub struct CoordinateRow {
     pub xyz_bits: Vec<[u64; 3]>,
 }
 
+/// The user-selected reference deadline is distinct from a chemistry error.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparationTimeout {
+    pub limit_seconds: u64,
+    pub mechanism: TimeoutMechanism,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimeoutMechanism {
+    Native,
+    ProcessDeadline,
+}
+
 /// A recorded source rejection is data; absent preparation is not ready.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GeometryPreparation {
     Ready(Geometry),
+    TimedOut(PreparationTimeout),
     Rejected {
         stage: crate::molecular::Stage,
         detail: String,
@@ -98,6 +113,7 @@ pub enum ExpectedErrorReason {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
     Coverage(bool),
+    TimedOut(PreparationTimeout),
     Optimized {
         status: i32,
         energy_bits: u64,
@@ -140,6 +156,11 @@ pub fn validate_reference(
         return Err("UFF reference changed recipe identity".into());
     }
     match (recipe.profile, &prepared.preparation, output) {
+        (
+            Profile::Optimization { .. } | Profile::ConformerOptimization { .. },
+            Some(GeometryPreparation::TimedOut(preparation)),
+            Observation::TimedOut(observation),
+        ) if preparation.limit_seconds == 60 && preparation == observation => Ok(()),
         (Profile::Coverage { .. }, None, Observation::Coverage(_)) => Ok(()),
         (Profile::Coverage { .. }, None, Observation::Error { detail, .. })
             if !detail.is_empty() =>
@@ -309,9 +330,9 @@ fn reference_error_reason(
             })
         }
         (Some(GeometryPreparation::Ready(_)), Stage::Operation) if input.case.id == "line:320" => {
-            // Pinned 351f8f378f8ad6bbd517980c38896e66bf907af8:
-            // Builder.cpp:324-327 checks both endpoints but passes params[atomIdx].
-            // AngleBend.cpp:79: PRECONDITION(at2Params, "bad params pointer");
+            // Pinned 0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985:
+            // Builder.cpp:323-326 checks both endpoints but passes params[atomIdx].
+            // AngleBend.cpp:78: PRECONDITION(at2Params, "bad params pointer");
             // Independent p1 source trace identifies this original center as 1.
             // This is the approved original reference error, not a molecule patch.
             let lines: Vec<_> = detail.lines().map(str::trim).collect();
@@ -319,9 +340,9 @@ fn reference_error_reason(
                 && lines[0] == "RuntimeError: Pre-condition Violation"
                 && lines[1] == "bad params pointer"
                 && lines[2]
-                    == "Violation occurred on line 79 in file Code/ForceField/UFF/AngleBend.cpp"
+                    == "Violation occurred on line 78 in file Code/ForceField/UFF/AngleBend.cpp"
                 && lines[3] == "Failed Expression: at2Params"
-                && lines[4] == "RDKIT: 2026.03.1"
+                && lines[4] == "RDKIT: 2026.03.6"
                 && lines[5] == "BOOST: 1_85"
             {
                 Some(ExpectedErrorReason::SourceTbpCenterParamsMissing {
@@ -440,6 +461,11 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     .ok_or("UFF common geometry was not prepared")?
                 {
                     GeometryPreparation::Ready(geometry) => geometry,
+                    GeometryPreparation::TimedOut(_) => {
+                        return Err(
+                            "reference preparation timed out; comparison must be skipped".into(),
+                        );
+                    }
                     GeometryPreparation::Rejected {
                         stage: failed_stage,
                         detail,
@@ -509,6 +535,11 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     .ok_or("UFF common conformer geometry was not prepared")?
                 {
                     GeometryPreparation::Ready(geometry) => geometry,
+                    GeometryPreparation::TimedOut(_) => {
+                        return Err(
+                            "reference preparation timed out; comparison must be skipped".into(),
+                        );
+                    }
                     GeometryPreparation::Rejected {
                         stage: failed_stage,
                         detail,

@@ -68,19 +68,31 @@ fn bond_with_smiles_index(
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
 
-    // BEGIN RDKIT CPP FUNCTION get_bond_with_smiles_idx
-    // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // BEGIN COMPLETE RDKit .6 CHEM26 get_bond_with_smiles_idx
+    // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(RWMol &mol, unsigned idx) {
+    // RDKit✔️✔️:   // SMILES ring-closure bonds are appended after the ordinary bonds. Only
+    // RDKit✔️✔️:   // they need an explicit parse-order index; ordinary bond positions can be
+    // RDKit✔️✔️:   // recovered by removing the earlier ring-closure slots.
+    // RDKit✔️✔️:   unsigned int earlierRingBonds = 0;
     // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
     // RDKit✔️✔️:     unsigned int smilesIdx;
-    // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-    // RDKit✔️✔️:         smilesIdx == idx) {
-    // RDKit✔️✔️:       return bnd;
+    // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx)) {
+    // RDKit✔️✔️:       if (smilesIdx == idx) {
+    // RDKit✔️✔️:         return bnd;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       earlierRingBonds += smilesIdx < idx;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return nullptr;
+    // RDKit✔️✔️:   const auto bondIdx = idx - earlierRingBonds;
+    // RDKit✔️✔️:   return bondIdx < mol.getNumBonds() ? mol.getBondWithIdx(bondIdx) : nullptr;
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION get_bond_with_smiles_idx
-    // Read only visited rows; a first match prevents all later property reads.
+    // END COMPLETE RDKit .6 CHEM26 get_bond_with_smiles_idx
+    // Exact source-u32 index state: scan in bond order, a first explicit match
+    // short-circuits before later bad properties. Only strictly earlier slots
+    // count; unsigned subtraction wraps before bounds comparison. Existing
+    // lexical >u32 behavior at other APIs remains outside this narrow delta.
+    // One O(E) ordered scan and O(1) auxiliary state, no secondary map/clone.
+    let mut earlier_ring_bonds = 0_u32;
     for bond in &topology.bonds {
         let Some(value) = bond.prop(CXSMILES_BOND_IDX_PROP) else {
             continue;
@@ -113,8 +125,13 @@ fn bond_with_smiles_index(
         if source_index == index {
             return Ok(Some(bond.id()));
         }
+        earlier_ring_bonds = earlier_ring_bonds.wrapping_add(u32::from(source_index < index));
     }
-    Ok(None)
+    if index > u32::MAX as usize {
+        return Ok(None);
+    }
+    let physical = (index as u32).wrapping_sub(earlier_ring_bonds) as usize;
+    Ok(topology.bonds.get(physical).map(cosmolkit_model::Bond::id))
 }
 
 fn atom_neighbors(topology: &TopologyBlock, atom: AtomId) -> &[cosmolkit_model::NeighborRef] {
@@ -473,8 +490,116 @@ pub(crate) fn apply_cx_to_smiles_record(
     // a partially installed CX record. This preserves behavior on success but
     // adds one O(molecule-size) clone to the source's record-linear work.
     let mut staged = record.clone();
-    apply_cx_to_smiles_record_in_place(&mut staged, parsed)?;
+    apply_cx_to_smiles_record_in_place(&mut staged, parsed, None, &mut 0)?;
     *record = staged;
+    Ok(())
+}
+
+/// Isolate the newly rejected enhanced membership path from unchanged malformed
+/// CX recovery. Only accepted members and the source hash participate.
+pub(crate) fn has_enhanced_membership_collision(
+    progress: &cosmolkit_cx::CxParseProgress,
+    atom_count: usize,
+) -> bool {
+    if progress.enhanced_stereo_duplicate_atom().is_some() {
+        return true;
+    }
+    let mut previous: Vec<(u32, Vec<usize>)> = Vec::new();
+    for item in progress.records() {
+        let CxRecord::EnhancedStereo(group) = item else {
+            continue;
+        };
+        let code = match group.kind {
+            CxStereoGroupKind::Absolute => 0,
+            CxStereoGroupKind::Or => 1,
+            CxStereoGroupKind::And => 2,
+        };
+        let hash = group.group_id.wrapping_mul(10).wrapping_add(code);
+        let atoms: Vec<_> = group
+            .atoms
+            .iter()
+            .copied()
+            .filter(|&index| index < atom_count)
+            .collect();
+        if atoms.is_empty() {
+            continue;
+        }
+        if let Some((_, earlier)) = previous.iter_mut().find(|(key, _)| *key == hash) {
+            if atoms.iter().any(|atom| earlier.contains(atom)) {
+                return true;
+            }
+            earlier.extend(atoms);
+        } else {
+            previous.push((hash, atoms));
+        }
+    }
+    false
+}
+
+/// Replay only the new duplicate path; unchanged syntax failures retain their
+/// existing adapter. Failed enhanced records have no Complete checkpoint.
+pub(crate) fn apply_enhanced_duplicate_progress(
+    record: &mut SmilesRecord,
+    progress: &cosmolkit_cx::CxParseProgress,
+    source_cursor: &mut usize,
+) -> Result<(), SmilesParseError> {
+    // BEGIN COMPLETE RDKit .6 handleCXPartAndName<T>
+    // RDKit❗❌: template <typename T>
+    // RDKit❗❌: void handleCXPartAndName(RWMol *res, const T &params, const std::string &cxPart,
+    // RDKit❗❌:                          std::string &name) {
+    // RDKit❗❌:   if (!res || cxPart.empty()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::string::const_iterator pos = cxPart.cbegin();
+    // RDKit❗❌:   bool cxfailed = false;
+    // RDKit❗❌:   if (params.allowCXSMILES) {
+    // RDKit❗❌:     if (*pos == '|') {
+    // RDKit❗❌:       try {
+    // RDKit❗❌:         SmilesParseOps::parseCXExtensions(*res, cxPart, pos);
+    // RDKit❗❌:       } catch (...) {
+    // RDKit❗❌:         cxfailed = true;
+    // RDKit❗❌:         if (params.strictCXSMILES) {
+    // RDKit❗❌:           throw;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res->setProp("_CXSMILES_Data", std::string(cxPart.cbegin(), pos));
+    // RDKit❗❌:     } else if (params.strictCXSMILES && !params.parseName &&
+    // RDKit❗❌:                pos != cxPart.cend()) {
+    // RDKit❗❌:       throw RDKit::SmilesParseException(
+    // RDKit❗❌:           "CXSMILES extension does not start with | and parseName=false");
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!cxfailed && params.parseName && pos != cxPart.end()) {
+    // RDKit❗❌:     std::string nmpart(pos, cxPart.cend());
+    // RDKit❗❌:     name = boost::trim_copy(nmpart);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END COMPLETE RDKit .6 handleCXPartAndName<T>
+    // The existing complete-record lowerer is reused directly, preserving
+    // earlier completed records and checking the failing group before commit.
+    // This adapter materializes O(records+members) syntax vectors and the
+    // collision-selection scan adds work beyond native single-pass parsing.
+    // Existing concrete-query preflight/whole-record effects remain qualified.
+    let mut records = Vec::new();
+    let mut cursors = Vec::new();
+    for checkpoint in progress.checkpoints() {
+        if checkpoint.phase == cosmolkit_cx::CxProgressPhase::Complete {
+            records.push(progress.records()[checkpoint.record_index].clone());
+            cursors.push(checkpoint.cursor);
+        }
+    }
+    let parsed = ParsedCxExtensions::new(records, progress.consumed());
+    apply_cx_to_smiles_record_in_place(record, &parsed, Some(&cursors), source_cursor)?;
+    *source_cursor = progress.consumed();
+    if !progress.is_complete() {
+        progress.emit_source_warning();
+        return Err(SmilesParseError::Cx(
+            progress
+                .error()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "failure parsing CXSMILES extensions".to_owned()),
+        ));
+    }
     Ok(())
 }
 
@@ -602,6 +727,8 @@ mod tests {
 fn apply_cx_to_smiles_record_in_place(
     record: &mut SmilesRecord,
     parsed: &ParsedCxExtensions,
+    source_record_cursors: Option<&[usize]>,
+    source_cursor: &mut usize,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION parser::parse_it dispatch
     // RDKit✔️✔️: } else if (*first == 'C') {
@@ -685,7 +812,10 @@ fn apply_cx_to_smiles_record_in_place(
     let atom_count = record.topology.atoms.len();
     let mut sgroup_index = 0_u32;
     let mut stereo_hashes = Vec::new();
-    for item in parsed.records() {
+    for (record_index, item) in parsed.records().iter().enumerate() {
+        if let Some(cursors) = source_record_cursors {
+            *source_cursor = cursors[record_index];
+        }
         match item {
             CxRecord::Coordinates(coordinates) => {
                 // BEGIN COMPLETE PINNED SF188
@@ -1038,85 +1168,93 @@ fn apply_cx_to_smiles_record_in_place(
                 }
             }
             CxRecord::EnhancedStereo(stereo) => {
-                // BEGIN COMPLETE PINNED SF205 concrete caller
-                // RDKit❗✔️: bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                // RDKit❗✔️:                            unsigned int startAtomIdx) {
-                // RDKit❗✔️:   StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
-                // RDKit❗✔️:   if (*first == 'a') {
-                // RDKit❗✔️:     group_type = StereoGroupType::STEREO_ABSOLUTE;
-                // RDKit❗✔️:   } else if (*first == 'o') {
-                // RDKit❗✔️:     group_type = StereoGroupType::STEREO_OR;
-                // RDKit❗✔️:   } else if (*first == '&') {
-                // RDKit❗✔️:     group_type = StereoGroupType::STEREO_AND;
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   ++first;
-                // RDKit❗✔️:
-                // RDKit❗✔️:   // OR and AND groups carry a group number
-                // RDKit❗✔️:   unsigned int group_id = 0;
-                // RDKit❗✔️:   if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
-                // RDKit❗✔️:     read_int(first, last, group_id);
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:
-                // RDKit❗✔️:   if (first >= last || *first != ':') {
-                // RDKit❗✔️:     return false;
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   ++first;
-                // RDKit❗✔️:
-                // RDKit❗✔️:   std::vector<Atom *> atoms;
-                // RDKit❗✔️:   std::vector<Bond *> bonds;
-                // RDKit❗✔️:
-                // RDKit❗✔️:   while (first <= last && *first >= '0' && *first <= '9') {
-                // RDKit❗✔️:     unsigned int aidx;
-                // RDKit❗✔️:     if (read_int(first, last, aidx)) {
-                // RDKit❗✔️:       if (VALID_ATIDX(aidx)) {
-                // RDKit❗✔️:         Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
-                // RDKit❗✔️:         if (!atom) {
-                // RDKit❗✔️:           BOOST_LOG(rdWarningLog)
-                // RDKit❗✔️:               << "Atom " << aidx << " not found!" << std::endl;
-                // RDKit❗✔️:           return false;
-                // RDKit❗✔️:         }
-                // RDKit❗✔️:         atoms.push_back(atom);
-                // RDKit❗✔️:       }
-                // RDKit❗✔️:     } else {
-                // RDKit❗✔️:       return false;
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:
-                // RDKit❗✔️:     if (first < last && *first == ',') {
-                // RDKit❗✔️:       ++first;
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   if (!atoms.empty()) {
-                // RDKit❗✔️:     // we need to do a bit of work to check whether or not we've already seen
-                // RDKit❗✔️:     // this particular StereoGroup (was Github #6050)
-                // RDKit❗✔️:     const auto group_hash =
-                // RDKit❗✔️:         10 * group_id + static_cast<unsigned int>(group_type);
-                // RDKit❗✔️:     std::vector<unsigned int> sgTracker;
-                // RDKit❗✔️:     mol.getPropIfPresent(cxsgTracker, sgTracker);
-                // RDKit❗✔️:     std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
-                // RDKit❗✔️:     TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
-                // RDKit❗✔️:
-                // RDKit❗✔️:     auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
-                // RDKit❗✔️:     if (iter != sgTracker.end()) {
-                // RDKit❗✔️:       auto index = iter - sgTracker.begin();
-                // RDKit❗✔️:       auto gAtoms = mol_stereo_groups[index].getAtoms();
-                // RDKit❗✔️:       gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
-                // RDKit❗✔️:       mol_stereo_groups[index] =
-                // RDKit❗✔️:           StereoGroup(mol_stereo_groups[index].getGroupType(),
-                // RDKit❗✔️:                       std::move(gAtoms), std::move(bonds), group_id);
-                // RDKit❗✔️:     } else {
-                // RDKit❗✔️:       // not seen this before, create a new stereogroup
-                // RDKit❗✔️:       mol_stereo_groups.emplace_back(group_type, std::move(atoms),
-                // RDKit❗✔️:                                      std::move(bonds), group_id);
-                // RDKit❗✔️:       sgTracker.push_back(group_hash);
-                // RDKit❗✔️:       mol.setProp(cxsgTracker, sgTracker);
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:
-                // RDKit❗✔️:     mol.setStereoGroups(std::move(mol_stereo_groups));
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:
-                // RDKit❗✔️:   return true;
-                // RDKit❗✔️: }
-                // END COMPLETE PINNED SF205 concrete caller
+                // BEGIN COMPLETE RDKit .6 SF205 concrete caller .6 controller
+                // RDKit❗❌: template <typename Iterator>
+                // RDKit❗❌: bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                // RDKit❗❌:                            unsigned int startAtomIdx) {
+                // RDKit❗❌:   StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
+                // RDKit❗❌:   if (*first == 'a') {
+                // RDKit❗❌:     group_type = StereoGroupType::STEREO_ABSOLUTE;
+                // RDKit❗❌:   } else if (*first == 'o') {
+                // RDKit❗❌:     group_type = StereoGroupType::STEREO_OR;
+                // RDKit❗❌:   } else if (*first == '&') {
+                // RDKit❗❌:     group_type = StereoGroupType::STEREO_AND;
+                // RDKit❗❌:   }
+                // RDKit❗❌:   ++first;
+                // RDKit❗❌:
+                // RDKit❗❌:   // OR and AND groups carry a group number
+                // RDKit❗❌:   unsigned int group_id = 0;
+                // RDKit❗❌:   if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
+                // RDKit❗❌:     read_int(first, last, group_id);
+                // RDKit❗❌:   }
+                // RDKit❗❌:
+                // RDKit❗❌:   if (first >= last || *first != ':') {
+                // RDKit❗❌:     return false;
+                // RDKit❗❌:   }
+                // RDKit❗❌:   ++first;
+                // RDKit❗❌:
+                // RDKit❗❌:   std::vector<Atom *> atoms;
+                // RDKit❗❌:   std::vector<Bond *> bonds;
+                // RDKit❗❌:
+                // RDKit❗❌:   while (first <= last && *first >= '0' && *first <= '9') {
+                // RDKit❗❌:     unsigned int aidx;
+                // RDKit❗❌:     if (read_int(first, last, aidx)) {
+                // RDKit❗❌:       if (VALID_ATIDX(aidx)) {
+                // RDKit❗❌:         Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
+                // RDKit❗❌:         if (!atom) {
+                // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+                // RDKit❗❌:               << "Atom " << aidx << " not found!" << std::endl;
+                // RDKit❗❌:           return false;
+                // RDKit❗❌:         }
+                // RDKit❗❌:         if (std::ranges::find(atoms, atom) != atoms.end()) {
+                // RDKit❗❌:           BOOST_LOG(rdWarningLog)
+                // RDKit❗❌:               << "Atom " << aidx
+                // RDKit❗❌:               << " appears more than once in stereo group specification!"
+                // RDKit❗❌:               << std::endl;
+                // RDKit❗❌:           return false;
+                // RDKit❗❌:         }
+                // RDKit❗❌:         atoms.push_back(atom);
+                // RDKit❗❌:       }
+                // RDKit❗❌:     } else {
+                // RDKit❗❌:       return false;
+                // RDKit❗❌:     }
+                // RDKit❗❌:
+                // RDKit❗❌:     if (first < last && *first == ',') {
+                // RDKit❗❌:       ++first;
+                // RDKit❗❌:     }
+                // RDKit❗❌:   }
+                // RDKit❗❌:   if (!atoms.empty()) {
+                // RDKit❗❌:     // we need to do a bit of work to check whether or not we've already seen
+                // RDKit❗❌:     // this particular StereoGroup (was Github #6050)
+                // RDKit❗❌:     const auto group_hash =
+                // RDKit❗❌:         10 * group_id + static_cast<unsigned int>(group_type);
+                // RDKit❗❌:     std::vector<unsigned int> sgTracker;
+                // RDKit❗❌:     mol.getPropIfPresent(cxsgTracker, sgTracker);
+                // RDKit❗❌:     std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
+                // RDKit❗❌:     TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
+                // RDKit❗❌:
+                // RDKit❗❌:     auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
+                // RDKit❗❌:     if (iter != sgTracker.end()) {
+                // RDKit❗❌:       auto index = iter - sgTracker.begin();
+                // RDKit❗❌:       auto gAtoms = mol_stereo_groups[index].getAtoms();
+                // RDKit❗❌:       gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
+                // RDKit❗❌:       mol_stereo_groups[index] =
+                // RDKit❗❌:           StereoGroup(mol_stereo_groups[index].getGroupType(),
+                // RDKit❗❌:                       std::move(gAtoms), std::move(bonds), group_id);
+                // RDKit❗❌:     } else {
+                // RDKit❗❌:       // not seen this before, create a new stereogroup
+                // RDKit❗❌:       mol_stereo_groups.emplace_back(group_type, std::move(atoms),
+                // RDKit❗❌:                                      std::move(bonds), group_id);
+                // RDKit❗❌:       sgTracker.push_back(group_hash);
+                // RDKit❗❌:       mol.setProp(cxsgTracker, sgTracker);
+                // RDKit❗❌:     }
+                // RDKit❗❌:
+                // RDKit❗❌:     mol.setStereoGroups(std::move(mol_stereo_groups));
+                // RDKit❗❌:   }
+                // RDKit❗❌:
+                // RDKit❗❌:   return true;
+                // RDKit❗❌: }
+                // END COMPLETE RDKit .6 SF205 concrete caller .6 controller
                 let kind = match stereo.kind {
                     CxStereoGroupKind::Absolute => StereoGroupKind::Absolute,
                     CxStereoGroupKind::Or => StereoGroupKind::Or,
@@ -1136,7 +1274,12 @@ fn apply_cx_to_smiles_record_in_place(
                     stereo.group_id,
                     atoms,
                 )
-                .map_err(model_failure)?;
+                .map_err(|error| match error {
+                    cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError::StereoGroup(
+                        cause,
+                    ) => SmilesParseError::StereoGroup(cause),
+                    other => model_failure(other),
+                })?;
                 if let Some(groups) = groups {
                     record.topology.stereo_groups = groups;
                 }
@@ -1248,16 +1391,25 @@ fn apply_cx_to_smiles_record_in_place(
                 // RDKit❗❌: }
                 // END COMPLETE PINNED SF200 concrete caller
                 // BEGIN COMPLETE SF200 concrete reached helpers
-                // RDKit❗❌: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-                // RDKit❗❌:   for (auto bnd : mol.bonds()) {
-                // RDKit❗❌:     unsigned int smilesIdx;
-                // RDKit❗❌:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-                // RDKit❗❌:         smilesIdx == idx) {
-                // RDKit❗❌:       return bnd;
-                // RDKit❗❌:     }
-                // RDKit❗❌:   }
-                // RDKit❗❌:   return nullptr;
-                // RDKit❗❌: }
+                // BEGIN COMPLETE RDKit .6 CHEM26 get_bond_with_smiles_idx_reached
+                // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(RWMol &mol, unsigned idx) {
+                // RDKit✔️✔️:   // SMILES ring-closure bonds are appended after the ordinary bonds. Only
+                // RDKit✔️✔️:   // they need an explicit parse-order index; ordinary bond positions can be
+                // RDKit✔️✔️:   // recovered by removing the earlier ring-closure slots.
+                // RDKit✔️✔️:   unsigned int earlierRingBonds = 0;
+                // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
+                // RDKit✔️✔️:     unsigned int smilesIdx;
+                // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx)) {
+                // RDKit✔️✔️:       if (smilesIdx == idx) {
+                // RDKit✔️✔️:         return bnd;
+                // RDKit✔️✔️:       }
+                // RDKit✔️✔️:       earlierRingBonds += smilesIdx < idx;
+                // RDKit✔️✔️:     }
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   const auto bondIdx = idx - earlierRingBonds;
+                // RDKit✔️✔️:   return bondIdx < mol.getNumBonds() ? mol.getBondWithIdx(bondIdx) : nullptr;
+                // RDKit✔️✔️: }
+                // END COMPLETE RDKit .6 CHEM26 get_bond_with_smiles_idx_reached
                 // RDKit❗❌:
                 // RDKit❗❌: inline bool canHaveDirection(const Bond &bond) {
                 // RDKit❗❌:   auto bondType = bond.getBondType();
@@ -2462,10 +2614,12 @@ fn apply_cx_to_smiles_record_in_place(
         .coordinates
         .validate_for_atom_count(record.topology.atoms.len())
         .map_err(model_failure)?;
-    record
-        .topology
-        .validate()
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+    record.topology.validate().map_err(|error| match error {
+        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
+            SmilesParseError::StereoGroup(cause)
+        }
+        other => SmilesParseError::Model(other.to_string()),
+    })?;
     Ok(())
 }
 
@@ -2582,4 +2736,152 @@ mod uint_complete_source_condition_cells {
 #[cfg(test)]
 fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
     std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
+}
+
+#[cfg(test)]
+mod recovery_chem29_smiles {
+    use super::*;
+    use cosmolkit_model::StereoGroupError;
+    #[test]
+    fn strict_new_same_record_failure_differs_from_constructor_value_error() {
+        let same = crate::parse_smiles("CC |o1:0,0|", &Default::default()).unwrap_err();
+        assert!(matches!(same, SmilesParseError::Cx(_)));
+        let cross = crate::parse_smiles("CC |o1:0,o1:0|", &Default::default()).unwrap_err();
+        assert_eq!(
+            cross,
+            SmilesParseError::StereoGroup(StereoGroupError::DuplicateAtom)
+        );
+        assert_eq!(
+            std::error::Error::source(&cross)
+                .unwrap()
+                .downcast_ref::<StereoGroupError>(),
+            Some(&StereoGroupError::DuplicateAtom)
+        );
+    }
+    #[test]
+    fn lax_failure_keeps_prior_group_and_stops_suffix_name_and_mutation() {
+        for (cx, expected) in [
+            ("|o1:0,&2:1,1,a:0| suffix", "|o1:0,&2:1,1"),
+            ("|o1:0,o1:0,&2:1| suffix", "|o1:0,o1:0,"),
+        ] {
+            let record = crate::parse_smiles(
+                &format!("CC {cx}"),
+                &crate::SmilesParseParams {
+                    strict_cxsmiles: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(record.topology.stereo_groups.len(), 1);
+            assert_eq!(record.topology.stereo_groups[0].atoms(), [AtomId::new(0)]);
+            assert_eq!(
+                record
+                    .properties
+                    .prop("_CXSMILES_Data")
+                    .unwrap()
+                    .as_string()
+                    .unwrap()
+                    .as_bytes(),
+                expected.as_bytes()
+            );
+            assert_eq!(record.properties.name(), None);
+        }
+    }
+    #[test]
+    fn accepted_index_filter_precedes_new_duplicate_predicate_and_kinds_stay_independent() {
+        let record = crate::parse_smiles("CC |a:99,99,0,o1:0,&1:0|", &Default::default()).unwrap();
+        assert_eq!(record.topology.stereo_groups.len(), 3);
+        for group in record.topology.stereo_groups {
+            assert_eq!(group.atoms(), [AtomId::new(0)]);
+        }
+    }
+    #[test]
+    fn private_existing_tracker_error_precedes_later_same_record_warning() {
+        let mut record = crate::parse_smiles("CC", &Default::default()).unwrap();
+        record.properties.set_prop("_sgTracker", "bad").unwrap();
+        let p = cosmolkit_cx::parse_cx_extensions_progress_with_atom_window("|o1:0,&2:1,1|", 0, 2);
+        let mut cursor = 0;
+        let error = apply_enhanced_duplicate_progress(&mut record, &p, &mut cursor).unwrap_err();
+        assert!(matches!(error, SmilesParseError::Model(_)));
+        assert_eq!(cursor, "|o1:0,".len());
+        assert!(record.topology.stereo_groups.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem26 {
+    use super::*;
+    fn record(text: &str) -> crate::SmilesRecord {
+        crate::parse_smiles(
+            text,
+            &crate::SmilesParseParams {
+                sanitize: false,
+                remove_hs: false,
+                skip_cleanup: true,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+    #[test]
+    fn exact_lookup_slots_priority_early_error_and_unsigned_underflow() {
+        for (text, slots) in [
+            ("CCC", vec![0, 1]),
+            ("C1CC1CC", vec![0, 1, 4, 2, 3]),
+            ("C1CC1C2CC2C", vec![0, 1, 6, 2, 3, 4, 7, 5]),
+        ] {
+            let r = record(text);
+            for (raw, physical) in slots.into_iter().enumerate() {
+                assert_eq!(
+                    bond_with_smiles_index(&r.topology, raw).unwrap(),
+                    Some(BondId::new(physical))
+                );
+            }
+        }
+        let mut r = record("CCC");
+        r.topology.bonds[1]
+            .set_prop(
+                CXSMILES_BOND_IDX_PROP,
+                cosmolkit_model::PropertyValue::UInt(0),
+            )
+            .unwrap();
+        assert_eq!(
+            bond_with_smiles_index(&r.topology, 0).unwrap(),
+            Some(BondId::new(1))
+        );
+        assert_eq!(
+            bond_with_smiles_index(&r.topology, 1).unwrap(),
+            Some(BondId::new(0))
+        );
+        r.topology.bonds[0]
+            .set_prop(
+                CXSMILES_BOND_IDX_PROP,
+                cosmolkit_model::PropertyValue::UInt(0),
+            )
+            .unwrap();
+        assert_eq!(
+            bond_with_smiles_index(&r.topology, 0).unwrap(),
+            Some(BondId::new(0))
+        );
+        assert_eq!(bond_with_smiles_index(&r.topology, 1).unwrap(), None);
+        r.topology.bonds[1]
+            .set_prop(
+                CXSMILES_BOND_IDX_PROP,
+                cosmolkit_model::PropertyValue::IntVector(vec![]),
+            )
+            .unwrap();
+        assert_eq!(
+            bond_with_smiles_index(&r.topology, 0).unwrap(),
+            Some(BondId::new(0))
+        );
+        assert!(matches!(
+            bond_with_smiles_index(&r.topology, 1),
+            Err(SmilesParseError::WriterNumeric(_))
+        ));
+        let r = record("C1CC1CC");
+        assert_eq!(
+            bond_with_smiles_index(&r.topology, 5).unwrap(),
+            Some(BondId::new(4))
+        );
+    }
 }

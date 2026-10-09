@@ -367,6 +367,8 @@ struct FragmentSubsetInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 enum SelectedBondCopyError {
+    #[error("{0}")]
+    Stereo(#[from] cosmolkit_model::BondValueError),
     #[error("copyMolSubset: subset bonds contain atoms not contained in subset atoms")]
     MissingEndpointMapping { bond: BondId, atom: AtomId },
 }
@@ -489,6 +491,173 @@ fn copy_selected_atoms(
     Ok(copied_atoms)
 }
 
+fn subset_other_stereo_atom(
+    reference: &TopologyBlock,
+    bond: &Bond,
+    endpoint: AtomId,
+    original: AtomId,
+) -> AtomId {
+    // BEGIN COMPLETE RDKit .6 Subset::getOtherAtomIdx
+    // RDKit✔️✔️: atomindex_t getOtherAtomIdx(const ROMol &ref_mol, const Bond &ref_bond,
+    // RDKit✔️✔️:                             atomindex_t dblBndAtomIdx,
+    // RDKit✔️✔️:                             atomindex_t stereoAtomIdx) {
+    // RDKit✔️✔️:   auto ref_atom = ref_bond.getBeginAtom();
+    // RDKit✔️✔️:   auto other_atom = ref_bond.getEndAtom();
+    // RDKit✔️✔️:   if (other_atom->getIdx() == dblBndAtomIdx) {
+    // RDKit✔️✔️:     std::swap(ref_atom, other_atom);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   CHECK_INVARIANT(ref_atom->getIdx() == dblBndAtomIdx,
+    // RDKit✔️✔️:                 "dblBndAtomIdx should be one of the bond's atoms");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (auto nbr : ref_mol.atomNeighbors(ref_atom)) {
+    // RDKit✔️✔️:     auto nbrIdx = nbr->getIdx();
+    // RDKit✔️✔️:     if (nbrIdx != stereoAtomIdx && nbr != other_atom) {
+    // RDKit✔️✔️:       return nbrIdx;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return RDKit::Atom::NOATOM;
+    // RDKit✔️✔️: }
+    // END COMPLETE RDKit .6 Subset::getOtherAtomIdx
+    let other = if endpoint == bond.begin() {
+        bond.end()
+    } else {
+        bond.begin()
+    };
+    reference
+        .adjacency
+        .neighbors_of(endpoint.index())
+        .iter()
+        .map(|n| AtomId::new(n.atom_index))
+        .find(|&n| n != original && n != other)
+        .unwrap_or(AtomId::new(u32::MAX as usize))
+}
+
+pub(crate) fn handle_subset_bond_stereo(
+    reference: &TopologyBlock,
+    bond: &Bond,
+    mapping: &BTreeMap<AtomId, AtomId>,
+) -> (BondStereo, Option<[AtomId; 2]>) {
+    // BEGIN COMPLETE RDKit .6 Subset::handleBondStereo
+    // RDKit✔️✔️: void handleBondStereo(Bond &extracted_bond, const Bond &ref_bond,
+    // RDKit✔️✔️:                       const ROMol &ref_mol,
+    // RDKit✔️✔️:                       const std::map<unsigned int, unsigned int> &atomMapping) {
+    // RDKit✔️✔️:   auto &atoms = extracted_bond.getStereoAtoms();
+    // RDKit✔️✔️:   if (atoms.size() != 2) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool needsSwap = false;
+    // RDKit✔️✔️:   auto map1 = atomMapping.find(atoms[0]);
+    // RDKit✔️✔️:   auto map2 = atomMapping.find(atoms[1]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (map1 == atomMapping.end()) {
+    // RDKit✔️✔️:     auto begin_atom = ref_bond.getBeginAtom();
+    // RDKit✔️✔️:     if (begin_atom->getDegree() < 3) {
+    // RDKit✔️✔️:       // No alternative atom on this side; clear stereo from the bond
+    // RDKit✔️✔️:       atoms.clear();
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     auto otherNeighborIdx =
+    // RDKit✔️✔️:         getOtherAtomIdx(ref_mol, ref_bond, begin_atom->getIdx(), atoms[0]);
+    // RDKit✔️✔️:     map1 = atomMapping.find(otherNeighborIdx);
+    // RDKit✔️✔️:     if (map1 == atomMapping.end()) {
+    // RDKit✔️✔️:       // The alternative atom wasn't extracted either; clear stereo
+    // RDKit✔️✔️:       atoms.clear();
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Ok, we can swap the stereo atom to the other neighbor on this side
+    // RDKit✔️✔️:     needsSwap = !needsSwap;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (map2 == atomMapping.end()) {
+    // RDKit✔️✔️:     auto end_atom = ref_bond.getEndAtom();
+    // RDKit✔️✔️:     if (end_atom->getDegree() < 3) {
+    // RDKit✔️✔️:       // No alternative atom on this side; clear stereo from the bond
+    // RDKit✔️✔️:       atoms.clear();
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     auto otherNeighborIdx =
+    // RDKit✔️✔️:         getOtherAtomIdx(ref_mol, ref_bond, end_atom->getIdx(), atoms[1]);
+    // RDKit✔️✔️:     map2 = atomMapping.find(otherNeighborIdx);
+    // RDKit✔️✔️:     if (map2 == atomMapping.end()) {
+    // RDKit✔️✔️:       // The alternative atom wasn't extracted either; clear stereo
+    // RDKit✔️✔️:       atoms.clear();
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Ok, we can swap the stereo atom to the other neighbor on this side
+    // RDKit✔️✔️:     needsSwap = !needsSwap;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   atoms[0] = map1->second;
+    // RDKit✔️✔️:   atoms[1] = map2->second;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Finally, update the label. Since CIP ranges may have changed,
+    // RDKit✔️✔️:   // convert E/Z to CIS/TRANS to keep the right stereo.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!needsSwap) {
+    // RDKit✔️✔️:     if (ref_bond.getStereo() == Bond::STEREOZ) {
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREOCIS);
+    // RDKit✔️✔️:     } else if (ref_bond.getStereo() == Bond::STEREOE) {
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREOTRANS);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     if (ref_bond.getStereo() == Bond::STEREOZ ||
+    // RDKit✔️✔️:         ref_bond.getStereo() == Bond::STEREOCIS) {
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREOTRANS);
+    // RDKit✔️✔️:     } else if (ref_bond.getStereo() == Bond::STEREOE ||
+    // RDKit✔️✔️:                ref_bond.getStereo() == Bond::STEREOTRANS) {
+    // RDKit✔️✔️:       extracted_bond.setStereo(Bond::STEREOCIS);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END COMPLETE RDKit .6 Subset::handleBondStereo
+    let Some([first, second]) = bond.stereo_atoms() else {
+        return (bond.stereo(), None);
+    };
+    let mut swapped = false;
+    let first = if let Some(&mapped) = mapping.get(&first) {
+        mapped
+    } else {
+        if reference.adjacency.neighbors_of(bond.begin().index()).len() < 3 {
+            return (BondStereo::None, None);
+        }
+        let alternate = subset_other_stereo_atom(reference, bond, bond.begin(), first);
+        let Some(&mapped) = mapping.get(&alternate) else {
+            return (BondStereo::None, None);
+        };
+        swapped = !swapped;
+        mapped
+    };
+    let second = if let Some(&mapped) = mapping.get(&second) {
+        mapped
+    } else {
+        if reference.adjacency.neighbors_of(bond.end().index()).len() < 3 {
+            return (BondStereo::None, None);
+        }
+        let alternate = subset_other_stereo_atom(reference, bond, bond.end(), second);
+        let Some(&mapped) = mapping.get(&alternate) else {
+            return (BondStereo::None, None);
+        };
+        swapped = !swapped;
+        mapped
+    };
+    let stereo = match (swapped, bond.stereo()) {
+        (false, BondStereo::Z) | (true, BondStereo::E | BondStereo::Trans) => BondStereo::Cis,
+        (false, BondStereo::E) | (true, BondStereo::Z | BondStereo::Cis) => BondStereo::Trans,
+        (_, other) => other,
+    };
+    (stereo, Some([first, second]))
+}
+
 fn copy_selected_bonds(
     reference: &TopologyBlock,
     selection_info: &mut FragmentSubsetInfo,
@@ -496,53 +665,63 @@ fn copy_selected_bonds(
     // UFF-FRAG uses copyAsQuery=false. Preserve this source bond loop as a
     // raw detached-row operation; validated topology construction happens at
     // a later owner boundary.
-    // BEGIN RDKIT CPP FUNCTION copySelectedAtomsAndBonds selected bond loop
-    // RDKit✔️✔️:   for (const auto &ref_bond : reference_mol.bonds()) {
-    // RDKit✔️✔️:     if (!selectedBonds[ref_bond->getIdx()]) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (atomMapping.find(ref_bond->getBeginAtomIdx()) == atomMapping.end() ||
-    // RDKit✔️✔️:         atomMapping.find(ref_bond->getEndAtomIdx()) == atomMapping.end()) {
-    // RDKit✔️✔️:       throw ValueErrorException("copyMolSubset: subset bonds contain atoms not contained in subset atoms");
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     std::unique_ptr<Bond> extracted_bond{
-    // RDKit✔️✔️:         options.copyAsQuery ? new QueryBond(*ref_bond) : ref_bond->copy()};
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     // Check the stereo atoms
-    // RDKit✔️✔️:     auto &atoms = extracted_bond->getStereoAtoms();
-    // RDKit✔️✔️:     if (atoms.size() == 2) {
-    // RDKit✔️✔️:       auto map1 = atomMapping.find(atoms[0]);
-    // RDKit✔️✔️:       auto map2 = atomMapping.find(atoms[1]);
-    // RDKit✔️✔️:       if (map1 != atomMapping.end() && map2 != atomMapping.end()) {
-    // RDKit✔️✔️:         atoms[0] = map1->second;
-    // RDKit✔️✔️:         atoms[1] = map2->second;
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         atoms.clear();  // We couldn't map the stereo atoms
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     for (auto &atomidx : atoms) {
-    // RDKit✔️✔️:       auto map = atomMapping.find(atomidx);
-    // RDKit✔️✔️:       if (map != atomMapping.end()) {
-    // RDKit✔️✔️:         atomidx = map->second;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     extracted_bond->setBeginAtomIdx(atomMapping[ref_bond->getBeginAtomIdx()]);
-    // RDKit✔️✔️:     extracted_bond->setEndAtomIdx(atomMapping[ref_bond->getEndAtomIdx()]);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     constexpr bool takeOwnership = true;
-    // RDKit✔️✔️:     auto num_bonds =
-    // RDKit✔️✔️:         extracted_mol.addBond(extracted_bond.release(), takeOwnership);
-    // RDKit✔️✔️:     bondMapping[ref_bond->getIdx()] = num_bonds - 1;
-    // RDKit✔️✔️:   }
-    // END RDKIT CPP FUNCTION copySelectedAtomsAndBonds selected bond loop
-    // Behavior: selected source bond rows are copied in order. Endpoint map
-    // checks fail before copying; stereo references get both source passes,
-    // and clone/remap preserves all other typed and property state.
-    // Complexity: O(B log A + C log B + copied property bytes) time and O(C)
-    // output/map storage; BTreeMap matches source std::map lookup costs.
+    // BEGIN COMPLETE RDKit .6 Subset::copySelectedAtomsAndBonds
+    // RDKit❗✔️: static void copySelectedAtomsAndBonds(RWMol &extracted_mol,
+    // RDKit❗✔️:                                       const RDKit::ROMol &reference_mol,
+    // RDKit❗✔️:                                       SubsetInfo &selection_info,
+    // RDKit❗✔️:                                       const SubsetOptions &options) {
+    // RDKit❗✔️:   auto &[selectedAtoms, selectedBonds, atomMapping, bondMapping] =
+    // RDKit❗✔️:       selection_info;
+    // RDKit❗✔️:   for (const auto &ref_atom : reference_mol.atoms()) {
+    // RDKit❗✔️:     if (!selectedAtoms[ref_atom->getIdx()]) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     std::unique_ptr<Atom> extracted_atom{
+    // RDKit❗✔️:         options.copyAsQuery ? new QueryAtom(*ref_atom) : ref_atom->copy()};
+    // RDKit❗✔️:     extracted_atom->clearComputedProps();
+    // RDKit❗✔️:
+    // RDKit❗✔️:     constexpr bool updateLabel = false;
+    // RDKit❗✔️:     constexpr bool takeOwnership = true;
+    // RDKit❗✔️:     atomMapping[ref_atom->getIdx()] = extracted_mol.addAtom(
+    // RDKit❗✔️:         extracted_atom.release(), updateLabel, takeOwnership);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (const auto &ref_bond : reference_mol.bonds()) {
+    // RDKit❗✔️:     if (!selectedBonds[ref_bond->getIdx()]) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (atomMapping.find(ref_bond->getBeginAtomIdx()) == atomMapping.end() ||
+    // RDKit❗✔️:         atomMapping.find(ref_bond->getEndAtomIdx()) == atomMapping.end()) {
+    // RDKit❗✔️:       throw ValueErrorException(
+    // RDKit❗✔️:           "copyMolSubset: subset bonds contain atoms not contained in subset atoms");
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     std::unique_ptr<Bond> extracted_bond{
+    // RDKit❗✔️:         options.copyAsQuery ? new QueryBond(*ref_bond) : ref_bond->copy()};
+    // RDKit❗✔️:
+    // RDKit❗✔️:     handleBondStereo(*extracted_bond, *ref_bond, reference_mol, atomMapping);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     extracted_bond->setBeginAtomIdx(atomMapping[ref_bond->getBeginAtomIdx()]);
+    // RDKit❗✔️:     extracted_bond->setEndAtomIdx(atomMapping[ref_bond->getEndAtomIdx()]);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     constexpr bool takeOwnership = true;
+    // RDKit❗✔️:     auto num_bonds =
+    // RDKit❗✔️:         extracted_mol.addBond(extracted_bond.release(), takeOwnership);
+    // RDKit❗✔️:     bondMapping[ref_bond->getIdx()] = num_bonds - 1;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we need to update rings now
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (selectedBonds.any() && reference_mol.getRingInfo()->isInitialized()) {
+    // RDKit❗✔️:     extracted_mol.getRingInfo()->reset();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // END COMPLETE RDKit .6 Subset::copySelectedAtomsAndBonds
+    // This existing private owner carries the selected-bond phase. Atom copy
+    // remains in copy_selected_atoms; optional source ring metadata is handled
+    // by its unchanged enclosing owner. Source mapping lookups and adjacency
+    // order are preserved; copied properties/temporary flags remain one clone.
     let mut copied_bonds = Vec::new();
     for ref_bond in &reference.bonds {
         if !selection_info
@@ -567,29 +746,14 @@ fn copy_selected_bonds(
             });
         };
 
-        let mut stereo_atoms = ref_bond.stereo_atoms();
-        if let Some([first, second]) = stereo_atoms {
-            stereo_atoms = match (
-                selection_info.atom_mapping.get(&first),
-                selection_info.atom_mapping.get(&second),
-            ) {
-                (Some(&new_first), Some(&new_second)) => Some([new_first, new_second]),
-                _ => None,
-            };
-        }
-
-        if let Some(atoms) = &mut stereo_atoms {
-            for atom_index in atoms {
-                if let Some(&mapped_index) = selection_info.atom_mapping.get(atom_index) {
-                    *atom_index = mapped_index;
-                }
-            }
-        }
+        let (stereo, stereo_atoms) =
+            handle_subset_bond_stereo(reference, ref_bond, &selection_info.atom_mapping);
 
         let new_id = BondId::new(copied_bonds.len());
-        let copied_bond = ref_bond
+        let mut copied_bond = ref_bond
             .clone()
             .remapped(new_id, new_begin, new_end, stereo_atoms);
+        copied_bond.set_stereo(stereo)?;
         copied_bonds.push(copied_bond);
         selection_info.bond_mapping.insert(ref_bond.id(), new_id);
     }
@@ -858,7 +1022,7 @@ fn copy_selected_substance_groups(
 fn copy_selected_stereo_groups(
     reference: &[StereoGroup],
     selection_info: &FragmentSubsetInfo,
-) -> Vec<StereoGroup> {
+) -> Result<Vec<StereoGroup>, cosmolkit_model::StereoGroupError> {
     // BEGIN RDKIT CPP FUNCTION copySelectedStereoGroups
     // RDKit✔️🔝: static void copySelectedStereoGroups(RWMol &extracted_mol,
     // RDKit✔️🔝:                                      const RDKit::ROMol &reference_mol,
@@ -950,13 +1114,13 @@ fn copy_selected_stereo_groups(
             .iter()
             .filter_map(|bond| selection_info.bond_mapping.get(bond).copied())
             .collect();
-        let mut copied_group = StereoGroup::new(source_group.kind(), atoms, bonds);
+        let mut copied_group = StereoGroup::new(source_group.kind(), atoms, bonds)?;
         if let Some(read_id) = source_group.id() {
             copied_group = copied_group.with_id(read_id);
         }
         copied_groups.push(copied_group.with_write_id(source_group.write_id()));
     }
-    copied_groups
+    Ok(copied_groups)
 }
 
 fn copy_full_molecule_coordinates(source: &FragmentCoordinateView<'_>) -> CoordinateBlock {
@@ -1731,6 +1895,9 @@ struct AtomPathSubsetCopy {
 
 #[derive(Debug, thiserror::Error)]
 enum AtomPathSubsetCopyError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error(transparent)]
     ComputedProperties(#[from] TopologyEditError),
     #[error("molecule property operation failed: {0}")]
@@ -1897,7 +2064,7 @@ fn copy_mol_subset_atom_path_with_view(
     let substance_groups =
         copy_selected_substance_groups(&source_topology.substance_groups, &selection_info)?;
     let stereo_groups =
-        copy_selected_stereo_groups(&source_topology.stereo_groups, &selection_info);
+        copy_selected_stereo_groups(&source_topology.stereo_groups, &selection_info)?;
 
     let mut topology =
         TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)?;
@@ -2875,7 +3042,7 @@ mod cf3d_frag_f06_tests {
         read_id: Option<u32>,
         write_id: u32,
     ) -> StereoGroup {
-        let group = StereoGroup::new(kind, atoms, bonds);
+        let group = StereoGroup::new(kind, atoms, bonds).expect("valid distinct stereo members");
         let group = match read_id {
             Some(id) => group.with_id(id),
             None => group,
@@ -3060,7 +3227,7 @@ mod cf3d_frag_f06_tests {
                     .insert(BondId::new(*source_index), BondId::new(mapped));
             }
 
-            let actual = copy_selected_stereo_groups(&reference, &selection);
+            let actual = copy_selected_stereo_groups(&reference, &selection).unwrap();
             let mut expected = Vec::new();
             if case.retain_nonempty_groups {
                 expected.push(group(
@@ -4038,7 +4205,14 @@ mod cf3d_frag_f04_tests {
             assert_eq!(copied_bond.id(), BondId::new(row));
             assert_eq!(copied_bond.begin(), original.begin());
             assert_eq!(copied_bond.end(), original.end());
-            assert_eq!(copied_bond.stereo(), tags[row]);
+            assert_eq!(
+                copied_bond.stereo(),
+                match tags[row] {
+                    BondStereo::E => BondStereo::Trans,
+                    BondStereo::Z => BondStereo::Cis,
+                    other => other,
+                }
+            );
             assert_eq!(
                 copied_bond.stereo_atoms(),
                 Some([AtomId::new(14), AtomId::new(15)])
@@ -4078,7 +4252,14 @@ mod cf3d_frag_f04_tests {
                     .expect("the selected bond endpoints are mapped");
                 let output = &copied[0];
 
-                assert_eq!(output.stereo(), stereo);
+                assert_eq!(
+                    output.stereo(),
+                    if retained_refs == 3 {
+                        stereo
+                    } else {
+                        BondStereo::None
+                    }
+                );
                 if retained_refs == 3 {
                     assert_eq!(
                         output.stereo_atoms(),
@@ -4087,7 +4268,7 @@ mod cf3d_frag_f04_tests {
                     assert_eq!(output.validate(), Ok(()));
                 } else {
                     assert_eq!(output.stereo_atoms(), None);
-                    assert_eq!(output.validate(), Err(BondValueError::StereoAtomsRequired));
+                    assert_eq!(output.validate(), Ok(()));
                 }
             }
         }
@@ -4112,7 +4293,7 @@ mod cf3d_frag_f04_tests {
         assert_eq!(copied[0].stereo(), BondStereo::Cis);
         assert_eq!(
             copied[0].stereo_atoms(),
-            Some([AtomId::new(0), AtomId::new(0)])
+            Some([AtomId::new(0), AtomId::new(1)])
         );
     }
 
@@ -4567,6 +4748,7 @@ mod cf3d_frag_f10_tests {
             vec![AtomId::new(5)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(17)
         .with_write_id(9);
         let topology =
@@ -5018,14 +5200,16 @@ mod cf3d_frag_f11_tests {
             (vec![], false),
         ];
         for (atoms, expected) in atom_cases {
-            let group = StereoGroup::new(StereoGroupKind::Absolute, atoms, vec![]);
+            let group = StereoGroup::new(StereoGroupKind::Absolute, atoms, vec![])
+                .expect("valid distinct stereo members");
             let topology = topology(plain, &[], Vec::new(), vec![group]);
             assert_eq!(challenging(&topology, &[0], &[0]), expected);
         }
 
         let bond_cases = [(vec![0, 1], true), (vec![0], false), (vec![], false)];
         for (selected_atoms, expected) in bond_cases {
-            let group = StereoGroup::new(StereoGroupKind::Or, vec![], vec![BondId::new(0)]);
+            let group = StereoGroup::new(StereoGroupKind::Or, vec![], vec![BondId::new(0)])
+                .expect("valid distinct stereo members");
             let topology = topology(plain, &[(0, 1, BondStereo::None)], Vec::new(), vec![group]);
             let component = if selected_atoms.len() == 2 {
                 vec![0, 1]
@@ -5045,11 +5229,14 @@ mod cf3d_frag_f11_tests {
             &[ChiralTag::TetrahedralCw, ChiralTag::Unspecified],
             &[(0, 1, BondStereo::None)],
             vec![sgroup(vec![AtomId::new(0)], vec![], vec![])],
-            vec![StereoGroup::new(
-                StereoGroupKind::And,
-                vec![AtomId::new(0)],
-                vec![BondId::new(0)],
-            )],
+            vec![
+                StereoGroup::new(
+                    StereoGroupKind::And,
+                    vec![AtomId::new(0)],
+                    vec![BondId::new(0)],
+                )
+                .expect("valid distinct stereo members"),
+            ],
         );
 
         assert!(challenging(&topology, &[0, 1], &[0, 1]));
@@ -5116,6 +5303,7 @@ mod cf3d_frag_f15_tests {
                     vec![AtomId::new(component * 2)],
                     vec![BondId::new(component)],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(100 + component as u32)
                 .with_write_id(200 + component as u32)
             })
@@ -5530,6 +5718,7 @@ mod cf3d_frag_f16_tests {
         .with_atoms(vec![AtomId::new(0)])
         .with_label("singleton-group");
         let stereo_group = StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], vec![])
+            .expect("valid distinct stereo members")
             .with_id(3)
             .with_write_id(9);
         let topology =
@@ -5577,6 +5766,7 @@ mod cf3d_frag_f16_tests {
             vec![AtomId::new(0), AtomId::new(1)],
             vec![BondId::new(0)],
         )
+        .expect("valid distinct stereo members")
         .with_id(17)
         .with_write_id(29);
         let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![group], vec![stereo_group])
@@ -7245,5 +7435,108 @@ mod source570_owned_fragment_tests {
         assert_eq!(output, before);
         assert_eq!(labels, vec![0, 1]);
         assert_eq!(maps, vec![vec![91], vec![0]]);
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem24 {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_types::{BondOrder, Element};
+    fn graph(stereo: BondStereo) -> TopologyBlock {
+        let atoms = (0..6)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let edges = [
+            (0, 1, BondOrder::Double),
+            (0, 2, BondOrder::Single),
+            (0, 3, BondOrder::Single),
+            (1, 4, BondOrder::Single),
+            (1, 5, BondOrder::Single),
+        ];
+        let mut bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                )
+            })
+            .collect::<Vec<_>>();
+        bonds[0].set_stereo_atoms(Some([AtomId::new(2), AtomId::new(4)]));
+        bonds[0].set_stereo(stereo).unwrap();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    #[test]
+    fn source_alternative_side_xor_and_ez_normalization_matrix() {
+        for stereo in [
+            BondStereo::Z,
+            BondStereo::E,
+            BondStereo::Cis,
+            BondStereo::Trans,
+        ] {
+            for sides in 0..4 {
+                let g = graph(stereo);
+                let a = if sides & 1 == 0 { 2 } else { 3 };
+                let b = if sides & 2 == 0 { 4 } else { 5 };
+                let mapping = BTreeMap::from([
+                    (AtomId::new(0), AtomId::new(0)),
+                    (AtomId::new(1), AtomId::new(1)),
+                    (AtomId::new(a), AtomId::new(2)),
+                    (AtomId::new(b), AtomId::new(3)),
+                ]);
+                let swap = (sides == 1) || (sides == 2);
+                let cis = matches!(stereo, BondStereo::Z | BondStereo::Cis) ^ swap;
+                assert_eq!(
+                    handle_subset_bond_stereo(&g, &g.bonds[0], &mapping),
+                    (
+                        if cis {
+                            BondStereo::Cis
+                        } else {
+                            BondStereo::Trans
+                        },
+                        Some([AtomId::new(2), AtomId::new(3)])
+                    )
+                );
+            }
+        }
+    }
+    #[test]
+    fn source_first_alternative_not_next_selected_and_missing_side_clears() {
+        let mut g = graph(BondStereo::E);
+        // Add a later selected alternative on begin side: the first unselected
+        // candidate3 must be chosen and fail, rather than searching candidate6.
+        g.atoms
+            .push(Atom::from_spec(AtomId::new(6), AtomSpec::new(Element::C)));
+        g.bonds.push(Bond::from_spec(
+            BondId::new(5),
+            BondSpec::new(AtomId::new(0), AtomId::new(6), BondOrder::Single),
+        ));
+        g = TopologyBlock::try_from_parts(g.atoms, g.bonds, vec![], vec![]).unwrap();
+        let mapping = BTreeMap::from([
+            (AtomId::new(0), AtomId::new(0)),
+            (AtomId::new(1), AtomId::new(1)),
+            (AtomId::new(4), AtomId::new(2)),
+            (AtomId::new(6), AtomId::new(3)),
+        ]);
+        assert_eq!(
+            subset_other_stereo_atom(&g, &g.bonds[0], AtomId::new(0), AtomId::new(2)),
+            AtomId::new(3)
+        );
+        assert_eq!(
+            handle_subset_bond_stereo(&g, &g.bonds[0], &mapping),
+            (BondStereo::None, None)
+        );
+        let mapping = BTreeMap::from([
+            (AtomId::new(2), AtomId::new(1)),
+            (AtomId::new(4), AtomId::new(0)),
+            (AtomId::new(0), AtomId::new(2)),
+            (AtomId::new(1), AtomId::new(3)),
+        ]);
+        assert_eq!(
+            handle_subset_bond_stereo(&g, &g.bonds[0], &mapping),
+            (BondStereo::Trans, Some([AtomId::new(1), AtomId::new(0)]))
+        );
     }
 }

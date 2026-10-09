@@ -590,6 +590,8 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::Hydrogen(..) => "Hydrogen",
         E::InvalidAlgorithmResult { .. } => "InvalidAlgorithmResult",
         E::Algorithm { .. } => "Algorithm",
+        #[cfg(feature = "cap-hashing")]
+        E::Scaffold(..) => "Scaffold",
     };
     let error = Error::new(&source.to_string());
     error.set_name("OperationError");

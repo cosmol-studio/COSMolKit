@@ -169,6 +169,143 @@ impl Molecule {
 
 #[cfg(test)]
 mod tests {
+    use crate::{AtomSpec, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder};
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_export_core_boundary() {
+        // Explicit MolToInchi precondition, independent of CXSMILES parsing.
+        // .6 inchi.cpp:2037–2078 consumes Any and adjacency, not stereoAtoms.
+        // The separate nine official SMILES regression remains unchanged.
+        for reverse in [false, true] {
+            let mut builder = MoleculeBuilder::new();
+            let fluorine = builder.add_atom(AtomSpec::new(Element::F));
+            let left = builder.add_atom(AtomSpec::new(Element::C));
+            let right = builder.add_atom(AtomSpec::new(Element::C));
+            let chlorine = builder.add_atom(AtomSpec::new(Element::CL));
+            builder
+                .add_bond(BondSpec::new(fluorine, left, BondOrder::Single))
+                .unwrap();
+            builder
+                .add_bond(
+                    BondSpec::new(
+                        if reverse { right } else { left },
+                        if reverse { left } else { right },
+                        BondOrder::Double,
+                    )
+                    .with_stereo(BondStereo::Any),
+                )
+                .unwrap();
+            builder
+                .add_bond(BondSpec::new(right, chlorine, BondOrder::Single))
+                .unwrap();
+            let molecule = builder.build().unwrap();
+            assert_eq!(molecule.bonds()[1].stereo(), BondStereo::Any);
+            assert_eq!(molecule.bonds()[1].stereo_atoms(), None);
+            let before = molecule.clone();
+            let generated = molecule
+                .to_inchi_with_params(&InchiWriteParams::new("-SUU".into()))
+                .unwrap();
+            assert!(!generated.is_empty());
+            assert_eq!(molecule, before);
+            let restored = Molecule::from_inchi(&generated).unwrap();
+            let unknown = restored
+                .bonds()
+                .iter()
+                .filter(|bond| bond.stereo() == BondStereo::Any)
+                .collect::<Vec<_>>();
+            assert_eq!(unknown.len(), 1);
+            assert_eq!(unknown[0].order(), BondOrder::Double);
+            let controllers = unknown[0]
+                .stereo_atoms()
+                .expect("INCHI01 UNKNOWN import retains both controllers");
+            assert_ne!(controllers[0], controllers[1]);
+            assert!(
+                controllers
+                    .iter()
+                    .all(|atom| atom.index() < restored.num_atoms())
+            );
+        }
+    }
+
+    #[cfg(feature = "cap-smiles")]
+    fn check_rdkit_2026_03_inchi_unknown_roundtrip(smiles: &str) {
+        let molecule = Molecule::from_smiles(smiles).unwrap();
+        assert!(
+            molecule
+                .bonds()
+                .iter()
+                .any(|b| b.stereo() == BondStereo::Any),
+            "{smiles}"
+        );
+        // RDKit .6 inchi.cpp:1751 copies the input molecule before modifying it.
+        // Compare the complete modeled value: the current detached SMILES writer
+        // independently rejects Any stereo, so serialization cannot observe this input.
+        let before = molecule.clone();
+        let generated = molecule
+            .to_inchi_with_params(&InchiWriteParams::new("-SUU".into()))
+            .unwrap();
+        assert!(!generated.is_empty());
+        assert_eq!(molecule, before);
+        let restored = Molecule::from_inchi(&generated).unwrap();
+        let unknown = restored
+            .bonds()
+            .iter()
+            .filter(|b| b.stereo() == BondStereo::Any)
+            .collect::<Vec<_>>();
+        assert!(!unknown.is_empty(), "{smiles}: {generated:?}");
+        assert!(
+            unknown.iter().all(|b| b.stereo_atoms().is_some()),
+            "{smiles}"
+        );
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_01() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("CSC1=NSC(CC=NC2=CC=CC=C2)=C1C#N |w:8.8|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_02() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("O/N=C/c1ccccc1 |w:1.1|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_03() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("OC(=O)/C=C/c1ccccc1 |w:3.3|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_04() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("O=C(/C=C/c1ccccc1)c1ccccc1 |w:2.2|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_05() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("C/C=C/C=O |w:1.1|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_06() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip(
+            "CC/C(=C(/c1ccccc1)c1ccc(OCCN(C)C)cc1)c1ccccc1 |w:2.2|",
+        );
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_07() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip(
+            "CC1=C(/C=C/C(C)=C/C=C/C(C)=C/C=O)C(C)(C)CCC1 |w:3.3|",
+        );
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_08() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("O=C(O)[C@@H](CC=Cc1ccccc1)N |w:4.4|");
+    }
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn rdkit_2026_03_inchi_unknown_roundtrip_upstream_09() {
+        check_rdkit_2026_03_inchi_unknown_roundtrip("C[C@H](O)/C(=N/O)c1ccccc1 |w:3.3|");
+    }
     use super::*;
 
     #[test]

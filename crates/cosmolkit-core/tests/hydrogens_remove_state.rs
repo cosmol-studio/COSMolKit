@@ -589,8 +589,11 @@ fn higher_degree_removal_remaps_sgroups_and_enhanced_stereo_without_stale_ids() 
         SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
             .with_atoms(vec![atom(0), atom(2)]),
     ];
-    let stereo =
-        vec![StereoGroup::new(StereoGroupKind::Or, vec![atom(0), atom(2)], Vec::new()).with_id(17)];
+    let stereo = vec![
+        StereoGroup::new(StereoGroupKind::Or, vec![atom(0), atom(2)], Vec::new())
+            .expect("valid distinct stereo members")
+            .with_id(17),
+    ];
     let source = topology_with_state(
         vec![
             AtomSpec::new(Element::C),

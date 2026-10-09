@@ -375,6 +375,9 @@ fn cip_state(value: CipStatePolicy) -> proc_macro2::TokenStream {
         CipStatePolicy::ReactionSourceTransition => {
             quote!(crate::ops::CipStatePolicy::ReactionSourceTransition)
         }
+        CipStatePolicy::ScaffoldSourceTransition => {
+            quote!(crate::ops::CipStatePolicy::ScaffoldSourceTransition)
+        }
     }
 }
 

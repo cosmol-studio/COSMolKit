@@ -1336,7 +1336,7 @@ pub enum McsCandidateMatchError {
     },
     #[error(transparent)]
     StereoOrder(#[from] cosmolkit_core::StereoOrderError),
-    #[error("MCS seed has {count} outgoing bonds; the source limit is 64")]
+    #[error("Number of new external bonds of a seed must be below 64")]
     TooManyNewBonds { count: usize },
     #[error("invalid MCS initial SMARTS: {message}")]
     InitialSeedParse { message: String },
@@ -4165,10 +4165,14 @@ impl McsSeed {
         }
 
         // RDKit✔️❌:   if (NewBonds.size() > 1) {
-        // RDKit✔️❌:     if (sizeof(unsigned long long) * 8 < NewBonds.size()) {
-        // RDKit✔️❌:       throw std::runtime_error(
-        // RDKit✔️❌:           "Max number of new external bonds of a seed >64");
-        // RDKit✔️❌:     }
+        // BEGIN RDKIT CPP FUNCTION RDKit::FMCS::Seed::grow external-bond bound
+        // RDKit✔️✔️:     if (sizeof(BitSet) * 8 <= NewBonds.size()) {
+        // RDKit✔️✔️:       throw std::runtime_error(
+        // RDKit✔️✔️:           "Number of new external bonds of a seed must be below 64");
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP FUNCTION RDKit::FMCS::Seed::grow external-bond bound
+        // Only the source bound/diagnostic changes. Existing complete grow anchors
+        // retain their conservative matcher-performance qualification.
         // RDKit✔️❌:     BitSet maxCompositionValue;
         // RDKit✔️❌:     Composition2N::compute2N(NewBonds.size(), maxCompositionValue);
         // RDKit✔️❌:     --maxCompositionValue;  // 2^N-1
@@ -4208,16 +4212,13 @@ impl McsSeed {
         // RDKit✔️❌:     }
         // RDKit✔️❌:   }
         if self.new_bonds.len() > 1 {
-            if self.new_bonds.len() > McsBitSet::BITS as usize {
+            if self.new_bonds.len() >= McsBitSet::BITS as usize {
                 return Err(McsCandidateMatchError::TooManyNewBonds {
                     count: self.new_bonds.len(),
                 });
             }
-            let max_composition_value = if self.new_bonds.len() == McsBitSet::BITS as usize {
-                McsBitSet::MAX
-            } else {
-                McsComposition2N::compute_2n(self.new_bonds.len() as u32) - 1
-            };
+            let max_composition_value =
+                McsComposition2N::compute_2n(self.new_bonds.len() as u32) - 1;
             let mut composition =
                 McsComposition2N::new(max_composition_value, max_composition_value);
             let mut new_atoms_set = vec![false; query.num_atoms()];
@@ -12274,5 +12275,151 @@ mod tests {
             None
         );
         assert_eq!(final_check_calls, 0);
+    }
+    fn fmcs01_star(frontier: usize) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..=frontier)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            (0..frontier)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    // Controlled detached valid topology + precomputed compatibility tables.
+    // These are genuine resumed grow() states, not sanitized high-valence carbon.
+    fn fmcs01_seed_and_tables(
+        query: &SearchTarget<'_>,
+        retained: usize,
+    ) -> (McsSeed, McsMatchTables) {
+        let mut seed = McsSeed {
+            excluded_bonds: vec![false; query.num_bonds()],
+            remaining_bonds: query.num_bonds(),
+            remaining_atoms: query.num_atoms() - 1,
+            ..McsSeed::default()
+        };
+        seed.add_atom(0);
+        seed.fill_new_bonds(query, None, &[], &[], 0, None).unwrap();
+        seed.growing_stage = 1; // resume after the source's already-attempted biggest child
+        let mut tables = q126_tables(query, query, false, false);
+        for i in 0..query.num_atoms() {
+            tables.atoms.set(i, i, true);
+        }
+        for i in 0..retained {
+            tables.bonds.set(i, i, true);
+        }
+        (seed, tables)
+    }
+
+    #[test]
+    fn fmcs01_grow_rejects_64_and_65_only_after_individual_frontier_attempts() {
+        for n in [64, 65] {
+            let topology = fmcs01_star(n);
+            let coordinates = CoordinateBlock::default();
+            let query = q107_target(&topology, &coordinates);
+            let (mut seed, tables) = fmcs01_seed_and_tables(&query, n);
+            let mut queue = McsSeedQueue::default();
+            let mut checks = 0;
+            let mut check = |_: usize, mapping: &[(usize, usize)], _: &McsParameters| {
+                assert_eq!(mapping.len(), 2);
+                checks += 1;
+                Ok(true)
+            };
+            let err = seed
+                .grow(
+                    &mut queue,
+                    &query,
+                    &[query],
+                    &[tables],
+                    1,
+                    0,
+                    0,
+                    &McsParameters::default(),
+                    Some(&mut check),
+                )
+                .unwrap_err();
+            assert_eq!(err, McsCandidateMatchError::TooManyNewBonds { count: n });
+            assert_eq!(
+                err.to_string(),
+                "Number of new external bonds of a seed must be below 64"
+            );
+            assert_eq!(checks, n);
+            assert_eq!(queue.seeds.len(), n);
+            assert_eq!(seed.new_bonds.len(), n);
+            assert_eq!(seed.growing_stage, 1);
+        }
+    }
+
+    #[test]
+    fn fmcs01_grow_allows_63_after_real_pruning_and_stops_at_first_composition_callback() {
+        let topology = fmcs01_star(65);
+        let coordinates = CoordinateBlock::default();
+        let query = q107_target(&topology, &coordinates);
+        let (mut seed, tables) = fmcs01_seed_and_tables(&query, 63);
+        let mut queue = McsSeedQueue::default();
+        let mut observed = Vec::new();
+        let sentinel = McsError::AtomOutOfRange {
+            side: "bounded-composition-test",
+            atom: usize::MAX,
+        };
+        let mut check = |_: usize, mapping: &[(usize, usize)], _: &McsParameters| {
+            observed.push(mapping.len());
+            if mapping.len() > 2 {
+                return Err(sentinel.clone());
+            }
+            Ok(true)
+        };
+        let err = seed
+            .grow(
+                &mut queue,
+                &query,
+                &[query],
+                &[tables],
+                1,
+                0,
+                0,
+                &McsParameters::default(),
+                Some(&mut check),
+            )
+            .unwrap_err();
+        assert_eq!(err, McsCandidateMatchError::State(sentinel));
+        assert_eq!(seed.new_bonds.len(), 63);
+        assert_eq!(queue.seeds.len(), 63);
+        assert_eq!(observed.len(), 64);
+        assert!(observed[..63].iter().all(|&n| n == 2));
+        assert_eq!(observed[63], 64); // first composition contains all 63 retained external bonds
+    }
+
+    #[test]
+    fn fmcs01_grow_prunes_65_to_one_before_limit_and_finishes() {
+        let topology = fmcs01_star(65);
+        let coordinates = CoordinateBlock::default();
+        let query = q107_target(&topology, &coordinates);
+        let (mut seed, tables) = fmcs01_seed_and_tables(&query, 1);
+        let mut queue = McsSeedQueue::default();
+        seed.grow(
+            &mut queue,
+            &query,
+            &[query],
+            &[tables],
+            1,
+            0,
+            0,
+            &McsParameters::default(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(seed.new_bonds.len(), 1);
+        assert_eq!(queue.seeds.len(), 1);
+        assert_eq!(seed.growing_stage, u32::MAX);
     }
 }

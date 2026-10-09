@@ -596,11 +596,10 @@ fn finish_rejects_topology_adjacency_stereo_and_sgroup_invariants() {
 
     let mut stereo = invariant_parts(&source, "stereo");
     let mut candidate = source.topology().clone();
-    candidate.stereo_groups.push(StereoGroup::new(
-        StereoGroupKind::Absolute,
-        vec![AtomId::new(9)],
-        Vec::new(),
-    ));
+    candidate.stereo_groups.push(
+        StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(9)], Vec::new())
+            .expect("valid distinct stereo members"),
+    );
     stereo.topology = WorkingBlock::Installed(candidate);
     assert!(matches!(
         stereo.finish(),

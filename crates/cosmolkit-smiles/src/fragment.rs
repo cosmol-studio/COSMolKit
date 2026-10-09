@@ -11,6 +11,9 @@ use crate::writer::SmilesWriteParams;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FragmentWriteInputError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("no atoms provided")]
     NoAtomsProvided,
     #[error("root atom index {atom_index} must be less than the molecule atom count {atom_count}")]
@@ -88,6 +91,124 @@ pub(super) struct PreparedFragmentStereo<'a> {
     pub(super) ranking_rings: Option<RingInfo>,
     pub(super) valence: Cow<'a, ValenceAssignment>,
     pub(super) stereochem_done: bool,
+}
+
+fn replace_omitted_fragment_stereo_controllers(
+    topology: &mut TopologyBlock,
+    masks: &FragmentSelectionMasks,
+) -> Result<(), BondValueError> {
+    // BEGIN COMPLETE RDKit .6 CHEM27 MolFragmentToSmiles_omitted_controllers
+    // RDKit✔️❌:     // check for double bonds where the atoms defining stereo are not included
+    // RDKit✔️❌:     for (auto bnd : tmol.bonds()) {
+    // RDKit✔️❌:       if (bondsInPlay[bnd->getIdx()] && bnd->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️❌:           bnd->getStereo() != Bond::BondStereo::STEREONONE) {
+    // RDKit✔️❌:         const auto &stereoAtoms = bnd->getStereoAtoms();
+    // RDKit✔️❌:         if (stereoAtoms.size() != 2) {
+    // RDKit✔️❌:           continue;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         // check at both ends of the bond to see if the stereo atom is in play.
+    // RDKit✔️❌:         // If not and there's another neighbor atom there that *is* in play,
+    // RDKit✔️❌:         // then keep the stereochemistry and swap the stereo atoms. If not,
+    // RDKit✔️❌:         // remove the stereochemistry.
+    // RDKit✔️❌:         const std::vector<std::pair<int, const Atom *>>
+    // RDKit✔️❌:             stereoAtomsAndBondAtoms = {
+    // RDKit✔️❌:                 std::make_pair(stereoAtoms[0], bnd->getBeginAtom()),
+    // RDKit✔️❌:                 std::make_pair(stereoAtoms[1], bnd->getEndAtom())};
+    // RDKit✔️❌:         for (auto [stereoAtomIdx, bondAtom] : stereoAtomsAndBondAtoms) {
+    // RDKit✔️❌:           if (!atomsInPlay[stereoAtomIdx]) {
+    // RDKit✔️❌:             if (bondAtom->getDegree() > 2) {
+    // RDKit✔️❌:               bool updated = false;
+    // RDKit✔️❌:               for (auto nbrAt : tmol.atomNeighbors(bondAtom)) {
+    // RDKit✔️❌:                 if (nbrAt->getIdx() !=
+    // RDKit✔️❌:                         static_cast<unsigned int>(stereoAtomIdx) &&
+    // RDKit✔️❌:                     atomsInPlay[nbrAt->getIdx()]) {
+    // RDKit✔️❌:                   if (stereoAtomIdx == stereoAtoms[0]) {
+    // RDKit✔️❌:                     bnd->setStereoAtoms(nbrAt->getIdx(), stereoAtoms[1]);
+    // RDKit✔️❌:                   } else {
+    // RDKit✔️❌:                     bnd->setStereoAtoms(stereoAtoms[0], nbrAt->getIdx());
+    // RDKit✔️❌:                   }
+    // RDKit✔️❌:                   updated = true;
+    // RDKit✔️❌:                   if (bnd->getStereo() == Bond::BondStereo::STEREOZ ||
+    // RDKit✔️❌:                       bnd->getStereo() == Bond::BondStereo::STEREOCIS) {
+    // RDKit✔️❌:                     bnd->setStereo(Bond::BondStereo::STEREOTRANS);
+    // RDKit✔️❌:                   } else if (bnd->getStereo() == Bond::BondStereo::STEREOE ||
+    // RDKit✔️❌:                              bnd->getStereo() ==
+    // RDKit✔️❌:                                  Bond::BondStereo::STEREOTRANS) {
+    // RDKit✔️❌:                     bnd->setStereo(Bond::BondStereo::STEREOCIS);
+    // RDKit✔️❌:                   }
+    // RDKit✔️❌:                   break;
+    // RDKit✔️❌:                 }
+    // RDKit✔️❌:               }
+    // RDKit✔️❌:               if (!updated) {
+    // RDKit✔️❌:                 bnd->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️❌:                 break;
+    // RDKit✔️❌:               }
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               bnd->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️❌:               break;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // END COMPLETE RDKit .6 CHEM27 MolFragmentToSmiles_omitted_controllers
+    // The complete enclosing source function is in write_fragment_smiles_output.
+    // Original work items snapshot the two controller indices, while each write
+    // uses the live pair to select its slot, exactly like the C++ vector reference.
+    // Alternate eligibility deliberately ignores bondsInPlay and includes the
+    // opposite endpoint. A failure clears only the enum and retains the pair.
+    // One ordered bond scan plus at most two degree scans per eligible edge;
+    // O(1) work scratch. Existing typed pair setters allocate a replacement Vec
+    // per successful replacement, unlike source capacity reuse (second axis ❌).
+    use cosmolkit_types::{BondOrder, BondStereo};
+    for row in 0..topology.bonds.len() {
+        let bond = &topology.bonds[row];
+        if !masks.bonds_in_play[row]
+            || bond.order() != BondOrder::Double
+            || bond.stereo() == BondStereo::None
+        {
+            continue;
+        }
+        let Some([first, second]) = bond.stereo_atoms() else {
+            continue;
+        };
+        let work = [(first, bond.begin()), (second, bond.end())];
+        for (original, endpoint) in work {
+            if masks.atoms_in_play[original.index()] {
+                continue;
+            }
+            let neighbors = topology.adjacency.neighbors_of(endpoint.index());
+            let alternate = if neighbors.len() > 2 {
+                neighbors
+                    .iter()
+                    .map(|n| AtomId::new(n.atom_index))
+                    .find(|&n| n != original && masks.atoms_in_play[n.index()])
+            } else {
+                None
+            };
+            let Some(alternate) = alternate else {
+                topology.bonds[row].set_stereo(BondStereo::None)?;
+                break;
+            };
+            let mut pair = topology.bonds[row]
+                .stereo_atoms()
+                .expect("eligible source pair retains two slots");
+            if original == pair[0] {
+                pair[0] = alternate;
+            } else {
+                pair[1] = alternate;
+            }
+            let bond = &mut topology.bonds[row];
+            bond.set_stereo_atoms(Some(pair));
+            let stereo = match bond.stereo() {
+                BondStereo::Z | BondStereo::Cis => BondStereo::Trans,
+                BondStereo::E | BondStereo::Trans => BondStereo::Cis,
+                other => other,
+            };
+            bond.set_stereo(stereo)?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn prepare_fragment_stereo<'record, 'a>(
@@ -190,6 +311,7 @@ pub(super) fn prepare_fragment_stereo<'record, 'a>(
                 }
             }
         }
+        replace_omitted_fragment_stereo_controllers(&mut topology, masks)?;
         stereochem_done = true;
     }
     Ok(PreparedFragmentStereo {
@@ -220,7 +342,10 @@ pub(super) fn rank_prepared_fragment(
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     for (unsigned int i = 0; i < tmol.getNumAtoms(); ++i) {
     // RDKit✔️✔️:       ranks[i] = i;
-    // Only canonical dispatch checks exact symbol lengths in the core owner.
+    // Public source preflight accepts oversized symbol vectors. Borrow exactly
+    // the topology prefix before the existing core exact-size owner; direct
+    // private short slices still reach that owner's unchanged typed failure.
+    // No new allocations or per-component ranking are introduced.
     // The index branch is O(V), while canonical dispatch borrows the S59
     // valence/Fast-ring preparation and performs the owner's rank refinement.
     if !params.canonical {
@@ -242,8 +367,8 @@ pub(super) fn rank_prepared_fragment(
             .or(prepared.retained_rings.as_ref()),
         &masks.atoms_in_play,
         &masks.bonds_in_play,
-        atom_symbols,
-        bond_symbols,
+        atom_symbols.map(|s| s.get(..prepared.topology.atoms.len()).unwrap_or(s)),
+        bond_symbols.map(|s| s.get(..prepared.topology.bonds.len()).unwrap_or(s)),
         &rank_params,
     )?)
 }
@@ -424,8 +549,14 @@ pub(super) fn build_fragment_selection_masks(
         }
     } else {
         if let Some(root) = params.rooted_at_atom {
-            let components = cosmolkit_core::connected_components(topology)
-                .map_err(|error| FragmentWriteInputError::InvalidTopology(error.to_string()))?;
+            let components =
+                cosmolkit_core::connected_components(topology).map_err(|error| match error {
+                    cosmolkit_core::PathError::StereoGroup(cause)
+                    | cosmolkit_core::PathError::InvalidTopology(
+                        cosmolkit_model::TopologyValidationError::StereoGroup(cause),
+                    ) => FragmentWriteInputError::StereoGroup(cause),
+                    error => FragmentWriteInputError::InvalidTopology(error.to_string()),
+                })?;
             if components.components.len() != 1 {
                 return Err(FragmentWriteInputError::RootAtomRequiresSingleFragment {
                     atom_index: root.index(),
@@ -699,12 +830,24 @@ mod tests {
             canonical: true,
             ..params
         };
+        // MolFragmentToSmiles accepts vectors with at least numAtoms entries;
+        // only the topology prefix reaches the exact-length ranking owner.
+        assert_eq!(
+            rank_prepared_fragment(&prepared, &masks, Some(&oversized), None, &canonical).unwrap(),
+            rank_prepared_fragment(&prepared, &masks, Some(&oversized[..3]), None, &canonical)
+                .unwrap()
+        );
+        let undersized = &oversized[..2];
+        assert_eq!(
+            rank_prepared_fragment(&prepared, &masks, Some(undersized), None, &params).unwrap(),
+            vec![0, 1, 2]
+        );
         assert!(matches!(
-            rank_prepared_fragment(&prepared, &masks, Some(&oversized), None, &canonical),
+            rank_prepared_fragment(&prepared, &masks, Some(undersized), None, &canonical),
             Err(FragmentWriteInputError::Rank(
                 CanonicalRankError::AtomSymbolLength {
                     expected: 3,
-                    actual: 4,
+                    actual: 2,
                 }
             ))
         ));
@@ -1293,5 +1436,249 @@ mod tests {
             }
         );
         assert_eq!(topology, before, "ring transport leaves input unchanged");
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem27 {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
+    use cosmolkit_types::{BondOrder, BondStereo, Element};
+    fn graph(
+        n: usize,
+        edges: &[(usize, usize, BondOrder)],
+        target: usize,
+        stereo: BondStereo,
+        pair: Option<[usize; 2]>,
+    ) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let mut bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                )
+            })
+            .collect::<Vec<_>>();
+        bonds[target].set_stereo_atoms(pair.map(|[a, b]| [AtomId::new(a), AtomId::new(b)]));
+        bonds[target].set_stereo(stereo).unwrap();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn branched(stereo: BondStereo) -> TopologyBlock {
+        graph(
+            6,
+            &[
+                (0, 2, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+                (0, 1, BondOrder::Double),
+                (1, 4, BondOrder::Single),
+                (1, 5, BondOrder::Single),
+            ],
+            2,
+            stereo,
+            Some([2, 4]),
+        )
+    }
+    fn masks(t: &TopologyBlock, atoms: &[usize]) -> FragmentSelectionMasks {
+        let mut a = vec![false; t.atoms.len()];
+        for &i in atoms {
+            a[i] = true;
+        }
+        FragmentSelectionMasks {
+            atoms_in_play: a,
+            bonds_in_play: vec![true; t.bonds.len()],
+        }
+    }
+    fn assert_target(t: &TopologyBlock, row: usize, stereo: BondStereo, pair: Option<[usize; 2]>) {
+        assert_eq!(t.bonds[row].stereo(), stereo);
+        assert_eq!(
+            t.bonds[row].stereo_atoms(),
+            pair.map(|[a, b]| [AtomId::new(a), AtomId::new(b)])
+        );
+    }
+    #[test]
+    fn first_neighbor_and_independent_atom_bond_masks_match_source_predicate() {
+        let mut t = branched(BondStereo::E);
+        let mut m = masks(&t, &[0, 1, 3, 4, 5]);
+        m.bonds_in_play[1] = false;
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 2, BondStereo::Cis, Some([3, 4]));
+        let mut t = branched(BondStereo::E);
+        let m = masks(&t, &[0, 1, 2, 3, 5]);
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 2, BondStereo::Cis, Some([2, 0]));
+        let mut t = branched(BondStereo::E);
+        let m = masks(&t, &[0, 1, 3, 5]);
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 2, BondStereo::Trans, Some([3, 0]));
+    }
+    #[test]
+    fn zero_one_two_replacements_flip_each_actual_source_enum() {
+        for (stereo, expected) in [
+            (
+                BondStereo::E,
+                [BondStereo::E, BondStereo::Cis, BondStereo::Trans],
+            ),
+            (
+                BondStereo::Z,
+                [BondStereo::Z, BondStereo::Trans, BondStereo::Cis],
+            ),
+            (
+                BondStereo::Cis,
+                [BondStereo::Cis, BondStereo::Trans, BondStereo::Cis],
+            ),
+            (
+                BondStereo::Trans,
+                [BondStereo::Trans, BondStereo::Cis, BondStereo::Trans],
+            ),
+            (BondStereo::Any, [BondStereo::Any; 3]),
+            (BondStereo::AtropCw, [BondStereo::AtropCw; 3]),
+            (BondStereo::AtropCcw, [BondStereo::AtropCcw; 3]),
+        ] {
+            for (atoms, pair, flips) in [
+                (&[0, 1, 2, 3, 4, 5][..], [2, 4], 0),
+                (&[0, 1, 3, 4, 5][..], [3, 4], 1),
+                (&[0, 1, 3, 5][..], [3, 0], 2),
+            ] {
+                let mut t = branched(stereo);
+                let m = masks(&t, atoms);
+                replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+                assert_target(&t, 2, expected[flips], Some(pair));
+            }
+        }
+    }
+    #[test]
+    fn original_work_snapshot_uses_live_pair_slots_and_later_failure_keeps_prefix() {
+        let mut t = graph(
+            5,
+            &[
+                (0, 1, BondOrder::Double),
+                (0, 2, BondOrder::Single),
+                (1, 2, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+            ],
+            0,
+            BondStereo::E,
+            Some([2, 2]),
+        );
+        let m = masks(&t, &[0, 1, 3, 4]);
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 0, BondStereo::Trans, Some([1, 0]));
+        let mut t = graph(
+            5,
+            &[
+                (0, 2, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+                (0, 1, BondOrder::Double),
+                (1, 4, BondOrder::Single),
+            ],
+            2,
+            BondStereo::E,
+            Some([2, 4]),
+        );
+        let m = masks(&t, &[0, 1, 3]);
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 2, BondStereo::None, Some([3, 4]));
+        let mut t = branched(BondStereo::E);
+        let m = masks(&t, &[4]);
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_target(&t, 2, BondStereo::None, Some([2, 4]));
+    }
+    #[test]
+    fn source_gates_preserve_unselected_nondouble_none_and_nonpair_cardinality() {
+        let mut t = branched(BondStereo::E);
+        let mut m = masks(&t, &[0, 1]);
+        m.bonds_in_play[2] = false;
+        let before = t.clone();
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_eq!(t, before);
+        let mut t = branched(BondStereo::E);
+        t.bonds[2].set_order(BondOrder::Single);
+        let m = masks(&t, &[0, 1]);
+        let before = t.clone();
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_eq!(t, before);
+        let mut t = branched(BondStereo::None);
+        let m = masks(&t, &[0, 1]);
+        let before = t.clone();
+        replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+        assert_eq!(t, before);
+        for refs in [
+            vec![],
+            vec![AtomId::new(2)],
+            vec![AtomId::new(2), AtomId::new(4), AtomId::new(5)],
+        ] {
+            let mut t = branched(BondStereo::E);
+            t.bonds[2].set_source_stereo_atom_references(refs);
+            let m = masks(&t, &[0, 1]);
+            let before = t.clone();
+            replace_omitted_fragment_stereo_controllers(&mut t, &m).unwrap();
+            assert_eq!(t, before);
+        }
+    }
+    #[test]
+    fn preparation_obeys_isomeric_gate_before_single_full_mask_ranking() {
+        let topology = branched(BondStereo::E);
+        let mut record = crate::SmilesRecord {
+            topology,
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        record
+            .properties
+            .set_prop("_StereochemDone", 1_i32)
+            .unwrap();
+        let m = masks(&record.topology, &[0, 1, 3, 4, 5]);
+        let atoms = [0, 1, 3, 4, 5].map(AtomId::new);
+        let before = record.clone();
+        let plain = prepare_fragment_stereo(
+            &record,
+            &SmilesWriteParams {
+                isomeric_smiles: false,
+                ..Default::default()
+            },
+            &atoms,
+            &m,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_target(&plain.topology, 2, BondStereo::E, Some([2, 4]));
+        let iso = prepare_fragment_stereo(
+            &record,
+            &SmilesWriteParams::default(),
+            &atoms,
+            &m,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_target(&iso.topology, 2, BondStereo::Cis, Some([3, 4]));
+        assert_eq!(record, before);
+    }
+    #[test]
+    fn larger_symbol_vectors_borrow_topology_prefix_and_disconnected_masks_once() {
+        let record = crate::parse_smiles_complete_source("CC.CC", &Default::default()).unwrap();
+        let atoms = [0, 1, 2, 3].map(AtomId::new);
+        let bonds = [0, 1].map(BondId::new);
+        let params = SmilesWriteParams::default();
+        let m = build_fragment_selection_masks(&record.topology, &params, &atoms, Some(&bonds))
+            .unwrap();
+        let p = prepare_fragment_stereo(&record, &params, &atoms, &m, None, None).unwrap();
+        let a = vec!["C".to_owned(); 4];
+        let b = vec!["".to_owned(); 2];
+        let mut aa = a.clone();
+        aa.push("unused".into());
+        let mut bb = b.clone();
+        bb.push("unused".into());
+        assert_eq!(
+            rank_prepared_fragment(&p, &m, Some(&a), Some(&b), &params).unwrap(),
+            rank_prepared_fragment(&p, &m, Some(&aa), Some(&bb), &params).unwrap()
+        );
     }
 }

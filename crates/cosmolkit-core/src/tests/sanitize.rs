@@ -215,9 +215,11 @@ fn invalid_atropisomer_cleanup_updates_only_affected_group_content_and_preserves
         vec![AtomId::new(0), AtomId::new(2)],
         Vec::new(),
     )
+    .expect("valid distinct stereo members")
     .with_id(17);
-    let unaffected =
-        StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(1)], Vec::new()).with_id(19);
+    let unaffected = StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(1)], Vec::new())
+        .expect("valid distinct stereo members")
+        .with_id(19);
     let input = topology(
         4,
         vec![
@@ -420,18 +422,21 @@ fn chirality_cleanup_selectively_rebuilds_enhanced_stereo_groups_in_source_order
         vec![AtomId::new(0), AtomId::new(1)],
         vec![BondId::new(0), BondId::new(1)],
     )
+    .expect("valid distinct stereo members")
     .with_id(7);
     let dropped = StereoGroup::new(
         StereoGroupKind::And,
         vec![AtomId::new(0)],
         vec![BondId::new(1)],
     )
+    .expect("valid distinct stereo members")
     .with_id(8);
     let unaffected = StereoGroup::new(
         StereoGroupKind::Absolute,
         vec![AtomId::new(1)],
         vec![BondId::new(0)],
     )
+    .expect("valid distinct stereo members")
     .with_id(9);
     let atoms = vec![
         chiral_atom(0, ChiralTag::TetrahedralCw, Hybridization::Sp2, None),
@@ -600,6 +605,7 @@ fn adjust_hs_preserves_aromatic_post_state_and_all_non_atom_references() {
         vec![AtomId::new(0)],
         vec![BondId::new(0)],
     )
+    .expect("valid distinct stereo members")
     .with_id(23);
     let input = TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![group]).unwrap();
     let snapshot = input.clone();

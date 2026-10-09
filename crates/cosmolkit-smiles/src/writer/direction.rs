@@ -5,33 +5,38 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
     stack: &[MolStackElem],
     traversal_ring_closure_bonds: &[bool],
 ) -> Result<(), SmilesParseError> {
-    // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment double-bond direction section
-    // RDKit✔️✔️: std::vector<unsigned int> atomVisitOrders(mol.getNumAtoms());
-    // RDKit✔️✔️: std::vector<unsigned int> bondVisitOrders(mol.getNumBonds());
-    // RDKit✔️✔️: for (const auto &msI : molStack) {
-    // RDKit✔️✔️:   if (msI.type == MOL_STACK_ATOM) { atomVisitOrders[msI.obj.atom->getIdx()] = pos; }
-    // RDKit✔️✔️:   else if (msI.type == MOL_STACK_BOND) {
-    // RDKit✔️✔️:     bondVisitOrders[msI.obj.bond->getIdx()] = pos;
-    // RDKit✔️✔️:     auto dir = msI.obj.bond->getBondDir();
-    // RDKit✔️✔️:     if (dir == Bond::ENDDOWNRIGHT || dir == Bond::ENDUPRIGHT) {
-    // RDKit✔️✔️:       msI.obj.bond->setBondDir(Bond::NONE);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: canonicalizeDoubleBonds(mol, bondVisitOrders, atomVisitOrders,
-    // RDKit✔️✔️:                         bondDirCounts, atomDirCounts, molStack);
-    // RDKit✔️✔️: Canon::removeUnwantedBondDirSpecs(mol, molStack, bondDirCounts,
-    // RDKit✔️✔️:                                     atomDirCounts, bondVisitOrders);
-    // RDKit✔️✔️: Canon::removeRedundantBondDirSpecs(mol, molStack, bondDirCounts,
-    // RDKit✔️✔️:                                    atomDirCounts);
-    // END RDKIT CPP FUNCTION Canon::canonicalizeFragment double-bond direction section
-    let mut atom_visit_orders = vec![usize::MAX; topology.atoms.len()];
-    let mut bond_visit_orders = vec![usize::MAX; topology.bonds.len()];
+    // BEGIN RDKit 2026.03.6 COMPLETE canonicalizeFragment visits and queue
+    // RDKit❗✔️:   std::vector<unsigned int> atomVisitOrders(mol.getNumAtoms(), 0);
+    // RDKit❗✔️:   std::vector<unsigned int> bondVisitOrders(mol.getNumBonds(), 0);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int pos =
+    // RDKit❗✔️:       1;  // start at 1 since we use 0 to detect unvisited atoms/bonds
+    // RDKit❗✔️:   for (const auto &msI : molStack) {
+    // RDKit❗✔️:     if (msI.type == MOL_STACK_ATOM) {
+    // RDKit❗✔️:       atomVisitOrders[msI.obj.atom->getIdx()] = pos;
+    // RDKit❗✔️:     } else if (msI.type == MOL_STACK_BOND) {
+    // RDKit❗✔️:       bondVisitOrders[msI.obj.bond->getIdx()] = pos;
+    // RDKit❗✔️:       auto dir = msI.obj.bond->getBondDir();
+    // RDKit❗✔️:       if (dir == Bond::ENDDOWNRIGHT || dir == Bond::ENDUPRIGHT) {
+    // RDKit❗✔️:         msI.obj.bond->setBondDir(Bond::NONE);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ++pos;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::vector<int8_t> bondDirCounts(mol.getNumBonds(), 0);
+    // RDKit❗✔️:   std::vector<int8_t> atomDirCounts(nAtoms, 0);
+    // RDKit❗✔️:   canonicalizeDoubleBonds(mol, bondVisitOrders, atomVisitOrders, bondDirCounts,
+    // RDKit❗✔️:                           atomDirCounts, molStack);
+    // RDKit❗✔️:
+    // END RDKit 2026.03.6 COMPLETE canonicalizeFragment visits and queue
+    let mut atom_visit_orders = vec![0; topology.atoms.len()];
+    let mut bond_visit_orders = vec![0; topology.bonds.len()];
     for (pos, item) in stack.iter().enumerate() {
         match *item {
-            MolStackElem::Atom(atom) => atom_visit_orders[atom] = pos,
+            MolStackElem::Atom(atom) => atom_visit_orders[atom] = pos + 1,
             MolStackElem::Bond { bond, .. } => {
-                bond_visit_orders[bond.index()] = pos;
+                bond_visit_orders[bond.index()] = pos + 1;
                 if matches!(
                     topology.bonds[bond.index()].direction(),
                     BondDirection::EndDownRight | BondDirection::EndUpRight
@@ -80,19 +85,152 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     atom_dir_counts: &mut [i8],
     stack: &[MolStackElem],
 ) -> Result<(), SmilesParseError> {
-    // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
-    // RDKit✔️✔️: for (auto &msI : molStack) {
-    // RDKit✔️✔️:   if (msI.type != MOL_STACK_BOND) { continue; }
-    // RDKit✔️✔️:   if (bond->getBondType() != Bond::DOUBLE ||
-    // RDKit✔️✔️:       bond->getStereo() <= Bond::STEREOANY ||
-    // RDKit✔️✔️:       bond->getStereoAtoms().size() < 2) {
-    // RDKit✔️✔️:     bond->setStereo(Bond::STEREONONE);
-    // RDKit✔️✔️:     continue;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   ... prioritize by neighboring stereo bonds and molStack order ...
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: while (!q.empty()) { Canon::canonicalizeDoubleBond(...); }
-    // END RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
+    // BEGIN CHEM09 canonicalizeDoubleBonds
+    // RDKit❗❌: void canonicalizeDoubleBonds(ROMol &mol, const UINT_VECT &bondVisitOrders,
+    // RDKit❗❌:                              const UINT_VECT &atomVisitOrders,
+    // RDKit❗❌:                              std::vector<int8_t> &bondDirCounts,
+    // RDKit❗❌:                              std::vector<int8_t> &atomDirCounts,
+    // RDKit❗❌:                              const MolStack &molStack) {
+    // RDKit❗❌:   // start by removing the current directions on single bonds
+    // RDKit❗❌:   // around double bonds. At the same time, we build a prioritized
+    // RDKit❗❌:   // queue to decide the order in which we will canonicalize bonds.
+    // RDKit❗❌:
+    // RDKit❗❌:   // We want to start with bonds with the most neighboring stereo
+    // RDKit❗❌:   // bonds, and in case of ties, start with the bond that has
+    // RDKit❗❌:   // the lowest position in the molStack
+    // RDKit❗❌:
+    // RDKit❗❌:   auto getNeighboringStereoBond = [&mol](const Atom *dblBndAtom,
+    // RDKit❗❌:                                          const Bond *nbrBnd) -> Bond * {
+    // RDKit❗❌:     auto otherAtom = nbrBnd->getOtherAtom(dblBndAtom);
+    // RDKit❗❌:     for (const auto bond : mol.atomBonds(otherAtom)) {
+    // RDKit❗❌:       if (bond != nbrBnd && isCanonicalizableStereoDoubleBond(*bond)) {
+    // RDKit❗❌:         return bond;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     return nullptr;
+    // RDKit❗❌:   };
+    // RDKit❗❌:
+    // RDKit❗❌:   std::greater<const unsigned int &> molStackComparer;
+    // RDKit❗❌:   std::less<const unsigned int &> numStereoNbrsComparer;
+    // RDKit❗❌:
+    // RDKit❗❌:   std::unordered_map<const Bond *, std::vector<Bond *>> stereoBondNbrs;
+    // RDKit❗❌:   auto compareBondPriority = [&stereoBondNbrs, &bondVisitOrders,
+    // RDKit❗❌:                               &molStackComparer, &numStereoNbrsComparer](
+    // RDKit❗❌:                                  const Bond *aBnd, const Bond *bBnd) {
+    // RDKit❗❌:     const auto aNumStereoNbrs = stereoBondNbrs[aBnd].size();
+    // RDKit❗❌:     const auto bNumStereoNbrs = stereoBondNbrs[bBnd].size();
+    // RDKit❗❌:
+    // RDKit❗❌:     if (aNumStereoNbrs == bNumStereoNbrs) {
+    // RDKit❗❌:       return molStackComparer(bondVisitOrders[aBnd->getIdx()],
+    // RDKit❗❌:                               bondVisitOrders[bBnd->getIdx()]);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     return numStereoNbrsComparer(aNumStereoNbrs, bNumStereoNbrs);
+    // RDKit❗❌:   };
+    // RDKit❗❌:
+    // RDKit❗❌:   std::priority_queue<Bond *, std::vector<Bond *>,
+    // RDKit❗❌:                       decltype(compareBondPriority)>
+    // RDKit❗❌:       q{compareBondPriority};
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto &msI : molStack) {
+    // RDKit❗❌:     if (msI.type != MOL_STACK_BOND) {
+    // RDKit❗❌:       // not a bond, skip it
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     auto bond = msI.obj.bond;
+    // RDKit❗❌:     Bond::BondDir dir = bond->getBondDir();
+    // RDKit❗❌:     if (dir == Bond::ENDDOWNRIGHT || dir == Bond::ENDUPRIGHT) {
+    // RDKit❗❌:       bond->setBondDir(Bond::NONE);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (!isCanonicalizableStereoDoubleBond(*bond) ||
+    // RDKit❗❌:         std::ranges::find_if(bond->getStereoAtoms(),
+    // RDKit❗❌:                              [&atomVisitOrders](const auto &atomIdx) {
+    // RDKit❗❌:                                return !atomVisitOrders[atomIdx];
+    // RDKit❗❌:                              }) != bond->getStereoAtoms().end()) {
+    // RDKit❗❌:       // not a bond that can have stereo or that needs canonicalization
+    // RDKit❗❌:       // or one of the stereo atoms has not been traversed
+    // RDKit❗❌:       bond->setStereo(Bond::STEREONONE);
+    // RDKit❗❌:       bond->getStereoAtoms().clear();
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     auto &currentNbrs = stereoBondNbrs[bond];
+    // RDKit❗❌:     for (const auto *dblBondAtom : {bond->getBeginAtom(), bond->getEndAtom()}) {
+    // RDKit❗❌:       for (const auto *nbrBond : mol.atomBonds(dblBondAtom)) {
+    // RDKit❗❌:         if (!canHaveDirection(*nbrBond)) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         auto nbrDblBnd = getNeighboringStereoBond(dblBondAtom, nbrBond);
+    // RDKit❗❌:         if (nbrDblBnd != nullptr) {
+    // RDKit❗❌:           currentNbrs.push_back(nbrDblBnd);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::ranges::sort(currentNbrs, [&molStackComparer, &bondVisitOrders](
+    // RDKit❗❌:                                        const Bond *aBnd, const Bond *bBnd) {
+    // RDKit❗❌:       // Reversing the bonds is intentional: molStackComparer
+    // RDKit❗❌:       // is a std::greater comparer (priority queue returns
+    // RDKit❗❌:       // the highest element), but here we want to sort in
+    // RDKit❗❌:       // increasing order, so we want a std::less comparer,
+    // RDKit❗❌:       // which can be achieved by reversing the std::greater
+    // RDKit❗❌:       // because we can have no ties here
+    // RDKit❗❌:       return molStackComparer(bondVisitOrders[bBnd->getIdx()],
+    // RDKit❗❌:                               bondVisitOrders[aBnd->getIdx()]);
+    // RDKit❗❌:     });
+    // RDKit❗❌:
+    // RDKit❗❌:     q.emplace(bond);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // Now that we have bonds in the order we want to handle them,
+    // RDKit❗❌:   // do the canonicalization
+    // RDKit❗❌:   std::vector<bool> seen_bonds(mol.getNumBonds());
+    // RDKit❗❌:   while (!q.empty()) {
+    // RDKit❗❌:     const auto bond = q.top();
+    // RDKit❗❌:     q.pop();
+    // RDKit❗❌:     if (seen_bonds[bond->getIdx()]) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     std::queue<Bond *> connectedBondsQ;
+    // RDKit❗❌:     connectedBondsQ.push(bond);
+    // RDKit❗❌:
+    // RDKit❗❌:     while (!connectedBondsQ.empty()) {
+    // RDKit❗❌:       const auto currentBond = connectedBondsQ.front();
+    // RDKit❗❌:       connectedBondsQ.pop();
+    // RDKit❗❌:       if (seen_bonds[currentBond->getIdx()] ||
+    // RDKit❗❌:           !bondVisitOrders[currentBond->getIdx()]) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (!isCanonicalizableStereoDoubleBond(*currentBond)) {
+    // RDKit❗❌:         currentBond->setStereo(Bond::STEREONONE);
+    // RDKit❗❌:         currentBond->getStereoAtoms().clear();
+    // RDKit❗❌:         seen_bonds[currentBond->getIdx()] = true;
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       Canon::canonicalizeDoubleBond(currentBond, bondVisitOrders,
+    // RDKit❗❌:                                     atomVisitOrders, bondDirCounts,
+    // RDKit❗❌:                                     atomDirCounts);
+    // RDKit❗❌:       seen_bonds[currentBond->getIdx()] = true;
+    // RDKit❗❌:       for (auto nbrStereoBnd : stereoBondNbrs[currentBond]) {
+    // RDKit❗❌:         if (!seen_bonds[nbrStereoBnd->getIdx()]) {
+    // RDKit❗❌:           connectedBondsQ.push(nbrStereoBnd);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌: #if ENABLE_EXTRA_CHECKS
+    // RDKit❗❌:   checkDirCounts(mol, bondDirCounts, atomDirCounts);
+    // RDKit❗❌: #endif
+    // RDKit❗❌: }
+    // END CHEM09 canonicalizeDoubleBonds
+    // New presence/cleanup guards below match source precisely. The whole owner
+    // retains preexisting BTreeMap/incident Vec/neighbor clone costs, all-neighbor
+    // dedup instead of source first-per-bridge; source visit sorting is preserved.
+    // All callers use the same source0/positive visit contract.
+    // Unchanged direction preclear belongs to the outer caller in this port.
     let mut stereo_bond_neighbors = BTreeMap::<BondId, Vec<BondId>>::new();
     let mut candidates = Vec::new();
     for item in stack {
@@ -100,16 +238,39 @@ pub(super) fn canonicalize_double_bonds_for_writer(
             continue;
         };
         let bond_ref = &topology.bonds[bond.index()];
-        if !is_writer_stereo_double_bond(bond_ref) {
-            if bond_ref.order() == BondOrder::Double {
-                let bond_mut = &mut topology.bonds[bond.index()];
-                bond_mut.set_stereo_atoms(None);
-                bond_mut.set_stereo(BondStereo::None)?;
-            }
+        // BEGIN CHEM09 initial_controller_cleanup
+        // RDKit✔️✔️:     if (!isCanonicalizableStereoDoubleBond(*bond) ||
+        // RDKit✔️✔️:         std::ranges::find_if(bond->getStereoAtoms(),
+        // RDKit✔️✔️:                              [&atomVisitOrders](const auto &atomIdx) {
+        // RDKit✔️✔️:                                return !atomVisitOrders[atomIdx];
+        // RDKit✔️✔️:                              }) != bond->getStereoAtoms().end()) {
+        // RDKit✔️✔️:       // not a bond that can have stereo or that needs canonicalization
+        // RDKit✔️✔️:       // or one of the stereo atoms has not been traversed
+        // RDKit✔️✔️:       bond->setStereo(Bond::STEREONONE);
+        // RDKit✔️✔️:       bond->getStereoAtoms().clear();
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     auto &currentNbrs = stereoBondNbrs[bond];
+        // END CHEM09 initial_controller_cleanup
+        if !is_writer_stereo_double_bond(bond_ref)
+            || bond_ref.stereo_atoms().is_some_and(|controllers| {
+                controllers
+                    .iter()
+                    .any(|atom| atom_visit_orders[atom.index()] == 0)
+            })
+        {
+            let bond_mut = &mut topology.bonds[bond.index()];
+            bond_mut.set_stereo(BondStereo::None)?;
+            bond_mut.set_stereo_atoms(None);
+            #[cfg(test)]
+            chem09_trace::record(chem09_trace::Event::InitialCleanup(bond));
             continue;
         }
         let mut stereo_nbrs = neighboring_stereo_double_bonds_for_writer(topology, bond);
         stereo_nbrs.sort_by_key(|neighbor| bond_visit_orders[neighbor.index()]);
+        #[cfg(test)]
+        chem09_trace::record(chem09_trace::Event::Neighbors(bond, stereo_nbrs.clone()));
         stereo_bond_neighbors.insert(bond, stereo_nbrs.clone());
         candidates.push((
             usize::MAX - stereo_nbrs.len(),
@@ -122,13 +283,53 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     let mut seen = vec![false; topology.bonds.len()];
     for (_, _, start_bond) in candidates {
         if seen[start_bond.index()] {
+            #[cfg(test)]
+            chem09_trace::record(chem09_trace::Event::PrioritySkipSeen(start_bond));
             continue;
         }
         let mut queue = std::collections::VecDeque::from([start_bond]);
         while let Some(bond) = queue.pop_front() {
-            if seen[bond.index()] {
+            #[cfg(test)]
+            chem09_trace::record(chem09_trace::Event::Dequeue(
+                bond,
+                seen[bond.index()],
+                bond_visit_orders[bond.index()] == 0,
+            ));
+            // BEGIN CHEM09 bfs_guards_and_cleanup
+            // RDKit✔️✔️:       if (seen_bonds[currentBond->getIdx()] ||
+            // RDKit✔️✔️:           !bondVisitOrders[currentBond->getIdx()]) {
+            // RDKit✔️✔️:         continue;
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:       if (!isCanonicalizableStereoDoubleBond(*currentBond)) {
+            // RDKit✔️✔️:         currentBond->setStereo(Bond::STEREONONE);
+            // RDKit✔️✔️:         currentBond->getStereoAtoms().clear();
+            // RDKit✔️✔️:         seen_bonds[currentBond->getIdx()] = true;
+            // RDKit✔️✔️:         continue;
+            // RDKit✔️✔️:       }
+            // END CHEM09 bfs_guards_and_cleanup
+            if seen[bond.index()] || bond_visit_orders[bond.index()] == 0 {
+                #[cfg(test)]
+                chem09_trace::record(if seen[bond.index()] {
+                    chem09_trace::Event::SkipSeen(bond)
+                } else {
+                    chem09_trace::Event::SkipOmitted(bond)
+                });
                 continue;
             }
+            if !is_writer_stereo_double_bond(&topology.bonds[bond.index()]) {
+                let bond_mut = &mut topology.bonds[bond.index()];
+                bond_mut.set_stereo(BondStereo::None)?;
+                bond_mut.set_stereo_atoms(None);
+                seen[bond.index()] = true;
+                #[cfg(test)]
+                {
+                    chem09_trace::record(chem09_trace::Event::InvalidCleanup(bond));
+                    chem09_trace::record(chem09_trace::Event::SeenMarked(bond));
+                }
+                continue;
+            }
+            #[cfg(test)]
+            chem09_trace::record(chem09_trace::Event::Canonicalize(bond));
             canonicalize_double_bond_for_writer(
                 topology,
                 bond,
@@ -139,9 +340,13 @@ pub(super) fn canonicalize_double_bonds_for_writer(
                 atom_dir_counts,
             );
             seen[bond.index()] = true;
+            #[cfg(test)]
+            chem09_trace::record(chem09_trace::Event::SeenMarked(bond));
             for &nbr in stereo_bond_neighbors.get(&bond).into_iter().flatten() {
                 if !seen[nbr.index()] {
                     queue.push_back(nbr);
+                    #[cfg(test)]
+                    chem09_trace::record(chem09_trace::Event::Enqueue(bond, nbr));
                 }
             }
         }
@@ -1122,6 +1327,16 @@ pub(super) fn flip_stereo_bond_dir_for_writer(direction: BondDirection) -> BondD
 }
 
 pub(super) fn is_writer_stereo_double_bond(bond: &Bond) -> bool {
+    // BEGIN COMPLETE RDKit .6 Canon::isCanonicalizableStereoDoubleBond
+    // RDKit✔️✔️: static bool isCanonicalizableStereoDoubleBond(const Bond &bond) {
+    // RDKit✔️✔️:   const auto stereo = bond.getStereo();
+    // RDKit✔️✔️:   return bond.getBondType() == Bond::DOUBLE && stereo >= Bond::STEREOZ &&
+    // RDKit✔️✔️:          stereo <= Bond::STEREOTRANS && bond.getStereoAtoms().size() == 2;
+    // RDKit✔️✔️: }
+    // END COMPLETE RDKit .6 Canon::isCanonicalizableStereoDoubleBond
+    // Behavior: the typed pair represents exactly two stereo references;
+    // the enum alternatives match the inclusive native Z..TRANS range.
+    // Complexity: constant-time field/pair checks with no scan or allocation.
     bond.order() == BondOrder::Double
         && matches!(
             bond.stereo(),
@@ -1170,5 +1385,61 @@ fn bond_other_atom(bond: &Bond, atom: AtomId) -> Option<AtomId> {
         Some(bond.begin())
     } else {
         None
+    }
+}
+
+// Private passive observation exists only in unit-test builds. Production has no
+// observer state, TLS lookup, allocation, API, or altered branch decision.
+#[cfg(test)]
+pub(super) mod chem09_trace {
+    use super::BondId;
+    use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(crate) enum Event {
+        InitialCleanup(BondId),
+        Neighbors(BondId, Vec<BondId>),
+        PrioritySkipSeen(BondId),
+        Dequeue(BondId, bool, bool),
+        SkipSeen(BondId),
+        SkipOmitted(BondId),
+        InvalidCleanup(BondId),
+        SeenMarked(BondId),
+        Canonicalize(BondId),
+        Enqueue(BondId, BondId),
+    }
+    std::thread_local! {
+        static EVENTS: RefCell<Option<Vec<Event>>> = const { RefCell::new(None) };
+    }
+    pub(crate) struct Capture {
+        _thread_bound: PhantomData<Rc<()>>,
+    }
+    pub(crate) fn capture() -> Capture {
+        EVENTS.with(|events| {
+            let mut events = events.borrow_mut();
+            assert!(events.is_none(), "CHEM09 passive capture cannot nest");
+            *events = Some(Vec::new());
+        });
+        Capture {
+            _thread_bound: PhantomData,
+        }
+    }
+    impl Capture {
+        pub(crate) fn events(&self) -> Vec<Event> {
+            EVENTS.with(|events| events.borrow().as_ref().expect("active capture").clone())
+        }
+    }
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            EVENTS.with(|events| {
+                events.borrow_mut().take();
+            });
+        }
+    }
+    pub(super) fn record(event: Event) {
+        EVENTS.with(|events| {
+            if let Some(events) = events.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
     }
 }

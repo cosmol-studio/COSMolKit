@@ -15,6 +15,7 @@ pyo3::create_exception!(cosmolkit, MatchError, PyValueError);
 pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr {
     use ck::SmartsParseError as E;
     let kind = match &source {
+        E::StereoGroup(_) => "StereoGroup",
         E::MissingRecursiveQueryGraph => "MissingRecursiveQueryGraph",
         E::CxLowering(_) => "CxLowering",
         E::QueryGraph(_) => "QueryGraph",
@@ -90,6 +91,7 @@ pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr
 pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr {
     use ck::SmartsWriteError as E;
     let kind = match &source {
+        E::StereoGroup(_) => "StereoGroup",
         E::Traversal(_) => "Traversal",
         E::CxCoordinates(_) => "CxCoordinates",
         E::CxRingInfo(_) => "CxRingInfo",

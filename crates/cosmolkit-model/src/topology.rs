@@ -15,6 +15,9 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TopologyValidationError {
+    #[error("{0}")]
+    StereoGroup(#[from] crate::StereoGroupError),
+
     #[error("atom at position {position} has id {id}, expected {position}")]
     AtomIdMismatch { position: usize, id: AtomId },
     #[error("atom {atom} has invalid template attachment order: {source}")]
@@ -130,6 +133,9 @@ pub enum BondEndPointsParseErrorKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TopologyEditError {
+    #[error("{0}")]
+    StereoGroup(#[from] crate::StereoGroupError),
+
     #[error("source coordinate edit failed: {0}")]
     Coordinate(#[from] crate::CoordinateValidationError),
     #[error("molecule property operation failed: {0}")]
@@ -273,7 +279,10 @@ impl TopologyBlock {
         // RDKit❗✔️: }
         // An owned TopologyBlock is not already an editor, so re-entry cannot
         // occur. Linear validity/mask setup and moved ownership avoid cloning.
-        self.validate().map_err(TopologyEditError::InvalidSource)?;
+        self.validate().map_err(|error| match error {
+            TopologyValidationError::StereoGroup(cause) => TopologyEditError::StereoGroup(cause),
+            other => TopologyEditError::InvalidSource(other),
+        })?;
         let source_atom_count = self.atoms.len();
         let source_bond_count = self.bonds.len();
         Ok(TopologyBatchEdit {
@@ -290,7 +299,10 @@ impl TopologyBlock {
         &self,
         old_atom_order: &[AtomId],
     ) -> Result<(Self, TopologyMapping), TopologyEditError> {
-        self.validate().map_err(TopologyEditError::InvalidSource)?;
+        self.validate().map_err(|error| match error {
+            TopologyValidationError::StereoGroup(cause) => TopologyEditError::StereoGroup(cause),
+            other => TopologyEditError::InvalidSource(other),
+        })?;
         if old_atom_order.len() != self.atoms.len() {
             return Err(TopologyEditError::PermutationLength {
                 actual: old_atom_order.len(),
@@ -415,7 +427,10 @@ impl TopologyBlock {
         let stereo_groups = self
             .stereo_groups
             .iter()
-            .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
+            .map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect();
         let mapping = TopologyMapping {
             atoms: AtomMapping {
@@ -431,7 +446,12 @@ impl TopologyBlock {
             .validate_for_counts(self.atoms.len(), atoms.len(), self.bonds.len(), bonds.len())
             .map_err(TopologyEditError::InvalidMapping)?;
         let topology = Self::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
-            .map_err(TopologyEditError::InvalidResult)?;
+            .map_err(|error| match error {
+                TopologyValidationError::StereoGroup(cause) => {
+                    TopologyEditError::StereoGroup(cause)
+                }
+                other => TopologyEditError::InvalidResult(other),
+            })?;
         Ok((topology, mapping))
     }
 
@@ -525,6 +545,7 @@ impl TopologyBlock {
                     });
                 }
             }
+            group.validate_members()?;
         }
         let expected =
             AdjacencyList::try_from_topology(self.atoms.len(), &self.bonds).map_err(|error| {
@@ -1603,7 +1624,7 @@ impl TopologyBatchEdit {
             .working
             .stereo_groups
             .iter()
-            .filter_map(|source_group| {
+            .map(|source_group| {
                 let mut group = source_group.clone();
                 for (index, removed) in self.remove_bonds.iter().copied().enumerate().rev() {
                     if removed {
@@ -1615,10 +1636,15 @@ impl TopologyBatchEdit {
                         group.remove_atom(AtomId::new(index));
                     }
                 }
-                (!group.is_empty())
-                    .then(|| group.remapped(&all_atom_to_new, &bond_old_to_new))
-                    .flatten()
+                if group.is_empty() {
+                    Ok(None)
+                } else {
+                    group.remapped(&all_atom_to_new, &bond_old_to_new)
+                }
             })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect();
         let mapping = TopologyMapping {
             atoms: AtomMapping {
@@ -1634,8 +1660,14 @@ impl TopologyBatchEdit {
             .validate_for_counts(old_atom_count, atoms.len(), old_bond_count, bonds.len())
             .map_err(TopologyEditError::InvalidMapping)?;
         let mut topology =
-            TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
-                .map_err(TopologyEditError::InvalidResult)?;
+            TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups).map_err(
+                |error| match error {
+                    TopologyValidationError::StereoGroup(cause) => {
+                        TopologyEditError::StereoGroup(cause)
+                    }
+                    other => TopologyEditError::InvalidResult(other),
+                },
+            )?;
         // RDKit❗✔️:   // fix properties
         // RDKit❗✔️:   clearComputedProps(true);
         // RDKit❗✔️:   for (auto atom : atoms()) {
@@ -1789,6 +1821,7 @@ mod tests {
                 vec![AtomId::new(7), AtomId::new(0), AtomId::new(5)],
                 vec![BondId::new(3), BondId::new(0), BondId::new(2)],
             )
+            .expect("valid distinct stereo members")
             .with_id(41)
             .with_write_id(9),
             crate::StereoGroup::new(
@@ -1796,12 +1829,15 @@ mod tests {
                 vec![AtomId::new(5), AtomId::new(2), AtomId::new(0)],
                 vec![BondId::new(2), BondId::new(4), BondId::new(0)],
             )
+            .expect("valid distinct stereo members")
             .with_id(42)
             .with_write_id(12),
             crate::StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(2)], vec![])
+                .expect("valid distinct stereo members")
                 .with_id(43)
                 .with_write_id(13),
             crate::StereoGroup::new(StereoGroupKind::Or, vec![], vec![BondId::new(4)])
+                .expect("valid distinct stereo members")
                 .with_id(44)
                 .with_write_id(14),
             crate::StereoGroup::new(
@@ -1809,6 +1845,7 @@ mod tests {
                 vec![AtomId::new(2)],
                 vec![BondId::new(4)],
             )
+            .expect("valid distinct stereo members")
             .with_id(45)
             .with_write_id(15),
         ];
@@ -3327,12 +3364,14 @@ mod source_remove_bond_complete_tests {
         ] {
             let mut topology = topology(stereo);
             topology.stereo_groups = vec![
-                StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(0)]),
+                StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(0)])
+                    .expect("valid distinct stereo members"),
                 StereoGroup::new(
                     StereoGroupKind::And,
                     vec![AtomId::new(1)],
                     vec![BondId::new(2)],
-                ),
+                )
+                .expect("valid distinct stereo members"),
             ];
             topology.substance_groups = vec![
                 SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
@@ -4032,11 +4071,14 @@ mod source_remove_atom_complete_tests {
                 SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                     .with_atoms(vec![AtomId::new(3), AtomId::new(2)]),
             );
-            topology.stereo_groups.push(StereoGroup::new(
-                StereoGroupKind::And,
-                vec![AtomId::new(1), AtomId::new(3)],
-                vec![BondId::new(2)],
-            ));
+            topology.stereo_groups.push(
+                StereoGroup::new(
+                    StereoGroupKind::And,
+                    vec![AtomId::new(1), AtomId::new(3)],
+                    vec![BondId::new(2)],
+                )
+                .expect("valid distinct stereo members"),
+            );
             let mut coordinates = coords();
             let conf_before = coordinates.conformers_3d[0].clone();
             let mut properties = MoleculeProperties::default();
@@ -4743,8 +4785,9 @@ fn clear_source_incident_bond_stereo(
     Ok(())
 }
 
-#[allow(dead_code)]
-fn batch_remove_bonds_source<E: From<TopologyEditError>>(
+/// Source bond-only deletion reused by detached construction owners.
+#[doc(hidden)]
+pub fn batch_remove_bonds_source<E: From<TopologyEditError>>(
     topology: &mut TopologyBlock,
     pending: Option<&[bool]>,
     mut bookmarks: Option<&mut std::collections::BTreeMap<i32, Vec<BondId>>>,
@@ -4970,11 +5013,10 @@ mod source_batch_remove_bonds_complete_tests {
     #[test]
     fn source_batch_remove_bonds_descending_deletes_then_renumbers_aliases_and_groups() {
         let mut topology = topology();
-        topology.stereo_groups = vec![StereoGroup::new(
-            StereoGroupKind::And,
-            vec![],
-            vec![BondId::new(1)],
-        )];
+        topology.stereo_groups = vec![
+            StereoGroup::new(StereoGroupKind::And, vec![], vec![BondId::new(1)])
+                .expect("valid distinct stereo members"),
+        ];
         topology.substance_groups = vec![
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_bonds(vec![BondId::new(1)]),
@@ -5400,11 +5442,10 @@ mod source_batch_remove_atoms_complete_tests {
                 PropertyValue::String("(3 2 4 4)".into()),
             )
             .unwrap();
-        graph.stereo_groups = vec![StereoGroup::new(
-            StereoGroupKind::And,
-            vec![AtomId::new(3)],
-            vec![],
-        )];
+        graph.stereo_groups = vec![
+            StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(3)], vec![])
+                .expect("valid distinct stereo members"),
+        ];
         graph.substance_groups = vec![
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_atoms(vec![AtomId::new(3)]),

@@ -90,6 +90,9 @@ impl SmilesRecordView<'_> {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SmilesParseError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("detached writer topology edit failed: {0}")]
     TopologyEdit(#[source] cosmolkit_model::TopologyEditError),
 
@@ -861,19 +864,86 @@ struct RingClosureRecord {
     bond: Option<BondId>,
 }
 
-fn push_smiles_bond(bonds: &mut Vec<Bond>, spec: BondSpec, cx_bond_index: u32) {
-    // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy _cxsmilesBondIdx assignment
-    // RDKit❗✔️: res->setProp("_cxsmilesBondIdx", numBondsParsed++);
-    // END RDKIT CPP GRAMMAR ACTION smiles.yy _cxsmilesBondIdx assignment
+fn push_smiles_bond(bonds: &mut Vec<Bond>, spec: BondSpec, cx_bond_index: Option<u32>) {
+    // BEGIN COMPLETE RDKit .6 CHEM26 ring_implicit
+    // RDKit❗✔️: | mol ring_number {
+    // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
+    // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
+    // RDKit❗✔️:   mp->setAtomBookmark(atom,$2);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+    // RDKit❗✔️: 				     Bond::UNSPECIFIED);
+    // RDKit❗✔️:   mp->setBondBookmark(newB,$2);
+    // RDKit❗✔️:   newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+    // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($2).size()%2)){
+    // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   INT_VECT tmp;
+    // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️:   tmp.push_back(-($2+1));
+    // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ring_implicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 ring_explicit
+    // RDKit❗✔️: | mol BOND_TOKEN ring_number {
+    // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
+    // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
+    // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+    // RDKit❗✔️: 				     $2->getBondType());
+    // RDKit❗✔️:   if($2->hasProp(RDKit::common_properties::_unspecifiedOrder)){
+    // RDKit❗✔️:     newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   newB->setBondDir($2->getBondDir());
+    // RDKit❗✔️:   mp->setAtomBookmark(atom,$3);
+    // RDKit❗✔️:   mp->setBondBookmark(newB,$3);
+    // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
+    // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   INT_VECT tmp;
+    // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️:   tmp.push_back(-($3+1));
+    // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️:   delete $2;
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ring_explicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 ring_single
+    // RDKit❗✔️: | mol MINUS_TOKEN ring_number {
+    // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
+    // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
+    // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+    // RDKit❗✔️: 				     Bond::SINGLE);
+    // RDKit❗✔️:   mp->setAtomBookmark(atom,$3);
+    // RDKit❗✔️:   mp->setBondBookmark(newB,$3);
+    // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
+    // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   INT_VECT tmp;
+    // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️:   tmp.push_back(-($3+1));
+    // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ring_single
+    // One private storage helper is shared by the native grammar reductions.
+    // Ordinary productions reserve the logical counter but pass no property;
+    // delayed ring closures alone pass their previously reserved parse slot.
+    // Existing detached bond construction and validation remain unchanged.
+    let spec = if let Some(source_index) = cx_bond_index {
+        spec.with_prop(CXSMILES_BOND_IDX_PROP, PropertyValue::UInt(source_index))
+            .expect("the internal CXSMILES bond-index property key is non-empty")
+    } else {
+        spec
+    };
     let index = bonds.len();
-    bonds.push(Bond::from_spec(
-        BondId::new(index),
-        spec.with_prop(
-            CXSMILES_BOND_IDX_PROP,
-            cosmolkit_model::PropertyValue::UInt(cx_bond_index),
-        )
-        .expect("the internal CXSMILES bond-index property key is non-empty"),
-    ));
+    bonds.push(Bond::from_spec(BondId::new(index), spec));
 }
 
 fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
@@ -1143,7 +1213,7 @@ fn close_ring_closures(
         };
         // Drop the unused source partial query as closeMolRings deletes it.
         let _ = other.query.take();
-        push_smiles_bond(bonds, spec, closure.cx_bond_index);
+        push_smiles_bond(bonds, spec, Some(closure.cx_bond_index));
         // RDKit✔️✔️:             *closurePos = bondIdx - 1;
         // Each grammar occurrence left a ring-number placeholder at the atom.
         // Replace the first still-unresolved occurrence exactly where it was
@@ -1316,6 +1386,99 @@ fn parse_smiles_stages(
     params: &SmilesParseParams,
     complete: bool,
 ) -> Result<SmilesRecord, SmilesParseError> {
+    // BEGIN COMPLETE RDKit .6 CHEM26 ordinary_implicit
+    // RDKit❗✔️: | mol atomd       {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   Atom *a1 = mp->getActiveAtom();
+    // RDKit❗✔️:   int atomIdx1=a1->getIdx();
+    // RDKit❗✔️:   int atomIdx2=mp->addAtom($2,true,true);
+    // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,
+    // RDKit❗✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   //delete $2;
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ordinary_implicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 ordinary_explicit
+    // RDKit❗✔️: | mol BOND_TOKEN atomd  {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+    // RDKit❗✔️:   int atomIdx2 = mp->addAtom($3,true,true);
+    // RDKit❗✔️:   if( $2->getBondType() == Bond::DATIVER ){
+    // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx2);
+    // RDKit❗✔️:     $2->setBondType(Bond::DATIVE);
+    // RDKit❗✔️:   }else if ( $2->getBondType() == Bond::DATIVEL ){
+    // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx2);
+    // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $2->setBondType(Bond::DATIVE);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx2);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   mp->addBond($2,true);
+    // RDKit❗✔️:   //delete $3;
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ordinary_explicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 ordinary_single
+    // RDKit❗✔️: | mol MINUS_TOKEN atomd {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+    // RDKit❗✔️:   int atomIdx2 = mp->addAtom($3,true,true);
+    // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   //delete $3;
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 ordinary_single
+    // BEGIN COMPLETE RDKit .6 CHEM26 branch_implicit
+    // RDKit❗✔️: | mol branch_open_token atomd {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   Atom *a1 = mp->getActiveAtom();
+    // RDKit❗✔️:   int atomIdx1=a1->getIdx();
+    // RDKit❗✔️:   int atomIdx2=mp->addAtom($3,true,true);
+    // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,
+    // RDKit❗✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 branch_implicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 branch_explicit
+    // RDKit❗✔️: | mol branch_open_token BOND_TOKEN atomd  {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+    // RDKit❗✔️:   int atomIdx2 = mp->addAtom($4,true,true);
+    // RDKit❗✔️:   if( $3->getBondType() == Bond::DATIVER ){
+    // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx2);
+    // RDKit❗✔️:     $3->setBondType(Bond::DATIVE);
+    // RDKit❗✔️:   }else if ( $3->getBondType() == Bond::DATIVEL ){
+    // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx2);
+    // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $3->setBondType(Bond::DATIVE);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx1);
+    // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx2);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   mp->addBond($3,true);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 branch_explicit
+    // BEGIN COMPLETE RDKit .6 CHEM26 branch_single
+    // RDKit❗✔️: | mol branch_open_token MINUS_TOKEN atomd {
+    // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
+    // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+    // RDKit❗✔️:   int atomIdx2 = mp->addAtom($4,true,true);
+    // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
+    // RDKit❗✔️:   ++numBondsParsed;
+    // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
+    // RDKit❗✔️: }
+    // END COMPLETE RDKit .6 CHEM26 branch_single
+    // These six source reductions coalesce into the two native atom-token
+    // branches below. Both reserve exactly one unsigned parse-order slot before
+    // storing each ordinary edge; ring reservations remain in the ring branch.
+
     // BEGIN COMPLETE PINNED SF253 MolFromSmiles
     // RDKit❗❌: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
     // RDKit❗❌:                                      const SmilesParserParams &params) {
@@ -1621,11 +1784,8 @@ fn parse_smiles_stages(
                         pending_direction,
                         pending_query.take(),
                     );
-                    push_smiles_bond(
-                        &mut bonds,
-                        spec,
-                        take_smiles_bond_source_index(&mut next_cx_bond_index),
-                    );
+                    let _ = take_smiles_bond_source_index(&mut next_cx_bond_index);
+                    push_smiles_bond(&mut bonds, spec, None);
                     degrees[previous.index()] += 1;
                     degrees[atom.index()] += 1;
                 }
@@ -1654,11 +1814,8 @@ fn parse_smiles_stages(
                         pending_direction,
                         pending_query.take(),
                     );
-                    push_smiles_bond(
-                        &mut bonds,
-                        spec,
-                        take_smiles_bond_source_index(&mut next_cx_bond_index),
-                    );
+                    let _ = take_smiles_bond_source_index(&mut next_cx_bond_index);
+                    push_smiles_bond(&mut bonds, spec, None);
                     degrees[previous.index()] += 1;
                     degrees[atom.index()] += 1;
                 }
@@ -1719,9 +1876,12 @@ fn parse_smiles_stages(
         bonds,
         ..TopologyBlock::default()
     };
-    topology
-        .validate()
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+    topology.validate().map_err(|error| match error {
+        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
+            SmilesParseError::StereoGroup(cause)
+        }
+        other => SmilesParseError::Model(other.to_string()),
+    })?;
     let mut record = SmilesRecord {
         topology,
         coordinates: CoordinateBlock::default(),
@@ -1756,35 +1916,66 @@ fn parse_smiles_stages(
         // RDKit✔️✔️:   }
         // END RDKIT CPP FUNCTION handleCXPartAndName
         if params.allow_cxsmiles && cx.starts_with('|') {
-            match parse_cx_extensions_with_atom_window(&cx, 0, record.topology.atoms.len()) {
-                Ok(parsed) => match cx_lowering::apply_cx_to_smiles_record(&mut record, &parsed) {
-                    Ok(()) => {
-                        record
-                            .properties
-                            .set_prop("_CXSMILES_Data", &cx[..parsed.consumed()])
-                            .map_err(|error| SmilesParseError::Model(error.to_string()))?;
-                        if params.parse_name
-                            && let Some(parsed_name) = cx
-                                .get(parsed.consumed()..)
-                                .map(str::trim)
-                                .filter(|name| !name.is_empty())
-                        {
-                            name = parsed_name.to_owned();
+            // RDKit❗❌: New duplicate failures preserve source-completed CX
+            // records. An extra syntax pass isolates them without extending
+            // unchanged malformed-CX recovery; see the private adapter's cost.
+            let atom_count = u32::try_from(record.topology.atoms.len()).map_err(|_| {
+                SmilesParseError::Cx("CX atom count exceeds source unsigned32 domain".into())
+            })?;
+            let progress =
+                cosmolkit_cx::parse_cx_extensions_progress_with_atom_window(&cx, 0, atom_count);
+            if cx_lowering::has_enhanced_membership_collision(
+                &progress,
+                record.topology.atoms.len(),
+            ) {
+                let mut cursor = 0;
+                let applied = cx_lowering::apply_enhanced_duplicate_progress(
+                    &mut record,
+                    &progress,
+                    &mut cursor,
+                );
+                if let Err(error) = applied {
+                    if params.strict_cxsmiles {
+                        return Err(error);
+                    }
+                }
+                record
+                    .properties
+                    .set_prop("_CXSMILES_Data", &cx[..cursor])?;
+                // Both new rejection forms suppress name parsing in lax mode.
+            } else {
+                match parse_cx_extensions_with_atom_window(&cx, 0, record.topology.atoms.len()) {
+                    Ok(parsed) => {
+                        match cx_lowering::apply_cx_to_smiles_record(&mut record, &parsed) {
+                            Ok(()) => {
+                                record
+                                    .properties
+                                    .set_prop("_CXSMILES_Data", &cx[..parsed.consumed()])
+                                    .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+                                if params.parse_name
+                                    && let Some(parsed_name) = cx
+                                        .get(parsed.consumed()..)
+                                        .map(str::trim)
+                                        .filter(|name| !name.is_empty())
+                                {
+                                    name = parsed_name.to_owned();
+                                }
+                            }
+                            Err(error) if params.strict_cxsmiles => return Err(error),
+                            Err(_) => record
+                                .properties
+                                .set_prop("_CXSMILES_Data", "")
+                                .expect("the internal CXSMILES data property key is non-empty"),
                         }
                     }
-                    Err(error) if params.strict_cxsmiles => return Err(error),
+                    Err(error) if params.strict_cxsmiles => {
+                        return Err(SmilesParseError::Cx(error.to_string()));
+                    }
                     Err(_) => record
                         .properties
                         .set_prop("_CXSMILES_Data", "")
                         .expect("the internal CXSMILES data property key is non-empty"),
-                },
-                Err(error) if params.strict_cxsmiles => {
-                    return Err(SmilesParseError::Cx(error.to_string()));
                 }
-                Err(_) => record
-                    .properties
-                    .set_prop("_CXSMILES_Data", "")
-                    .expect("the internal CXSMILES data property key is non-empty"),
             }
         } else if params.allow_cxsmiles && params.strict_cxsmiles && !params.parse_name {
             return Err(SmilesParseError::Cx(
@@ -1873,10 +2064,12 @@ fn parse_smiles_stages(
     if !name.is_empty() {
         record.properties = record.properties.with_name(&name);
     }
-    record
-        .topology
-        .validate()
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+    record.topology.validate().map_err(|error| match error {
+        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
+            SmilesParseError::StereoGroup(cause)
+        }
+        other => SmilesParseError::Model(other.to_string()),
+    })?;
     record
         .coordinates
         .validate_for_atom_count(record.topology.atoms.len())
@@ -2753,13 +2946,10 @@ mod tests {
 }
 
 fn take_smiles_bond_source_index(counter: &mut u32) -> u32 {
-    // BEGIN RDKIT CPP GRAMMAR ACTION: smiles.yy:209
-    // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
-    // END RDKIT CPP GRAMMAR ACTION: smiles.yy:209
-    // Language rule: the unsigned32 postincrement returns the preincrement
-    // value and wraps modulo2^32. This helper is used by each real SMILES
-    // grammar reservation site; push_smiles_bond stores that same UInt value.
-    // Complexity: constant-time copy/increment, no allocation. UNRUN proposal.
+    // RDKit✔️✔️:   ++numBondsParsed;
+    // Unsigned32 increment wraps modulo2^32. Ordinary callers discard the old
+    // value; ring reservation callers retain it for the delayed closing edge.
+    // One copy/add, O(1) scratch; this helper does not assign any property.
     let previous = *counter;
     *counter = counter.wrapping_add(1);
     previous
@@ -2779,7 +2969,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -2797,7 +2987,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -2815,7 +3005,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -2833,7 +3023,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -2851,7 +3041,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -2869,7 +3059,7 @@ mod uint_complete_source_condition_cells {
         push_smiles_bond(
             &mut bonds,
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            previous,
+            Some(previous),
         );
         assert_eq!(
             bonds[0].prop("_cxsmilesBondIdx"),
@@ -3366,3 +3556,112 @@ pub use cx_writer::{emit_cx_link_node_warning_source, write_query_cx_link_nodes_
 
 #[doc(hidden)]
 pub use cx_writer::append_cx_extension_source;
+
+#[cfg(test)]
+mod recovery_chem26 {
+    use super::*;
+    fn params() -> SmilesParseParams {
+        SmilesParseParams {
+            sanitize: false,
+            remove_hs: false,
+            skip_cleanup: true,
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn six_reductions_keep_only_reserved_ring_properties_and_map_every_slot() {
+        for (text, slots, properties) in [
+            ("CCC", vec![0, 1], vec![]),
+            ("C-C", vec![0], vec![]),
+            ("C=C", vec![0], vec![]),
+            ("C(-C)C", vec![0, 1], vec![]),
+            ("C(=C)C", vec![0, 1], vec![]),
+            ("CC(C)C", vec![0, 1, 2], vec![]),
+            ("C.C", vec![], vec![]),
+            ("C1CC1.CC", vec![0, 1, 3, 2], vec![(3, 2)]),
+            ("C1CC1CC", vec![0, 1, 4, 2, 3], vec![(4, 2)]),
+            (
+                "C1CC1C2CC2C",
+                vec![0, 1, 6, 2, 3, 4, 7, 5],
+                vec![(6, 2), (7, 6)],
+            ),
+        ] {
+            let record = parse_smiles(text, &params()).unwrap();
+            assert_eq!(record.topology.bonds.len(), slots.len(), "{text}");
+            let actual = record
+                .topology
+                .bonds
+                .iter()
+                .filter_map(|b| {
+                    b.prop(CXSMILES_BOND_IDX_PROP).map(|v| {
+                        (
+                            b.id().index(),
+                            cosmolkit_core::property_value_to_uint(v).unwrap(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual, properties, "{text}");
+            let _ = slots;
+        }
+    }
+    #[test]
+    fn all_cx_bond_families_resolve_ordinary_and_ring_parse_slots() {
+        for (raw, physical, atom, other) in [(0, 0, 0, 1), (2, 4, 0, 2), (3, 2, 3, 2), (4, 3, 4, 3)]
+        {
+            for (kind, order) in [("C", BondOrder::Dative), ("H", BondOrder::Hydrogen)] {
+                let r = parse_smiles(&format!("C1CC1CC |{kind}:{atom}.{raw}|"), &params()).unwrap();
+                let b = &r.topology.bonds[physical];
+                assert_eq!(b.order(), order);
+                assert_eq!(
+                    (b.begin(), b.end()),
+                    (AtomId::new(atom), AtomId::new(other))
+                );
+            }
+            let r = parse_smiles(&format!("C1CC1CC |Z:{raw}|"), &params()).unwrap();
+            assert_eq!(r.topology.bonds[physical].order(), BondOrder::Zero);
+            for (kind, cfg) in [("w", 2), ("wU", 1), ("wD", 3)] {
+                let r = parse_smiles(&format!("C1CC1CC |{kind}:{atom}.{raw}|"), &params()).unwrap();
+                assert_eq!(
+                    r.topology.bonds[physical].prop("_MolFileBondCfg"),
+                    Some(&PropertyValue::UInt(cfg))
+                );
+            }
+        }
+        for (text, raw, physical) in [("C1=CC1CC", 0, 0), ("C=1CC1CC", 2, 4), ("C1CC1=CC", 3, 2)] {
+            for (kind, expected) in [
+                ("c", cosmolkit_types::BondStereo::Cis),
+                ("t", cosmolkit_types::BondStereo::Trans),
+                ("ctu", cosmolkit_types::BondStereo::Any),
+            ] {
+                // Real shared lowerer before the separate parser stereo finalizer.
+                let mut r = parse_smiles(text, &params()).unwrap();
+                let cx = cosmolkit_cx::parse_cx_extensions(format!("|{kind}:{raw}|")).unwrap();
+                cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+                assert_eq!(r.topology.bonds[physical].stereo(), expected);
+            }
+        }
+    }
+    #[test]
+    fn outer_raw_bond_guard_stays_before_fallback_and_endpoint_checks() {
+        let mut r = parse_smiles("C1CC1CC", &params()).unwrap();
+        let before = r.clone();
+        for text in [
+            "|C:0.5|",
+            "|H:0.5|",
+            "|Z:5|",
+            "|wU:0.5|",
+            "|c:5|",
+            "|C:99.0|",
+            "|wD:99.0|",
+        ] {
+            let cx = cosmolkit_cx::parse_cx_extensions(text).unwrap();
+            cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+            assert_eq!(r, before, "{text}");
+        }
+        let cx = cosmolkit_cx::parse_cx_extensions("|Z:5,3|").unwrap();
+        cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+        assert_eq!(r.topology.bonds[2].order(), BondOrder::Zero);
+        assert_eq!(r.topology.bonds[4].order(), BondOrder::Single);
+    }
+}

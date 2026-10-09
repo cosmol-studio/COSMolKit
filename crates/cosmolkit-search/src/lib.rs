@@ -600,3 +600,21 @@ mod query_cx_composition;
 #[cfg(feature = "smiles-integration")]
 #[doc(hidden)]
 pub use query_cx_composition::{QueryCxComposition, compose_query_cx_templates};
+
+/// Internal source count overload; shares compiled plans, recursion and typed
+/// errors with matching while retaining only accepted sink count, not rows.
+#[doc(hidden)]
+pub fn try_get_substruct_match_count_with_compiled_query_and_context(
+    target: &SearchTarget<'_>,
+    query: &CompiledQuery,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+) -> Result<u32, SubstructMatchError> {
+    matcher::try_get_substruct_match_count_with_compiled_query_and_context(
+        target,
+        &query.query,
+        params,
+        &query.compiled_graph,
+        query_context,
+    )
+}

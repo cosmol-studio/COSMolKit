@@ -348,42 +348,49 @@ impl AtomLabel {
 }
 
 fn adjust_colons(symbol: &[u8], rects: &mut [StringRect]) {
-    // BEGIN RDKIT CPP FUNCTION AtomSymbol::adjustColons (AtomSymbol.cpp)
-    // RDKit✔️✔️: if (symbol_.empty()) {
-    // RDKit✔️✔️:   return;  // but probably it's always got something in it.
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: size_t colonPos = symbol_.find(':');
-    // RDKit✔️✔️: if (colonPos == std::string::npos) {
-    // RDKit✔️✔️:   return;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: // we need to allow for markup in the symbol, such as <lit>[CH2;X2:4]</lit>
-    // RDKit✔️✔️: // and the easiest way to do that is to use the fact that atomLabelToPieces
-    // RDKit✔️✔️: // strips it out.
-    // RDKit✔️✔️: std::string tmpSym = symbol_;
-    // RDKit✔️✔️: while (true) {
-    // RDKit✔️✔️:   size_t ltPos = tmpSym.find('<');
-    // RDKit✔️✔️:   if (ltPos == std::string::npos) {
-    // RDKit✔️✔️:     break;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   size_t gtPos = tmpSym.find('>');
-    // RDKit✔️✔️:   tmpSym = tmpSym.substr(0, ltPos) + tmpSym.substr(gtPos + 1);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: colonPos = tmpSym.find(':');
-    // RDKit✔️✔️: if (colonPos == std::string::npos) {
-    // RDKit✔️✔️:   return;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: double leftHeight = colonPos ? rects_[colonPos - 1]->height_ : 0;
-    // RDKit✔️✔️: double rightHeight =
-    // RDKit✔️✔️:     colonPos < symbol_.size() - 1 ? rects_[colonPos + 1]->height_ : 0;
-    // RDKit✔️✔️: rects_[colonPos]->height_ = std::min(leftHeight, rightHeight);
-    // END RDKIT CPP FUNCTION AtomSymbol::adjustColons
+    // BEGIN RECOVERY DRAW-03 SOURCE adjust_colons
+    // RDKit❗✔️: void AtomSymbol::adjustColons() {
+    // RDKit❗✔️:   if (symbol_.empty()) {
+    // RDKit❗✔️:     return;  // but probably it's always got something in it.
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   size_t colonPos = symbol_.find(':');
+    // RDKit❗✔️:   if (colonPos == std::string::npos) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we need to allow for markup in the symbol, such as <lit>[CH2;X2:4]</lit>
+    // RDKit❗✔️:   // and the easiest way to do that is to use the fact that atomLabelToPieces
+    // RDKit❗✔️:   // strips it out.
+    // RDKit❗✔️:   std::string tmpSym = symbol_;
+    // RDKit❗✔️:   while (true) {
+    // RDKit❗✔️:     size_t ltPos = tmpSym.find('<');
+    // RDKit❗✔️:     if (ltPos == std::string::npos) {
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     size_t gtPos = tmpSym.find('>');
+    // RDKit❗✔️:     if (gtPos == std::string::npos) {
+    // RDKit❗✔️:       return;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     tmpSym = tmpSym.substr(0, ltPos) + tmpSym.substr(gtPos + 1);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   colonPos = tmpSym.find(':');
+    // RDKit❗✔️:   if (colonPos == std::string::npos) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   CHECK_INVARIANT(colonPos < rects_.size(), "bad rects_ size");
+    // RDKit❗✔️:   double leftHeight = colonPos ? rects_[colonPos - 1]->height_ : 0;
+    // RDKit❗✔️:   double rightHeight =
+    // RDKit❗✔️:       colonPos + 1 < rects_.size() ? rects_[colonPos + 1]->height_ : 0;
+    // RDKit❗✔️:   rects_[colonPos]->height_ = std::min(leftHeight, rightHeight);
+    // RDKit❗✔️: }
+    // END RECOVERY DRAW-03 SOURCE adjust_colons
+
     if symbol.is_empty() {
         return;
     }
     let mut tmp_sym = symbol.to_vec();
     while let Some(lt_pos) = tmp_sym.iter().position(|&byte| byte == b'<') {
         let Some(gt_pos) = tmp_sym.iter().position(|&byte| byte == b'>') else {
-            break;
+            return;
         };
         tmp_sym = [&tmp_sym[..lt_pos], &tmp_sym[gt_pos + 1..]].concat();
     }
@@ -398,7 +405,7 @@ fn adjust_colons(symbol: &[u8], rects: &mut [StringRect]) {
     } else {
         0.0
     };
-    let right_height = if colon_pos < symbol.len() - 1 && colon_pos + 1 < rects.len() {
+    let right_height = if colon_pos + 1 < rects.len() {
         rects[colon_pos + 1].height
     } else {
         0.0
@@ -903,6 +910,114 @@ fn normalize_point2d(mut point: DVec2) -> DVec2 {
     point.x /= length;
     point.y /= length;
     point
+}
+
+fn checked_normalize_point2d(mut point: DVec2) -> Option<DVec2> {
+    // BEGIN RECOVERY DRAW-04 SOURCE length
+    // RDKit❗✔️:
+    // RDKit❗✔️:   double length() const override {
+    // RDKit❗✔️:     // double res = pow(x,2) + pow(y,2);
+    // RDKit❗✔️:     double res = x * x + y * y;
+    // RDKit❗✔️:     return sqrt(res);
+    // RDKit❗✔️:   }
+    // END RECOVERY DRAW-04 SOURCE length
+
+    // BEGIN RECOVERY DRAW-04 SOURCE normalize
+    // RDKit❗✔️:   void normalize() override {
+    // RDKit❗✔️:     double ln = this->length();
+    // RDKit❗✔️:     if (ln < zero_tolerance) {
+    // RDKit❗✔️:       throw std::runtime_error("Cannot normalize a zero length vector");
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     x /= ln;
+    // RDKit❗✔️:     y /= ln;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // END RECOVERY DRAW-04 SOURCE normalize
+
+    let length = (point.x * point.x + point.y * point.y).sqrt();
+    if length < 1.0e-16 {
+        return None;
+    }
+    point.x /= length;
+    point.y /= length;
+    Some(point)
+}
+
+fn checked_direction_vector(from: DVec2, to: DVec2) -> Option<DVec2> {
+    // BEGIN RECOVERY DRAW-04 SOURCE direction
+    // RDKit❗✔️:   Point2D directionVector(const Point2D &other) const {
+    // RDKit❗✔️:     Point2D res;
+    // RDKit❗✔️:     res.x = other.x - x;
+    // RDKit❗✔️:     res.y = other.y - y;
+    // RDKit❗✔️:     res.normalize();
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // END RECOVERY DRAW-04 SOURCE direction
+
+    checked_normalize_point2d(DVec2::new(to.x - from.x, to.y - from.y))
+}
+
+fn note_direction_vector(from: DVec2, to: DVec2) -> DVec2 {
+    // BEGIN RECOVERY DRAW-04 SOURCE note_neighbor
+    // RDKit❗✔️:     try {
+    // RDKit❗✔️:       bond_vec = at_cds.directionVector(atCds_[nbr]);
+    // RDKit❗✔️:     } catch (const std::runtime_error &e) {
+    // RDKit❗✔️:       bond_vec.x = 0.7071;
+    // RDKit❗✔️:       bond_vec.y = 0.7071;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     bond_vecs.push_back(bond_vec);
+    // END RECOVERY DRAW-04 SOURCE note_neighbor
+
+    checked_direction_vector(from, to).unwrap_or(DVec2::new(0.7071, 0.7071))
+}
+
+fn note_pair_direction(bond_vecs: &[DVec2]) -> DVec2 {
+    // BEGIN RECOVERY DRAW-04 SOURCE note_pairs
+    // RDKit❗✔️:     // just take 2 that are probably adjacent
+    // RDKit❗✔️:     double discrim = 4.0 * M_PI / bond_vecs.size();
+    // RDKit❗✔️:     for (size_t i = 0; i < bond_vecs.size() - 1; ++i) {
+    // RDKit❗✔️:       for (size_t j = i + 1; j < bond_vecs.size(); ++j) {
+    // RDKit❗✔️:         double ang = acos(bond_vecs[i].dotProduct(bond_vecs[j]));
+    // RDKit❗✔️:         if (ang < discrim) {
+    // RDKit❗✔️:           ret_vec = bond_vecs[i] + bond_vecs[j];
+    // RDKit❗✔️:           try {
+    // RDKit❗✔️:             ret_vec.normalize();
+    // RDKit❗✔️:           } catch (const std::runtime_error &e) {
+    // RDKit❗✔️:             // normalize throws on zero-length bond.
+    // RDKit❗✔️:             continue;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:           discrim = -1.0;
+    // RDKit❗✔️:           break;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (discrim > 0.0) {
+    // RDKit❗✔️:       ret_vec = bond_vecs[0] + bond_vecs[1];
+    // RDKit❗✔️:       ret_vec *= -1.0;
+    // RDKit❗✔️:     }
+    // END RECOVERY DRAW-04 SOURCE note_pairs
+
+    let mut discrim = 4.0 * std::f64::consts::PI / bond_vecs.len() as f64;
+    let mut ret = DVec2::ZERO;
+    'outer: for i in 0..bond_vecs.len() - 1 {
+        for j in i + 1..bond_vecs.len() {
+            let angle = bond_vecs[i].dot(bond_vecs[j]).acos();
+            if angle < discrim {
+                let Some(normalized) = checked_normalize_point2d(bond_vecs[i] + bond_vecs[j])
+                else {
+                    continue;
+                };
+                ret = normalized;
+                discrim = -1.0;
+                break 'outer;
+            }
+        }
+    }
+    if discrim > 0.0 {
+        ret = -(bond_vecs[0] + bond_vecs[1]);
+    }
+    ret
 }
 
 // BEGIN RDKIT CPP FUNCTION RDGeom::Point2D::directionVector (Geometry/point.h)
@@ -2507,6 +2622,212 @@ fn line_point(line: &DrawLine, point_idx: usize) -> DVec2 {
     }
 }
 
+#[derive(Debug)]
+struct SGroupDataLabel {
+    text: PropertyText,
+    pos: DVec2,
+    positioned: bool,
+    atom_idx: Option<usize>,
+}
+fn get_sgroup_data_labels(
+    topology: &TopologyBlock,
+    layout: Option<&cosmolkit_model::Conformer2D>,
+) -> Result<Vec<SGroupDataLabel>, DrawingError> {
+    // BEGIN RECOVERY DRAW-01 SOURCE get_sgroup_data_labels
+    // RDKit❗❌: std::vector<SGroupDataLabel> getSGroupDataLabels(const ROMol &mol,
+    // RDKit❗❌:                                                  double rotate) {
+    // RDKit❗❌:   std::vector<SGroupDataLabel> result;
+    // RDKit❗❌:   if (!mol.getNumConformers()) {
+    // RDKit❗❌:     return result;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   const auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗❌:   if (sgs.empty()) {
+    // RDKit❗❌:     return result;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   double rot = rotate * M_PI / 180.0;
+    // RDKit❗❌:   RDGeom::Transform2D tform;
+    // RDKit❗❌:   tform.SetTransform(Point2D(0.0, 0.0), rot);
+    // RDKit❗❌:
+    // RDKit❗❌:   const auto &conf = mol.getConformer();
+    // RDKit❗❌:   for (const auto &sg : sgs) {
+    // RDKit❗❌:     std::string typ;
+    // RDKit❗❌:     if (!sg.getPropIfPresent("TYPE", typ) || typ != "DAT") {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     std::string text;
+    // RDKit❗❌:     if (sg.hasProp("DATAFIELDS")) {
+    // RDKit❗❌:       STR_VECT dfs = sg.getProp<STR_VECT>("DATAFIELDS");
+    // RDKit❗❌:       for (const auto &df : dfs) {
+    // RDKit❗❌:         text += df + "|";
+    // RDKit❗❌:       }
+    // RDKit❗❌:       text.pop_back();
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (text.empty()) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     int atomIdx = -1;
+    // RDKit❗❌:     if (!sg.getAtoms().empty()) {
+    // RDKit❗❌:       atomIdx = sg.getAtoms()[0];
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     bool located = false;
+    // RDKit❗❌:     std::string fieldDisp;
+    // RDKit❗❌:     Point2D pos(0.0, 0.0);
+    // RDKit❗❌:     if (sg.getPropIfPresent("FIELDDISP", fieldDisp)) {
+    // RDKit❗❌:       double xp =
+    // RDKit❗❌:           FileParserUtils::stripSpacesAndCast<double>(fieldDisp.substr(0, 10));
+    // RDKit❗❌:       double yp =
+    // RDKit❗❌:           FileParserUtils::stripSpacesAndCast<double>(fieldDisp.substr(10, 10));
+    // RDKit❗❌:       // we always invert y for the molecule coords
+    // RDKit❗❌:       pos = Point2D{xp, -yp};
+    // RDKit❗❌:
+    // RDKit❗❌:       if (fieldDisp[25] == 'R') {
+    // RDKit❗❌:         if (atomIdx < 0) {
+    // RDKit❗❌:           // no atom to anchor relative position to, skip
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         } else if (fabs(xp) > 1e-3 || fabs(yp) > 1e-3) {
+    // RDKit❗❌:           // opposite sign for y
+    // RDKit❗❌:           pos.x += conf.getAtomPos(atomIdx).x;
+    // RDKit❗❌:           pos.y -= conf.getAtomPos(atomIdx).y;
+    // RDKit❗❌:           located = true;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         // Absolute position - check for centroid offset set by drawing pipeline
+    // RDKit❗❌:         if (mol.hasProp("_centroidx")) {
+    // RDKit❗❌:           Point2D centroid;
+    // RDKit❗❌:           mol.getProp("_centroidx", centroid.x);
+    // RDKit❗❌:           mol.getProp("_centroidy", centroid.y);
+    // RDKit❗❌:           // opposite sign for y
+    // RDKit❗❌:           pos.x += centroid.x;
+    // RDKit❗❌:           pos.y -= centroid.y;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         located = true;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       tform.TransformPoint(pos);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (!located) {
+    // RDKit❗❌:       if (atomIdx >= 0) {
+    // RDKit❗❌:         const auto &p = conf.getAtomPos(atomIdx);
+    // RDKit❗❌:         pos = Point2D{p.x, p.y};
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:             << "FIELDDISP info not found for DAT SGroup which isn't "
+    // RDKit❗❌:                "associated with an atom. SGroup will not be included."
+    // RDKit❗❌:             << std::endl;
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     result.push_back({text, pos, located, atomIdx});
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return result;
+    // RDKit❗❌: }
+    // END RECOVERY DRAW-01 SOURCE get_sgroup_data_labels
+
+    // Private absent-conformer boundary. Production always passes its validated prepared layout.
+    // Existing rotation/centroid omission and relative-y baseline stay qualified;
+    // read actual prepared raw coordinates, never drawing-scaled at_cds or original input.
+    let Some(layout) = layout else {
+        return Ok(vec![]);
+    };
+    let sgs = &topology.substance_groups;
+    let mut labels = Vec::new();
+    for sg in sgs {
+        let typ = sg
+            .props()
+            .get(b"TYPE".as_slice())
+            .map(cosmolkit_core::property_value_to_string)
+            .transpose()?;
+        if typ.as_ref().is_some_and(|text| text.as_bytes() == b"DAT") {
+            let mut text = PropertyText::new();
+            // Build text from data_fields
+            let data_fields = sg.data_fields();
+            for df in data_fields {
+                text.extend_bytes(df.as_bytes());
+                text.push_byte(b'|');
+            }
+            if !text.is_empty() {
+                let mut bytes = text.into_bytes();
+                bytes.pop();
+                text = PropertyText::from(bytes);
+            }
+            if text.is_empty() {
+                continue;
+            }
+            let atom_idx = if !sg.atoms().is_empty() {
+                Some(sg.atoms()[0].index())
+            } else {
+                None
+            };
+            let mut located = false;
+            let mut orig_loc = DVec2::ZERO;
+
+            // Check for FIELDDISP property in sg.props
+            if let Some(field_disp) = sg
+                .props()
+                .get(b"FIELDDISP".as_slice())
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()?
+            {
+                if field_disp.len() >= 26 {
+                    {
+                        let xp = cosmolkit_core::source_field_double(&field_disp.as_bytes()[0..10])
+                            .map_err(|source| DrawingError::DataFieldDouble {
+                                group: sg.id().index(),
+                                field: "x",
+                                source,
+                            })?;
+                        let yp =
+                            cosmolkit_core::source_field_double(&field_disp.as_bytes()[10..20])
+                                .map_err(|source| DrawingError::DataFieldDouble {
+                                    group: sg.id().index(),
+                                    field: "y",
+                                    source,
+                                })?;
+                        orig_loc = DVec2::new(xp, -yp);
+                        if field_disp.as_bytes().get(25) == Some(&b'R') {
+                            let Some(ai) = atom_idx else {
+                                continue;
+                            };
+                            {
+                                if xp.abs() > 1e-3 || yp.abs() > 1e-3 {
+                                    orig_loc.x += layout.coordinates()[ai][0];
+                                    orig_loc.y -= -layout.coordinates()[ai][1];
+                                    located = true;
+                                }
+                            }
+                        } else {
+                            located = true;
+                        }
+                    }
+                }
+            }
+
+            if !located {
+                if let Some(ai) = atom_idx {
+                    orig_loc = DVec2::new(layout.coordinates()[ai][0], layout.coordinates()[ai][1]);
+                } else {
+                    eprintln!(
+                        "FIELDDISP info not found for DAT SGroup which isn't associated with an atom. SGroup will not be included."
+                    );
+                    continue;
+                }
+            }
+            labels.push(SGroupDataLabel {
+                text,
+                pos: orig_loc,
+                positioned: located,
+                atom_idx,
+            });
+        }
+    }
+    Ok(labels)
+}
+
 /// Validated final detached values selected by the drawing-preparation owner.
 pub(crate) struct PreparedDrawingInput<'a> {
     pub topology: &'a TopologyBlock,
@@ -3946,11 +4267,50 @@ impl DrawMol {
         offset: f64,
         trunc: bool,
     ) -> DVec2 {
+        // BEGIN RECOVERY DRAW-04 SOURCE double_end
+        // RDKit❗❌: Point2D DrawMol::doubleBondEnd(unsigned int at1, unsigned int at2,
+        // RDKit❗❌:                                unsigned int at3, double offset,
+        // RDKit❗❌:                                bool trunc) const {
+        // RDKit❗❌:   Point2D v21 = atCds_[at2].directionVector(atCds_[at1]);
+        // RDKit❗❌:   Point2D v23 = atCds_[at2].directionVector(atCds_[at3]);
+        // RDKit❗❌:   Point2D v23perp(-v23.y, v23.x);
+        // RDKit❗❌:   v23perp.normalize();
+        // RDKit❗❌:
+        // RDKit❗❌:   Point2D bis = v21 + v23;
+        // RDKit❗❌:   try {
+        // RDKit❗❌:     bis.normalize();
+        // RDKit❗❌:   } catch (std::exception &e) {
+        // RDKit❗❌:     // if the bonds are colinear, bis comes out as 0, and thus normalizes
+        // RDKit❗❌:     // to NaN which gives a very ugly result (Github #6027).  It's safe
+        // RDKit❗❌:     // to use v23perp in this case, so long as it is on the right side of the
+        // RDKit❗❌:     // bond, which will be checked on return.
+        // RDKit❗❌:     return (atCds_[at2] - v23perp * offset);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   if (v23perp.dotProduct(bis) < 0.0) {
+        // RDKit❗❌:     v23perp = v23perp * -1.0;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   Point2D ip;
+        // RDKit❗❌:   // if there's an atom label, we don't need to step the bond end back
+        // RDKit❗❌:   // because both ends are shortened to accommodate the letters.
+        // RDKit❗❌:   // likewise if the two lines don't intersect, it's already stepped
+        // RDKit❗❌:   // back enough (github 6025).
+        // RDKit❗❌:   bool ipAlreadySet = false;
+        // RDKit❗❌:   if (trunc) {
+        // RDKit❗❌:     ipAlreadySet = doLinesIntersect(atCds_[at2], atCds_[at2] + bis,
+        // RDKit❗❌:                                     atCds_[at2] + v23perp * offset,
+        // RDKit❗❌:                                     atCds_[at3] + v23perp * offset, &ip);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   if (!ipAlreadySet) {
+        // RDKit❗❌:     ip = atCds_[at2] + v23perp * offset;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return ip;
+        // RDKit❗❌: }
+        // END RECOVERY DRAW-04 SOURCE double_end
+
         let v21 = direction_vector(at_cds[at2], at_cds[at1]);
         let v23 = direction_vector(at_cds[at2], at_cds[at3]);
         let mut v23perp = normalize_point2d(DVec2::new(-v23.y, v23.x));
-        let mut bis = v21 + v23;
-        if bis.length_squared() < 1.0e-6 {
+        let Some(bis) = checked_normalize_point2d(v21 + v23) else {
             let result = at_cds[at2] - v23perp * offset;
             if debug_target_bond().is_some() {
                 debug_svg_bond_log(format!(
@@ -3959,8 +4319,7 @@ impl DrawMol {
                 ));
             }
             return result;
-        }
-        bis = normalize_point2d(bis);
+        };
         if v23perp.dot(bis) < 0.0 {
             v23perp *= -1.0;
         }
@@ -5732,234 +6091,51 @@ impl DrawMol {
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION DrawMol::extractSGroupData (DrawMol.cpp:601-697)
-    // RDKit✔️✔️: void DrawMol::extractSGroupData() {
-    // RDKit✔️✔️:   if (!includeAnnotations_) { return Ok(()); }
-    // RDKit✔️✔️:   const auto &sgs = getSubstanceGroups(*drawMol_);
-    // RDKit✔️✔️:   if (sgs.empty()) { return Ok(()); }
-    // RDKit✔️✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
-    // RDKit✔️✔️:   RDGeom::Transform2D tform;
-    // RDKit✔️✔️:   tform.SetTransform(Point2D(0.0, 0.0), rot);
-    // RDKit✔️✔️:   for (const auto &sg : sgs) {
-    // RDKit✔️✔️:     std::string typ;
-    // RDKit✔️✔️:     if (sg.getPropIfPresent("TYPE", typ) && typ == "DAT") {
-    // RDKit✔️✔️:       std::string text;
-    // RDKit✔️✔️:       if (sg.hasProp("DATAFIELDS")) {
-    // RDKit✔️✔️:         STR_VECT dfs = sg.getProp<STR_VECT>("DATAFIELDS");
-    // RDKit✔️✔️:         for (const auto &df : dfs) { text += df + "|"; }
-    // RDKit✔️✔️:         text.pop_back();
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       if (text.empty()) { continue; }
-    // RDKit✔️✔️:       int atomIdx = -1;
-    // RDKit✔️✔️:       if (!sg.getAtoms().empty()) { atomIdx = sg.getAtoms()[0]; }
-    // RDKit✔️✔️:       bool located = false;
-    // RDKit✔️✔️:       Point2D origLoc(0.0, 0.0);
-    // RDKit✔️✔️:       if (sg.getPropIfPresent("FIELDDISP", fieldDisp)) {
-    // RDKit✔️✔️:         // ... parse field display coordinates and adjust
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       DrawAnnotation *annot = new DrawAnnotation(
-    // RDKit✔️✔️:           text, TextAlignType::START, "note", ...);
-    // RDKit✔️✔️:       if (!located) {
-    // RDKit✔️✔️:         calcAnnotationPosition(drawMol_->getAtomWithIdx(atomIdx), *annot);
-    // RDKit✔️✔️:       } else { annot->pos_ = origLoc; }
-    // RDKit✔️✔️:       annotations_.emplace_back(annot);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION DrawMol::extractSGroupData
     fn extract_sgroup_data(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
-        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
-        // RDKit❗✔️: void DrawMol::extractSGroupData() {
-        // RDKit❗✔️:   if (!includeAnnotations_) {
-        // RDKit❗✔️:     return Ok(());
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   const auto &sgs = getSubstanceGroups(*drawMol_);
-        // RDKit❗✔️:   if (sgs.empty()) {
-        // RDKit❗✔️:     return Ok(());
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
-        // RDKit❗✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
-        // RDKit❗✔️:   RDGeom::Transform2D tform;
-        // RDKit❗✔️:   tform.SetTransform(Point2D(0.0, 0.0), rot);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   for (const auto &sg : sgs) {
-        // RDKit❗✔️:     std::string typ;
-        // RDKit❗✔️:     if (sg.getPropIfPresent("TYPE", typ) && typ == "DAT") {
-        // RDKit❗✔️:       std::string text;
-        // RDKit❗✔️:       // it seems like we should be rendering FIELDNAME, but
-        // RDKit❗✔️:       // Marvin Sketch, Biovia Draw, and ChemDraw don't do it
-        // RDKit❗✔️:       // if (sg.getPropIfPresent("FIELDNAME", text)) {
-        // RDKit❗✔️:       //   text += "=";
-        // RDKit❗✔️:       // };
-        // RDKit❗✔️:       if (sg.hasProp("DATAFIELDS")) {
-        // RDKit❗✔️:         STR_VECT dfs = sg.getProp<STR_VECT>("DATAFIELDS");
-        // RDKit❗✔️:         for (const auto &df : dfs) {
-        // RDKit❗✔️:           text += df + "|";
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         text.pop_back();
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       if (text.empty()) {
-        // RDKit❗✔️:         continue;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       int atomIdx = -1;
-        // RDKit❗✔️:       if (!sg.getAtoms().empty()) {
-        // RDKit❗✔️:         atomIdx = sg.getAtoms()[0];
-        // RDKit❗✔️:       };
-        // RDKit❗✔️:       bool located = false;
-        // RDKit❗✔️:       std::string fieldDisp;
-        // RDKit❗✔️:       Point2D origLoc(0.0, 0.0);
-        // RDKit❗✔️:       if (sg.getPropIfPresent("FIELDDISP", fieldDisp)) {
-        // RDKit❗✔️:         double xp = FileParserUtils::stripSpacesAndCast<double>(
-        // RDKit❗✔️:             fieldDisp.substr(0, 10));
-        // RDKit❗✔️:         double yp = FileParserUtils::stripSpacesAndCast<double>(
-        // RDKit❗✔️:             fieldDisp.substr(10, 10));
-        // RDKit❗✔️:         // we always invert y for the molecule coords
-        // RDKit❗✔️:         origLoc = Point2D{xp, -yp};
-        // RDKit❗✔️:
-        // RDKit❗✔️:         if (fieldDisp[25] == 'R') {
-        // RDKit❗✔️:           if (atomIdx < 0) {
-        // RDKit❗✔️:             // we will warn about this below
-        // RDKit❗✔️:             text = "";
-        // RDKit❗✔️:           } else if (fabs(xp) > 1e-3 || fabs(yp) > 1e-3) {
-        // RDKit❗✔️:             // opposite sign for y
-        // RDKit❗✔️:             origLoc.x += drawMol_->getConformer().getAtomPos(atomIdx).x;
-        // RDKit❗✔️:             origLoc.y -= drawMol_->getConformer().getAtomPos(atomIdx).y;
-        // RDKit❗✔️:             located = true;
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         } else {
-        // RDKit❗✔️:           if (drawMol_->hasProp("_centroidx")) {
-        // RDKit❗✔️:             Point2D centroid;
-        // RDKit❗✔️:             drawMol_->getProp("_centroidx", centroid.x);
-        // RDKit❗✔️:             drawMol_->getProp("_centroidy", centroid.y);
-        // RDKit❗✔️:             // opposite sign for y
-        // RDKit❗✔️:             origLoc.x += centroid.x;
-        // RDKit❗✔️:             origLoc.y -= centroid.y;
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:           located = true;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         tform.TransformPoint(origLoc);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:
-        // RDKit❗✔️:       if (!text.empty()) {
-        // RDKit❗✔️:         // looks like everybody renders these left justified
-        // RDKit❗✔️:         DrawAnnotation *annot = new DrawAnnotation(
-        // RDKit❗✔️:             text, TextAlignType::START, "note",
-        // RDKit❗✔️:             drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
-        // RDKit❗✔️:             drawOptions_.annotationColour, textDrawer_);
-        // RDKit❗✔️:         if (!located) {
-        // RDKit❗✔️:           if (atomIdx >= 0 && !text.empty()) {
-        // RDKit❗✔️:             calcAnnotationPosition(drawMol_->getAtomWithIdx(atomIdx), *annot);
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         } else {
-        // RDKit❗✔️:           annot->pos_ = origLoc;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         annotations_.emplace_back(annot);
-        // RDKit❗✔️:       } else {
-        // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
-        // RDKit❗✔️:             << "FIELDDISP info not found for DAT SGroup which isn't "
-        // RDKit❗✔️:                "associated with an atom. SGroup will not be rendered."
-        // RDKit❗✔️:             << std::endl;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
+        // BEGIN RECOVERY DRAW-01 SOURCE extract_sgroup_data
+        // RDKit❗❌: void DrawMol::extractSGroupData() {
+        // RDKit❗❌:   if (!includeAnnotations_) {
+        // RDKit❗❌:     return;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // it seems like we should be rendering FIELDNAME, but
+        // RDKit❗❌:   // Marvin Sketch, Biovia Draw, and ChemDraw don't do it
+        // RDKit❗❌:   for (const auto &lbl :
+        // RDKit❗❌:        MolDraw2D_detail::getSGroupDataLabels(*drawMol_, drawOptions_.rotate)) {
+        // RDKit❗❌:     // looks like everybody renders these left justified
+        // RDKit❗❌:     DrawAnnotation *annot =
+        // RDKit❗❌:         new DrawAnnotation(lbl.text, TextAlignType::START, "note",
+        // RDKit❗❌:                            drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗❌:                            drawOptions_.annotationColour, textDrawer_);
+        // RDKit❗❌:     if (lbl.positioned) {
+        // RDKit❗❌:       annot->pos_ = lbl.pos;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       calcAnnotationPosition(drawMol_->getAtomWithIdx(lbl.atomIdx), *annot);
+        // RDKit❗❌:     }
+        // RDKit❗❌:     annotations_.emplace_back(annot);
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY DRAW-01 SOURCE extract_sgroup_data
 
         if !self.options.include_annotations {
             return Ok(());
         }
-        let sgs = &mol.topology.substance_groups;
-        if sgs.is_empty() {
-            return Ok(());
-        }
-        let font_size = self.font_size * self.font_scale;
-
-        for sg in sgs {
-            let typ = sg
-                .props()
-                .get(b"TYPE".as_slice())
-                .map(cosmolkit_core::property_value_to_string)
-                .transpose()?;
-            if typ.as_ref().is_some_and(|text| text.as_bytes() == b"DAT") {
-                let mut text = PropertyText::new();
-                // Build text from data_fields
-                let data_fields = sg.data_fields();
-                for df in data_fields {
-                    text.extend_bytes(df.as_bytes());
-                    text.push_byte(b'|');
-                }
-                if !text.is_empty() {
-                    let mut bytes = text.into_bytes();
-                    bytes.pop();
-                    text = PropertyText::from(bytes);
-                }
-                if text.is_empty() {
-                    continue;
-                }
-                let atom_idx = if !sg.atoms().is_empty() {
-                    Some(sg.atoms()[0].index())
-                } else {
-                    None
-                };
-                let mut located = false;
-                let mut orig_loc = DVec2::ZERO;
-
-                // Check for FIELDDISP property in sg.props
-                if let Some(field_disp) = sg
-                    .props()
-                    .get(b"FIELDDISP".as_slice())
-                    .map(cosmolkit_core::property_value_to_string)
-                    .transpose()?
-                {
-                    if field_disp.len() >= 26 {
-                        {
-                            let xp =
-                                cosmolkit_core::source_field_double(&field_disp.as_bytes()[0..10])
-                                    .map_err(|source| DrawingError::DataFieldDouble {
-                                        group: sg.id().index(),
-                                        field: "x",
-                                        source,
-                                    })?;
-                            let yp =
-                                cosmolkit_core::source_field_double(&field_disp.as_bytes()[10..20])
-                                    .map_err(|source| DrawingError::DataFieldDouble {
-                                        group: sg.id().index(),
-                                        field: "y",
-                                        source,
-                                    })?;
-                            orig_loc = DVec2::new(xp, -yp);
-                            if field_disp.as_bytes().get(25) == Some(&b'R') {
-                                if let Some(ai) = atom_idx {
-                                    if xp.abs() > 1e-3 || yp.abs() > 1e-3 {
-                                        orig_loc.x += self.at_cds[ai].x;
-                                        orig_loc.y -= self.at_cds[ai].y;
-                                        located = true;
-                                    }
-                                }
-                            } else {
-                                located = true;
-                            }
-                        }
-                    }
-                }
-
-                let mut annot = DrawAnnotation::new(
-                    text,
-                    TextAlignType::Start,
-                    "note".to_string(),
-                    self.options.annotation_font_scale,
-                    DVec2::ZERO,
-                    self.options.annotation_colour,
-                    self.font_size,
-                    self.font_scale,
-                );
-                if located {
-                    annot.pos = orig_loc;
-                } else if let Some(ai) = atom_idx {
-                    self.calc_annotation_position_for_atom(mol, ai, &mut annot);
-                }
-                self.annotations.push(annot);
+        for label in get_sgroup_data_labels(mol.topology, Some(mol.layout))? {
+            let mut annot = DrawAnnotation::new(
+                label.text,
+                TextAlignType::Start,
+                "note".to_string(),
+                self.options.annotation_font_scale,
+                DVec2::ZERO,
+                self.options.annotation_colour,
+                self.font_size,
+                self.font_scale,
+            );
+            if label.positioned {
+                annot.pos = label.pos;
+            } else if let Some(ai) = label.atom_idx {
+                self.calc_annotation_position_for_atom(mol, ai, &mut annot);
             }
+            self.annotations.push(annot);
         }
         Ok(())
     }
@@ -6143,192 +6319,170 @@ impl DrawMol {
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION DrawMol::extractBrackets (DrawMol.cpp:774-929)
-    // RDKit✔️✔️: void DrawMol::extractBrackets() {
-    // RDKit✔️✔️:   auto &sgs = getSubstanceGroups(*drawMol_);
-    // RDKit✔️✔️:   if (sgs.empty()) { return Ok(()); }
-    // RDKit✔️✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
-    // RDKit✔️✔️:   RDGeom::Transform2D trans;
-    // RDKit✔️✔️:   trans.SetTransform(Point2D(0.0, 0.0), rot);
-    // RDKit✔️✔️:   for (auto &sg : sgs) {
-    // RDKit✔️✔️:     if (sg.getBrackets().empty()) { continue; }
-    // RDKit✔️✔️:     Point2D refPt{0., 0.};
-    // RDKit✔️✔️:     if (!sg.getAtoms().empty()) {
-    // RDKit✔️✔️:       // compute bounding box of brackets, find atoms inside, average refPt
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     std::vector<std::pair<Point2D, Point2D>> sgBondSegments;
-    // RDKit✔️✔️:     for (auto bndIdx : sg.getBonds()) {
-    // RDKit✔️✔️:       // ... build bond segments
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     for (const auto &brk : sg.getBrackets()) {
-    // RDKit✔️✔️:       Point2D p1{brk[0].x, -brk[0].y};
-    // RDKit✔️✔️:       Point2D p2{brk[1].x, -brk[1].y};
-    // RDKit✔️✔️:       trans.TransformPoint(p1); trans.TransformPoint(p2);
-    // RDKit✔️✔️:       auto points = getBracketPoints(p1, p2, refPt, sgBondSegments);
-    // RDKit✔️✔️:       postShapes_.emplace_back(new DrawShapePolyLine(points, ...));
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (includeAnnotations_) {
-    // RDKit✔️✔️:       // Add CONNECT and LABEL/TYPE annotations on the last bracket
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION DrawMol::extractBrackets
     fn extract_brackets(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
+        // BEGIN RECOVERY DRAW-04 SOURCE brackets
+        // RDKit❗❌: void DrawMol::extractBrackets() {
+        // RDKit❗❌:   auto &sgs = getSubstanceGroups(*drawMol_);
+        // RDKit❗❌:   if (sgs.empty()) {
+        // RDKit❗❌:     return;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   // details of this transformation are in extractAtomCoords
+        // RDKit❗❌:   double rot = drawOptions_.rotate * M_PI / 180.0;
+        // RDKit❗❌:   RDGeom::Transform2D trans;
+        // RDKit❗❌:   trans.SetTransform(Point2D(0.0, 0.0), rot);
+        // RDKit❗❌:   for (auto &sg : sgs) {
+        // RDKit❗❌:     if (sg.getBrackets().empty()) {
+        // RDKit❗❌:       continue;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     // figure out the location of the reference point we'll use to figure out
+        // RDKit❗❌:     // which direction the bracket points
+        // RDKit❗❌:     // Thanks to John Mayfield for the thoughts on the best way to do this:
+        // RDKit❗❌:     //   http://efficientbits.blogspot.com/2015/11/bringing-molfile-sgroups-to-cdk.html
+        // RDKit❗❌:     Point2D refPt{0., 0.};
+        // RDKit❗❌:
+        // RDKit❗❌:     if (!sg.getAtoms().empty()) {
+        // RDKit❗❌:       // use the average position of the atoms in the sgroup
+        // RDKit❗❌:       // Github5768 shows that this is a bit simplistic in some cases.  In
+        // RDKit❗❌:       // that molecule, there is a long chain that stretches outside the
+        // RDKit❗❌:       // bracket area that turns the last bracket the wrong way.
+        // RDKit❗❌:       // Just pick out the SGroup atoms that are inside brackets, rather
+        // RDKit❗❌:       // crudely.
+        // RDKit❗❌:       double xMin = std::numeric_limits<double>::max() / 2.0;
+        // RDKit❗❌:       double yMin = std::numeric_limits<double>::max() / 2.0;
+        // RDKit❗❌:       double xMax = std::numeric_limits<double>::lowest() / 2.0;
+        // RDKit❗❌:       double yMax = std::numeric_limits<double>::lowest() / 2.0;
+        // RDKit❗❌:       for (const auto &brk : sg.getBrackets()) {
+        // RDKit❗❌:         Point2D p1{brk[0].x, -brk[0].y};
+        // RDKit❗❌:         Point2D p2{brk[1].x, -brk[1].y};
+        // RDKit❗❌:         trans.TransformPoint(p1);
+        // RDKit❗❌:         trans.TransformPoint(p2);
+        // RDKit❗❌:         xMin = std::min({xMin, p1.x, p2.x});
+        // RDKit❗❌:         yMin = std::min({yMin, p1.y, p2.y});
+        // RDKit❗❌:         xMax = std::max({xMax, p1.x, p2.x});
+        // RDKit❗❌:         yMax = std::max({yMax, p1.y, p2.y});
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       int numIn = 0;
+        // RDKit❗❌:       for (auto aidx : sg.getAtoms()) {
+        // RDKit❗❌:         if (atCds_[aidx].x >= xMin && atCds_[aidx].x <= xMax &&
+        // RDKit❗❌:             atCds_[aidx].y >= yMin && atCds_[aidx].y <= yMax) {
+        // RDKit❗❌:           refPt += atCds_[aidx];
+        // RDKit❗❌:           ++numIn;
+        // RDKit❗❌:         }
+        // RDKit❗❌:       }
+        // RDKit❗❌:       if (numIn) {
+        // RDKit❗❌:         refPt /= numIn;
+        // RDKit❗❌:       } else {
+        // RDKit❗❌:         // we'll have to go with all of them, and live with the consequences
+        // RDKit❗❌:         for (auto aidx : sg.getAtoms()) {
+        // RDKit❗❌:           refPt += atCds_[aidx];
+        // RDKit❗❌:         }
+        // RDKit❗❌:         refPt /= sg.getAtoms().size();
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:
+        // RDKit❗❌:     std::vector<std::pair<Point2D, Point2D>> sgBondSegments;
+        // RDKit❗❌:     for (auto bndIdx : sg.getBonds()) {
+        // RDKit❗❌:       const auto bnd = drawMol_->getBondWithIdx(bndIdx);
+        // RDKit❗❌:       if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
+        // RDKit❗❌:                     bnd->getBeginAtomIdx()) != sg.getAtoms().end()) {
+        // RDKit❗❌:         sgBondSegments.push_back(std::make_pair(atCds_[bnd->getBeginAtomIdx()],
+        // RDKit❗❌:                                                 atCds_[bnd->getEndAtomIdx()]));
+        // RDKit❗❌:
+        // RDKit❗❌:       } else if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
+        // RDKit❗❌:                            bnd->getEndAtomIdx()) != sg.getAtoms().end()) {
+        // RDKit❗❌:         sgBondSegments.push_back(std::make_pair(
+        // RDKit❗❌:             atCds_[bnd->getEndAtomIdx()], atCds_[bnd->getBeginAtomIdx()]));
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:     int numBrackets = 0;
+        // RDKit❗❌:     for (const auto &brk : sg.getBrackets()) {
+        // RDKit❗❌:       // the atom coords have been inverted in y, so the bracket coords
+        // RDKit❗❌:       // must be, too.
+        // RDKit❗❌:       ++numBrackets;
+        // RDKit❗❌:       Point2D p1{brk[0].x, -brk[0].y};
+        // RDKit❗❌:       Point2D p2{brk[1].x, -brk[1].y};
+        // RDKit❗❌:       trans.TransformPoint(p1);
+        // RDKit❗❌:       trans.TransformPoint(p2);
+        // RDKit❗❌:       auto points = getBracketPoints(p1, p2, refPt, sgBondSegments);
+        // RDKit❗❌:       DrawShapePolyLine *pl =
+        // RDKit❗❌:           new DrawShapePolyLine(points, drawOptions_.bondLineWidth, false,
+        // RDKit❗❌:                                 DrawColour(0.0, 0.0, 0.0), false);
+        // RDKit❗❌:       postShapes_.emplace_back(pl);
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (includeAnnotations_) {
+        // RDKit❗❌:       // Find the bottom-most or right-most bracket.  First work out if the
+        // RDKit❗❌:       // bracket is largely horizontal or largely vertical.
+        // RDKit❗❌:       const auto &brkShp = *postShapes_.back();
+        // RDKit❗❌:       Point2D longline = brkShp.points_[1] - brkShp.points_[2];
+        // RDKit❗❌:       try {
+        // RDKit❗❌:         longline.normalize();
+        // RDKit❗❌:       } catch (std::runtime_error &e) {
+        // RDKit❗❌:         // the bracket had no length so can be ignored.
+        // RDKit❗❌:         continue;
+        // RDKit❗❌:       }
+        // RDKit❗❌:       static const double cos45 = 1.0 / sqrt(2.0);
+        // RDKit❗❌:       bool horizontal = fabs(longline.x) > cos45;
+        // RDKit❗❌:       size_t labelBrk = postShapes_.size() - 1;
+        // RDKit❗❌:       for (int i = 1; i < numBrackets; ++i) {
+        // RDKit❗❌:         const auto &brkShp = *postShapes_[postShapes_.size() - i - 1];
+        // RDKit❗❌:         if (horizontal) {
+        // RDKit❗❌:           if (brkShp.points_[2].y > postShapes_[labelBrk]->points_[2].y) {
+        // RDKit❗❌:             labelBrk = postShapes_.size() - i - 1;
+        // RDKit❗❌:           }
+        // RDKit❗❌:         } else {
+        // RDKit❗❌:           if (brkShp.points_[2].x > postShapes_[labelBrk]->points_[2].x) {
+        // RDKit❗❌:             labelBrk = postShapes_.size() - i - 1;
+        // RDKit❗❌:           }
+        // RDKit❗❌:         }
+        // RDKit❗❌:       }
+        // RDKit❗❌:       std::string connect;
+        // RDKit❗❌:       if (sg.getPropIfPresent("CONNECT", connect)) {
+        // RDKit❗❌:         // annotations go on the last bracket of an sgroup
+        // RDKit❗❌:         const auto &brkShp = *postShapes_[labelBrk];
+        // RDKit❗❌:         // CONNECT goes at the top, but that's now the bottom due to the y
+        // RDKit❗❌:         // inversion
+        // RDKit❗❌:         auto botPt = brkShp.points_[2];
+        // RDKit❗❌:         auto brkPt = brkShp.points_[3];
+        // RDKit❗❌:         if ((!horizontal && brkShp.points_[1].y < botPt.y) ||
+        // RDKit❗❌:             (horizontal && brkShp.points_[1].x > botPt.x)) {
+        // RDKit❗❌:           botPt = brkShp.points_[1];
+        // RDKit❗❌:           brkPt = brkShp.points_[0];
+        // RDKit❗❌:         }
+        // RDKit❗❌:         DrawAnnotation *da = new DrawAnnotation(
+        // RDKit❗❌:             connect, TextAlignType::MIDDLE, "connect",
+        // RDKit❗❌:             drawOptions_.annotationFontScale, botPt + (botPt - brkPt),
+        // RDKit❗❌:             DrawColour(0.0, 0.0, 0.0), textDrawer_);
+        // RDKit❗❌:         // if we're to the right of the bracket, we need to left justify,
+        // RDKit❗❌:         // otherwise things seem to work as is
+        // RDKit❗❌:         if (brkPt.x < botPt.x) {
+        // RDKit❗❌:           da->align_ = TextAlignType::START;
+        // RDKit❗❌:         }
+        // RDKit❗❌:         annotations_.emplace_back(da);
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       std::string label;
+        // RDKit❗❌:       if (sg.getPropIfPresent("LABEL", label)) {
+        // RDKit❗❌:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
+        // RDKit❗❌:                                   textDrawer_, horizontal);
+        // RDKit❗❌:         annotations_.emplace_back(da);
+        // RDKit❗❌:       } else if (sg.getPropIfPresent("TYPE", label)) {
+        // RDKit❗❌:         if (label == "GEN") {
+        // RDKit❗❌:           // ChemDraw doesn't draw the GEN (type=generic) label.
+        // RDKit❗❌:           continue;
+        // RDKit❗❌:         }
+        // RDKit❗❌:         // draw the lowercase type if there's no label to go there.
+        // RDKit❗❌:         std::transform(label.begin(), label.end(), label.begin(), ::tolower);
+        // RDKit❗❌:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
+        // RDKit❗❌:                                   textDrawer_, horizontal);
+        // RDKit❗❌:         annotations_.emplace_back(da);
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY DRAW-04 SOURCE brackets
+
         // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
-        // RDKit❗✔️: void DrawMol::extractBrackets() {
-        // RDKit❗✔️:   auto &sgs = getSubstanceGroups(*drawMol_);
-        // RDKit❗✔️:   if (sgs.empty()) {
-        // RDKit❗✔️:     return Ok(());
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
-        // RDKit❗✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
-        // RDKit❗✔️:   RDGeom::Transform2D trans;
-        // RDKit❗✔️:   trans.SetTransform(Point2D(0.0, 0.0), rot);
-        // RDKit❗✔️:   for (auto &sg : sgs) {
-        // RDKit❗✔️:     if (sg.getBrackets().empty()) {
-        // RDKit❗✔️:       continue;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     // figure out the location of the reference point we'll use to figure out
-        // RDKit❗✔️:     // which direction the bracket points
-        // RDKit❗✔️:     // Thanks to John Mayfield for the thoughts on the best way to do this:
-        // RDKit❗✔️:     //   http://efficientbits.blogspot.com/2015/11/bringing-molfile-sgroups-to-cdk.html
-        // RDKit❗✔️:     Point2D refPt{0., 0.};
-        // RDKit❗✔️:
-        // RDKit❗✔️:     if (!sg.getAtoms().empty()) {
-        // RDKit❗✔️:       // use the average position of the atoms in the sgroup
-        // RDKit❗✔️:       // Github5768 shows that this is a bit simplistic in some cases.  In
-        // RDKit❗✔️:       // that molecule, there is a long chain that stretches outside the
-        // RDKit❗✔️:       // bracket area that turns the last bracket the wrong way.
-        // RDKit❗✔️:       // Just pick out the SGroup atoms that are inside brackets, rather
-        // RDKit❗✔️:       // crudely.
-        // RDKit❗✔️:       double xMin = std::numeric_limits<double>::max() / 2.0;
-        // RDKit❗✔️:       double yMin = std::numeric_limits<double>::max() / 2.0;
-        // RDKit❗✔️:       double xMax = std::numeric_limits<double>::lowest() / 2.0;
-        // RDKit❗✔️:       double yMax = std::numeric_limits<double>::lowest() / 2.0;
-        // RDKit❗✔️:       for (const auto &brk : sg.getBrackets()) {
-        // RDKit❗✔️:         Point2D p1{brk[0].x, -brk[0].y};
-        // RDKit❗✔️:         Point2D p2{brk[1].x, -brk[1].y};
-        // RDKit❗✔️:         trans.TransformPoint(p1);
-        // RDKit❗✔️:         trans.TransformPoint(p2);
-        // RDKit❗✔️:         xMin = std::min({xMin, p1.x, p2.x});
-        // RDKit❗✔️:         yMin = std::min({yMin, p1.y, p2.y});
-        // RDKit❗✔️:         xMax = std::max({xMax, p1.x, p2.x});
-        // RDKit❗✔️:         yMax = std::max({yMax, p1.y, p2.y});
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:
-        // RDKit❗✔️:       int numIn = 0;
-        // RDKit❗✔️:       for (auto aidx : sg.getAtoms()) {
-        // RDKit❗✔️:         if (atCds_[aidx].x >= xMin && atCds_[aidx].x <= xMax &&
-        // RDKit❗✔️:             atCds_[aidx].y >= yMin && atCds_[aidx].y <= yMax) {
-        // RDKit❗✔️:           refPt += atCds_[aidx];
-        // RDKit❗✔️:           ++numIn;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       if (numIn) {
-        // RDKit❗✔️:         refPt /= numIn;
-        // RDKit❗✔️:       } else {
-        // RDKit❗✔️:         // we'll have to go with all of them, and live with the consequences
-        // RDKit❗✔️:         for (auto aidx : sg.getAtoms()) {
-        // RDKit❗✔️:           refPt += atCds_[aidx];
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         refPt /= sg.getAtoms().size();
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:
-        // RDKit❗✔️:     std::vector<std::pair<Point2D, Point2D>> sgBondSegments;
-        // RDKit❗✔️:     for (auto bndIdx : sg.getBonds()) {
-        // RDKit❗✔️:       const auto bnd = drawMol_->getBondWithIdx(bndIdx);
-        // RDKit❗✔️:       if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
-        // RDKit❗✔️:                     bnd->getBeginAtomIdx()) != sg.getAtoms().end()) {
-        // RDKit❗✔️:         sgBondSegments.push_back(std::make_pair(atCds_[bnd->getBeginAtomIdx()],
-        // RDKit❗✔️:                                                 atCds_[bnd->getEndAtomIdx()]));
-        // RDKit❗✔️:
-        // RDKit❗✔️:       } else if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
-        // RDKit❗✔️:                            bnd->getEndAtomIdx()) != sg.getAtoms().end()) {
-        // RDKit❗✔️:         sgBondSegments.push_back(std::make_pair(
-        // RDKit❗✔️:             atCds_[bnd->getEndAtomIdx()], atCds_[bnd->getBeginAtomIdx()]));
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     int numBrackets = 0;
-        // RDKit❗✔️:     for (const auto &brk : sg.getBrackets()) {
-        // RDKit❗✔️:       // the atom coords have been inverted in y, so the bracket coords
-        // RDKit❗✔️:       // must be, too.
-        // RDKit❗✔️:       ++numBrackets;
-        // RDKit❗✔️:       Point2D p1{brk[0].x, -brk[0].y};
-        // RDKit❗✔️:       Point2D p2{brk[1].x, -brk[1].y};
-        // RDKit❗✔️:       trans.TransformPoint(p1);
-        // RDKit❗✔️:       trans.TransformPoint(p2);
-        // RDKit❗✔️:       auto points = getBracketPoints(p1, p2, refPt, sgBondSegments);
-        // RDKit❗✔️:       DrawShapePolyLine *pl =
-        // RDKit❗✔️:           new DrawShapePolyLine(points, drawOptions_.bondLineWidth, false,
-        // RDKit❗✔️:                                 DrawColour(0.0, 0.0, 0.0), false);
-        // RDKit❗✔️:       postShapes_.emplace_back(pl);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     if (includeAnnotations_) {
-        // RDKit❗✔️:       // Find the bottom-most or right-most bracket.  First work out if the
-        // RDKit❗✔️:       // bracket is largely horizontal or largely vertical.
-        // RDKit❗✔️:       const auto &brkShp = *postShapes_.back();
-        // RDKit❗✔️:       Point2D longline = brkShp.points_[1] - brkShp.points_[2];
-        // RDKit❗✔️:       longline.normalize();
-        // RDKit❗✔️:       static const double cos45 = 1.0 / sqrt(2.0);
-        // RDKit❗✔️:       bool horizontal = fabs(longline.x) > cos45;
-        // RDKit❗✔️:       size_t labelBrk = postShapes_.size() - 1;
-        // RDKit❗✔️:       for (int i = 1; i < numBrackets; ++i) {
-        // RDKit❗✔️:         const auto &brkShp = *postShapes_[postShapes_.size() - i - 1];
-        // RDKit❗✔️:         if (horizontal) {
-        // RDKit❗✔️:           if (brkShp.points_[2].y > postShapes_[labelBrk]->points_[2].y) {
-        // RDKit❗✔️:             labelBrk = postShapes_.size() - i - 1;
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         } else {
-        // RDKit❗✔️:           if (brkShp.points_[2].x > postShapes_[labelBrk]->points_[2].x) {
-        // RDKit❗✔️:             labelBrk = postShapes_.size() - i - 1;
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       std::string connect;
-        // RDKit❗✔️:       if (sg.getPropIfPresent("CONNECT", connect)) {
-        // RDKit❗✔️:         // annotations go on the last bracket of an sgroup
-        // RDKit❗✔️:         const auto &brkShp = *postShapes_[labelBrk];
-        // RDKit❗✔️:         // CONNECT goes at the top, but that's now the bottom due to the y
-        // RDKit❗✔️:         // inversion
-        // RDKit❗✔️:         auto botPt = brkShp.points_[2];
-        // RDKit❗✔️:         auto brkPt = brkShp.points_[3];
-        // RDKit❗✔️:         if ((!horizontal && brkShp.points_[1].y < botPt.y) ||
-        // RDKit❗✔️:             (horizontal && brkShp.points_[1].x > botPt.x)) {
-        // RDKit❗✔️:           botPt = brkShp.points_[1];
-        // RDKit❗✔️:           brkPt = brkShp.points_[0];
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         DrawAnnotation *da = new DrawAnnotation(
-        // RDKit❗✔️:             connect, TextAlignType::MIDDLE, "connect",
-        // RDKit❗✔️:             drawOptions_.annotationFontScale, botPt + (botPt - brkPt),
-        // RDKit❗✔️:             DrawColour(0.0, 0.0, 0.0), textDrawer_);
-        // RDKit❗✔️:         // if we're to the right of the bracket, we need to left justify,
-        // RDKit❗✔️:         // otherwise things seem to work as is
-        // RDKit❗✔️:         if (brkPt.x < botPt.x) {
-        // RDKit❗✔️:           da->align_ = TextAlignType::START;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         annotations_.emplace_back(da);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:
-        // RDKit❗✔️:       std::string label;
-        // RDKit❗✔️:       if (sg.getPropIfPresent("LABEL", label)) {
-        // RDKit❗✔️:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
-        // RDKit❗✔️:                                   textDrawer_, horizontal);
-        // RDKit❗✔️:         annotations_.emplace_back(da);
-        // RDKit❗✔️:       } else if (sg.getPropIfPresent("TYPE", label)) {
-        // RDKit❗✔️:         if (label.as_bytes() == b"GEN") {
-        // RDKit❗✔️:           // ChemDraw doesn't draw the GEN (type=generic) label.
-        // RDKit❗✔️:           continue;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:         // draw the lowercase type if there's no label to go there.
-        // RDKit❗✔️:         std::transform(label.begin(), label.end(), label.begin(), ::tolower);
-        // RDKit❗✔️:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
-        // RDKit❗✔️:                                   textDrawer_, horizontal);
-        // RDKit❗✔️:         annotations_.emplace_back(da);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
 
         let sgs = &mol.topology.substance_groups;
         if sgs.is_empty() {
@@ -6419,14 +6573,13 @@ impl DrawMol {
             if self.options.include_annotations {
                 let last_shape_idx = self.post_shapes.len() - 1;
                 let brk_shp = &self.post_shapes[last_shape_idx];
-                let longline = brk_shp.points[1] - brk_shp.points[2];
-                let longline_len = longline.length();
-                let cos45 = 1.0 / (2.0_f64).sqrt();
-                let horizontal = if longline_len > 1e-10 {
-                    (longline / longline_len).x.abs() > cos45
-                } else {
-                    false
+                let Some(longline) =
+                    checked_normalize_point2d(brk_shp.points[1] - brk_shp.points[2])
+                else {
+                    continue;
                 };
+                let cos45 = 1.0 / (2.0_f64).sqrt();
+                let horizontal = longline.x.abs() > cos45;
 
                 // Find bottom-most (or right-most) bracket
                 let mut label_brk = last_shape_idx;
@@ -6982,130 +7135,84 @@ impl DrawMol {
         annot.pos = least_worst_pos;
     }
 
-    // BEGIN RDKIT CPP FUNCTION DrawMol::getNoteStartAngle (DrawMol.cpp:2656-2725)
-    // RDKit✔️✔️: double DrawMol::getNoteStartAngle(const Atom *atom) const {
-    // RDKit✔️✔️:   if (atom->getDegree() == 0) { return M_PI / 2.0; }
-    // RDKit✔️✔️:   const Point2D &at_cds = atCds_[atom->getIdx()];
-    // RDKit✔️✔️:   std::vector<Point2D> bond_vecs;
-    // RDKit✔️✔️:   for (auto nbr : make_iterator_range(drawMol_->getAtomNeighbors(atom))) {
-    // RDKit✔️✔️:     if ((at_cds - atCds_[nbr]).lengthSq() < 0.0001) {
-    // RDKit✔️✔️:       bond_vec.x = 0.1;  bond_vec.y = 0.1;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       bond_vec = at_cds.directionVector(atCds_[nbr]);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     bond_vec.normalize();
-    // RDKit✔️✔️:     bond_vecs.push_back(bond_vec);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   Point2D ret_vec;
-    // RDKit✔️✔️:   if (bond_vecs.size() == 1) {
-    // RDKit✔️✔️:     if (!atomLabels_[atom->getIdx()]) {
-    // RDKit✔️✔️:       ret_vec.x = bond_vecs[0].y;  ret_vec.y = -bond_vecs[0].x;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       ret_vec = -bond_vecs[0];
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (bond_vecs.size() == 2) {
-    // RDKit✔️✔️:     ret_vec = bond_vecs[0] + bond_vecs[1];
-    // RDKit✔️✔️:     if (ret_vec.lengthSq() > 1.0e-6) {
-    // RDKit✔️✔️:       if (!atom->getNumImplicitHs() || atom->getAtomicNum() == 6) {
-    // RDKit✔️✔️:         ret_vec *= -1.0;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       ret_vec.x = -bond_vecs.front().y;  ret_vec.y = bond_vecs.front().x;
-    // RDKit✔️✔️:       ret_vec.normalize();
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     double discrim = 4.0 * M_PI / bond_vecs.size();
-    // RDKit✔️✔️:     for (size_t i = 0; i < bond_vecs.size() - 1; ++i) {
-    // RDKit✔️✔️:       for (size_t j = i + 1; j < bond_vecs.size(); ++j) {
-    // RDKit✔️✔️:         double ang = acos(bond_vecs[i].dotProduct(bond_vecs[j]));
-    // RDKit✔️✔️:         if (ang < discrim) {
-    // RDKit✔️✔️:           ret_vec = bond_vecs[i] + bond_vecs[j];
-    // RDKit✔️✔️:           ret_vec.normalize();
-    // RDKit✔️✔️:           discrim = -1.0;
-    // RDKit✔️✔️:           break;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (discrim > 0.0) {
-    // RDKit✔️✔️:       ret_vec = bond_vecs[0] + bond_vecs[1];
-    // RDKit✔️✔️:       ret_vec *= -1.0;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return atan2(ret_vec.y, ret_vec.x);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION DrawMol::getNoteStartAngle
     fn calc_note_start_angle(&self, mol: &PreparedDrawingInput<'_>, atom_idx: usize) -> f64 {
+        // BEGIN RECOVERY DRAW-04 SOURCE note
+        // RDKit❗❌: double DrawMol::getNoteStartAngle(const Atom *atom) const {
+        // RDKit❗❌:   if (atom->getDegree() == 0) {
+        // RDKit❗❌:     return M_PI / 2.0;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   const Point2D &at_cds = atCds_[atom->getIdx()];
+        // RDKit❗❌:   std::vector<Point2D> bond_vecs;
+        // RDKit❗❌:   for (auto nbr : make_iterator_range(drawMol_->getAtomNeighbors(atom))) {
+        // RDKit❗❌:     // If the nbr has the same coords as atom, bond_vec comes out as NaN, NaN
+        // RDKit❗❌:     // (issue 6559), so use a short arbitrary vector instead.
+        // RDKit❗❌:     Point2D bond_vec;
+        // RDKit❗❌:     try {
+        // RDKit❗❌:       bond_vec = at_cds.directionVector(atCds_[nbr]);
+        // RDKit❗❌:     } catch (const std::runtime_error &e) {
+        // RDKit❗❌:       bond_vec.x = 0.7071;
+        // RDKit❗❌:       bond_vec.y = 0.7071;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     bond_vecs.push_back(bond_vec);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   Point2D ret_vec;
+        // RDKit❗❌:   if (bond_vecs.size() == 1) {
+        // RDKit❗❌:     if (!atomLabels_[atom->getIdx()]) {
+        // RDKit❗❌:       // go with perpendicular to bond.  This is mostly to avoid getting
+        // RDKit❗❌:       // a zero at the end of a bond to carbon, which looks like a black
+        // RDKit❗❌:       // oxygen atom in the default font in SVG and PNG.
+        // RDKit❗❌:       ret_vec.x = bond_vecs[0].y;
+        // RDKit❗❌:       ret_vec.y = -bond_vecs[0].x;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       // go opposite end
+        // RDKit❗❌:       ret_vec = -bond_vecs[0];
+        // RDKit❗❌:     }
+        // RDKit❗❌:   } else if (bond_vecs.size() == 2) {
+        // RDKit❗❌:     ret_vec = bond_vecs[0] + bond_vecs[1];
+        // RDKit❗❌:     if (ret_vec.lengthSq() > 1.0e-6) {
+        // RDKit❗❌:       if (!atom->getNumImplicitHs() || atom->getAtomicNum() == 6) {
+        // RDKit❗❌:         // prefer outside the angle, unless there are Hs that will be in
+        // RDKit❗❌:         // the way, probably.
+        // RDKit❗❌:         ret_vec *= -1.0;
+        // RDKit❗❌:       }
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       // it must be a -# or == or some such.  Take perpendicular to
+        // RDKit❗❌:       // one of them
+        // RDKit❗❌:       ret_vec.x = -bond_vecs.front().y;
+        // RDKit❗❌:       ret_vec.y = bond_vecs.front().x;
+        // RDKit❗❌:       ret_vec.normalize();
+        // RDKit❗❌:     }
+        // RDKit❗❌:   } else {
+        // RDKit❗❌:     // just take 2 that are probably adjacent
+        // RDKit❗❌:     double discrim = 4.0 * M_PI / bond_vecs.size();
+        // RDKit❗❌:     for (size_t i = 0; i < bond_vecs.size() - 1; ++i) {
+        // RDKit❗❌:       for (size_t j = i + 1; j < bond_vecs.size(); ++j) {
+        // RDKit❗❌:         double ang = acos(bond_vecs[i].dotProduct(bond_vecs[j]));
+        // RDKit❗❌:         if (ang < discrim) {
+        // RDKit❗❌:           ret_vec = bond_vecs[i] + bond_vecs[j];
+        // RDKit❗❌:           try {
+        // RDKit❗❌:             ret_vec.normalize();
+        // RDKit❗❌:           } catch (const std::runtime_error &e) {
+        // RDKit❗❌:             // normalize throws on zero-length bond.
+        // RDKit❗❌:             continue;
+        // RDKit❗❌:           }
+        // RDKit❗❌:           discrim = -1.0;
+        // RDKit❗❌:           break;
+        // RDKit❗❌:         }
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (discrim > 0.0) {
+        // RDKit❗❌:       ret_vec = bond_vecs[0] + bond_vecs[1];
+        // RDKit❗❌:       ret_vec *= -1.0;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // start angle is the angle between ret_vec and the x axis
+        // RDKit❗❌:   return atan2(ret_vec.y, ret_vec.x);
+        // RDKit❗❌: }
+        // END RECOVERY DRAW-04 SOURCE note
+
         // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2656
-        // RDKit❗✔️: double DrawMol::getNoteStartAngle(const Atom *atom) const {
-        // RDKit❗✔️:   if (atom->getDegree() == 0) {
-        // RDKit❗✔️:     return M_PI / 2.0;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   const Point2D &at_cds = atCds_[atom->getIdx()];
-        // RDKit❗✔️:   std::vector<Point2D> bond_vecs;
-        // RDKit❗✔️:   for (auto nbr : make_iterator_range(drawMol_->getAtomNeighbors(atom))) {
-        // RDKit❗✔️:     // If the nbr has the same coords as atom, bond_vec comes out as NaN, NaN
-        // RDKit❗✔️:     // (issue 6559), so use a short arbitrary vector instead.
-        // RDKit❗✔️:     Point2D bond_vec;
-        // RDKit❗✔️:     if ((at_cds - atCds_[nbr]).lengthSq() < 0.0001) {
-        // RDKit❗✔️:       bond_vec.x = 0.1;
-        // RDKit❗✔️:       bond_vec.y = 0.1;
-        // RDKit❗✔️:     } else {
-        // RDKit❗✔️:       bond_vec = at_cds.directionVector(atCds_[nbr]);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     bond_vec.normalize();
-        // RDKit❗✔️:     bond_vecs.push_back(bond_vec);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   Point2D ret_vec;
-        // RDKit❗✔️:   if (bond_vecs.size() == 1) {
-        // RDKit❗✔️:     if (!atomLabels_[atom->getIdx()]) {
-        // RDKit❗✔️:       // go with perpendicular to bond.  This is mostly to avoid getting
-        // RDKit❗✔️:       // a zero at the end of a bond to carbon, which looks like a black
-        // RDKit❗✔️:       // oxygen atom in the default font in SVG and PNG.
-        // RDKit❗✔️:       ret_vec.x = bond_vecs[0].y;
-        // RDKit❗✔️:       ret_vec.y = -bond_vecs[0].x;
-        // RDKit❗✔️:     } else {
-        // RDKit❗✔️:       // go opposite end
-        // RDKit❗✔️:       ret_vec = -bond_vecs[0];
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   } else if (bond_vecs.size() == 2) {
-        // RDKit❗✔️:     ret_vec = bond_vecs[0] + bond_vecs[1];
-        // RDKit❗✔️:     if (ret_vec.lengthSq() > 1.0e-6) {
-        // RDKit❗✔️:       if (!atom->getNumImplicitHs() || atom->getAtomicNum() == 6) {
-        // RDKit❗✔️:         // prefer outside the angle, unless there are Hs that will be in
-        // RDKit❗✔️:         // the way, probably.
-        // RDKit❗✔️:         ret_vec *= -1.0;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     } else {
-        // RDKit❗✔️:       // it must be a -# or == or some such.  Take perpendicular to
-        // RDKit❗✔️:       // one of them
-        // RDKit❗✔️:       ret_vec.x = -bond_vecs.front().y;
-        // RDKit❗✔️:       ret_vec.y = bond_vecs.front().x;
-        // RDKit❗✔️:       ret_vec.normalize();
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   } else {
-        // RDKit❗✔️:     // just take 2 that are probably adjacent
-        // RDKit❗✔️:     double discrim = 4.0 * M_PI / bond_vecs.size();
-        // RDKit❗✔️:     for (size_t i = 0; i < bond_vecs.size() - 1; ++i) {
-        // RDKit❗✔️:       for (size_t j = i + 1; j < bond_vecs.size(); ++j) {
-        // RDKit❗✔️:         double ang = acos(bond_vecs[i].dotProduct(bond_vecs[j]));
-        // RDKit❗✔️:         if (ang < discrim) {
-        // RDKit❗✔️:           ret_vec = bond_vecs[i] + bond_vecs[j];
-        // RDKit❗✔️:           ret_vec.normalize();
-        // RDKit❗✔️:           discrim = -1.0;
-        // RDKit❗✔️:           break;
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     if (discrim > 0.0) {
-        // RDKit❗✔️:       ret_vec = bond_vecs[0] + bond_vecs[1];
-        // RDKit❗✔️:       ret_vec *= -1.0;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   // start angle is the angle between ret_vec and the x axis
-        // RDKit❗✔️:   return atan2(ret_vec.y, ret_vec.x);
-        // RDKit❗✔️: }
 
         let degree = atom_degree(mol.topology, atom_idx);
         if degree == 0 {
@@ -7114,12 +7221,8 @@ impl DrawMol {
         let at_cds = self.at_cds[atom_idx];
         let mut bond_vecs: Vec<DVec2> = Vec::new();
         for &nbr in &atom_neighbors(mol.topology, atom_idx) {
-            let bond_vec = if (at_cds - self.at_cds[nbr]).length_squared() < 0.0001 {
-                DVec2::new(0.1, 0.1)
-            } else {
-                direction_vector(at_cds, self.at_cds[nbr])
-            };
-            bond_vecs.push(bond_vec.normalize());
+            let bond_vec = note_direction_vector(at_cds, self.at_cds[nbr]);
+            bond_vecs.push(bond_vec);
         }
 
         let ret_vec = if bond_vecs.len() == 1 {
@@ -7146,23 +7249,7 @@ impl DrawMol {
             }
             rv
         } else {
-            let mut discrim = 4.0 * std::f64::consts::PI / bond_vecs.len() as f64;
-            let mut ret = bond_vecs[0] + bond_vecs[1];
-            for i in 0..bond_vecs.len() - 1 {
-                for j in (i + 1)..bond_vecs.len() {
-                    let ang = bond_vecs[i].dot(bond_vecs[j]).acos();
-                    if ang < discrim {
-                        ret = bond_vecs[i] + bond_vecs[j];
-                        ret = ret.normalize();
-                        discrim = -1.0;
-                        break;
-                    }
-                }
-            }
-            if discrim > 0.0 {
-                ret *= -1.0;
-            }
-            ret
+            note_pair_direction(&bond_vecs)
         };
 
         f64::atan2(ret_vec.y, ret_vec.x)
@@ -8807,25 +8894,31 @@ mod drawing_render_legacy_tests {
 }
 
 fn is_linear_atom(mol: &TopologyBlock, at_cds: &[DVec2], atom_idx: usize) -> bool {
-    // BEGIN RDKIT CPP FUNCTION isLinearAtom (DrawMol.cpp)
-    // RDKit✔️✔️: bool isLinearAtom(const Atom &atom, const std::vector<Point2D> &atCds) {
-    // RDKit✔️✔️:   if (atom.getDegree() == 2) {
-    // RDKit✔️✔️:     Point2D bond_vecs[2];
-    // RDKit✔️✔️:     Bond::BondType bts[2];
-    // RDKit✔️✔️:     Point2D const &at1_cds = atCds[atom.getIdx()];
-    // RDKit✔️✔️:     ROMol const &mol = atom.getOwningMol();
-    // RDKit✔️✔️:     int i = 0;
-    // RDKit✔️✔️:     for (auto nbr : make_iterator_range(mol.getAtomNeighbors(&atom))) {
-    // RDKit✔️✔️:       Point2D bond_vec = at1_cds.directionVector(atCds[nbr]);
-    // RDKit✔️✔️:       bond_vec.normalize();
-    // RDKit✔️✔️:       bond_vecs[i] = bond_vec;
-    // RDKit✔️✔️:       bts[i] = mol.getBondBetweenAtoms(atom.getIdx(), nbr)->getBondType();
-    // RDKit✔️✔️:       ++i;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     return (bts[0] == bts[1] && bond_vecs[0].dotProduct(bond_vecs[1]) < -0.95);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return false;
-    // RDKit✔️✔️: }
+    // BEGIN RECOVERY DRAW-04 SOURCE linear
+    // RDKit❗❌: bool isLinearAtom(const Atom &atom, const std::vector<Point2D> &atCds) {
+    // RDKit❗❌:   if (atom.getDegree() == 2) {
+    // RDKit❗❌:     Point2D bond_vecs[2];
+    // RDKit❗❌:     Bond::BondType bts[2];
+    // RDKit❗❌:     Point2D const &at1_cds = atCds[atom.getIdx()];
+    // RDKit❗❌:     ROMol const &mol = atom.getOwningMol();
+    // RDKit❗❌:     int i = 0;
+    // RDKit❗❌:     for (auto nbr : make_iterator_range(mol.getAtomNeighbors(&atom))) {
+    // RDKit❗❌:       try {
+    // RDKit❗❌:         Point2D bond_vec = at1_cds.directionVector(atCds[nbr]);
+    // RDKit❗❌:         bond_vecs[i] = bond_vec;
+    // RDKit❗❌:         bts[i] = mol.getBondBetweenAtoms(atom.getIdx(), nbr)->getBondType();
+    // RDKit❗❌:       } catch (std::runtime_error &e) {
+    // RDKit❗❌:         // A zero-length vector throws and can be ignored.
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       ++i;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     return (bts[0] == bts[1] && bond_vecs[0].dotProduct(bond_vecs[1]) < -0.95);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return false;
+    // RDKit❗❌: }
+    // END RECOVERY DRAW-04 SOURCE linear
+
     if atom_degree(mol, atom_idx) != 2 {
         return false;
     }
@@ -8837,12 +8930,11 @@ fn is_linear_atom(mol: &TopologyBlock, at_cds: &[DVec2], atom_idx: usize) -> boo
     let mut bond_vecs = [DVec2::ZERO, DVec2::ZERO];
     let mut bond_orders = [BondOrder::Unspecified, BondOrder::Unspecified];
     for (i, &nbr) in nbrs.iter().enumerate() {
-        let mut bond_vec = at_cds[nbr] - at1_cds;
-        let len = bond_vec.length();
-        if len <= 1e-8 {
+        let Some(bond_vec) = checked_direction_vector(at1_cds, at_cds[nbr]) else {
+            // Source leaves uninitialized bts on this exception; native returns false safely.
+            // This is an explicit safe native policy, never claimed as a C++ defined result.
             return false;
-        }
-        bond_vec /= len;
+        };
         bond_vecs[i] = bond_vec;
         bond_orders[i] = mol
             .bonds
@@ -10049,3 +10141,362 @@ mod drawing_helpers_legacy_tests {
 #[cfg(test)]
 #[path = "drawing_text_tests.rs"]
 mod drawing_text_tests;
+
+#[cfg(test)]
+mod recovery_draw04_tests {
+
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, AtomSpec, BondId, BondSpec, Conformer2D, Element, MoleculeProperties,
+        SGroupBracket, SGroupDisplay, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    };
+    fn topology(n: usize, edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn with_input(
+        coords: Vec<[f64; 2]>,
+        edges: &[(usize, usize)],
+        groups: Vec<SubstanceGroup>,
+        f: impl FnOnce(&PreparedDrawingInput<'_>),
+    ) {
+        let mut t = topology(coords.len(), edges);
+        t.substance_groups = groups;
+        let l = Conformer2D::new(0, coords);
+        let props = MoleculeProperties::default();
+        let v = cosmolkit_core::assign_valence(&t, &Default::default()).unwrap();
+        let r = cosmolkit_core::find_sssr(&t, &Default::default()).unwrap();
+        let input = PreparedDrawingInput {
+            topology: &t,
+            layout: &l,
+            properties: &props,
+            valence: &v,
+            rings: &r,
+        };
+        f(&input);
+    }
+    fn bracket(id: usize, label: &str, endpoints: [[f64; 2]; 2]) -> SubstanceGroup {
+        let mut g = SubstanceGroup::new(SubstanceGroupId::new(id), SubstanceGroupKind::Data)
+            .with_display(SGroupDisplay {
+                brackets: vec![SGroupBracket::new([
+                    [endpoints[0][0], endpoints[0][1], 0.],
+                    [endpoints[1][0], endpoints[1][1], 0.],
+                    [0., 0., 0.],
+                ])],
+                ..Default::default()
+            });
+        g.set_prop("LABEL", label).unwrap();
+        g
+    }
+
+    #[test]
+    fn recovery_draw04_checked_scalar_boundaries_and_source_nonfinite_predicate() {
+        assert!(checked_normalize_point2d(DVec2::new(-0.0, 0.0)).is_none());
+        let tol = 1.0e-16_f64;
+        assert!(
+            checked_normalize_point2d(DVec2::new(f64::from_bits(tol.to_bits() - 1), 0.0)).is_none()
+        );
+        for x in [tol, f64::from_bits(tol.to_bits() + 1), 3.0] {
+            let y = if x == 3.0 { 4.0 } else { 0.0 };
+            let length = (x * x + y * y).sqrt();
+            let out = checked_normalize_point2d(DVec2::new(x, y)).unwrap();
+            assert_eq!(out.x.to_bits(), (x / length).to_bits());
+            assert_eq!(out.y.to_bits(), (y / length).to_bits());
+        }
+        let nan = checked_normalize_point2d(DVec2::new(f64::NAN, 1.0)).unwrap();
+        assert!(nan.x.is_nan() && nan.y.is_nan());
+        let large = checked_normalize_point2d(DVec2::new(1.0e308, -1.0e308)).unwrap();
+        assert_eq!(large.x.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(large.y.to_bits(), (-0.0_f64).to_bits());
+    }
+
+    #[test]
+    fn recovery_draw04_neighbor_fallback_literal_and_single_normalization() {
+        let coincident = note_direction_vector(DVec2::ZERO, DVec2::ZERO);
+        assert_eq!(coincident.x.to_bits(), 0.7071_f64.to_bits());
+        assert_eq!(coincident.y.to_bits(), 0.7071_f64.to_bits());
+        let tiny = note_direction_vector(DVec2::ZERO, DVec2::new(3.0e-16, 4.0e-16));
+        let length = (3.0e-16_f64 * 3.0e-16 + 4.0e-16_f64 * 4.0e-16).sqrt();
+        assert_eq!(tiny.x.to_bits(), (3.0e-16 / length).to_bits());
+        assert_eq!(tiny.y.to_bits(), (4.0e-16 / length).to_bits());
+    }
+
+    #[test]
+    fn recovery_draw04_pair_failure_continues_and_all_fail_recomputes_first_pair() {
+        let direction = note_pair_direction(&[DVec2::X, -DVec2::X, DVec2::Y]);
+        assert_eq!(
+            direction,
+            checked_normalize_point2d(DVec2::X + DVec2::Y).unwrap()
+        );
+        // Controlled finite private-block input, not claimed reachable normalized molecule directions.
+        let small = [
+            DVec2::new(2.0e-20, 0.0),
+            DVec2::new(0.0, 3.0e-20),
+            DVec2::new(0.0, -4.0e-20),
+        ];
+        assert_eq!(note_pair_direction(&small), -(small[0] + small[1]));
+    }
+
+    #[test]
+    fn recovery_draw04_linear_tiny_valid_and_source_undefined_failure_qualified() {
+        let t = topology(3, &[(0, 1), (1, 2)]);
+        assert!(is_linear_atom(
+            &t,
+            &[DVec2::new(1e-12, 0.), DVec2::ZERO, DVec2::new(-1e-12, 0.)],
+            1
+        ));
+        assert!(!is_linear_atom(
+            &t,
+            &[DVec2::ZERO, DVec2::ZERO, -DVec2::X],
+            1
+        ));
+    }
+    #[test]
+    fn recovery_draw04_double_bisector_only_source_normalize_threshold() {
+        with_input(
+            vec![[1., 0.], [0., 0.], [-1., 1e-4]],
+            &[(0, 1), (1, 2)],
+            vec![],
+            |input| {
+                let draw = DrawMol::from_prepared(input, 300, 300, Default::default()).unwrap();
+                let cds = [DVec2::X, DVec2::ZERO, DVec2::new(-1., 1e-4)];
+                let v = direction_vector(cds[1], cds[2]);
+                let perp = normalize_point2d(DVec2::new(-v.y, v.x));
+                assert!((DVec2::X + v).length_squared() < 1e-6);
+                assert_eq!(draw.double_bond_end(&cds, 0, 1, 2, 0.2, false), -perp * 0.2);
+                let bis = checked_normalize_point2d(DVec2::X + v).unwrap();
+                let flipped = -perp;
+                let expected = line_intersection(
+                    cds[1],
+                    cds[1] + bis,
+                    cds[1] + flipped * 0.2,
+                    cds[2] + flipped * 0.2,
+                )
+                .unwrap();
+                assert_eq!(draw.double_bond_end(&cds, 0, 1, 2, 0.2, true), expected);
+                assert_ne!(expected, -perp * 0.2);
+                assert_eq!(
+                    draw.double_bond_end(&[DVec2::X, DVec2::ZERO, -DVec2::X], 0, 1, 2, 0.2, false),
+                    DVec2::new(0., 0.2)
+                );
+            },
+        );
+    }
+    #[test]
+    fn recovery_draw04_degree_two_retains_unchanged_sum_threshold() {
+        with_input(
+            vec![[1., 0.], [0., 0.], [-1., 1e-4]],
+            &[(0, 1), (1, 2)],
+            vec![],
+            |input| {
+                let mut draw = DrawMol::from_prepared(input, 300, 300, Default::default()).unwrap();
+                draw.at_cds = vec![DVec2::X, DVec2::ZERO, DVec2::new(-1., 1e-4)];
+                assert_eq!(
+                    draw.calc_note_start_angle(input, 1),
+                    std::f64::consts::FRAC_PI_2
+                );
+                draw.at_cds[2] = DVec2::new(-1., 0.01);
+                let expected = -(DVec2::X + note_direction_vector(DVec2::ZERO, draw.at_cds[2]));
+                assert_eq!(
+                    draw.calc_note_start_angle(input, 1),
+                    expected.y.atan2(expected.x)
+                );
+            },
+        );
+    }
+    #[test]
+    fn recovery_draw04_zero_bracket_keeps_shape_skips_only_group_annotation() {
+        let groups = vec![
+            bracket(0, "skip", [[0., 0.], [0., 0.]]),
+            bracket(1, "later", [[2., -1.], [2., 1.]]),
+        ];
+        with_input(vec![[0., 0.], [1., 0.]], &[(0, 1)], groups, |input| {
+            let mut draw = DrawMol::from_prepared(input, 300, 300, Default::default()).unwrap();
+            draw.annotations.clear();
+            draw.post_shapes.clear();
+            draw.extract_brackets(input).unwrap();
+            assert_eq!(draw.post_shapes.len(), 2);
+            assert_eq!(draw.annotations.len(), 1);
+            assert_eq!(draw.annotations[0].text.as_bytes(), b"later");
+        });
+        let groups = vec![bracket(0, "tiny", [[0., 0.], [0., 1e-12]])];
+        with_input(vec![[0., 0.], [1., 0.]], &[(0, 1)], groups, |input| {
+            let mut draw = DrawMol::from_prepared(input, 300, 300, Default::default()).unwrap();
+            draw.annotations.clear();
+            draw.post_shapes.clear();
+            draw.extract_brackets(input).unwrap();
+            assert_eq!(draw.annotations.len(), 1);
+        });
+    }
+}
+
+#[cfg(test)]
+mod recovery_draw03_tests {
+    use super::*;
+    fn draw_candidate_rect(height: f64) -> StringRect {
+        let mut rect = radical_rect_at(DVec2::ZERO, 1.0, height);
+        rect.height = height;
+        rect
+    }
+
+    #[test]
+    fn recovery_draw03_missing_markup_close_returns_without_adjustment() {
+        let mut rects = vec![
+            draw_candidate_rect(2.0),
+            draw_candidate_rect(9.0),
+            draw_candidate_rect(3.0),
+        ];
+        adjust_colons(b"C:<bad", &mut rects);
+        assert_eq!(
+            rects.iter().map(|r| r.height).collect::<Vec<_>>(),
+            [2.0, 9.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn recovery_draw03_rect_count_bounds_and_valid_markup() {
+        let mut rects = vec![
+            draw_candidate_rect(2.0),
+            draw_candidate_rect(9.0),
+            draw_candidate_rect(3.0),
+        ];
+        adjust_colons(b"<lit>C:N</lit>", &mut rects);
+        assert_eq!(rects[1].height, 2.0);
+        adjust_colons(b"C:", &mut rects);
+        assert_eq!(rects[1].height, 2.0); // source rect-count bound retains available right rect
+        let mut last = vec![draw_candidate_rect(2.0), draw_candidate_rect(9.0)];
+        adjust_colons(b"C:", &mut last);
+        assert_eq!(last[1].height, 0.0);
+        let mut invalid = Vec::<StringRect>::new();
+        adjust_colons(b":", &mut invalid);
+        assert!(invalid.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod recovery_draw01_tests {
+
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, AtomSpec, Conformer2D, Element, MoleculeProperties, SubstanceGroup,
+        SubstanceGroupId, SubstanceGroupKind,
+    };
+    fn topology() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn group(id: usize, text: &str, atom: bool, field: Option<&str>) -> SubstanceGroup {
+        let mut g = SubstanceGroup::new(SubstanceGroupId::new(id), SubstanceGroupKind::Data)
+            .with_data_field(text);
+        g.set_prop("TYPE", "DAT").unwrap();
+        if atom {
+            g = g.with_atoms(vec![AtomId::new(0)]);
+        }
+        if let Some(f) = field {
+            g.set_prop("FIELDDISP", f).unwrap();
+        }
+        g
+    }
+    fn field(x: f64, y: f64, relative: bool) -> String {
+        format!("{x:10.4}{y:10.4}     {}", if relative { 'R' } else { 'A' })
+    }
+    fn prepared<'a>(
+        t: &'a TopologyBlock,
+        l: &'a Conformer2D,
+        p: &'a MoleculeProperties,
+        v: &'a cosmolkit_core::ValenceAssignment,
+        r: &'a cosmolkit_core::RingInfo,
+    ) -> PreparedDrawingInput<'a> {
+        PreparedDrawingInput {
+            topology: t,
+            layout: l,
+            properties: p,
+            valence: v,
+            rings: r,
+        }
+    }
+    #[test]
+    fn recovery_draw01_absent_conformer_is_empty_before_invalid_field() {
+        let mut t = topology();
+        t.substance_groups.push(group(
+            0,
+            "ignored",
+            false,
+            Some("bad bad bad bad bad bad bad bad"),
+        ));
+        assert!(get_sgroup_data_labels(&t, None).unwrap().is_empty());
+    }
+    #[test]
+    fn recovery_draw01_anchor_guards_keep_later_valid_absolute_and_skip_relative() {
+        let mut t = topology();
+        t.substance_groups = vec![
+            group(0, "relative-no-anchor", false, Some(&field(1., 2., true))),
+            group(1, "unlocated-no-anchor", false, None),
+            group(2, "absolute", false, Some(&field(1., 2., false))),
+            group(3, "anchored", true, None),
+        ];
+        let l = Conformer2D::new(0, vec![[3., 4.]]);
+        let before = t.clone();
+        let labels = get_sgroup_data_labels(&t, Some(&l)).unwrap();
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].text.as_bytes(), b"absolute");
+        assert_eq!(labels[0].pos, DVec2::new(1., -2.));
+        assert!(labels[0].positioned);
+        assert_eq!(labels[1].text.as_bytes(), b"anchored");
+        assert_eq!(labels[1].pos, DVec2::new(3., 4.));
+        assert!(!labels[1].positioned);
+        assert_eq!(t, before);
+    }
+    #[test]
+    fn recovery_draw01_reads_selected_prepared_layout_and_keeps_all_inputs() {
+        let mut t = topology();
+        t.substance_groups = vec![group(0, "anchor", true, None)];
+        let source = Conformer2D::new(0, vec![[0., 0.]]);
+        let selected = Conformer2D::new(7, vec![[8., 9.]]);
+        let before = (t.clone(), source.clone(), selected.clone());
+        let labels = get_sgroup_data_labels(&t, Some(&selected)).unwrap();
+        assert_eq!(labels[0].pos, DVec2::new(8., 9.));
+        assert_eq!((t, source, selected), before);
+    }
+    #[test]
+    fn recovery_draw01_disabled_annotations_short_circuit_and_relative_baseline() {
+        let mut t = topology();
+        t.substance_groups = vec![group(0, "relative", true, Some(&field(1., 2., true)))];
+        let l = Conformer2D::new(0, vec![[3., 4.]]);
+        let labels = get_sgroup_data_labels(&t, Some(&l)).unwrap();
+        assert_eq!(labels[0].pos, DVec2::new(4., 2.)); // inherited relative-y baseline, not .6 source-y acceptance
+        let props = MoleculeProperties::default();
+        let v = cosmolkit_core::assign_valence(&t, &Default::default()).unwrap();
+        let r = cosmolkit_core::find_sssr(&t, &Default::default()).unwrap();
+        let input = prepared(&t, &l, &props, &v, &r);
+        let mut options = DrawOptions::default();
+        options.include_annotations = false;
+        let mut draw = DrawMol::from_prepared(&input, 300, 300, options).unwrap();
+        draw.annotations.clear();
+        draw.extract_sgroup_data(&input).unwrap();
+        assert!(draw.annotations.is_empty());
+        t.substance_groups[0]
+            .set_prop("FIELDDISP", "invalidlongvaluewrongvalue__")
+            .unwrap();
+        let input = prepared(&t, &l, &props, &v, &r);
+        draw.extract_sgroup_data(&input).unwrap();
+        assert!(draw.annotations.is_empty());
+    }
+}

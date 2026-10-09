@@ -4,10 +4,13 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::Digest;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +66,209 @@ pub(crate) struct Snapshot {
     pub spec: Spec,
     pub inputs: Value,
     pub rows: Vec<Value>,
+}
+
+/// A checked reference owns private bytes. Reopening an expected path after
+/// preflight would permit a later preparation to change the checked values.
+pub(crate) struct OwnedRows {
+    file: Mutex<fs::File>,
+    count: usize,
+    sha256: String,
+}
+impl OwnedRows {
+    fn copy_from(path: &Path) -> Result<Self> {
+        let mut source = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        // An anonymous temporary file is reclaimed by the OS even though
+        // OnceLock/static values are not dropped at process exit.
+        let mut file = tempfile::tempfile().map_err(|e| e.to_string())?;
+        let mut writer = BufWriter::new(&mut file);
+        let mut hash = sha2::Sha256::new();
+        std::io::copy(
+            &mut source,
+            &mut HashingWriter {
+                writer: &mut writer,
+                hash: &mut hash,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        drop(writer);
+        let mut rows = Self {
+            file: Mutex::new(file),
+            count: 0,
+            sha256: hex_digest(hash),
+        };
+        // Preserve the original whole-file UTF-8 check before any JSON error.
+        let mut reader = BufReader::new(rows.reader());
+        let mut line = Vec::new();
+        let mut offset = 0;
+        loop {
+            line.clear();
+            let count = reader
+                .read_until(b'\n', &mut line)
+                .map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            if let Err(error) = std::str::from_utf8(&line) {
+                let index = offset + error.valid_up_to();
+                return Err(match error.error_len() {
+                    Some(length) => {
+                        format!("invalid utf-8 sequence of {length} bytes from index {index}")
+                    }
+                    None => format!("incomplete utf-8 byte sequence from index {index}"),
+                });
+            }
+            offset += count;
+        }
+        drop(line);
+        drop(reader);
+        // Syntax of every line precedes manifest and typed/schema validation.
+        let mut count = 0;
+        for row in rows.iter()? {
+            row?;
+            count += 1;
+        }
+        rows.count = count;
+        Ok(rows)
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.count
+    }
+
+    fn reader(&self) -> OwnedCursor<'_> {
+        OwnedCursor {
+            file: &self.file,
+            offset: 0,
+        }
+    }
+
+    pub(crate) fn iter(&self) -> Result<impl Iterator<Item = Result<Value>>> {
+        Ok(BufReader::new(self.reader()).lines().map(|line| {
+            let line = line.map_err(|e| e.to_string())?;
+            serde_json::from_str(&line).map_err(|e| e.to_string())
+        }))
+    }
+}
+
+/// Each iterator has its own offset. A short lock around seek/read makes the
+/// anonymous owned file portable without sharing the cursor of File::try_clone.
+struct OwnedCursor<'a> {
+    file: &'a Mutex<fs::File>,
+    offset: u64,
+}
+impl Read for OwnedCursor<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        let mut file = self
+            .file
+            .lock()
+            .map_err(|_| std::io::Error::other("owned reference file lock poisoned"))?;
+        file.seek(SeekFrom::Start(self.offset))?;
+        let count = file.read(bytes)?;
+        self.offset += count as u64;
+        Ok(count)
+    }
+}
+
+struct GeneratedRows {
+    file: tempfile::NamedTempFile,
+    count: usize,
+    sha256: String,
+}
+impl GeneratedRows {
+    fn len(&self) -> usize {
+        self.count
+    }
+    fn iter(&self) -> Result<impl Iterator<Item = Result<Value>>> {
+        let reader = BufReader::new(self.file.reopen().map_err(|e| e.to_string())?);
+        Ok(reader.lines().map(|line| {
+            let line = line.map_err(|e| e.to_string())?;
+            serde_json::from_str(&line).map_err(|e| e.to_string())
+        }))
+    }
+    fn persist(self, path: &Path) -> Result<()> {
+        self.file.persist(path).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+struct HashingWriter<'a, W> {
+    writer: &'a mut W,
+    hash: &'a mut sha2::Sha256,
+}
+impl<W: Write> Write for HashingWriter<'_, W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let count = self.writer.write(bytes)?;
+        self.hash.update(&bytes[..count]);
+        Ok(count)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
+}
+fn hex_digest(hash: sha2::Sha256) -> String {
+    hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+fn encoded_digest<T: Serialize + ?Sized>(value: &T) -> Result<String> {
+    let mut hash = sha2::Sha256::new();
+    serde_json::to_writer(
+        HashingWriter {
+            writer: &mut std::io::sink(),
+            hash: &mut hash,
+        },
+        value,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(hex_digest(hash))
+}
+
+/// Serializes one native array element at a time using the original compact
+/// JSONL bytes. No size cutoff or chemistry-specific representation is added.
+struct RowWriter {
+    file: tempfile::NamedTempFile,
+    writer: BufWriter<fs::File>,
+    hash: sha2::Sha256,
+    count: usize,
+}
+impl RowWriter {
+    fn new_in(folder: &Path) -> Result<Self> {
+        let file = tempfile::NamedTempFile::new_in(folder).map_err(|e| e.to_string())?;
+        let writer = BufWriter::new(file.reopen().map_err(|e| e.to_string())?);
+        Ok(Self {
+            file,
+            writer,
+            hash: sha2::Sha256::new(),
+            count: 0,
+        })
+    }
+    fn push(&mut self, row: Value) -> Result<()> {
+        let mut output = HashingWriter {
+            writer: &mut self.writer,
+            hash: &mut self.hash,
+        };
+        serde_json::to_writer(&mut output, &row).map_err(|e| e.to_string())?;
+        output.write_all(b"\n").map_err(|e| e.to_string())?;
+        self.count += 1;
+        Ok(())
+    }
+    fn finish(mut self) -> Result<GeneratedRows> {
+        self.writer.flush().map_err(|e| e.to_string())?;
+        drop(self.writer);
+        Ok(GeneratedRows {
+            file: self.file,
+            count: self.count,
+            sha256: hex_digest(self.hash),
+        })
+    }
+}
+
+pub(crate) struct CheckedSnapshot {
+    pub spec: Spec,
+    // Corpus recipes are fully checked and then released. Only designated
+    // special regressions need the complete owned fixture for their consumers.
+    inputs: Option<Value>,
+    pub rows: OwnedRows,
 }
 
 #[derive(Debug, Default)]
@@ -240,38 +446,49 @@ pub(crate) fn jsonl(rows: &[Value]) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-pub(crate) fn validate_rows(spec: &Spec, input: &Value, rows: &[Value]) -> Result<()> {
+pub(crate) fn validate_rows<I>(spec: &Spec, input: &Value, rows: I, row_count: usize) -> Result<()>
+where
+    I: IntoIterator<Item = Result<Value>>,
+{
+    let mut rows = rows.into_iter();
     match *spec {
         Spec::Corpus(task) => {
-            let inputs: Vec<Input> =
-                serde_json::from_value(input.clone()).map_err(|e| e.to_string())?;
-            if inputs.is_empty() || inputs.len() != rows.len() {
+            let recipes = input
+                .as_array()
+                .ok_or("reference recipes must be an array")?;
+            // The former Vec<Input> conversion checked all recipe types before
+            // checking row counts or typed reference rows. Retain that order
+            // without retaining a second complete typed recipe collection.
+            for recipe in recipes {
+                Input::deserialize(recipe).map_err(|e| e.to_string())?;
+            }
+            if recipes.is_empty() || recipes.len() != row_count {
                 return Err("reference row count mismatch".into());
             }
-            for (recipe, row) in inputs.iter().zip(rows) {
-                let record: Record =
-                    serde_json::from_value(row.clone()).map_err(|e| e.to_string())?;
-                task.validate_reference(recipe, &record.input, &record.output)?;
+            for recipe in recipes {
+                let recipe = Input::deserialize(recipe).map_err(|e| e.to_string())?;
+                let row = rows.next().ok_or("reference row count mismatch")??;
+                let record: Record = serde_json::from_value(row).map_err(|e| e.to_string())?;
+                task.validate_reference(&recipe, &record.input, &record.output)?;
             }
         }
         Spec::Batch => {
             let recipes = input.as_array().ok_or("batch recipes must be an array")?;
-            if recipes.is_empty() || recipes.len() != rows.len() {
+            if recipes.is_empty() || recipes.len() != row_count {
                 return Err("batch row count mismatch".into());
             }
-            for (recipe, row) in recipes.iter().zip(rows) {
+            for recipe in recipes {
+                let row = rows.next().ok_or("batch row count mismatch")??;
                 let count = recipe["cases"]
                     .as_array()
                     .ok_or("batch cases missing")?
                     .len();
-                let mask: Vec<bool> = serde_json::from_value(row["output"]["valid_mask"].clone())
-                    .map_err(|e| e.to_string())?;
+                let mask: Vec<bool> =
+                    Vec::deserialize(&row["output"]["valid_mask"]).map_err(|e| e.to_string())?;
                 let smiles: Vec<Option<String>> =
-                    serde_json::from_value(row["output"]["smiles"].clone())
-                        .map_err(|e| e.to_string())?;
+                    Vec::deserialize(&row["output"]["smiles"]).map_err(|e| e.to_string())?;
                 let errors: Vec<usize> =
-                    serde_json::from_value(row["output"]["error_indices"].clone())
-                        .map_err(|e| e.to_string())?;
+                    Vec::deserialize(&row["output"]["error_indices"]).map_err(|e| e.to_string())?;
                 let invalid: Vec<_> = mask
                     .iter()
                     .enumerate()
@@ -291,8 +508,15 @@ pub(crate) fn validate_rows(spec: &Spec, input: &Value, rows: &[Value]) -> Resul
             }
         }
         Spec::Special(s) => {
-            special_regression::validate(&encode(input)?, &jsonl(rows)?, s.rows, s.schema)?;
+            // The existing public special-regression API requires complete
+            // owned fixture/rows. Preserve its complete schema validation.
+            let rows: Vec<Value> = rows.collect::<Result<_>>()?;
+            return special_regression::validate(&encode(input)?, &jsonl(&rows)?, s.rows, s.schema)
+                .map(|_| ());
         }
+    }
+    if rows.next().transpose()?.is_some() {
+        return Err("reference row count mismatch".into());
     }
     Ok(())
 }
@@ -317,6 +541,16 @@ fn identity(
     output: &[u8],
     rows: usize,
 ) -> Result<Manifest> {
+    identity_with_output_digest(selection, spec, input, digest(output), rows)
+}
+
+fn identity_with_output_digest(
+    selection: &Selection,
+    spec: &Spec,
+    input: &Value,
+    output_sha256: String,
+    rows: usize,
+) -> Result<Manifest> {
     let pin = if reference::uses_gemmi(spec) {
         "gemmi.json"
     } else {
@@ -326,65 +560,146 @@ fn identity(
         schema: 1,
         selection: selection.clone(),
         task: spec.key().into(),
-        input_sha256: digest(&encode(input)?),
+        input_sha256: encoded_digest(input)?,
         generator_sha256: reference::source_digest(spec)?,
         reference_identity: serde_json::from_slice(&read(
             &directory().join("testdata/reference").join(pin),
         )?)
         .map_err(|e| e.to_string())?,
         platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-        output_sha256: digest(output),
+        output_sha256,
         rows,
     })
 }
 
-fn load_reference(plan: &Plan, spec: &Spec, dir: &Path) -> Result<Snapshot> {
+fn load_reference(plan: &Plan, spec: &Spec, dir: &Path) -> Result<CheckedSnapshot> {
     let input = inputs(spec, &plan.cases)?;
     let stored: Value =
         serde_json::from_slice(&read(&dir.join("input.json"))?).map_err(|e| e.to_string())?;
     if stored != input {
         return Err("prepared input changed".into());
     }
-    let output = read(&dir.join("reference.jsonl"))?;
-    let rows: Vec<Value> = String::from_utf8(output.clone())
-        .map_err(|e| e.to_string())?
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
-        .collect::<Result<_>>()?;
+    drop(stored);
+    let rows = OwnedRows::copy_from(&dir.join("reference.jsonl"))?;
     let manifest: Manifest =
         serde_json::from_slice(&read(&dir.join("manifest.json"))?).map_err(|e| e.to_string())?;
-    if manifest != identity(&plan.selection, spec, &input, &output, rows.len())? {
+    if manifest
+        != identity_with_output_digest(
+            &plan.selection,
+            spec,
+            &input,
+            rows.sha256.clone(),
+            rows.len(),
+        )?
+    {
         return Err("stale/corrupt reference manifest".into());
     }
-    validate_rows(spec, &input, &rows)?;
-    Ok(Snapshot {
+    validate_rows(spec, &input, rows.iter()?, rows.len())?;
+    Ok(CheckedSnapshot {
         spec: *spec,
-        inputs: input,
+        inputs: matches!(spec, Spec::Special(_)).then_some(input),
         rows,
     })
+}
+
+/// Finish every selected preflight before returning any references to CK.
+/// Completion order must never select the reported failure: results are reduced
+/// in the original task order after all bounded workers have joined.
+fn parallel_preflight<T, F>(count: usize, workers: usize, check: F) -> Result<Vec<T>>
+where
+    T: Send,
+    F: Fn(usize) -> Result<T> + Sync,
+{
+    if count == 0 {
+        return Err("empty test selection".into());
+    }
+    if workers == 0 {
+        return Err("reference preflight workers must be positive".into());
+    }
+    let workers = workers.min(112).min(count);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut ordered: Vec<Option<Result<T>>> = (0..count).map(|_| None).collect();
+    std::thread::scope(|scope| -> Result<()> {
+        let mut handles = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let next = &next;
+            let check = &check;
+            handles.push(scope.spawn(move || {
+                let mut completed = Vec::new();
+                loop {
+                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if index >= count {
+                        break;
+                    }
+                    completed.push((index, check(index)));
+                }
+                completed
+            }));
+        }
+        let mut panicked = false;
+        for handle in handles {
+            match handle.join() {
+                Ok(completed) => {
+                    for (index, result) in completed {
+                        ordered[index] = Some(result);
+                    }
+                }
+                Err(_) => panicked = true,
+            }
+        }
+        if panicked {
+            return Err("reference preflight worker panicked".into());
+        }
+        Ok(())
+    })?;
+    ordered
+        .into_iter()
+        .map(|result| {
+            result.ok_or_else(|| "reference preflight worker omitted a task".to_string())?
+        })
+        .collect()
 }
 
 pub(crate) fn load_references(
     plan: &Plan,
     folder: &Path,
+) -> Result<BTreeMap<&'static str, CheckedSnapshot>> {
+    let workers = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(112);
+    parallel_preflight(plan.specs.len(), workers, |index| {
+        let s = &plan.specs[index];
+        load_reference(plan, s, &folder.join(s.key()))
+            .map(|snapshot| (s.key(), snapshot))
+            .map_err(|e| {
+                let mut command = plan.selection.command();
+                if matches!(plan.selection, Selection::Corpus(_)) {
+                    command.push_str(&format!(" --task {}", s.key()));
+                }
+                format!("{}: {e}\nPrepare first: {command}", s.key())
+            })
+    })
+    .map(|checked| checked.into_iter().collect())
+}
+
+pub(crate) fn load_special_references(
+    plan: &Plan,
+    folder: &Path,
 ) -> Result<BTreeMap<&'static str, Snapshot>> {
-    if plan.specs.is_empty() {
-        return Err("empty test selection".into());
-    }
-    plan.specs
-        .iter()
-        .map(|s| {
-            load_reference(plan, s, &folder.join(s.key()))
-                .map(|snapshot| (s.key(), snapshot))
-                .map_err(|e| {
-                    let mut command = plan.selection.command();
-                    if matches!(plan.selection, Selection::Corpus(_)) {
-                        command.push_str(&format!(" --task {}", s.key()));
-                    }
-                    format!("{}: {e}\nPrepare first: {command}", s.key())
-                })
-        })
+    // Complete every selected special preflight before materializing consumers.
+    load_references(plan, folder)?
+        .into_iter()
+        .map(|(key, checked)| Ok((key, materialize_special(checked)?)))
         .collect()
+}
+
+fn materialize_special(checked: CheckedSnapshot) -> Result<Snapshot> {
+    Ok(Snapshot {
+        spec: checked.spec,
+        inputs: checked.inputs.ok_or("special fixture unavailable")?,
+        rows: checked.rows.iter()?.collect::<Result<_>>()?,
+    })
 }
 
 pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Result<Preparation> {
@@ -418,26 +733,36 @@ pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Res
         let input = inputs(spec, &plan.cases)?;
         let generator_before = reference::source_digest(spec)?;
         eprintln!("Generating {}", spec.key());
-        let rows = reference::generate(spec, &plan.cases, &input, threads, &mut descriptors)?;
-        if reference::source_digest(spec)? != generator_before {
-            return Err("reference generator changed during preparation".into());
-        }
-        validate_rows(spec, &input, &rows)?;
-        let bytes = jsonl(&rows)?;
         let temporary = tempfile::Builder::new()
             .prefix(".prepare-")
             .tempdir_in(&folder)
             .map_err(|e| e.to_string())?;
-        for (name, bytes) in [
-            ("input.json", encode(&input)?),
-            ("reference.jsonl", bytes.clone()),
-            (
-                "manifest.json",
-                encode(&identity(selection, spec, &input, &bytes, rows.len())?)?,
-            ),
-        ] {
-            fs::write(temporary.path().join(name), bytes).map_err(|e| e.to_string())?;
+        let mut writer = RowWriter::new_in(temporary.path())?;
+        reference::generate(
+            spec,
+            &plan.cases,
+            &input,
+            threads,
+            &mut descriptors,
+            |row| writer.push(row),
+        )?;
+        let rows = writer.finish()?;
+        if reference::source_digest(spec)? != generator_before {
+            return Err("reference generator changed during preparation".into());
         }
+        validate_rows(spec, &input, rows.iter()?, rows.len())?;
+        let manifest =
+            identity_with_output_digest(selection, spec, &input, rows.sha256.clone(), rows.len())?;
+        let row_count = rows.len();
+        let mut input_file = BufWriter::new(
+            fs::File::create(temporary.path().join("input.json")).map_err(|e| e.to_string())?,
+        );
+        serde_json::to_writer(&mut input_file, &input).map_err(|e| e.to_string())?;
+        input_file.flush().map_err(|e| e.to_string())?;
+        drop(input_file);
+        rows.persist(&temporary.path().join("reference.jsonl"))?;
+        fs::write(temporary.path().join("manifest.json"), encode(&manifest)?)
+            .map_err(|e| e.to_string())?;
         let destination = folder.join(spec.key());
         let backup = folder.join(format!(
             ".invalid-{}-{}",
@@ -456,13 +781,23 @@ pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Res
             return Err(error.to_string());
         }
         result.generated_tasks += 1;
-        result.rows += rows.len();
+        result.rows += row_count;
         eprintln!(
             "  [========================] saved {} reference rows",
-            rows.len()
+            row_count
         );
     }
-    load_references(&plan, &folder)?;
+    // Validate all tasks again, dropping each owned temporary snapshot before
+    // proceeding. Publishing selection still waits for every final preflight.
+    for spec in &plan.specs {
+        load_reference(&plan, spec, &folder.join(spec.key())).map_err(|e| {
+            let mut command = plan.selection.command();
+            if matches!(plan.selection, Selection::Corpus(_)) {
+                command.push_str(&format!(" --task {}", spec.key()));
+            }
+            format!("{}: {e}\nPrepare first: {command}", spec.key())
+        })?;
+    }
     let lane = if matches!(selection, Selection::Corpus(_)) {
         "corpus"
     } else {
@@ -489,7 +824,7 @@ mod tests {
     use super::*;
     #[test]
     fn registry_keys_and_cargo_declarations_share_one_census() {
-        assert_eq!(registry::TASKS.len(), 111);
+        assert_eq!(registry::TASKS.len(), 114);
         let mut unique = BTreeSet::new();
         for task in registry::TASKS {
             assert_eq!(
@@ -508,7 +843,7 @@ mod tests {
         assert!(plan(&Selection::Corpus("fingerprint_5000".into())).is_err());
         let smoke = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
         assert_eq!(smoke.cases.molecules.len(), 3);
-        assert_eq!(smoke.specs.len(), 110);
+        assert_eq!(smoke.specs.len(), 113);
         let bio = plan(&Selection::Corpus("bio_small".into())).unwrap();
         assert_eq!(bio.cases.bio_cases.len(), 2);
         assert_eq!(bio.specs.len(), 2);
@@ -523,7 +858,7 @@ mod tests {
     #[test]
     fn special_regressions_have_separate_fixed_inputs() {
         let special = plan(&Selection::Special("all".into())).unwrap();
-        assert_eq!(special.specs.len(), 5);
+        assert_eq!(special.specs.len(), 7);
         assert_eq!(
             special
                 .specs
@@ -531,6 +866,8 @@ mod tests {
                 .map(|s| s.key())
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([
+                "forcefield_optimizers",
+                "mmff_builtin",
                 "bio_mmcif_switches",
                 "molalign_focused",
                 "structure_tags",
@@ -585,14 +922,14 @@ mod tests {
         let spec = Spec::Batch;
         let input = json!([{"cases":[{"id":"a","smiles":"CCO"},{"id":"b","smiles":"invalid"}],"workers":4}]);
         let row = json!({"input":input[0],"output":{"valid_mask":[true,false],"smiles":["CCO",null],"error_indices":[1]}});
-        validate_rows(&spec, &input, &[row.clone()]).unwrap();
+        validate_rows(&spec, &input, [Ok(row.clone())], 1).unwrap();
         let mut wrong = row.clone();
         wrong["output"]["error_indices"] = json!([0]);
-        assert!(validate_rows(&spec, &input, &[wrong]).is_err());
+        assert!(validate_rows(&spec, &input, [Ok(wrong)], 1).is_err());
         let mut wrong = row;
         wrong["input"]["workers"] = json!(1);
-        assert!(validate_rows(&spec, &input, &[wrong]).is_err());
-        assert!(validate_rows(&spec, &input, &[]).is_err());
+        assert!(validate_rows(&spec, &input, [Ok(wrong)], 1).is_err());
+        assert!(validate_rows(&spec, &input, std::iter::empty(), 0).is_err());
     }
     #[test]
     fn cargo_does_not_prepare_missing_expectations() {
@@ -648,12 +985,16 @@ mod tests {
     #[test]
     fn task_selection_is_exact_and_must_apply_to_the_corpus() {
         let selection = Selection::Corpus("smiles_smoke".into());
-        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 110);
+        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 113);
         for key in [
             "num_heavy_atoms_smiles",
             "batch_smiles",
             "mmff_force_field_smiles",
             "uff_force_field_smiles",
+            "murcko_scaffold_smiles",
+            "net_scaffold_smiles",
+            "murcko_decompose_smiles",
+            "remove_hs_smiles",
         ] {
             let selected = plan_task(&selection, Some(key)).unwrap();
             assert_eq!(selected.specs.len(), 1);
@@ -720,6 +1061,265 @@ mod tests {
             prepare(&Selection::Corpus("smiles_small".into()), 0, None)
                 .unwrap_err()
                 .contains("positive")
+        );
+    }
+    fn molecular_reference_fixture() -> (Plan, Spec, tempfile::TempDir, Vec<Value>) {
+        let mut selected = plan_task(
+            &Selection::Corpus("smiles_smoke".into()),
+            Some("num_heavy_atoms_smiles"),
+        )
+        .unwrap();
+        selected.cases.molecules.truncate(1);
+        let spec = selected.specs[0];
+        let input = inputs(&spec, &selected.cases).unwrap();
+        let recipes: Vec<Input> = Vec::deserialize(&input).unwrap();
+        let rows: Vec<Value> = recipes
+            .into_iter()
+            .map(|input| {
+                serde_json::to_value(Record {
+                    input,
+                    output: registry::Value::Molecular(crate::molecular::Outcome::Unsigned(3)),
+                })
+                .unwrap()
+            })
+            .collect();
+        let output = jsonl(&rows).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(folder.path().join("input.json"), encode(&input).unwrap()).unwrap();
+        fs::write(folder.path().join("reference.jsonl"), &output).unwrap();
+        fs::write(
+            folder.path().join("manifest.json"),
+            encode(&identity(&selected.selection, &spec, &input, &output, rows.len()).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        (selected, spec, folder, rows)
+    }
+
+    #[test]
+    fn owned_reference_survives_expected_replacement_and_independent_cursors() {
+        let (selected, spec, folder, original) = molecular_reference_fixture();
+        let checked = load_reference(&selected, &spec, folder.path()).unwrap();
+        assert!(checked.inputs.is_none());
+        fs::write(folder.path().join("reference.jsonl"), b"changed\n").unwrap();
+        fs::write(folder.path().join("input.json"), b"changed").unwrap();
+        fs::remove_file(folder.path().join("manifest.json")).unwrap();
+        let mut first = checked.rows.iter().unwrap();
+        let mut second = checked.rows.iter().unwrap();
+        for expected in &original {
+            assert_eq!(first.next().unwrap().unwrap(), *expected);
+            assert_eq!(second.next().unwrap().unwrap(), *expected);
+        }
+        assert!(first.next().is_none());
+        assert!(second.next().is_none());
+        drop(first);
+        drop(second);
+        fs::remove_dir_all(folder.path()).unwrap();
+        std::thread::scope(|scope| {
+            let a = scope.spawn(|| {
+                checked
+                    .rows
+                    .iter()
+                    .unwrap()
+                    .collect::<Result<Vec<_>>>()
+                    .unwrap()
+            });
+            let b = scope.spawn(|| {
+                checked
+                    .rows
+                    .iter()
+                    .unwrap()
+                    .collect::<Result<Vec<_>>>()
+                    .unwrap()
+            });
+            assert_eq!(a.join().unwrap(), original);
+            assert_eq!(b.join().unwrap(), original);
+        });
+    }
+
+    #[test]
+    fn whole_utf8_and_json_syntax_keep_precedence_over_manifest_and_typed_rows() {
+        let (selected, spec, folder, _) = molecular_reference_fixture();
+        fs::write(folder.path().join("manifest.json"), b"not-json").unwrap();
+        fs::write(folder.path().join("reference.jsonl"), b"{\n\xff\n").unwrap();
+        let error = load_reference(&selected, &spec, folder.path())
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("invalid utf-8") && error.contains("index 2"),
+            "{error}"
+        );
+        // First {} has no Record fields, but the later syntax error must win.
+        fs::write(folder.path().join("reference.jsonl"), b"{}\n{\n").unwrap();
+        let error = load_reference(&selected, &spec, folder.path())
+            .err()
+            .unwrap();
+        assert!(error.contains("EOF while parsing"), "{error}");
+        assert!(!error.contains("missing field"));
+        fs::write(folder.path().join("reference.jsonl"), b"{}\n").unwrap();
+        let error = load_reference(&selected, &spec, folder.path())
+            .err()
+            .unwrap();
+        assert!(
+            !error.contains("missing field"),
+            "manifest must fail before typed row: {error}"
+        );
+    }
+
+    #[test]
+    fn owned_jsonl_preserves_crlf_final_line_empty_file_and_blank_line_rules() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("rows.jsonl");
+        let bytes = b"{\"a\":1}\r\n{\"b\":2}";
+        fs::write(&path, bytes).unwrap();
+        let rows = OwnedRows::copy_from(&path).unwrap();
+        assert_eq!(rows.sha256, digest(bytes));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows.iter().unwrap().collect::<Result<Vec<_>>>().unwrap(),
+            vec![json!({"a":1}), json!({"b":2})]
+        );
+        fs::write(&path, b"").unwrap();
+        assert_eq!(OwnedRows::copy_from(&path).unwrap().len(), 0);
+        for bytes in [b"{}\n\n".as_slice(), b"\n{}\n".as_slice()] {
+            fs::write(&path, bytes).unwrap();
+            assert!(OwnedRows::copy_from(&path).is_err());
+        }
+    }
+
+    #[test]
+    fn streamed_generated_jsonl_and_manifest_hashes_equal_original_encoding() {
+        let folder = tempfile::tempdir().unwrap();
+        let rows = vec![
+            json!({"coordinate":0.9389657496748851,"bits":u64::MAX}),
+            json!({"coordinate":-0.0,"nested":{"z":[1,2],"a":"value"}}),
+        ];
+        let expected = jsonl(&rows).unwrap();
+        let mut writer = RowWriter::new_in(folder.path()).unwrap();
+        for row in &rows {
+            writer.push(row.clone()).unwrap();
+        }
+        let generated = writer.finish().unwrap();
+        assert_eq!(generated.len(), rows.len());
+        assert_eq!(generated.sha256, digest(&expected));
+        assert_eq!(
+            encoded_digest(&rows).unwrap(),
+            digest(&encode(&rows).unwrap())
+        );
+        let selected = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
+        assert_eq!(
+            identity(
+                &selected.selection,
+                &selected.specs[0],
+                &json!([1]),
+                &expected,
+                rows.len()
+            )
+            .unwrap(),
+            identity_with_output_digest(
+                &selected.selection,
+                &selected.specs[0],
+                &json!([1]),
+                generated.sha256.clone(),
+                rows.len()
+            )
+            .unwrap(),
+        );
+        let path = folder.path().join("reference.jsonl");
+        generated.persist(&path).unwrap();
+        assert_eq!(fs::read(path).unwrap(), expected);
+    }
+
+    #[test]
+    fn special_materialization_retains_complete_owned_fixture_and_rows() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("owned.jsonl");
+        let rows = vec![
+            json!({"case":"first","nested":[1,2]}),
+            json!({"case":"second","nested":{"all":"values"}}),
+        ];
+        fs::write(&path, jsonl(&rows).unwrap()).unwrap();
+        let owned = OwnedRows::copy_from(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        let fixture = json!({"complete":{"cases":[1,2],"branches":["a","b"]}});
+        // This boundary consumes an already checked private snapshot; source
+        // schema checking remains in load_references before materialization.
+        let snapshot = materialize_special(CheckedSnapshot {
+            spec: Spec::Special(&registry::SPECIAL_REGRESSIONS[0]),
+            inputs: Some(fixture.clone()),
+            rows: owned,
+        })
+        .unwrap();
+        assert_eq!(snapshot.inputs, fixture);
+        assert_eq!(snapshot.rows, rows);
+    }
+
+    #[test]
+    fn parallel_preflight_is_bounded_checks_every_selected_task_and_preserves_order() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let visited: Vec<_> = (0..9).map(|_| AtomicUsize::new(0)).collect();
+        let first_wave = std::sync::Barrier::new(3);
+        let observed = parallel_preflight(visited.len(), 3, |index| {
+            visited[index].fetch_add(1, Ordering::SeqCst);
+            let running = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(running, Ordering::SeqCst);
+            if index < 3 {
+                first_wave.wait();
+            }
+            std::thread::yield_now();
+            active.fetch_sub(1, Ordering::SeqCst);
+            Ok(index)
+        })
+        .unwrap();
+        assert_eq!(observed, (0..9).collect::<Vec<_>>());
+        assert_eq!(peak.load(Ordering::SeqCst), 3);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert!(
+            visited
+                .iter()
+                .all(|count| count.load(Ordering::SeqCst) == 1)
+        );
+    }
+
+    #[test]
+    fn parallel_preflight_waits_for_all_tasks_and_returns_first_error_in_selected_order() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let visited: Vec<_> = (0..7).map(|_| AtomicUsize::new(0)).collect();
+        let later_completed = (Mutex::new(false), std::sync::Condvar::new());
+        let completion_order = Mutex::new(Vec::new());
+        let error = parallel_preflight(visited.len(), 3, |index| {
+            visited[index].fetch_add(1, Ordering::SeqCst);
+            if index == 0 {
+                let mut done = later_completed.0.lock().unwrap();
+                while !*done {
+                    done = later_completed.1.wait(done).unwrap();
+                }
+            }
+            completion_order.lock().unwrap().push(index);
+            if index == 4 {
+                *later_completed.0.lock().unwrap() = true;
+                later_completed.1.notify_all();
+            }
+            if index == 0 || index == 4 {
+                Err(format!("selected task {index} failed"))
+            } else {
+                Ok(index)
+            }
+        })
+        .unwrap_err();
+        assert_eq!(error, "selected task 0 failed");
+        assert!(
+            visited
+                .iter()
+                .all(|count| count.load(Ordering::SeqCst) == 1)
+        );
+        let order = completion_order.lock().unwrap();
+        assert_eq!(order.len(), visited.len());
+        assert!(
+            order.iter().position(|&index| index == 4).unwrap()
+                < order.iter().position(|&index| index == 0).unwrap()
         );
     }
 }

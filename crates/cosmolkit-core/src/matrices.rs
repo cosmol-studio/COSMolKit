@@ -292,7 +292,7 @@ fn selected_distance_bonds<'a>(
     Ok(bonds)
 }
 
-fn floyd_warshall(
+pub(crate) fn floyd_warshall(
     dimension: usize,
     distances: &mut [f64],
     active_indices: &[usize],

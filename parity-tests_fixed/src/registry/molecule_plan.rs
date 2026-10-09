@@ -34,6 +34,9 @@ pub enum Reference {
 impl TaskId {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::MurckoScaffold => "murcko_scaffold",
+            Self::NetScaffold => "net_scaffold",
+            Self::MurckoDecompose => "murcko_decompose",
             Self::TautomerEnumeration => "tautomer_enumeration",
             Self::TautomerCanonicalization => "tautomer_canonicalization",
             Self::Chi0 => "chi_0",
@@ -192,6 +195,9 @@ impl TaskId {
             | Self::Qed => Category::Descriptors,
             Self::SmilesRead => Category::Notation,
             Self::Sanitize
+            | Self::MurckoScaffold
+            | Self::NetScaffold
+            | Self::MurckoDecompose
             | Self::Kekulize
             | Self::AddHydrogens
             | Self::RemoveHydrogens
@@ -229,6 +235,9 @@ impl TaskId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TaskId {
+    MurckoScaffold,
+    NetScaffold,
+    MurckoDecompose,
     TautomerEnumeration,
     TautomerCanonicalization,
     NumAmideBonds,
@@ -410,6 +419,9 @@ impl VsaBins {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Profile {
+    MurckoScaffold,
+    NetScaffold,
+    MurckoDecompose,
     TautomerEnumeration {
         parameters: TautomerProfile,
     },
@@ -704,6 +716,24 @@ use TaskId::*;
 /// Frozen matrices. Executable registration lives in the parent module;
 /// unregistered matrices remain planned, not passing evidence.
 pub const TASKS: &[Task] = &[
+    Task {
+        id: MurckoScaffold,
+        input: SanitizedHydrogensRemoved,
+        comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NetScaffold,
+        input: SanitizedHydrogensRemoved,
+        comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: MurckoDecompose,
+        input: SanitizedHydrogensRemoved,
+        comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
     Task {
         id: DistanceMatrix,
         input: SanitizedHydrogensRemoved,
@@ -1282,6 +1312,9 @@ impl TaskId {
     pub fn profiles(self) -> Vec<Profile> {
         let booleans = [false, true];
         match self {
+            MurckoScaffold => vec![Profile::MurckoScaffold],
+            NetScaffold => vec![Profile::NetScaffold],
+            MurckoDecompose => vec![Profile::MurckoDecompose],
             TautomerEnumeration | TautomerCanonicalization => {
                 [TautomerCatalog::Current, TautomerCatalog::V1]
                     .map(|catalog| {

@@ -118,6 +118,9 @@ pub struct StereoGroupAssignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AtropisomerError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("source atropisomer precondition failed: {message}")]
     SourcePrecondition { message: &'static str },
     #[error("candidate traversal bond {bond} is outside {bond_count} source bond rows")]
@@ -1745,7 +1748,7 @@ pub fn cleanup_atropisomer_stereo_groups(
         } else {
             // The pinned three-argument constructor propagates neither the
             // source read ID nor its write ID; this fresh value resets both.
-            groups.push(StereoGroup::new(group.kind(), atoms, bonds));
+            groups.push(StereoGroup::new(group.kind(), atoms, bonds)?);
         }
     }
     Ok(StereoGroupAssignment { groups })
@@ -2179,28 +2182,32 @@ mod stereo_group_batch_tests {
         let groups = vec![
             StereoGroup::new(
                 StereoGroupKind::Absolute,
-                vec![AtomId::new(2), AtomId::new(0), AtomId::new(2)],
+                vec![AtomId::new(2), AtomId::new(0)],
                 Vec::new(),
-            ),
+            )
+            .expect("valid distinct stereo members"),
             StereoGroup::new(
                 StereoGroupKind::Or,
                 vec![AtomId::new(0), AtomId::new(1)],
                 Vec::new(),
-            ),
+            )
+            .expect("valid distinct stereo members"),
             StereoGroup::new(
                 StereoGroupKind::And,
                 vec![AtomId::new(3)],
                 vec![BondId::new(0)],
-            ),
+            )
+            .expect("valid distinct stereo members"),
             StereoGroup::new(
                 StereoGroupKind::Or,
                 vec![AtomId::new(1)],
                 vec![BondId::new(0)],
-            ),
+            )
+            .expect("valid distinct stereo members"),
         ];
 
         let expected = vec![
-            vec![AtomId::new(2), AtomId::new(0), AtomId::new(2)],
+            vec![AtomId::new(2), AtomId::new(0)],
             vec![AtomId::new(0), AtomId::new(1)],
             vec![AtomId::new(3), AtomId::new(1)],
             vec![AtomId::new(1)],
@@ -2232,7 +2239,8 @@ mod stereo_group_batch_tests {
             StereoGroupKind::Absolute,
             vec![AtomId::new(3), AtomId::new(0)],
             Vec::new(),
-        );
+        )
+        .expect("valid distinct stereo members");
         assert_eq!(
             get_all_atom_ids_for_stereo_groups(
                 &topology,
@@ -2248,7 +2256,8 @@ mod stereo_group_batch_tests {
     fn cf_smi_groups_wedge_map_accepts_only_atropisomer_entries() {
         let topology = group_topology([BondDirection::None; 3]);
         let axial_group =
-            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(0)]);
+            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(0)])
+                .expect("valid distinct stereo members");
         let update = AtropisomerWedgeUpdate {
             bond: BondId::new(1),
             begin: AtomId::new(1),
@@ -2281,7 +2290,8 @@ mod stereo_group_batch_tests {
             .find(|bond| *bond != chiral_bond)
             .expect("a second central bond remains for the group");
         let chiral_group =
-            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![group_bond]);
+            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![group_bond])
+                .expect("valid distinct stereo members");
         assert_eq!(
             get_all_atom_ids_for_stereo_group(&tetrahedral, &chiral_group, &chiral_map)
                 .expect("Chiral map entries do not expand an enhanced group"),
@@ -2296,7 +2306,8 @@ mod stereo_group_batch_tests {
             StereoGroupKind::Absolute,
             vec![AtomId::new(99)],
             vec![BondId::new(99)],
-        );
+        )
+        .expect("valid distinct stereo members");
         assert_eq!(
             get_all_atom_ids_for_stereo_groups(
                 &topology,
@@ -2309,12 +2320,14 @@ mod stereo_group_batch_tests {
             })
         );
 
-        let invalid_bond = StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![BondId::new(99)]);
+        let invalid_bond = StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![BondId::new(99)])
+            .expect("valid distinct stereo members");
         assert_eq!(
             get_all_atom_ids_for_stereo_groups(
                 &topology,
                 &[
-                    StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new(),),
+                    StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new(),)
+                        .expect("valid distinct stereo members"),
                     invalid_bond
                 ],
                 &WedgeAssignments::default(),
@@ -2337,7 +2350,7 @@ mod stereo_group_batch_tests {
                     StereoGroupKind::Absolute,
                     vec![AtomId::new(0)],
                     Vec::new(),
-                )],
+                ).expect("valid distinct stereo members")],
                 &WedgeAssignments::default(),
             ),
             Err(AtropisomerError::InvalidTopology {
@@ -2360,6 +2373,7 @@ mod stereo_group_batch_tests {
                     vec![AtomId::new(index % 4)],
                     Vec::new(),
                 )
+                .expect("valid distinct stereo members")
             })
             .collect::<Vec<_>>();
 
@@ -4379,6 +4393,7 @@ mod cleanup_ring_state_tests {
             (0..n).map(AtomId::new).collect(),
             Vec::new(),
         )
+        .expect("valid distinct stereo members")
         .with_id(7);
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![sentinel]).unwrap()
     }
@@ -7002,13 +7017,32 @@ mod complete_stereo_group_source_tests {
             atoms.iter().copied().map(AtomId::new).collect(),
             bonds.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
     }
     fn indices(output: &[AtomId]) -> Vec<usize> {
         output.iter().map(|id| id.index()).collect()
     }
 
     #[test]
-    fn reused_output_is_cleared_without_deduplicating_initial_members_or_reallocating_capacity() {
+    fn duplicate_members_are_rejected_and_reused_output_keeps_order_and_capacity() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 0, 2].into_iter().map(AtomId::new).collect(),
+                [0, 0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 0].into_iter().map(AtomId::new).collect(),
+                [0, 0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateBond),
+        );
         let topology = graph(
             3,
             &[
@@ -7021,12 +7055,12 @@ mod complete_stereo_group_source_tests {
         let pointer = output.as_ptr();
         collect_stereo_group_atom_ids_source(
             &topology,
-            &group(&[2, 0, 2], &[0, 0]),
+            &group(&[2, 0], &[0]),
             &mut output,
             &WedgeAssignments::default(),
         )
         .unwrap();
-        assert_eq!(indices(&output), vec![2, 0, 2, 1]);
+        assert_eq!(indices(&output), vec![2, 0, 1]);
         assert_eq!(output.as_ptr(), pointer);
         collect_stereo_group_atom_ids_source(
             &topology,
@@ -7041,19 +7075,37 @@ mod complete_stereo_group_source_tests {
 
     #[test]
     fn group_atom_metadata_is_copied_without_a_source_graph_dereference() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [77, 0, 77].into_iter().map(AtomId::new).collect(),
+                Vec::new(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let mut output = vec![AtomId::new(500)];
         collect_stereo_group_atom_ids_source(
             &TopologyBlock::default(),
-            &group(&[77, 0, 77], &[]),
+            &group(&[77, 0], &[]),
             &mut output,
             &WedgeAssignments::default(),
         )
         .unwrap();
-        assert_eq!(indices(&output), vec![77, 0, 77]);
+        assert_eq!(indices(&output), vec![77, 0]);
     }
 
     #[test]
     fn begin_then_end_order_and_neighbor_direction_ignore_carrier_begin_orientation() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 2].into_iter().map(AtomId::new).collect(),
+                [0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let topology = graph(
             4,
             &[
@@ -7073,12 +7125,12 @@ mod complete_stereo_group_source_tests {
         assert_eq!(indices(&output), vec![1, 2]);
         collect_stereo_group_atom_ids_source(
             &topology,
-            &group(&[2, 2], &[0]),
+            &group(&[2], &[0]),
             &mut output,
             &WedgeAssignments::default(),
         )
         .unwrap();
-        assert_eq!(indices(&output), vec![2, 2, 1]);
+        assert_eq!(indices(&output), vec![2, 1]);
     }
 
     #[test]
@@ -7133,6 +7185,15 @@ mod complete_stereo_group_source_tests {
 
     #[test]
     fn later_bond_error_preserves_cleared_metadata_and_earlier_appended_prefix() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 2].into_iter().map(AtomId::new).collect(),
+                [0, 99].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let topology = graph(
             3,
             &[
@@ -7144,7 +7205,7 @@ mod complete_stereo_group_source_tests {
         assert_eq!(
             collect_stereo_group_atom_ids_source(
                 &topology,
-                &group(&[2, 2], &[0, 99]),
+                &group(&[2], &[0, 99]),
                 &mut output,
                 &WedgeAssignments::default()
             ),
@@ -7153,7 +7214,7 @@ mod complete_stereo_group_source_tests {
                 bond_count: 2
             })
         );
-        assert_eq!(indices(&output), vec![2, 2, 0]);
+        assert_eq!(indices(&output), vec![2, 0]);
     }
 
     #[test]
@@ -7191,6 +7252,15 @@ mod complete_stereo_group_source_tests {
 
     #[test]
     fn missing_actual_csr_row_is_not_silently_zero_degree_and_unused_rows_are_not_read() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 2].into_iter().map(AtomId::new).collect(),
+                Vec::new(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let isolated = graph(2, &[]);
         assert_eq!(isolated.adjacency.try_neighbors_of(0), Some([].as_slice()));
         assert_eq!(isolated.adjacency.try_neighbors_of(2), None);
@@ -7212,12 +7282,12 @@ mod complete_stereo_group_source_tests {
         assert_eq!(indices(&output), vec![2]);
         collect_stereo_group_atom_ids_source(
             &topology,
-            &group(&[2, 2], &[]),
+            &group(&[2], &[]),
             &mut output,
             &WedgeAssignments::default(),
         )
         .unwrap();
-        assert_eq!(indices(&output), vec![2, 2]);
+        assert_eq!(indices(&output), vec![2]);
     }
 
     #[test]
@@ -7294,6 +7364,7 @@ mod query_stereo_group_source_tests {
             atoms.iter().copied().map(AtomId::new).collect(),
             bonds.iter().copied().map(BondId::new).collect(),
         )
+        .expect("valid distinct stereo members")
     }
     fn collect(q: &QueryGraph, g: &StereoGroup, w: &WedgeAssignments) -> Vec<AtomId> {
         let mut out = vec![AtomId::new(999)];
@@ -7301,7 +7372,25 @@ mod query_stereo_group_source_tests {
         out
     }
     #[test]
-    fn query_collector_clears_reused_output_and_retains_initial_duplicates() {
+    fn query_collector_rejects_duplicate_members_and_keeps_reused_output_order() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 0, 2].into_iter().map(AtomId::new).collect(),
+                [0, 0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 0].into_iter().map(AtomId::new).collect(),
+                [0, 0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateBond),
+        );
         let q = graph(
             &[6, 6, 6],
             &[
@@ -7314,20 +7403,12 @@ mod query_stereo_group_source_tests {
         let pointer = out.as_ptr();
         collect_query_stereo_group_atom_ids_source(
             &q,
-            &group(&[2, 0, 2], &[0, 0]),
+            &group(&[2, 0], &[0]),
             &mut out,
             &Default::default(),
         )
         .unwrap();
-        assert_eq!(
-            out,
-            vec![
-                AtomId::new(2),
-                AtomId::new(0),
-                AtomId::new(2),
-                AtomId::new(1)
-            ]
-        );
+        assert_eq!(out, vec![AtomId::new(2), AtomId::new(0), AtomId::new(1)]);
         assert_eq!(pointer, out.as_ptr());
     }
     #[test]
@@ -7380,6 +7461,15 @@ mod query_stereo_group_source_tests {
     }
     #[test]
     fn source_ids_do_not_require_element_conversion_or_query_rewriting() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 2].into_iter().map(AtomId::new).collect(),
+                [0].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let q = graph(
             &[255, 0, 119],
             &[
@@ -7389,13 +7479,22 @@ mod query_stereo_group_source_tests {
         );
         let before = q.clone();
         assert_eq!(
-            collect(&q, &group(&[2, 2], &[0]), &Default::default()),
-            vec![AtomId::new(2), AtomId::new(2), AtomId::new(0)]
+            collect(&q, &group(&[2], &[0]), &Default::default()),
+            vec![AtomId::new(2), AtomId::new(0)]
         );
         assert_eq!(q, before);
     }
     #[test]
     fn later_group_bond_failure_preserves_native_output_prefix() {
+        // The original illegal fixture is now rejected at the source constructor.
+        assert_eq!(
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                [2, 2].into_iter().map(AtomId::new).collect(),
+                [0, 99].into_iter().map(BondId::new).collect(),
+            ),
+            Err(cosmolkit_model::StereoGroupError::DuplicateAtom),
+        );
         let q = graph(
             &[6; 3],
             &[
@@ -7406,7 +7505,7 @@ mod query_stereo_group_source_tests {
         let mut out = vec![AtomId::new(999)];
         let e = collect_query_stereo_group_atom_ids_source(
             &q,
-            &group(&[2, 2], &[0, 99]),
+            &group(&[2], &[0, 99]),
             &mut out,
             &Default::default(),
         )
@@ -7414,7 +7513,7 @@ mod query_stereo_group_source_tests {
         assert!(
             matches!(e,AtropisomerError::StereoGroupBondOutOfRange{bond,bond_count:2}if bond==BondId::new(99))
         );
-        assert_eq!(out, vec![AtomId::new(2), AtomId::new(2), AtomId::new(1)]);
+        assert_eq!(out, vec![AtomId::new(2), AtomId::new(1)]);
     }
 }
 

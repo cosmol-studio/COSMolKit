@@ -1089,6 +1089,7 @@ pyo3::create_exception!(cosmolkit, ReactionProductError, PyValueError);
 pub(crate) fn product_error(py: Python<'_>, source: &ck::ReactionProductError) -> PyErr {
     use ck::ReactionProductError as E;
     let kind = match source {
+        E::StereoGroup(_) => "StereoGroup",
         E::Coordinate(..) => "Coordinate",
         E::TopologyEdit(..) => "TopologyEdit",
         E::Adjacency(..) => "Adjacency",

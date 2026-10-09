@@ -3868,6 +3868,9 @@ pub enum QueryConstructionError {
 /// Errors produced by SMARTS parsing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsParseError {
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error("recursive structure query has no owned query graph")]
     MissingRecursiveQueryGraph,
     #[error("CX query lowering failed: {0}")]

@@ -3000,6 +3000,29 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
             0
         }
     );
+    // Public tautomer transforms are generated source-preserving value forms.
+    // Only the cache operations used on working candidates remain private.
+    // A binding's operation link must name that callable exactly;
+    // private cache implementation names have no direct public binding.
+    // Keep an explicit, exhaustive owner fixture rather than inventing links
+    // or treating every unbound operation as private.
+    let private_tautomer_owners: [(&str, &[&str]); 2] = [
+        (
+            "with_assigned_symm_sssr",
+            &[
+                "Molecule.tautomer_score",
+                "Molecule.tautomer_score_with_params",
+            ],
+        ),
+        (
+            "with_installed_tautomer_score_cache",
+            &[
+                "TautomerEnumeration.canonical_tautomer",
+                "TautomerEnumeration.canonical_tautomer_with_params",
+            ],
+        ),
+    ];
+    let mut witnessed_private = HashSet::new();
     for operation in cosmolkit::operation_specs() {
         // The declaration owns the receiver: reconstruction may belong to
         // Reaction rather than Molecule. Follow the registered operation link.
@@ -3011,13 +3034,73 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 })
             })
             .collect();
-        assert!(
-            !bindings.is_empty(),
-            "missing binding for {}",
-            operation.method
-        );
-        for binding in bindings {
-            assert_eq!(operation.status, binding.status, "{}", binding.semantic_id);
+        if let Some((method, owners)) = private_tautomer_owners
+            .iter()
+            .find(|(method, _)| *method == operation.method)
+        {
+            assert!(cfg!(feature = "cap-tautomer"));
+            assert!(
+                bindings.is_empty(),
+                "private operation {method} was exposed"
+            );
+            assert!(witnessed_private.insert(*method));
+            let support = cosmolkit::support_matrix()
+                .iter()
+                .filter(|row| {
+                    row.operation
+                        .is_some_and(|spec| core::ptr::eq(spec, *operation))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(support.len(), 1, "support owner for {method}");
+            assert_eq!(support[0].feature.name, "cap-tautomer");
+            assert_eq!(operation.status, FunctionStatus::Experimental);
+            for owner in *owners {
+                let binding = entry(owner);
+                let callable = binding.callable.expect("public private-operation owner");
+                assert_eq!(binding.feature, "cap-tautomer", "{owner}");
+                assert_eq!(binding.status, operation.status, "{owner}");
+                assert_eq!(callable.kind, BindingKind::Instance, "{owner}");
+                assert_eq!(
+                    callable.receiver,
+                    Some(cosmolkit::BindingReceiver::Shared),
+                    "{owner}"
+                );
+                assert_eq!(
+                    callable.state_model,
+                    if owner.starts_with("Molecule.tautomer_score") {
+                        StateModel::ReadOnly
+                    } else {
+                        StateModel::ValueReturning
+                    },
+                    "{owner}"
+                );
+                assert_eq!(callable.operation_semantic_id, None, "{owner}");
+                assert_eq!(
+                    binding.owner,
+                    if owner.starts_with("Molecule.") {
+                        BindingOwner::Molecule
+                    } else {
+                        BindingOwner::Type
+                    },
+                    "{owner}"
+                );
+            }
+        } else {
+            assert!(
+                !bindings.is_empty(),
+                "missing binding for {}",
+                operation.method
+            );
+            for binding in bindings {
+                assert_eq!(operation.status, binding.status, "{}", binding.semantic_id);
+            }
         }
+    }
+    for (method, _) in private_tautomer_owners {
+        assert_eq!(
+            witnessed_private.contains(method),
+            cfg!(feature = "cap-tautomer"),
+            "private operation coverage for {method}"
+        );
     }
 }

@@ -415,7 +415,7 @@ fn single_transform_application_catches_only_the_kekulize_failure_branch() {
 }
 
 #[test]
-fn source_property_failure_precedes_transform_sanitize_and_preserves_inputs() {
+fn quickcopy_discards_molecule_computed_list_but_preserves_atom_clear_errors() {
     let source = fixture("CC=O").unwrap();
     let mut candidate = kekulized(&source).unwrap();
     let transform = builtin_transform("1,3 (thio)keto/enol f");
@@ -444,15 +444,16 @@ fn source_property_failure_precedes_transform_sanitize_and_preserves_inputs() {
     let error = run(&candidate).unwrap_err();
     assert!(matches!(
         error,
-        TautomerRunError::MoleculeProperty(
-            cosmolkit_model::MoleculePropertyError::ComputedListKind(_)
-        )
+        TautomerRunError::Sanitize(SanitizeError::AtomProperty(
+            cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+        ))
     ));
     assert_eq!(source, source_before);
     assert_eq!(candidate, candidate_before);
 
-    // Fix only the molecule field: the original competing atom error remains
-    // observable at the next source stage, rather than being swallowed.
+    // .6 quickCopy resets molecule properties before clearing the retained
+    // atom/bond properties. Fixing only the discarded molecule field therefore
+    // leaves the same atom error visible; neither input is modified.
     candidate
         .properties
         .set_prop(
@@ -475,6 +476,12 @@ fn source_property_failure_precedes_transform_sanitize_and_preserves_inputs() {
             "__computedProps",
             cosmolkit_model::PropertyValue::StringVector(Vec::new()),
         )
+        .unwrap();
+    // Retain the original malformed molecule list as a negative control: only
+    // the fixed atom field matters after the source quickCopy boundary.
+    candidate
+        .properties
+        .set_prop("__computedProps", cosmolkit_model::PropertyValue::Int(7))
         .unwrap();
     let before_success = candidate.clone();
     let TautomerExpansionAttempt::Product(product) = run(&candidate).unwrap() else {

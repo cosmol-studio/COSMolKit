@@ -99,6 +99,81 @@ impl InversionContribs {
     }
 
     pub(crate) fn get_grad(&self, context: &mut EvaluationContext<'_>, gradient: &mut [f64]) {
+        // BEGIN RECOVERY GEO-01 SOURCE get_grad
+        // RDKit❗✔️: void InversionContribs::getGrad(double *pos, double *grad) const {
+        // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit❗✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit❗✔️:   PRECONDITION(grad, "bad vector");
+        // RDKit❗✔️:   const std::size_t dimension = dp_forceField->dimension();
+        // RDKit❗✔️:   for (const auto &contrib : d_contribs) {
+        // RDKit❗✔️:     const RDGeom::Point3D p1(pos[dimension * contrib.idx1],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx1 + 1],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx1 + 2]);
+        // RDKit❗✔️:     const RDGeom::Point3D p2(pos[dimension * contrib.idx2],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx2 + 1],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx2 + 2]);
+        // RDKit❗✔️:     const RDGeom::Point3D p3(pos[dimension * contrib.idx3],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx3 + 1],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx3 + 2]);
+        // RDKit❗✔️:     const RDGeom::Point3D p4(pos[dimension * contrib.idx4],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx4 + 1],
+        // RDKit❗✔️:                              pos[dimension * contrib.idx4 + 2]);
+        // RDKit❗✔️:     double *g1 = &(grad[dimension * contrib.idx1]);
+        // RDKit❗✔️:     double *g2 = &(grad[dimension * contrib.idx2]);
+        // RDKit❗✔️:     double *g3 = &(grad[dimension * contrib.idx3]);
+        // RDKit❗✔️:     double *g4 = &(grad[dimension * contrib.idx4]);
+        // RDKit❗✔️:     RDGeom::Point3D rJI = p1 - p2;
+        // RDKit❗✔️:     RDGeom::Point3D rJK = p3 - p2;
+        // RDKit❗✔️:     RDGeom::Point3D rJL = p4 - p2;
+        // RDKit❗✔️:     const double dJI = rJI.length();
+        // RDKit❗✔️:     const double dJK = rJK.length();
+        // RDKit❗✔️:     const double dJL = rJL.length();
+        // RDKit❗✔️:     if (isDoubleZero(dJI) || isDoubleZero(dJK) || isDoubleZero(dJL)) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     rJI.normalize();
+        // RDKit❗✔️:     rJK.normalize();
+        // RDKit❗✔️:     rJL.normalize();
+        // RDKit❗✔️:
+        // RDKit❗✔️:     RDGeom::Point3D n = (-rJI).crossProduct(rJK);
+        // RDKit❗✔️:     n.normalize();
+        // RDKit❗✔️:     double cosY = n.dotProduct(rJL);
+        // RDKit❗✔️:     cosY = std::clamp(cosY, -1.0, 1.0);
+        // RDKit❗✔️:     const double sinYSq = 1.0 - cosY * cosY;
+        // RDKit❗✔️:     const double sinY = std::max(sqrt(sinYSq), 1.0e-8);
+        // RDKit❗✔️:     double cosTheta = rJI.dotProduct(rJK);
+        // RDKit❗✔️:     cosTheta = std::clamp(cosTheta, -1.0, 1.0);
+        // RDKit❗✔️:     const double sinThetaSq = 1.0 - cosTheta * cosTheta;
+        // RDKit❗✔️:     const double sinTheta = std::max(sqrt(sinThetaSq), 1.0e-8);
+        // RDKit❗✔️:     // sin(2 * W) = 2 * sin(W) * cos(W) = 2 * cos(Y) * sin(Y)
+        // RDKit❗✔️:     const double dE_dW = -contrib.forceConstant *
+        // RDKit❗✔️:                          (contrib.C1 * cosY + 4.0 * contrib.C2 * cosY * sinY);
+        // RDKit❗✔️:     const RDGeom::Point3D t1 = rJL.crossProduct(rJK);
+        // RDKit❗✔️:     const RDGeom::Point3D t2 = rJI.crossProduct(rJL);
+        // RDKit❗✔️:     const RDGeom::Point3D t3 = rJK.crossProduct(rJI);
+        // RDKit❗✔️:     const double term1 = sinY * sinTheta;
+        // RDKit❗✔️:     const double term2 = cosY / (sinY * sinThetaSq);
+        // RDKit❗✔️:     const double tg1[3] = {
+        // RDKit❗✔️:         (t1.x / term1 - (rJI.x - rJK.x * cosTheta) * term2) / dJI,
+        // RDKit❗✔️:         (t1.y / term1 - (rJI.y - rJK.y * cosTheta) * term2) / dJI,
+        // RDKit❗✔️:         (t1.z / term1 - (rJI.z - rJK.z * cosTheta) * term2) / dJI};
+        // RDKit❗✔️:     const double tg3[3] = {
+        // RDKit❗✔️:         (t2.x / term1 - (rJK.x - rJI.x * cosTheta) * term2) / dJK,
+        // RDKit❗✔️:         (t2.y / term1 - (rJK.y - rJI.y * cosTheta) * term2) / dJK,
+        // RDKit❗✔️:         (t2.z / term1 - (rJK.z - rJI.z * cosTheta) * term2) / dJK};
+        // RDKit❗✔️:     const double tg4[3] = {(t3.x / term1 - rJL.x * cosY / sinY) / dJL,
+        // RDKit❗✔️:                            (t3.y / term1 - rJL.y * cosY / sinY) / dJL,
+        // RDKit❗✔️:                            (t3.z / term1 - rJL.z * cosY / sinY) / dJL};
+        // RDKit❗✔️:     for (unsigned int i = 0; i < 3; ++i) {
+        // RDKit❗✔️:       g1[i] += dE_dW * tg1[i];
+        // RDKit❗✔️:       g2[i] += -dE_dW * (tg1[i] + tg3[i] + tg4[i]);
+        // RDKit❗✔️:       g3[i] += dE_dW * tg3[i];
+        // RDKit❗✔️:       g4[i] += dE_dW * tg4[i];
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RECOVERY GEO-01 SOURCE get_grad
+
         // BEGIN RDKIT CPP FUNCTION ForceFields::UFF::InversionContribs::getGrad (ForceField/UFF/Inversions.cpp:69-135)
         // RDKit❗✔️: void InversionContribs::getGrad(double *pos, double *grad) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -142,7 +217,7 @@ impl InversionContribs {
         // RDKit❗✔️:     const double sinTheta = std::max(sqrt(sinThetaSq), 1.0e-8);
         // RDKit❗✔️:     // sin(2 * W) = 2 * sin(W) * cos(W) = 2 * cos(Y) * sin(Y)
         // RDKit❗✔️:     const double dE_dW = -contrib.forceConstant *
-        // RDKit❗✔️:                          (contrib.C1 * cosY - 4.0 * contrib.C2 * cosY * sinY);
+        // RDKit❗✔️:                          (contrib.C1 * cosY + 4.0 * contrib.C2 * cosY * sinY);
         // RDKit❗✔️:     const RDGeom::Point3D t1 = rJL.crossProduct(rJK);
         // RDKit❗✔️:     const RDGeom::Point3D t2 = rJI.crossProduct(rJL);
         // RDKit❗✔️:     const RDGeom::Point3D t3 = rJK.crossProduct(rJI);
@@ -477,11 +552,11 @@ mod tests {
             (6, -0.262_966_359_151_671_3),
             (7, -0.262_966_359_151_671_3),
             (8, -0.262_966_359_151_671_3),
-            (15, -1.166_607_041_307_889_3),
-            (33, -0.965_284_608_498_554_7),
-            (51, -0.913_139_584_094_318_1),
-            (83, -0.764_229_195_103_490_4),
-            (16, -116_065_986.286_788_43),
+            (15, 0.707_836_598_250_805_8),
+            (33, 0.738_317_820_839_811_3),
+            (51, 0.745_516_090_060_605),
+            (83, 0.764_229_195_103_490_2),
+            (16, -50_174_972.431_154_32),
         ];
 
         for (atomic_num, unbound_expected) in source_first_component {

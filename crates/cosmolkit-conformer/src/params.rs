@@ -4,23 +4,6 @@ use crate::bounds::BoundsMatrix;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-// BEGIN RDKIT CPP ENUM DGeomHelpers::EmbedFailureCauses (Embedder.h:25-39)
-// RDKit✔️✔️: enum EmbedFailureCauses {
-// RDKit✔️✔️:   INITIAL_COORDS = 0,
-// RDKit✔️✔️:   FIRST_MINIMIZATION = 1,
-// RDKit✔️✔️:   CHECK_TETRAHEDRAL_CENTERS = 2,
-// RDKit✔️✔️:   CHECK_CHIRAL_CENTERS = 3,
-// RDKit✔️✔️:   MINIMIZE_FOURTH_DIMENSION = 4,
-// RDKit✔️✔️:   ETK_MINIMIZATION = 5,
-// RDKit✔️✔️:   FINAL_CHIRAL_BOUNDS = 6,
-// RDKit✔️✔️:   FINAL_CENTER_IN_VOLUME = 7,
-// RDKit✔️✔️:   LINEAR_DOUBLE_BOND = 8,
-// RDKit✔️✔️:   BAD_DOUBLE_BOND_STEREO = 9,
-// RDKit✔️✔️:   CHECK_CHIRAL_CENTERS2 = 10,
-// RDKit✔️✔️:   EXCEEDED_TIMEOUT = 11,
-// RDKit✔️✔️:   END_OF_ENUM = 12,
-// RDKit✔️✔️: };
-// END RDKIT CPP ENUM DGeomHelpers::EmbedFailureCauses
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum EmbedFailureCause {
@@ -36,11 +19,14 @@ pub enum EmbedFailureCause {
     BadDoubleBondStereo = 9,
     CheckChiralCenters2 = 10,
     ExceededTimeout = 11,
-    EndOfEnum = 12,
+    Minimization = 12,
+    KtermViolation = 13,
+    Clash = 14,
+    EndOfEnum = 15,
 }
 
 impl EmbedFailureCause {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 16] = [
         Self::InitialCoords,
         Self::FirstMinimization,
         Self::CheckTetrahedralCenters,
@@ -53,16 +39,61 @@ impl EmbedFailureCause {
         Self::BadDoubleBondStereo,
         Self::CheckChiralCenters2,
         Self::ExceededTimeout,
+        Self::Minimization,
+        Self::KtermViolation,
+        Self::Clash,
         Self::EndOfEnum,
     ];
 
     #[must_use]
     pub const fn rdkit_ordinal(self) -> u32 {
+        // BEGIN RECOVERY GEO-15 SOURCE rdkit_ordinal
+        // RDKit✔️✔️: enum EmbedFailureCauses {
+        // RDKit✔️✔️:   INITIAL_COORDS = 0,
+        // RDKit✔️✔️:   FIRST_MINIMIZATION = 1,
+        // RDKit✔️✔️:   CHECK_TETRAHEDRAL_CENTERS = 2,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS = 3,
+        // RDKit✔️✔️:   MINIMIZE_FOURTH_DIMENSION = 4,
+        // RDKit✔️✔️:   ETK_MINIMIZATION = 5,
+        // RDKit✔️✔️:   FINAL_CHIRAL_BOUNDS = 6,
+        // RDKit✔️✔️:   FINAL_CENTER_IN_VOLUME = 7,
+        // RDKit✔️✔️:   LINEAR_DOUBLE_BOND = 8,
+        // RDKit✔️✔️:   BAD_DOUBLE_BOND_STEREO = 9,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS2 = 10,
+        // RDKit✔️✔️:   EXCEEDED_TIMEOUT = 11,
+        // RDKit✔️✔️:   MINIMIZATION = 12,
+        // RDKit✔️✔️:   KTERM_VIOLATION = 13,
+        // RDKit✔️✔️:   CLASH = 14,
+        // RDKit✔️✔️:   END_OF_ENUM = 15,
+        // RDKit✔️✔️: };
+        // END RECOVERY GEO-15 SOURCE rdkit_ordinal
+
         self as u32
     }
 
     #[must_use]
     pub const fn from_rdkit_ordinal(value: u32) -> Option<Self> {
+        // BEGIN RECOVERY GEO-15 SOURCE from_rdkit_ordinal
+        // RDKit✔️✔️: enum EmbedFailureCauses {
+        // RDKit✔️✔️:   INITIAL_COORDS = 0,
+        // RDKit✔️✔️:   FIRST_MINIMIZATION = 1,
+        // RDKit✔️✔️:   CHECK_TETRAHEDRAL_CENTERS = 2,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS = 3,
+        // RDKit✔️✔️:   MINIMIZE_FOURTH_DIMENSION = 4,
+        // RDKit✔️✔️:   ETK_MINIMIZATION = 5,
+        // RDKit✔️✔️:   FINAL_CHIRAL_BOUNDS = 6,
+        // RDKit✔️✔️:   FINAL_CENTER_IN_VOLUME = 7,
+        // RDKit✔️✔️:   LINEAR_DOUBLE_BOND = 8,
+        // RDKit✔️✔️:   BAD_DOUBLE_BOND_STEREO = 9,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS2 = 10,
+        // RDKit✔️✔️:   EXCEEDED_TIMEOUT = 11,
+        // RDKit✔️✔️:   MINIMIZATION = 12,
+        // RDKit✔️✔️:   KTERM_VIOLATION = 13,
+        // RDKit✔️✔️:   CLASH = 14,
+        // RDKit✔️✔️:   END_OF_ENUM = 15,
+        // RDKit✔️✔️: };
+        // END RECOVERY GEO-15 SOURCE from_rdkit_ordinal
+
         match value {
             0 => Some(Self::InitialCoords),
             1 => Some(Self::FirstMinimization),
@@ -76,13 +107,37 @@ impl EmbedFailureCause {
             9 => Some(Self::BadDoubleBondStereo),
             10 => Some(Self::CheckChiralCenters2),
             11 => Some(Self::ExceededTimeout),
-            12 => Some(Self::EndOfEnum),
+            12 => Some(Self::Minimization),
+            13 => Some(Self::KtermViolation),
+            14 => Some(Self::Clash),
+            15 => Some(Self::EndOfEnum),
             _ => None,
         }
     }
 
     #[must_use]
     pub const fn rdkit_name(self) -> &'static str {
+        // BEGIN RECOVERY GEO-15 SOURCE rdkit_name
+        // RDKit✔️✔️: enum EmbedFailureCauses {
+        // RDKit✔️✔️:   INITIAL_COORDS = 0,
+        // RDKit✔️✔️:   FIRST_MINIMIZATION = 1,
+        // RDKit✔️✔️:   CHECK_TETRAHEDRAL_CENTERS = 2,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS = 3,
+        // RDKit✔️✔️:   MINIMIZE_FOURTH_DIMENSION = 4,
+        // RDKit✔️✔️:   ETK_MINIMIZATION = 5,
+        // RDKit✔️✔️:   FINAL_CHIRAL_BOUNDS = 6,
+        // RDKit✔️✔️:   FINAL_CENTER_IN_VOLUME = 7,
+        // RDKit✔️✔️:   LINEAR_DOUBLE_BOND = 8,
+        // RDKit✔️✔️:   BAD_DOUBLE_BOND_STEREO = 9,
+        // RDKit✔️✔️:   CHECK_CHIRAL_CENTERS2 = 10,
+        // RDKit✔️✔️:   EXCEEDED_TIMEOUT = 11,
+        // RDKit✔️✔️:   MINIMIZATION = 12,
+        // RDKit✔️✔️:   KTERM_VIOLATION = 13,
+        // RDKit✔️✔️:   CLASH = 14,
+        // RDKit✔️✔️:   END_OF_ENUM = 15,
+        // RDKit✔️✔️: };
+        // END RECOVERY GEO-15 SOURCE rdkit_name
+
         match self {
             Self::InitialCoords => "INITIAL_COORDS",
             Self::FirstMinimization => "FIRST_MINIMIZATION",
@@ -96,6 +151,9 @@ impl EmbedFailureCause {
             Self::BadDoubleBondStereo => "BAD_DOUBLE_BOND_STEREO",
             Self::CheckChiralCenters2 => "CHECK_CHIRAL_CENTERS2",
             Self::ExceededTimeout => "EXCEEDED_TIMEOUT",
+            Self::Minimization => "MINIMIZATION",
+            Self::KtermViolation => "KTERM_VIOLATION",
+            Self::Clash => "CLASH",
             Self::EndOfEnum => "END_OF_ENUM",
         }
     }
@@ -152,6 +210,7 @@ pub struct EmbedParams {
     pub ignore_smoothing_failures: bool,
     pub enforce_chirality: bool,
     pub use_exp_torsion_angle_prefs: bool,
+    pub use_legacy_implementation: bool,
     pub use_basic_knowledge: bool,
     pub verbose: bool,
     pub basin_thresh: f64,
@@ -177,6 +236,10 @@ pub struct EmbedParams {
 
 impl Default for EmbedParams {
     fn default() -> Self {
+        // BEGIN RECOVERY GEO-15 SOURCE default
+        // RDKit✔️✔️:   bool useLegacyImplementation{true};
+        // END RECOVERY GEO-15 SOURCE default
+
         // RDKit✔️✔️:   EmbedParameters() : boundsMat(nullptr), CPCI(nullptr), callback(nullptr) {}
         Self {
             max_iterations: 0,
@@ -192,6 +255,7 @@ impl Default for EmbedParams {
             ignore_smoothing_failures: false,
             enforce_chirality: true,
             use_exp_torsion_angle_prefs: false,
+            use_legacy_implementation: true,
             use_basic_knowledge: false,
             verbose: false,
             basin_thresh: 5.0,
@@ -379,70 +443,42 @@ impl EmbedParams {
 
     #[must_use]
     pub fn etdg() -> Self {
-        // RDKit✔️✔️: const EmbedParameters ETDG(0,        // maxIterations
-        // RDKit✔️✔️:                            1,        // numThreads
-        // RDKit✔️✔️:                            -1,       // randomSeed
-        // RDKit✔️✔️:                            true,     // clearConfs
-        // RDKit✔️✔️:                            false,    // useRandomCoords
-        // RDKit✔️✔️:                            2.0,      // boxSizeMult
-        // RDKit✔️✔️:                            true,     // randNegEig
-        // RDKit✔️✔️:                            1,        // numZeroFail
-        // RDKit✔️✔️:                            nullptr,  // coordMap
-        // RDKit✔️✔️:                            1e-3,     // optimizerForceTol
-        // RDKit✔️✔️:                            false,    // ignoreSmoothingFailures
-        // RDKit✔️✔️:                            false,    // enforceChirality
-        // RDKit✔️✔️:                            true,     // useExpTorsionAnglePrefs
-        // RDKit✔️✔️:                            false,    // useBasicKnowledge
-        // RDKit✔️✔️:                            false,    // verbose
-        // RDKit✔️✔️:                            5.0,      // basinThresh
-        // RDKit✔️✔️:                            -1.0,     // pruneRmsThresh
-        // RDKit✔️✔️:                            true,     // onlyHeavyAtomsForRMS
-        // RDKit✔️✔️:                            1,        // ETversion
-        // RDKit✔️✔️:                            nullptr,  // boundsMat
-        // RDKit✔️✔️:                            true,     // embedFragmentsSeparately
-        // RDKit✔️✔️:                            false,    // useSmallRingTorsions
-        // RDKit✔️✔️:                            false,    // useMacrocycleTorsions
-        // RDKit✔️✔️:                            false,    // useMacrocycle14config
-        // RDKit✔️✔️:                            0,        // timeout
-        // RDKit✔️✔️:                            nullptr,  // CPCI
-        // RDKit✔️✔️:                            nullptr   // callback
+        // BEGIN RECOVERY GEO-05 SOURCE etdg
+        // RDKit✔️✔️:   bool enforceChirality{true};
+        // END RECOVERY GEO-05 SOURCE etdg
+
+        // BEGIN RECOVERY GEO-05 SOURCE etdg
+        // RDKit✔️✔️: const EmbedParameters ETDG{.useExpTorsionAnglePrefs = true,
+        // RDKit✔️✔️:                            .useBasicKnowledge = false,
+        // RDKit✔️✔️:                            .ETversion = 1,
+        // RDKit✔️✔️:                            .useSmallRingTorsions = false,
+        // RDKit✔️✔️:                            .useMacrocycleTorsions = false,
+        // RDKit✔️✔️:                            .useMacrocycle14config = false};
+        // END RECOVERY GEO-05 SOURCE etdg
+
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, false, false, 5.0,
             -1.0, true, 1, None, true, false, false, false, 0, None, None,
         )
     }
 
     #[must_use]
     pub fn etdg_v2() -> Self {
-        // RDKit✔️✔️: const EmbedParameters ETDGv2(0,        // maxIterations
-        // RDKit✔️✔️:                              1,        // numThreads
-        // RDKit✔️✔️:                              -1,       // randomSeed
-        // RDKit✔️✔️:                              true,     // clearConfs
-        // RDKit✔️✔️:                              false,    // useRandomCoords
-        // RDKit✔️✔️:                              2.0,      // boxSizeMult
-        // RDKit✔️✔️:                              true,     // randNegEig
-        // RDKit✔️✔️:                              1,        // numZeroFail
-        // RDKit✔️✔️:                              nullptr,  // coordMap
-        // RDKit✔️✔️:                              1e-3,     // optimizerForceTol
-        // RDKit✔️✔️:                              false,    // ignoreSmoothingFailures
-        // RDKit✔️✔️:                              false,    // enforceChirality
-        // RDKit✔️✔️:                              true,     // useExpTorsionAnglePrefs
-        // RDKit✔️✔️:                              false,    // useBasicKnowledge
-        // RDKit✔️✔️:                              false,    // verbose
-        // RDKit✔️✔️:                              5.0,      // basinThresh
-        // RDKit✔️✔️:                              -1.0,     // pruneRmsThresh
-        // RDKit✔️✔️:                              true,     // onlyHeavyAtomsForRMS
-        // RDKit✔️✔️:                              2,        // ETversion
-        // RDKit✔️✔️:                              nullptr,  // boundsMat
-        // RDKit✔️✔️:                              true,     // embedFragmentsSeparately
-        // RDKit✔️✔️:                              false,    // useSmallRingTorsions
-        // RDKit✔️✔️:                              false,    // useMacrocycleTorsions
-        // RDKit✔️✔️:                              false,    // useMacrocycle14config
-        // RDKit✔️✔️:                              0,        // timeout
-        // RDKit✔️✔️:                              nullptr,  // CPCI
-        // RDKit✔️✔️:                              nullptr   // callback
+        // BEGIN RECOVERY GEO-05 SOURCE etdg_v2
+        // RDKit✔️✔️:   bool enforceChirality{true};
+        // END RECOVERY GEO-05 SOURCE etdg_v2
+
+        // BEGIN RECOVERY GEO-05 SOURCE etdg_v2
+        // RDKit✔️✔️: const EmbedParameters ETDGv2{.useExpTorsionAnglePrefs = true,
+        // RDKit✔️✔️:                              .useBasicKnowledge = false,
+        // RDKit✔️✔️:                              .ETversion = 2,
+        // RDKit✔️✔️:                              .useSmallRingTorsions = false,
+        // RDKit✔️✔️:                              .useMacrocycleTorsions = false,
+        // RDKit✔️✔️:                              .useMacrocycle14config = false};
+        // END RECOVERY GEO-05 SOURCE etdg_v2
+
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, false, false, 5.0,
             -1.0, true, 2, None, true, false, false, false, 0, None, None,
         )
     }
@@ -588,41 +624,79 @@ impl EmbedParams {
     }
 
     pub(crate) fn update_from_json(&mut self, json: &str) -> Result<(), ConformerError> {
-        // BEGIN RDKIT CPP FUNCTION DGeomHelpers::updateEmbedParametersFromJSON (EmbedderUtils.cpp:56-87)
-        // RDKit✔️✔️: void updateEmbedParametersFromJSON(EmbedParameters &params,
-        // RDKit✔️✔️:                                    const std::string &json) {
-        // RDKit✔️✔️:   if (json.empty()) {
-        // RDKit✔️✔️:     return;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   std::istringstream ss(json);
-        // RDKit✔️✔️:   boost::property_tree::ptree pt;
-        // RDKit✔️✔️:   boost::property_tree::read_json(ss, pt);
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   EMBED_PARAMS_FIELDS(PT_OPT_GET)
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   std::map<int, RDGeom::Point3D> *cmap = nullptr;
-        // RDKit✔️✔️:   const auto coordMap = pt.get_child_optional("coordMap");
-        // RDKit✔️✔️:   if (coordMap) {
-        // RDKit✔️✔️:     // NOTE: this leaks since EmbedParameters uses a naked pointer and we don't
-        // RDKit✔️✔️:     // have any way to tie the lifetime of the memory we allocate here to the
-        // RDKit✔️✔️:     // EmbedParameters object itself.
-        // RDKit✔️✔️:     cmap = new std::map<int, RDGeom::Point3D>();
-        // RDKit✔️✔️:     for (const auto &entry : *coordMap) {
-        // RDKit✔️✔️:       RDGeom::Point3D pt;
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       auto itm = entry.second.begin();
-        // RDKit✔️✔️:       pt.x = itm->second.get_value<float>();
-        // RDKit✔️✔️:       ++itm;
-        // RDKit✔️✔️:       pt.y = itm->second.get_value<float>();
-        // RDKit✔️✔️:       ++itm;
-        // RDKit✔️✔️:       pt.z = itm->second.get_value<float>();
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       (*cmap)[boost::lexical_cast<int>(entry.first)] = pt;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     params.coordMap = cmap;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION DGeomHelpers::updateEmbedParametersFromJSON
+        // BEGIN RECOVERY GEO-15 SOURCE update_from_json
+        // RDKit❗❌: #define EMBED_PARAMS_FIELDS(X)                    \
+        // RDKit❗❌:   X(basinThresh)                                  \
+        // RDKit❗❌:   X(boundsMatForceScaling)                        \
+        // RDKit❗❌:   X(boxSizeMult)                                  \
+        // RDKit❗❌:   X(clearConfs)                                   \
+        // RDKit❗❌:   X(embedFragmentsSeparately)                     \
+        // RDKit❗❌:   X(enableSequentialRandomSeeds)                  \
+        // RDKit❗❌:   X(enforceChirality)                             \
+        // RDKit❗❌:   X(ETversion)                                    \
+        // RDKit❗❌:   X(forceTransAmides)                             \
+        // RDKit❗❌:   X(ignoreSmoothingFailures)                      \
+        // RDKit❗❌:   X(maxIterations)                                \
+        // RDKit❗❌:   X(numThreads)                                   \
+        // RDKit❗❌:   X(numZeroFail)                                  \
+        // RDKit❗❌:   X(onlyHeavyAtomsForRMS)                         \
+        // RDKit❗❌:   X(optimizerForceTol)                            \
+        // RDKit❗❌:   X(pruneRmsThresh)                               \
+        // RDKit❗❌:   X(randNegEig)                                   \
+        // RDKit❗❌:   X(randomSeed)                                   \
+        // RDKit❗❌:   X(symmetrizeConjugatedTerminalGroupsForPruning) \
+        // RDKit❗❌:   X(timeout)                                      \
+        // RDKit❗❌:   X(trackFailures)                                \
+        // RDKit❗❌:   X(useBasicKnowledge)                            \
+        // RDKit❗❌:   X(useExpTorsionAnglePrefs)                      \
+        // RDKit❗❌:   X(useLegacyImplementation)                      \
+        // RDKit❗❌:   X(useMacrocycle14config)                        \
+        // RDKit❗❌:   X(useMacrocycleTorsions)                        \
+        // RDKit❗❌:   X(useRandomCoords)                              \
+        // RDKit❗❌:   X(useSmallRingTorsions)                         \
+        // RDKit❗❌:   X(useSymmetryForPruning)                        \
+        // RDKit❗❌:   X(verbose)
+        // RDKit❗❌:
+        // RDKit❗❌: #define PT_OPT_GET(opt) params.opt = pt.get(#opt, params.opt);
+        // RDKit❗❌: #define PT_OPT_PUT(opt) pt.put(#opt, params.opt);
+        // END RECOVERY GEO-15 SOURCE update_from_json
+
+        // BEGIN RECOVERY GEO-15 SOURCE update_from_json
+        // RDKit❗❌: void updateEmbedParametersFromJSON(EmbedParameters &params,
+        // RDKit❗❌:                                    const std::string &json) {
+        // RDKit❗❌:   if (json.empty()) {
+        // RDKit❗❌:     return;
+        // RDKit❗❌:   }
+        // RDKit❗❌:   std::istringstream ss(json);
+        // RDKit❗❌:   boost::property_tree::ptree pt;
+        // RDKit❗❌:   boost::property_tree::read_json(ss, pt);
+        // RDKit❗❌:
+        // RDKit❗❌:   EMBED_PARAMS_FIELDS(PT_OPT_GET)
+        // RDKit❗❌:
+        // RDKit❗❌:   std::map<int, RDGeom::Point3D> *cmap = nullptr;
+        // RDKit❗❌:   const auto coordMap = pt.get_child_optional("coordMap");
+        // RDKit❗❌:   if (coordMap) {
+        // RDKit❗❌:     // NOTE: this leaks since EmbedParameters uses a naked pointer and we don't
+        // RDKit❗❌:     // have any way to tie the lifetime of the memory we allocate here to the
+        // RDKit❗❌:     // EmbedParameters object itself.
+        // RDKit❗❌:     cmap = new std::map<int, RDGeom::Point3D>();
+        // RDKit❗❌:     for (const auto &entry : *coordMap) {
+        // RDKit❗❌:       RDGeom::Point3D pt;
+        // RDKit❗❌:
+        // RDKit❗❌:       auto itm = entry.second.begin();
+        // RDKit❗❌:       pt.x = itm->second.get_value<float>();
+        // RDKit❗❌:       ++itm;
+        // RDKit❗❌:       pt.y = itm->second.get_value<float>();
+        // RDKit❗❌:       ++itm;
+        // RDKit❗❌:       pt.z = itm->second.get_value<float>();
+        // RDKit❗❌:
+        // RDKit❗❌:       (*cmap)[boost::lexical_cast<int>(entry.first)] = pt;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     params.coordMap = cmap;
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        // END RECOVERY GEO-15 SOURCE update_from_json
+
         if json.is_empty() {
             return Ok(());
         }
@@ -680,6 +754,22 @@ impl EmbedParams {
             "useExpTorsionAnglePrefs",
             &mut self.use_exp_torsion_angle_prefs,
         )?;
+        // Only the new field follows exact Boost default-get conversion; old fields remain baseline.
+        // BEGIN GEO15 BoostDefaultGet
+        // Boost✔️❌:     template<class Type> inline
+        // Boost✔️❌:     typename boost::disable_if<detail::is_translator<Type>, Type>::type
+        // Boost✔️❌:     basic_ptree<K, D, C>::get(const path_type &path,
+        // Boost✔️❌:                               const Type &default_value) const
+        // Boost✔️❌:     {
+        // Boost✔️❌:         return get_optional<Type>(path).get_value_or(default_value);
+        // Boost✔️❌:     }
+        // END GEO15 BoostDefaultGet
+        // Newfieldonly: second borrowed O(document) pass preserves firstduplicate/rawnumber.
+        // Existing Value/oldfield parsing remains baseline; this extra pass is a known cost.
+        if let Some(raw) = first_embed_legacy_raw_field(json, value.is_object())? {
+            self.use_legacy_implementation =
+                embed_legacy_bool_raw(raw).unwrap_or(self.use_legacy_implementation);
+        }
         update_bool_field(
             &value,
             "useMacrocycle14config",
@@ -719,55 +809,93 @@ impl EmbedParams {
 
     #[must_use]
     pub fn to_json(&self) -> String {
-        // BEGIN RDKIT CPP FUNCTION DGeomHelpers::embedParametersToJSON (EmbedderUtils.cpp:90-126)
-        // RDKit✔️✔️: std::string embedParametersToJSON(const EmbedParameters &params) {
-        // RDKit✔️✔️:   boost::property_tree::ptree pt;
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   EMBED_PARAMS_FIELDS(PT_OPT_PUT)
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   if (params.coordMap) {
-        // RDKit✔️✔️:     boost::property_tree::ptree coordMapPT;
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:     for (const auto &kv : *params.coordMap) {
-        // RDKit✔️✔️:       boost::property_tree::ptree pointPT;
-        // RDKit✔️✔️:       pointPT.push_back(
-        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.x))});
-        // RDKit✔️✔️:       pointPT.push_back(
-        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.y))});
-        // RDKit✔️✔️:       pointPT.push_back(
-        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.z))});
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       coordMapPT.add_child(std::to_string(kv.first), pointPT);
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:     pt.add_child("coordMap", coordMapPT);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   if (params.boundsMat) {
-        // RDKit✔️✔️:     boost::property_tree::ptree matrixPT;
-        // RDKit✔️✔️:     const unsigned int N = params.boundsMat->numCols();
-        // RDKit✔️✔️:     for (unsigned i = 0; i < N; ++i) {
-        // RDKit✔️✔️:       boost::property_tree::ptree rowPT;
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       for (unsigned j = 0; j < N; ++j) {
-        // RDKit✔️✔️:         boost::property_tree::ptree v;
-        // RDKit✔️✔️:         v.put("", params.boundsMat->getVal(i, j));
-        // RDKit✔️✔️:         rowPT.push_back({"", v});
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       matrixPT.push_back({"", rowPT});
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:     pt.add_child("boundsMatrix", matrixPT);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:   std::ostringstream ss;
-        // RDKit✔️✔️:   boost::property_tree::write_json(ss, pt, false);
-        // RDKit✔️✔️:   auto str = ss.str();
-        // RDKit✔️✔️:   boost::algorithm::trim(str);
-        // RDKit✔️✔️:   return str;
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION DGeomHelpers::embedParametersToJSON
+        // BEGIN RECOVERY GEO-15 SOURCE to_json
+        // RDKit❗❌: #define EMBED_PARAMS_FIELDS(X)                    \
+        // RDKit❗❌:   X(basinThresh)                                  \
+        // RDKit❗❌:   X(boundsMatForceScaling)                        \
+        // RDKit❗❌:   X(boxSizeMult)                                  \
+        // RDKit❗❌:   X(clearConfs)                                   \
+        // RDKit❗❌:   X(embedFragmentsSeparately)                     \
+        // RDKit❗❌:   X(enableSequentialRandomSeeds)                  \
+        // RDKit❗❌:   X(enforceChirality)                             \
+        // RDKit❗❌:   X(ETversion)                                    \
+        // RDKit❗❌:   X(forceTransAmides)                             \
+        // RDKit❗❌:   X(ignoreSmoothingFailures)                      \
+        // RDKit❗❌:   X(maxIterations)                                \
+        // RDKit❗❌:   X(numThreads)                                   \
+        // RDKit❗❌:   X(numZeroFail)                                  \
+        // RDKit❗❌:   X(onlyHeavyAtomsForRMS)                         \
+        // RDKit❗❌:   X(optimizerForceTol)                            \
+        // RDKit❗❌:   X(pruneRmsThresh)                               \
+        // RDKit❗❌:   X(randNegEig)                                   \
+        // RDKit❗❌:   X(randomSeed)                                   \
+        // RDKit❗❌:   X(symmetrizeConjugatedTerminalGroupsForPruning) \
+        // RDKit❗❌:   X(timeout)                                      \
+        // RDKit❗❌:   X(trackFailures)                                \
+        // RDKit❗❌:   X(useBasicKnowledge)                            \
+        // RDKit❗❌:   X(useExpTorsionAnglePrefs)                      \
+        // RDKit❗❌:   X(useLegacyImplementation)                      \
+        // RDKit❗❌:   X(useMacrocycle14config)                        \
+        // RDKit❗❌:   X(useMacrocycleTorsions)                        \
+        // RDKit❗❌:   X(useRandomCoords)                              \
+        // RDKit❗❌:   X(useSmallRingTorsions)                         \
+        // RDKit❗❌:   X(useSymmetryForPruning)                        \
+        // RDKit❗❌:   X(verbose)
+        // RDKit❗❌:
+        // RDKit❗❌: #define PT_OPT_GET(opt) params.opt = pt.get(#opt, params.opt);
+        // RDKit❗❌: #define PT_OPT_PUT(opt) pt.put(#opt, params.opt);
+        // END RECOVERY GEO-15 SOURCE to_json
+
+        // BEGIN RECOVERY GEO-15 SOURCE to_json
+        // RDKit❗❌: std::string embedParametersToJSON(const EmbedParameters &params) {
+        // RDKit❗❌:   boost::property_tree::ptree pt;
+        // RDKit❗❌:
+        // RDKit❗❌:   EMBED_PARAMS_FIELDS(PT_OPT_PUT)
+        // RDKit❗❌:
+        // RDKit❗❌:   if (params.coordMap) {
+        // RDKit❗❌:     boost::property_tree::ptree coordMapPT;
+        // RDKit❗❌:
+        // RDKit❗❌:     for (const auto &kv : *params.coordMap) {
+        // RDKit❗❌:       boost::property_tree::ptree pointPT;
+        // RDKit❗❌:       pointPT.push_back(
+        // RDKit❗❌:           {"", boost::property_tree::ptree(std::to_string(kv.second.x))});
+        // RDKit❗❌:       pointPT.push_back(
+        // RDKit❗❌:           {"", boost::property_tree::ptree(std::to_string(kv.second.y))});
+        // RDKit❗❌:       pointPT.push_back(
+        // RDKit❗❌:           {"", boost::property_tree::ptree(std::to_string(kv.second.z))});
+        // RDKit❗❌:
+        // RDKit❗❌:       coordMapPT.add_child(std::to_string(kv.first), pointPT);
+        // RDKit❗❌:     }
+        // RDKit❗❌:
+        // RDKit❗❌:     pt.add_child("coordMap", coordMapPT);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   if (params.boundsMat) {
+        // RDKit❗❌:     boost::property_tree::ptree matrixPT;
+        // RDKit❗❌:     const unsigned int N = params.boundsMat->numCols();
+        // RDKit❗❌:     for (unsigned i = 0; i < N; ++i) {
+        // RDKit❗❌:       boost::property_tree::ptree rowPT;
+        // RDKit❗❌:
+        // RDKit❗❌:       for (unsigned j = 0; j < N; ++j) {
+        // RDKit❗❌:         boost::property_tree::ptree v;
+        // RDKit❗❌:         v.put("", params.boundsMat->getVal(i, j));
+        // RDKit❗❌:         rowPT.push_back({"", v});
+        // RDKit❗❌:       }
+        // RDKit❗❌:
+        // RDKit❗❌:       matrixPT.push_back({"", rowPT});
+        // RDKit❗❌:     }
+        // RDKit❗❌:
+        // RDKit❗❌:     pt.add_child("boundsMatrix", matrixPT);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   std::ostringstream ss;
+        // RDKit❗❌:   boost::property_tree::write_json(ss, pt, false);
+        // RDKit❗❌:   auto str = ss.str();
+        // RDKit❗❌:   boost::algorithm::trim(str);
+        // RDKit❗❌:   return str;
+        // RDKit❗❌: }
+        // END RECOVERY GEO-15 SOURCE to_json
+
         let mut fields = Vec::with_capacity(31);
         push_json_field(&mut fields, "basinThresh", self.basin_thresh);
         push_json_field(
@@ -819,6 +947,11 @@ impl EmbedParams {
             &mut fields,
             "useExpTorsionAnglePrefs",
             self.use_exp_torsion_angle_prefs,
+        );
+        push_json_field(
+            &mut fields,
+            "useLegacyImplementation",
+            self.use_legacy_implementation,
         );
         push_json_field(
             &mut fields,
@@ -880,6 +1013,142 @@ impl EmbedParams {
 
         format!("{{{}}}", fields.join(","))
     }
+}
+
+fn first_embed_legacy_raw_field(
+    json: &str,
+    object_root: bool,
+) -> Result<Option<&serde_json::value::RawValue>, ConformerError> {
+    if !object_root {
+        return Ok(None);
+    }
+    struct FirstLegacy;
+    impl<'de> serde::de::Visitor<'de> for FirstLegacy {
+        type Value = Option<&'de serde_json::value::RawValue>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("an embedding parameter object")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            // BEGIN GEO15 BoostGetOptional
+            // Boost✔️❌:     template<class Type, class Translator>
+            // Boost✔️❌:     optional<Type> basic_ptree<K, D, C>::get_optional(const path_type &path,
+            // Boost✔️❌:                                                          Translator tr) const
+            // Boost✔️❌:     {
+            // Boost✔️❌:         if (optional<const self_type&> child = get_child_optional(path))
+            // Boost✔️❌:             return child.get().
+            // Boost✔️❌:                 BOOST_NESTED_TEMPLATE get_value_optional<Type>(tr);
+            // Boost✔️❌:         else
+            // Boost✔️❌:             return optional<Type>();
+            // Boost✔️❌:     }
+            // END GEO15 BoostGetOptional
+
+            // property_tree retains the first matching child; decode key escapes,
+            // borrow only that value, and skip every later duplicate unchanged.
+            let mut first = None;
+            while let Some(key) = map.next_key::<String>()? {
+                if key == "useLegacyImplementation" && first.is_none() {
+                    first = Some(map.next_value::<&'de serde_json::value::RawValue>()?);
+                } else {
+                    let _: serde::de::IgnoredAny = map.next_value()?;
+                }
+            }
+            Ok(first)
+        }
+    }
+    serde::Deserializer::deserialize_map(&mut serde_json::Deserializer::from_str(json), FirstLegacy)
+        .map_err(|err| ConformerError::InvalidEmbedParametersJson(err.to_string()))
+}
+
+fn embed_legacy_bool_raw(raw: &serde_json::value::RawValue) -> Option<bool> {
+    // BEGIN GEO15 BoostGetValueOptional
+    // Boost✔️❌:     template<class K, class D, class C>
+    // Boost✔️❌:     template<class Type, class Translator> inline
+    // Boost✔️❌:     optional<Type> basic_ptree<K, D, C>::get_value_optional(
+    // Boost✔️❌:                                                 Translator tr) const
+    // Boost✔️❌:     {
+    // Boost✔️❌:         return tr.get_value(data());
+    // Boost✔️❌:     }
+    // END GEO15 BoostGetValueOptional
+
+    // This adapter repeats JSON-string decoding/allocation that source ptree
+    // already performed; its complete cost is deliberately marked worse.
+    // JSON has already parsed successfully. Strings use decoded tree data;
+    // booleans and numbers retain lexical data, including integer -0.
+    let token = raw.get();
+    if token.starts_with('"') {
+        embed_legacy_bool_text(&serde_json::from_str::<String>(token).ok()?)
+    } else {
+        embed_legacy_bool_text(token)
+    }
+}
+
+fn embed_legacy_bool_text(text: &str) -> Option<bool> {
+    // BEGIN GEO15 BoostBoolExtract
+    // Boost✔️🔝:         static void extract(std::basic_istream<Ch, Traits>& s, bool& e) {
+    // Boost✔️🔝:             s >> e;
+    // Boost✔️🔝:             if(s.fail()) {
+    // Boost✔️🔝:                 // Try again in word form.
+    // Boost✔️🔝:                 s.clear();
+    // Boost✔️🔝:                 s.setf(std::ios_base::boolalpha);
+    // Boost✔️🔝:                 s >> e;
+    // Boost✔️🔝:             }
+    // Boost✔️🔝:             if(!s.eof()) {
+    // Boost✔️🔝:                 s >> std::ws;
+    // Boost✔️🔝:             }
+    // Boost✔️🔝:         }
+    // END GEO15 BoostBoolExtract
+    // BEGIN GEO15 BoostGetValue
+    // Boost✔️🔝:         boost::optional<E> get_value(const internal_type &v) {
+    // Boost✔️🔝:             std::basic_istringstream<Ch, Traits, Alloc> iss(v);
+    // Boost✔️🔝:             iss.imbue(m_loc);
+    // Boost✔️🔝:             E e;
+    // Boost✔️🔝:             customized::extract(iss, e);
+    // Boost✔️🔝:             if(iss.fail() || iss.bad() || iss.get() != Traits::eof()) {
+    // Boost✔️🔝:                 return boost::optional<E>();
+    // Boost✔️🔝:             }
+    // Boost✔️🔝:             return e;
+    // Boost✔️🔝:         }
+    // END GEO15 BoostGetValue
+
+    // The borrowed cursor reproduces the C-locale stream decisions without
+    // copying text into std::istringstream: O(1) auxiliary storage vs source
+    // O(text length) stream buffer. This local gain does not erase the extra
+    // whole-JSON pass and selected-string decode in the enclosing adapter.
+    // C-locale sentry/num_get decimal extraction preserves its consumed cursor
+    // on failure. Magnitude classes 0,1,other suffice for bool and avoid integer
+    // overflow without changing the consumed decimal-digit prefix.
+    fn ws(s: &str) -> &str {
+        s.trim_start_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r'])
+    }
+    let mut cursor = ws(text);
+    let negative = cursor.starts_with('-');
+    if cursor.starts_with(['+', '-']) {
+        cursor = &cursor[1..];
+    }
+    let mut digits = 0usize;
+    let mut magnitude = 0u8;
+    for c in cursor.bytes().take_while(u8::is_ascii_digit) {
+        digits += 1;
+        magnitude = (magnitude * 10 + c - b'0').min(2);
+    }
+    cursor = &cursor[digits..];
+    if digits > 0 && magnitude <= 1 && (!negative || magnitude == 0) {
+        // Successful numeric extraction never retries boolalpha on suffix.
+        return ws(cursor).is_empty().then_some(magnitude == 1);
+    }
+    // s.clear() does not rewind; the second extraction's sentry skips ASCII WS.
+    cursor = ws(cursor);
+    let (value, tail) = if let Some(tail) = cursor.strip_prefix("true") {
+        (true, tail)
+    } else if let Some(tail) = cursor.strip_prefix("false") {
+        (false, tail)
+    } else {
+        return None;
+    };
+    ws(tail).is_empty().then_some(value)
 }
 
 fn embed_parameters_json_field<'a>(
@@ -1083,6 +1352,429 @@ fn parse_embed_parameters_coord_map(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recovery_geo15_legacy_json_matches_all_boost_cursor_raw_duplicate_cases_and_continues() {
+        // Source-derived Boost1.85 C-locale reference:62cases×2initial states.
+        // No dependency on audit output at test compile/run time.
+        let cases = [
+            (
+                "numeric_minus_zero",
+                r##"{"useLegacyImplementation":-0,"useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_plus_zero",
+                r##"{"useLegacyImplementation":"+0","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_zero",
+                r##"{"useLegacyImplementation":"0","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_one",
+                r##"{"useLegacyImplementation":"1","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_leadingzeros_zero",
+                r##"{"useLegacyImplementation":"0000","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_leadingzeros_one",
+                r##"{"useLegacyImplementation":"0001","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_negative_leadingzeros_zero",
+                r##"{"useLegacyImplementation":"-0000","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_negative_leadingzeros_one",
+                r##"{"useLegacyImplementation":"-0001","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_ascii_six_ws",
+                r##"{"useLegacyImplementation":" \u0009\u000a\u000b\u000c\u000dtrue \u0009\u000a\u000b\u000c\u000d","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_nbsp",
+                r##"{"useLegacyImplementation":"\u00a0true\u00a0","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_emspace",
+                r##"{"useLegacyImplementation":"\u2003true\u2003","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_ascii_vtab",
+                r##"{"useLegacyImplementation":"\u000bfalse\u000b","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_bad_int_word_true",
+                r##"{"useLegacyImplementation":"2true","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_bad_int_ws_word_false",
+                r##"{"useLegacyImplementation":"2 false","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_negative_int_word_true",
+                r##"{"useLegacyImplementation":"-1true","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_sign_word_true",
+                r##"{"useLegacyImplementation":"-true","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_sign_word_false",
+                r##"{"useLegacyImplementation":"+false","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_good_int_word_true",
+                r##"{"useLegacyImplementation":"1true","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_zero_word_false",
+                r##"{"useLegacyImplementation":"0false","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_large_int_word_false",
+                r##"{"useLegacyImplementation":"999999999999999999999999999999999999999999false","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_numeric_partial_word",
+                r##"{"useLegacyImplementation":"2trux","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_bare_word_suffix",
+                r##"{"useLegacyImplementation":"truex","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_two_words",
+                r##"{"useLegacyImplementation":"true false","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_second_sign_word",
+                r##"{"useLegacyImplementation":"--true","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_sign_ws_word",
+                r##"{"useLegacyImplementation":"- true","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_plus_ws_word",
+                r##"{"useLegacyImplementation":"+ false","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_hex_like",
+                r##"{"useLegacyImplementation":"0x1","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_signed_hex_like",
+                r##"{"useLegacyImplementation":"-0x1","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_nul_suffix",
+                r##"{"useLegacyImplementation":"true\u0000","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_nul_prefix",
+                r##"{"useLegacyImplementation":"\u0000true","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_numeric_nul_suffix",
+                r##"{"useLegacyImplementation":"1\u0000","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_retry_nul_suffix",
+                r##"{"useLegacyImplementation":"2true\u0000","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_sign_ws_digit",
+                r##"{"useLegacyImplementation":"- 1","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "missing",
+                r##"{"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "true",
+                r##"{"useLegacyImplementation":true,"useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "false",
+                r##"{"useLegacyImplementation":false,"useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "zero",
+                r##"{"useLegacyImplementation":0,"useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "one",
+                r##"{"useLegacyImplementation":1,"useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "decimal_zero",
+                r##"{"useLegacyImplementation":0.0,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "decimal_one",
+                r##"{"useLegacyImplementation":1.0,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "numeric_exponent",
+                r##"{"useLegacyImplementation":1e0,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "numeric_two",
+                r##"{"useLegacyImplementation":2,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "numeric_minus_one",
+                r##"{"useLegacyImplementation":-1,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_true",
+                r##"{"useLegacyImplementation":"true","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_false",
+                r##"{"useLegacyImplementation":"false","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_ws_true",
+                r##"{"useLegacyImplementation":"  true  ","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_ws_false",
+                r##"{"useLegacyImplementation":"\tfalse\n","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_ws_one",
+                r##"{"useLegacyImplementation":" 1 ","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_plus_one",
+                r##"{"useLegacyImplementation":"+1","useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "string_minus_zero",
+                r##"{"useLegacyImplementation":"-0","useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "string_decimal_one",
+                r##"{"useLegacyImplementation":"1.0","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_TRUE",
+                r##"{"useLegacyImplementation":"TRUE","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_empty",
+                r##"{"useLegacyImplementation":"","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "string_invalid",
+                r##"{"useLegacyImplementation":"bad","useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "null",
+                r##"{"useLegacyImplementation":null,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "array",
+                r##"{"useLegacyImplementation":[false],"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "object",
+                r##"{"useLegacyImplementation":{"x":false},"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "duplicate_true_false",
+                r##"{"useLegacyImplementation":true,"useLegacyImplementation":false,"useMacrocycle14config":true}"##,
+                [true, true],
+            ),
+            (
+                "duplicate_false_true",
+                r##"{"useLegacyImplementation":false,"useLegacyImplementation":true,"useMacrocycle14config":true}"##,
+                [false, false],
+            ),
+            (
+                "duplicate_invalid_false",
+                r##"{"useLegacyImplementation":"bad","useLegacyImplementation":false,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "duplicate_decimal_false",
+                r##"{"useLegacyImplementation":1.0,"useLegacyImplementation":false,"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+            (
+                "valid_boolean_data_with_child",
+                r##"{"useLegacyImplementation":{"":false},"useMacrocycle14config":true}"##,
+                [false, true],
+            ),
+        ];
+        for (name, json, expected) in cases {
+            for (i, initial) in [false, true].into_iter().enumerate() {
+                let mut params = EmbedParams {
+                    use_legacy_implementation: initial,
+                    ..EmbedParams::default()
+                };
+                params.update_from_json(json).unwrap();
+                assert_eq!(
+                    params.use_legacy_implementation, expected[i],
+                    "{name}: initial={initial}"
+                );
+                assert!(
+                    params.use_macrocycle14config,
+                    "later field must run: {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_geo15_legacy_json_decodes_key_escapes_skips_nested_keys_and_retains_old_field_baseline()
+     {
+        let mut p = EmbedParams::default();
+        p.update_from_json(r#"{"nested":{"useLegacyImplementation":true},"useLegacy\u0049mplementation":false,"useLegacyImplementation":true}"#).unwrap();
+        assert!(!p.use_legacy_implementation);
+        let before = p.to_json();
+        p.update_from_json("{}").unwrap();
+        assert_eq!(p.to_json(), before);
+        p.update_from_json("[]").unwrap();
+        assert!(!p.use_legacy_implementation);
+        // Existing fields remain Value's last-key-wins behavior; only newfield is first.
+        p.update_from_json(r#"{"useRandomCoords":false,"useRandomCoords":true,"useLegacyImplementation":false,"useLegacyImplementation":true}"#).unwrap();
+        assert!(p.use_random_coords);
+        assert!(!p.use_legacy_implementation);
+        // Existing prefix errors win before newfield, later errors happen after its update.
+        p.use_legacy_implementation = true;
+        assert!(
+            p.update_from_json(r#"{"basinThresh":null,"useLegacyImplementation":false}"#)
+                .is_err()
+        );
+        assert!(p.use_legacy_implementation);
+        assert!(
+            p.update_from_json(r#"{"useLegacyImplementation":false,"useMacrocycle14config":null}"#)
+                .is_err()
+        );
+        assert!(!p.use_legacy_implementation);
+    }
+
+    #[test]
+    fn recovery_geo15_enum_keeps_first_twelve_and_new_slots_are_disjoint_from_sentinel() {
+        assert_eq!(EmbedFailureCause::ALL.len(), 16);
+        for (i, c) in EmbedFailureCause::ALL.iter().copied().enumerate() {
+            assert_eq!(c.rdkit_ordinal(), i as u32);
+            assert_eq!(EmbedFailureCause::from_rdkit_ordinal(i as u32), Some(c));
+        }
+        assert_eq!(EmbedFailureCause::Minimization.rdkit_name(), "MINIMIZATION");
+        assert_eq!(
+            EmbedFailureCause::KtermViolation.rdkit_name(),
+            "KTERM_VIOLATION"
+        );
+        assert_eq!(EmbedFailureCause::Clash.rdkit_name(), "CLASH");
+        assert_eq!(EmbedFailureCause::EndOfEnum as usize, 15);
+        assert_eq!(EmbedFailureCause::from_rdkit_ordinal(16), None);
+        assert_eq!(EmbedFailureCause::from_rdkit_ordinal(u32::MAX), None);
+    }
+
+    #[test]
+    fn recovery_geo15_legacy_json_true_false_roundtrip_preserves_source_field_order() {
+        for value in [false, true] {
+            let p = EmbedParams {
+                use_legacy_implementation: value,
+                ..EmbedParams::default()
+            };
+            let j = p.to_json();
+            let prefix = j.find("\"useExpTorsionAnglePrefs\"").unwrap();
+            let selected = j.find("\"useLegacyImplementation\"").unwrap();
+            let suffix = j.find("\"useMacrocycle14config\"").unwrap();
+            assert!(prefix < selected && selected < suffix);
+            assert!(j.contains(&format!("\"useLegacyImplementation\":\"{value}\"")));
+            let mut q = EmbedParams::default();
+            q.update_from_json(&j).unwrap();
+            assert_eq!(q.use_legacy_implementation, value);
+            assert_eq!(q.to_json(), j);
+        }
+    }
+
+    #[test]
+    fn recovery_geo05_etdg_presets_inherit_constructor_chirality_true() {
+        assert!(EmbedParams::default().enforce_chirality);
+        for p in [EmbedParams::etdg(), EmbedParams::etdg_v2()] {
+            assert!(p.enforce_chirality);
+            assert!(p.use_exp_torsion_angle_prefs);
+            assert!(!p.use_basic_knowledge);
+        }
+        assert_eq!(EmbedParams::etdg().et_version, 1);
+        assert_eq!(EmbedParams::etdg_v2().et_version, 2);
+        for p in [
+            EmbedParams::kdg(),
+            EmbedParams::etkdg(),
+            EmbedParams::etkdg_v2(),
+            EmbedParams::etkdg_v3(),
+            EmbedParams::sr_etkdg_v3(),
+        ] {
+            assert!(p.enforce_chirality);
+        }
+    }
+
     use super::*;
     #[test]
     fn embed_failure_causes_match_rdkit_ordinals_and_names() {
@@ -1131,7 +1823,10 @@ mod tests {
                 "CHECK_CHIRAL_CENTERS2",
             ),
             (EmbedFailureCause::ExceededTimeout, 11, "EXCEEDED_TIMEOUT"),
-            (EmbedFailureCause::EndOfEnum, 12, "END_OF_ENUM"),
+            (EmbedFailureCause::Minimization, 12, "MINIMIZATION"),
+            (EmbedFailureCause::KtermViolation, 13, "KTERM_VIOLATION"),
+            (EmbedFailureCause::Clash, 14, "CLASH"),
+            (EmbedFailureCause::EndOfEnum, 15, "END_OF_ENUM"),
         ];
 
         assert_eq!(EmbedFailureCause::ALL.len(), expected.len());
@@ -1141,7 +1836,7 @@ mod tests {
             assert_eq!(EmbedFailureCause::from_rdkit_ordinal(ordinal), Some(cause));
             assert_eq!(cause.rdkit_name(), name);
         }
-        assert_eq!(EmbedFailureCause::from_rdkit_ordinal(13), None);
+        assert_eq!(EmbedFailureCause::from_rdkit_ordinal(16), None);
     }
 
     #[test]
@@ -1368,7 +2063,7 @@ mod tests {
             1,
             1e-3,
             false,
-            false,
+            true,
             true,
             false,
             false,
@@ -1394,7 +2089,7 @@ mod tests {
             1,
             1e-3,
             false,
-            false,
+            true,
             true,
             false,
             false,
@@ -1670,7 +2365,7 @@ mod tests {
     #[test]
     fn embed_parameters_to_json_matches_rdkit_without_maps() {
         let json = EmbedParams::kdg().to_json();
-        let expected = r#"{"basinThresh":"5","boundsMatForceScaling":"1","boxSizeMult":"2","clearConfs":"true","embedFragmentsSeparately":"true","enableSequentialRandomSeeds":"false","enforceChirality":"true","ETversion":"1","forceTransAmides":"true","ignoreSmoothingFailures":"false","maxIterations":"0","numThreads":"1","numZeroFail":"1","onlyHeavyAtomsForRMS":"true","optimizerForceTol":"0.001","pruneRmsThresh":"-1","randNegEig":"true","randomSeed":"-1","symmetrizeConjugatedTerminalGroupsForPruning":"true","timeout":"0","trackFailures":"false","useBasicKnowledge":"true","useExpTorsionAnglePrefs":"false","useMacrocycle14config":"false","useMacrocycleTorsions":"false","useRandomCoords":"false","useSmallRingTorsions":"false","useSymmetryForPruning":"true","verbose":"false"}"#;
+        let expected = r#"{"basinThresh":"5","boundsMatForceScaling":"1","boxSizeMult":"2","clearConfs":"true","embedFragmentsSeparately":"true","enableSequentialRandomSeeds":"false","enforceChirality":"true","ETversion":"1","forceTransAmides":"true","ignoreSmoothingFailures":"false","maxIterations":"0","numThreads":"1","numZeroFail":"1","onlyHeavyAtomsForRMS":"true","optimizerForceTol":"0.001","pruneRmsThresh":"-1","randNegEig":"true","randomSeed":"-1","symmetrizeConjugatedTerminalGroupsForPruning":"true","timeout":"0","trackFailures":"false","useBasicKnowledge":"true","useExpTorsionAnglePrefs":"false","useLegacyImplementation":"true","useMacrocycle14config":"false","useMacrocycleTorsions":"false","useRandomCoords":"false","useSmallRingTorsions":"false","useSymmetryForPruning":"true","verbose":"false"}"#;
 
         assert_eq!(json, expected);
     }
@@ -1684,7 +2379,7 @@ mod tests {
             .insert(3, [1.1, 2.2, 3.3]);
 
         let json = params.to_json();
-        let expected = r#"{"basinThresh":"5","boundsMatForceScaling":"1","boxSizeMult":"2","clearConfs":"true","embedFragmentsSeparately":"true","enableSequentialRandomSeeds":"false","enforceChirality":"true","ETversion":"1","forceTransAmides":"true","ignoreSmoothingFailures":"false","maxIterations":"0","numThreads":"1","numZeroFail":"1","onlyHeavyAtomsForRMS":"true","optimizerForceTol":"0.001","pruneRmsThresh":"-1","randNegEig":"true","randomSeed":"-1","symmetrizeConjugatedTerminalGroupsForPruning":"true","timeout":"0","trackFailures":"false","useBasicKnowledge":"true","useExpTorsionAnglePrefs":"false","useMacrocycle14config":"false","useMacrocycleTorsions":"false","useRandomCoords":"false","useSmallRingTorsions":"false","useSymmetryForPruning":"true","verbose":"false","coordMap":{"3":["1.100000","2.200000","3.300000"]}}"#;
+        let expected = r#"{"basinThresh":"5","boundsMatForceScaling":"1","boxSizeMult":"2","clearConfs":"true","embedFragmentsSeparately":"true","enableSequentialRandomSeeds":"false","enforceChirality":"true","ETversion":"1","forceTransAmides":"true","ignoreSmoothingFailures":"false","maxIterations":"0","numThreads":"1","numZeroFail":"1","onlyHeavyAtomsForRMS":"true","optimizerForceTol":"0.001","pruneRmsThresh":"-1","randNegEig":"true","randomSeed":"-1","symmetrizeConjugatedTerminalGroupsForPruning":"true","timeout":"0","trackFailures":"false","useBasicKnowledge":"true","useExpTorsionAnglePrefs":"false","useLegacyImplementation":"true","useMacrocycle14config":"false","useMacrocycleTorsions":"false","useRandomCoords":"false","useSmallRingTorsions":"false","useSymmetryForPruning":"true","verbose":"false","coordMap":{"3":["1.100000","2.200000","3.300000"]}}"#;
 
         assert_eq!(json, expected);
     }

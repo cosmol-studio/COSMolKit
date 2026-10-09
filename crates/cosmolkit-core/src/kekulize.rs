@@ -18,6 +18,11 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CanonicalRankError {
+    #[error("hanoi scratch is too small")]
+    HanoiScratchTooSmall,
+    #[error("{0}")]
+    StereoGroup(#[from] cosmolkit_model::StereoGroupError),
+
     #[error(
         "atom {atom_index} property {property} unsigned value {value} causes positive_overflow converting UInt to signed int"
     )]
@@ -232,10 +237,41 @@ struct FusedKekulizeState {
 }
 
 #[derive(Debug)]
+struct CandidateAttempt {
+    double_bond_candidates: Vec<bool>,
+    questions: Vec<AtomId>,
+    done: Vec<AtomId>,
+}
+#[derive(Debug)]
+struct MatchingAttempt {
+    succeeded: bool,
+    double_bond_candidates: Vec<bool>,
+    double_bonds_added: Vec<bool>,
+    done: Vec<AtomId>,
+    problem_atoms: Vec<AtomId>,
+    backtracks: u32,
+}
+#[derive(Debug)]
+struct FusedAttempt {
+    succeeded: bool,
+    problem_atoms: Vec<AtomId>,
+}
+#[derive(Debug)]
+struct PreparedKekulizeInputs {
+    atoms_in_play: Vec<bool>,
+    bonds_in_play: Vec<bool>,
+    original_total_valences: Vec<i32>,
+    dummy_atoms: Vec<bool>,
+    wedged_atoms: Vec<bool>,
+    found_aromatic: bool,
+}
+
+#[derive(Debug)]
 struct QuestionEnumerator {
     questions: Vec<AtomId>,
-    position: u32,
-    end: u32,
+    // Packed little-endian binary counter; shifts are confined to 0..64.
+    state: Vec<u64>,
+    done: bool,
 }
 
 fn atom_is_aromatic_for_kekulize(topology: &TopologyBlock, atom: AtomId) -> bool {
@@ -374,12 +410,46 @@ fn prepare_kekulize_core(
     query_state: Option<QueryStateRef<'_>>,
     source_valence: Option<&ValenceAssignment>,
 ) -> Result<PreparedKekulizeCore, KekulizeError> {
+    let mut valence = source_valence
+        .cloned()
+        .unwrap_or_else(|| ValenceAssignment {
+            explicit_valence: vec![-1; topology.atoms.len()],
+            implicit_hydrogens: vec![-1; topology.atoms.len()],
+        });
+    let prepared = prepare_kekulize_inputs(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        query_state,
+        &mut valence,
+    )?;
+    // Retain the old private atoms-none scratch result for existing callers.
+    if !atoms_in_play.iter().any(|selected| *selected) {
+        valence = ValenceAssignment {
+            explicit_valence: vec![0; topology.atoms.len()],
+            implicit_hydrogens: vec![0; topology.atoms.len()],
+        };
+    }
+    Ok(PreparedKekulizeCore {
+        atoms_in_play: prepared.atoms_in_play,
+        bonds_in_play: prepared.bonds_in_play,
+        original_total_valences: prepared.original_total_valences,
+        dummy_atoms: prepared.dummy_atoms,
+        wedged_atoms: prepared.wedged_atoms,
+        found_aromatic: prepared.found_aromatic,
+        valence,
+    })
+}
+
+fn prepare_kekulize_inputs(
+    topology: &TopologyBlock,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    query_state: Option<QueryStateRef<'_>>,
+    valence: &mut ValenceAssignment,
+) -> Result<PreparedKekulizeInputs, KekulizeError> {
+    // Existing detached graph/query/width validation order is preserved.
     topology.validate()?;
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
-    // RDKit✔️✔️: PRECONDITION(atomsToUse.size() == mol.getNumAtoms(),
-    // RDKit✔️✔️:              "atomsToUse is wrong size");
-    // RDKit✔️✔️: PRECONDITION(bondsToUse.size() == mol.getNumBonds(),
-    // RDKit✔️✔️:              "bondsToUse is wrong size");
     if atoms_in_play.len() != topology.atoms.len() {
         return Err(KekulizeError::AtomSelectionLength {
             expected: topology.atoms.len(),
@@ -392,37 +462,19 @@ fn prepare_kekulize_core(
             actual: bonds_in_play.len(),
         });
     }
-    // RDKit✔️✔️: // if there are no atoms to use we can directly return
-    // RDKit✔️✔️: if (atomsToUse.none()) {
-    // RDKit✔️✔️:   return;
-    // RDKit✔️✔️: }
     if !atoms_in_play.iter().any(|selected| *selected) {
-        return Ok(PreparedKekulizeCore {
+        return Ok(PreparedKekulizeInputs {
             atoms_in_play: atoms_in_play.to_vec(),
             bonds_in_play: bonds_in_play.to_vec(),
             original_total_valences: vec![0; topology.atoms.len()],
             dummy_atoms: vec![false; topology.atoms.len()],
             wedged_atoms: vec![false; topology.atoms.len()],
             found_aromatic: false,
-            valence: ValenceAssignment {
-                explicit_valence: vec![0; topology.atoms.len()],
-                implicit_hydrogens: vec![0; topology.atoms.len()],
-            },
         });
     }
 
     let mut selected_bonds = bonds_in_play.to_vec();
     let mut found_aromatic = false;
-    // RDKit✔️✔️: bool foundAromatic = false;
-    // RDKit✔️✔️: for (const auto bond : mol.bonds()) {
-    // RDKit✔️✔️:   if (bondsToUse[bond->getIdx()]) {
-    // RDKit✔️✔️:     if (QueryOps::hasBondTypeQuery(*bond)) {
-    // RDKit✔️✔️:       bondsToUse[bond->getIdx()] = 0;
-    // RDKit✔️✔️:     } else if (bond->getIsAromatic()) {
-    // RDKit✔️✔️:       foundAromatic = true;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
     for bond in &topology.bonds {
         if !selected_bonds[bond.id().index()] {
             continue;
@@ -431,100 +483,45 @@ fn prepare_kekulize_core(
             selected_bonds[bond.id().index()] = false;
             continue;
         }
-        // Behavior: after source type-query exclusion, this bond-only loop
-        // tests the flag alone. Independent order/flag values are not rejected.
-        // Cost: O(1) per selected bond; no allocation or extra neighborhood scan.
         if bond.is_aromatic() {
             found_aromatic = true;
         }
     }
 
-    // Stored Atom fields are source input, including initialized stale E.
-    // A cold detached value starts at source -1 sentinels. Only selected rows
-    // below are calculated, in atom order; unselected fields remain exact.
-    let mut valence = match source_valence {
-        Some(existing) => {
-            for (field, actual) in [
-                ("explicit valence", existing.explicit_valence.len()),
-                ("implicit valence", existing.implicit_hydrogens.len()),
-            ] {
-                if actual != topology.atoms.len() {
-                    return Err(KekulizeError::MatchingStateLength {
-                        field,
-                        expected: topology.atoms.len(),
-                        actual,
-                    });
-                }
-            }
-            existing.clone()
+    for (field, actual) in [
+        ("explicit valence", valence.explicit_valence.len()),
+        ("implicit valence", valence.implicit_hydrogens.len()),
+    ] {
+        if actual != topology.atoms.len() {
+            return Err(KekulizeError::MatchingStateLength {
+                field,
+                expected: topology.atoms.len(),
+                actual,
+            });
         }
-        None => ValenceAssignment {
-            explicit_valence: vec![-1; topology.atoms.len()],
-            implicit_hydrogens: vec![-1; topology.atoms.len()],
-        },
-    };
+    }
     let mut original_total_valences = vec![0; topology.atoms.len()];
     let mut dummy_atoms = vec![false; topology.atoms.len()];
-    // RDKit✔️✔️: auto numAtoms = mol.getNumAtoms();
-    // RDKit✔️✔️: INT_VECT valences(numAtoms);
-    // RDKit✔️✔️: boost::dynamic_bitset<> dummyAts(numAtoms);
-    // RDKit✔️✔️: for (auto atom : mol.atoms()) {
-    // RDKit✔️✔️:   if (!atomsToUse[atom->getIdx()]) {
-    // RDKit✔️✔️:     continue;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   atom->calcImplicitValence(false);
-    // RDKit✔️✔️:   valences[atom->getIdx()] = atom->getTotalValence();
-    // RDKit✔️✔️:   if (isAromaticAtom(*atom)) {
-    // RDKit✔️✔️:     foundAromatic = true;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (!atom->getAtomicNum()) {
-    // RDKit✔️✔️:     dummyAts[atom->getIdx()] = 1;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
     for (atom_idx, selected) in atoms_in_play.iter().copied().enumerate() {
         if !selected {
             continue;
         }
         let atom_id = AtomId::new(atom_idx);
-        // RDKit✔️✔️: int Atom::calcImplicitValence(bool strict) {
-        // RDKit✔️✔️:   if (d_explicitValence == -1) {
-        // RDKit✔️✔️:     calcExplicitValence(strict);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   bool checkIt = false;
-        // RDKit✔️✔️:   d_implicitValence = calculateImplicitValence(*this, strict, checkIt);
-        // RDKit✔️✔️:   return d_implicitValence;
-        // RDKit✔️✔️: }
-        // RDKit✔️✔️: std::int8_t d_implicitValence, d_explicitValence;
-        let explicit = i32::from(valence.explicit_valence[atom_idx] as i8);
-        valence.explicit_valence[atom_idx] = if explicit == -1 {
-            crate::assign_explicit_valence_for_atom_from_parts(
-                &topology.atoms,
-                &topology.bonds,
-                &topology.adjacency,
-                atom_id,
-                false,
-            )?
-        } else {
-            explicit
-        };
-        valence.implicit_hydrogens[atom_idx] =
-            crate::assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
-                &topology.atoms,
-                &topology.bonds,
-                &topology.adjacency,
-                atom_id,
-                valence.explicit_valence[atom_idx],
-                false,
-            )?;
+        crate::valence::source_calc_implicit_cache_row(
+            &topology.atoms,
+            &topology.bonds,
+            &topology.adjacency,
+            atom_id,
+            &mut valence.explicit_valence[atom_idx],
+            &mut valence.implicit_hydrogens[atom_idx],
+            false,
+        )?;
         original_total_valences[atom_idx] =
-            checked_total_valence(&valence, &topology.atoms[atom_idx])?;
+            checked_total_valence(valence, &topology.atoms[atom_idx])?;
         found_aromatic |= atom_is_aromatic_for_kekulize(topology, atom_id);
         dummy_atoms[atom_idx] = topology.atoms[atom_idx].atomic_number() == 0;
     }
 
-    // RDKit✔️✔️: if (!foundAromatic) {
-    // RDKit✔️✔️:   return;
-    // RDKit✔️✔️: }
     let mut wedged_atoms = vec![false; topology.atoms.len()];
     for bond in &topology.bonds {
         if selected_bonds[bond.id().index()]
@@ -537,14 +534,13 @@ fn prepare_kekulize_core(
         }
     }
     let _ = &selected_bonds;
-    Ok(PreparedKekulizeCore {
+    Ok(PreparedKekulizeInputs {
         atoms_in_play: atoms_in_play.to_vec(),
         bonds_in_play: selected_bonds,
         original_total_valences,
         dummy_atoms,
         wedged_atoms,
         found_aromatic,
-        valence,
     })
 }
 
@@ -825,6 +821,7 @@ fn acquire_sssr_rows(topology: &TopologyBlock) -> Result<RingInfo, KekulizeError
 enum KekulizeRingRows<'a> {
     /// Initialized caller assignment, borrowed and never modified.
     Borrowed(&'a RingInfo),
+    Live(&'a mut RingInfo),
     /// Fresh SSSR rows moved from the finder (source findSSSR install).
     Acquired(RingInfo),
     /// No initialized rows exist (absent/reset caller state with no
@@ -836,6 +833,7 @@ impl KekulizeRingRows<'_> {
     fn as_ring_info(&self) -> Option<&RingInfo> {
         match self {
             KekulizeRingRows::Borrowed(rings) => Some(rings),
+            KekulizeRingRows::Live(rings) => rings.is_initialized().then_some(&**rings),
             KekulizeRingRows::Acquired(rings) => Some(rings),
             KekulizeRingRows::Uninitialized => None,
         }
@@ -871,6 +869,33 @@ fn validate_consumed_ring_dimensions(
 /// rankFragmentAtoms guard and post-ranking reset) followed by the candidate
 /// acquisition restricted to effective bondsToUse.any(). Returns the rows the
 /// fused dispatch and marking read, plus the caller-visible ring update.
+impl KekulizeRingRows<'_> {
+    fn install(&mut self, next: RingInfo) {
+        match self {
+            Self::Live(rings) => **rings = next,
+            _ => *self = Self::Acquired(next),
+        }
+    }
+    fn reset(&mut self) {
+        match self {
+            Self::Live(rings) => rings.reset(),
+            _ => *self = Self::Uninitialized,
+        }
+    }
+    fn into_update(self, replaced_by_reset: bool) -> Option<RingInfo> {
+        match self {
+            Self::Acquired(rings) => Some(rings),
+            Self::Live(_) => None,
+            _ if replaced_by_reset => {
+                let mut reset = RingInfo::new(RingFindType::OtherOrUnknown, 0, 0);
+                reset.reset();
+                Some(reset)
+            }
+            _ => None,
+        }
+    }
+}
+
 fn kekulize_ring_state_transition<'a>(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
@@ -880,151 +905,145 @@ fn kekulize_ring_state_transition<'a>(
     acquisition_required: bool,
     rings: Option<&'a RingInfo>,
 ) -> Result<(KekulizeRingRows<'a>, bool, Vec<usize>), KekulizeError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (complete body, lines 821-869)
-    // RDKit✔️✔️: void rankFragmentAtoms(const ROMol &mol, std::vector<unsigned int> &res,
-    // RDKit✔️✔️:                        const boost::dynamic_bitset<> &atomsInPlay,
-    // RDKit✔️✔️:                        const boost::dynamic_bitset<> &bondsInPlay,
-    // RDKit✔️✔️:                        const std::vector<std::string> *atomSymbols,
-    // RDKit✔️✔️:                        const std::vector<std::string> *bondSymbols,
-    // RDKit✔️✔️:                        bool breakTies, bool includeChirality,
-    // RDKit✔️✔️:                        bool includeIsotopes, bool includeAtomMaps,
-    // RDKit✔️✔️:                        bool includeChiralPresence, bool includeRingStereo) {
-    // RDKit✔️✔️:   PRECONDITION(atomsInPlay.size() == mol.getNumAtoms(), "bad atomsInPlay size");
-    // RDKit✔️✔️:   PRECONDITION(bondsInPlay.size() == mol.getNumBonds(), "bad bondsInPlay size");
-    // RDKit✔️✔️:   PRECONDITION(!atomSymbols || atomSymbols->size() == mol.getNumAtoms(),
-    // RDKit✔️✔️:                "bad atomSymbols size");
-    // RDKit✔️✔️:   PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
-    // RDKit✔️✔️:                "bad bondSymbols size");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   bool clearRings = false;
-    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
-    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
-    // RDKit✔️✔️:     clearRings = true;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   res.resize(mol.getNumAtoms());
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
-    // RDKit✔️✔️:   detail::initFragmentCanonAtoms(mol, atoms, includeChirality, atomSymbols,
-    // RDKit✔️✔️:                                  bondSymbols, atomsInPlay, bondsInPlay, true);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol, &atomsInPlay, &bondsInPlay);
-    // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
-    // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
-    // RDKit✔️✔️:   ftor.df_useAtomMaps = includeAtomMaps;
-    // RDKit✔️✔️:   ftor.df_useChiralityRings = includeChirality;
-    // RDKit✔️✔️:   ftor.df_useChiralPresence = includeChiralPresence;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<int> order(mol.getNumAtoms());
-    // RDKit✔️✔️:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
-    // RDKit✔️✔️:                           includeRingStereo, &atomsInPlay, &bondsInPlay);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
-    // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (clearRings) {
-    // RDKit✔️✔️:     mol.getRingInfo()->reset();
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }  // end of rankFragmentAtoms()
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (complete body, lines 821-869)
-    // Behavior review, borrowed ranking: an initialized Fast/SSSR/Symm
-    // assignment (including initialized-empty rows) satisfies the source
-    // isFindFastOrBetter guard and is borrowed unchanged by the existing
-    // ranking helper, mirroring the source path where clearRings stays
-    // false and the mol's live RingInfo rows feed the functor untouched.
-    // Behavior review, temporary Fast/reset: absent or reset storage is
-    // passed to the helper as None — reset storage has zero membership
-    // dimensions and the SOURCE acquires temporary Fast rows inside this
-    // function instead. Canonical ranking over an initialized Other
-    // assignment runs exactly the source temporary-Fast-then-reset path
-    // (clearRings = true, mol reset at function end), so the caller's
-    // stored state is reset; the engine transports that replacement as
-    // Some(uninitialized) unless a later acquisition supersedes it.
-    // Behavior review, permanent SSSR: the Kekulize.cpp ring-selection guard
-    // below is the permanent acquisition; the fresh rows are used by the
-    // candidates, the fused dispatch and the marking reads, and reused by
-    // the marking guard without a second find.
-    // Complexity review, final MOVED ownership: ranking reuses the existing
-    // prepared-state helper (one O(V+E) temporary fast discovery only when
-    // the guard fails); the one permanent acquisition runs through the
-    // single acquisition entry and its result is MOVED — this owner builds
-    // no update and clones neither a supplied nor an acquired assignment;
-    // the engine consumes the single owned buffer into the public update by
-    // move only after every candidate/fused/marking/postcondition read has
-    // finished successfully.
+    let mut rows = match rings {
+        Some(rings) if rings.is_initialized() => KekulizeRingRows::Borrowed(rings),
+        _ => KekulizeRingRows::Uninitialized,
+    };
+    let (reset, ranks) = kekulize_ring_state_transition_mut(
+        topology,
+        valence,
+        atoms_in_play,
+        bonds_in_play,
+        canonical,
+        acquisition_required,
+        &mut rows,
+    )?;
+    Ok((rows, reset, ranks))
+}
+
+fn kekulize_ring_state_transition_mut(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    canonical: bool,
+    acquisition_required: bool,
+    rows: &mut KekulizeRingRows<'_>,
+) -> Result<(bool, Vec<usize>), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (2026.03.6 complete)
+    // RDKit❗❌: void rankFragmentAtoms(const ROMol &mol, std::vector<unsigned int> &res,
+    // RDKit❗❌:                        const boost::dynamic_bitset<> &atomsInPlay,
+    // RDKit❗❌:                        const boost::dynamic_bitset<> &bondsInPlay,
+    // RDKit❗❌:                        const std::vector<std::string> *atomSymbols,
+    // RDKit❗❌:                        const std::vector<std::string> *bondSymbols,
+    // RDKit❗❌:                        bool breakTies, bool includeChirality,
+    // RDKit❗❌:                        bool includeIsotopes, bool includeAtomMaps,
+    // RDKit❗❌:                        bool includeChiralPresence, bool includeRingStereo) {
+    // RDKit❗❌:   PRECONDITION(atomsInPlay.size() == mol.getNumAtoms(), "bad atomsInPlay size");
+    // RDKit❗❌:   PRECONDITION(bondsInPlay.size() == mol.getNumBonds(), "bad bondsInPlay size");
+    // RDKit❗❌:   PRECONDITION(!atomSymbols || atomSymbols->size() == mol.getNumAtoms(),
+    // RDKit❗❌:                "bad atomSymbols size");
+    // RDKit❗❌:   PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
+    // RDKit❗❌:                "bad bondSymbols size");
+    // RDKit❗❌:
+    // RDKit❗❌:   if (!mol.getNumAtoms()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   bool clearRings = false;
+    // RDKit❗❌:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit❗❌:     MolOps::fastFindRings(mol);
+    // RDKit❗❌:     clearRings = true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   res.resize(mol.getNumAtoms());
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
+    // RDKit❗❌:   detail::initFragmentCanonAtoms(mol, atoms, includeChirality, atomSymbols,
+    // RDKit❗❌:                                  bondSymbols, atomsInPlay, bondsInPlay, true);
+    // RDKit❗❌:
+    // RDKit❗❌:   AtomCompareFunctor ftor(&atoms.front(), mol, &atomsInPlay, &bondsInPlay);
+    // RDKit❗❌:   ftor.df_useIsotopes = includeIsotopes;
+    // RDKit❗❌:   ftor.df_useChirality = includeChirality;
+    // RDKit❗❌:   ftor.df_useAtomMaps = includeAtomMaps;
+    // RDKit❗❌:   ftor.df_useChiralityRings = includeChirality;
+    // RDKit❗❌:   ftor.df_useChiralPresence = includeChiralPresence;
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<int> order(mol.getNumAtoms());
+    // RDKit❗❌:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
+    // RDKit❗❌:                           includeRingStereo, &atomsInPlay, &bondsInPlay);
+    // RDKit❗❌:
+    // RDKit❗❌:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:     res[order[i]] = atoms[order[i]].index;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (clearRings) {
+    // RDKit❗❌:     mol.getRingInfo()->reset();
+    // RDKit❗❌:   }
+    // RDKit❗❌: }  // end of rankFragmentAtoms()
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (2026.03.6 complete)
+    // Source publishes Fast BEFORE rank; rank errors retain it. The existing
+    // prepared rank algorithm consumes these very rows without reacquiring.
     let mut replaced_by_reset = false;
     let atom_ranks;
-    if canonical {
+    if canonical && !topology.atoms.is_empty() {
         #[cfg(test)]
         ring_transport_probe::record_rank();
-        let ranking_rings = match rings {
-            Some(supplied) if supplied.is_initialized() => Some(supplied),
-            // Absent or reset storage: pass None so the helper performs the
-            // source's temporary fast discovery instead of dimension-checking
-            // zero-width rows.
-            _ => None,
-        };
+        // A detached borrowed carrier keeps the existing prepared-rank input
+        // contract. Reject its malformed dimensions through the same rank
+        // owner before replacing scratch rows, preserving valence-before-ring
+        // error priority without duplicating validation or running a second
+        // rank on valid inputs. Live source state still publishes Fast before
+        // any later rank error, as required by the upstream mutation order.
+        if let KekulizeRingRows::Borrowed(supplied) = rows
+            && (supplied.atom_row_count() != topology.atoms.len()
+                || supplied.bond_row_count() != topology.bonds.len())
+        {
+            rank_fragment_atoms_with_prepared_state(
+                topology,
+                valence,
+                Some(supplied),
+                atoms_in_play,
+                bonds_in_play,
+                None,
+                None,
+                &CanonicalRankParams::kekulize_fragment_default(),
+            )?;
+        }
+        let clear_rings = !rows
+            .as_ring_info()
+            .is_some_and(RingInfo::is_find_fast_or_better);
+        replaced_by_reset = rows
+            .as_ring_info()
+            .is_some_and(|rings| !rings.is_find_fast_or_better());
+        if clear_rings {
+            rows.install(fast_find_rings_from_parts(
+                topology.atoms.len(),
+                &topology.bonds,
+                &topology.adjacency,
+            )?);
+        }
         atom_ranks = rank_fragment_atoms_with_prepared_state(
             topology,
             valence,
-            ranking_rings,
+            rows.as_ring_info(),
             atoms_in_play,
             bonds_in_play,
             None,
             None,
             &CanonicalRankParams::kekulize_fragment_default(),
         )?;
-        if let Some(supplied) = rings
-            && supplied.is_initialized()
-            && !supplied.is_find_fast_or_better()
-        {
-            // Source clearRings ran: the initialized Other caller state was
-            // reset by the ranking just performed.
-            replaced_by_reset = true;
+        if clear_rings {
+            rows.reset();
         }
     } else {
-        // RDKit✔️✔️:   } else {
-        // RDKit✔️✔️:     // When canonical=false (e.g. during sanitization), we skip the
-        // RDKit✔️✔️:     // expensive ranking step and use atom indices directly.  This is
-        // RDKit✔️✔️:     // appropriate because sanitization runs *before* stereo perception:
-        // RDKit✔️✔️:     // canonical ranking would be based on incomplete chemistry and the
-        // RDKit✔️✔️:     // "deterministic" result would be meaningless.  Callers who need a
-        // RDKit✔️✔️:     // canonical Kekulé form should call Kekulize() with canonical=true
-        // RDKit✔️✔️:     // after the molecule is fully sanitized and stereo has been assigned.
-        // RDKit✔️✔️:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
-        // RDKit✔️✔️:   }
         atom_ranks = (0..topology.atoms.len()).collect();
     }
-
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ring selection
-    // RDKit✔️✔️:   VECT_INT_VECT allringsSSSR;
-    // RDKit✔️✔️:   if (!mol.getRingInfo()->isInitialized()) {
-    // RDKit✔️✔️:     MolOps::findSSSR(mol, allringsSSSR);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const VECT_INT_VECT &allrings =
-    // RDKit✔️✔️:       allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ring selection
-    // Behavior review: the acquisition guard is the source caller's
-    // bondsToUse.any() restriction (passed as acquisition_required) plus
-    // !isInitialized on the current state; any initialized state — including
-    // initialized-empty rows — is borrowed, never re-found or upgraded.
-    let rows = if let Some(supplied) = rings
-        && supplied.is_initialized()
-        && !replaced_by_reset
-    {
-        KekulizeRingRows::Borrowed(supplied)
-    } else if acquisition_required {
+    if acquisition_required && rows.as_ring_info().is_none() {
         #[cfg(test)]
         ring_transport_probe::record_sssr();
-        KekulizeRingRows::Acquired(acquire_sssr_rows(topology)?)
-    } else {
-        KekulizeRingRows::Uninitialized
-    };
-    Ok((rows, replaced_by_reset, atom_ranks))
+        rows.install(acquire_sssr_rows(topology)?);
+    }
+    Ok((replaced_by_reset, atom_ranks))
 }
 
 fn is_early_atom_for_kekulize(atomic_number: u8) -> bool {
@@ -1069,6 +1088,183 @@ fn mark_double_bond_candidates(
     rings: &RingInfo,
     valence: &ValenceAssignment,
 ) -> Result<CandidateState, KekulizeError> {
+    let mut working = topology.clone();
+    let state = mark_double_bond_candidates_mut(&mut working, all_atoms, rings, valence)?;
+    Ok(CandidateState {
+        topology: working,
+        double_bond_candidates: state.double_bond_candidates,
+        questions: state.questions,
+        done: state.done,
+    })
+}
+
+fn mark_double_bond_candidates_mut(
+    topology: &mut TopologyBlock,
+    all_atoms: &[AtomId],
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+) -> Result<CandidateAttempt, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: markDbondCands (2026.03.6 complete)
+    // RDKit❗❌: void markDbondCands(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗❌:                     boost::dynamic_bitset<> &dBndCands, INT_VECT &questions,
+    // RDKit❗❌:                     INT_VECT &done) {
+    // RDKit❗❌:   // ok this function does more than mark atoms that are candidates for
+    // RDKit❗❌:   // double bonds during kekulization
+    // RDKit❗❌:   // - check that a non-aromatic atom does not have any aromatic bonds
+    // RDKit❗❌:   // - marks all aromatic bonds to single bonds
+    // RDKit❗❌:   // - marks atoms that can take a double bond
+    // RDKit❗❌:
+    // RDKit❗❌:   bool hasAromaticOrDummyAtom =
+    // RDKit❗❌:       std::any_of(allAtms.begin(), allAtms.end(), [&mol](int allAtm) {
+    // RDKit❗❌:         return (!mol.getAtomWithIdx(allAtm)->getAtomicNum() ||
+    // RDKit❗❌:                 isAromaticAtom(*mol.getAtomWithIdx(allAtm)));
+    // RDKit❗❌:       });
+    // RDKit❗❌:   // if there's not at least one atom in the ring that's
+    // RDKit❗❌:   // marked as being aromatic or a dummy,
+    // RDKit❗❌:   // there's no point in continuing:
+    // RDKit❗❌:   if (!hasAromaticOrDummyAtom) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // mark rings which are not candidates for double bonds
+    // RDKit❗❌:   // i.e. that have at least one atom which is in a single ring
+    // RDKit❗❌:   // and is not aromatic
+    // RDKit❗❌:   boost::dynamic_bitset<> isRingNotCand(mol.getRingInfo()->numRings());
+    // RDKit❗❌:   unsigned int ri = 0;
+    // RDKit❗❌:   for (const auto &aring : mol.getRingInfo()->atomRings()) {
+    // RDKit❗❌:     isRingNotCand.set(ri);
+    // RDKit❗❌:     for (auto ai : aring) {
+    // RDKit❗❌:       const auto at = mol.getAtomWithIdx(ai);
+    // RDKit❗❌:       if (isAromaticAtom(*at) && mol.getRingInfo()->numAtomRings(ai) == 1) {
+    // RDKit❗❌:         isRingNotCand.reset(ri);
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     ++ri;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::vector<Bond *> makeSingle;
+    // RDKit❗❌:
+    // RDKit❗❌:   boost::dynamic_bitset<> inAllAtms(mol.getNumAtoms());
+    // RDKit❗❌:   for (int allAtm : allAtms) {
+    // RDKit❗❌:     inAllAtms.set(allAtm);
+    // RDKit❗❌:     Atom *at = mol.getAtomWithIdx(allAtm);
+    // RDKit❗❌:
+    // RDKit❗❌:     if (at->getAtomicNum() && !isAromaticAtom(*at)) {
+    // RDKit❗❌:       done.push_back(allAtm);
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // count the number of neighbors connected with single,
+    // RDKit❗❌:     // double, or aromatic bonds. Along the way, mark
+    // RDKit❗❌:     // bonds that we will later mark as being single:
+    // RDKit❗❌:     int sbo = 0;
+    // RDKit❗❌:     unsigned nToIgnore = 0;
+    // RDKit❗❌:     unsigned int nonArNonDummyNbr = 0;
+    // RDKit❗❌:     for (const auto bond : mol.atomBonds(at)) {
+    // RDKit❗❌:       auto otherAt = bond->getOtherAtom(at);
+    // RDKit❗❌:       if (otherAt->getAtomicNum() && !otherAt->getIsAromatic() &&
+    // RDKit❗❌:           inAllAtms.test(otherAt->getIdx())) {
+    // RDKit❗❌:         ++nonArNonDummyNbr;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (bond->getIsAromatic() && (bond->getBondType() == Bond::SINGLE ||
+    // RDKit❗❌:                                     bond->getBondType() == Bond::DOUBLE ||
+    // RDKit❗❌:                                     bond->getBondType() == Bond::AROMATIC)) {
+    // RDKit❗❌:         ++sbo;
+    // RDKit❗❌:         // mark this bond to be marked single later
+    // RDKit❗❌:         // we don't want to do right now because it can screw-up the
+    // RDKit❗❌:         // valence calculation to determine the number of hydrogens below
+    // RDKit❗❌:         makeSingle.push_back(bond);
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         int bondContrib = std::lround(bond->getValenceContrib(at));
+    // RDKit❗❌:         sbo += bondContrib;
+    // RDKit❗❌:         if (!bondContrib) {
+    // RDKit❗❌:           ++nToIgnore;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     auto numAtomRings = mol.getRingInfo()->numAtomRings(at->getIdx());
+    // RDKit❗❌:     const auto &riVect = mol.getRingInfo()->atomMembers(at->getIdx());
+    // RDKit❗❌:     size_t numNonCandRings = std::count_if(
+    // RDKit❗❌:         riVect.begin(), riVect.end(),
+    // RDKit❗❌:         [&isRingNotCand](int ri) { return isRingNotCand.test(ri); });
+    // RDKit❗❌:     if (!at->getAtomicNum() && nonArNonDummyNbr < numAtomRings &&
+    // RDKit❗❌:         numNonCandRings < numAtomRings) {
+    // RDKit❗❌:       // dummies always start as candidates to have a double bond:
+    // RDKit❗❌:       dBndCands[allAtm] = 1;
+    // RDKit❗❌:       // but they don't have to have one, so mark them as questionable:
+    // RDKit❗❌:       questions.push_back(allAtm);
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       // for non dummies, it's a bit more work to figure out if they
+    // RDKit❗❌:       // can take a double bond:
+    // RDKit❗❌:
+    // RDKit❗❌:       sbo += at->getTotalNumHs();
+    // RDKit❗❌:       auto dv =
+    // RDKit❗❌:           PeriodicTable::getTable()->getDefaultValence(at->getAtomicNum());
+    // RDKit❗❌:       auto chrg = at->getFormalCharge();
+    // RDKit❗❌:       if (isEarlyAtom(at->getAtomicNum())) {
+    // RDKit❗❌:         chrg = -chrg;  // fix for GitHub #65
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // special case for carbon - see GitHub #539
+    // RDKit❗❌:       if (at->getAtomicNum() == 6 && chrg > 0) {
+    // RDKit❗❌:         chrg = -chrg;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       dv += chrg;
+    // RDKit❗❌:       int tbo = at->getTotalValence();
+    // RDKit❗❌:       int nRadicals = at->getNumRadicalElectrons();
+    // RDKit❗❌:       int totalDegree = at->getDegree() +
+    // RDKit❗❌:                         at->getValence(Atom::ValenceType::IMPLICIT) - nToIgnore;
+    // RDKit❗❌:
+    // RDKit❗❌:       const auto &valList =
+    // RDKit❗❌:           PeriodicTable::getTable()->getValenceList(at->getAtomicNum());
+    // RDKit❗❌:       unsigned int vi = 1;
+    // RDKit❗❌:
+    // RDKit❗❌:       while (tbo > dv && vi < valList.size() && valList[vi] > 0) {
+    // RDKit❗❌:         dv = valList[vi] + chrg;
+    // RDKit❗❌:         ++vi;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // Kekulize aromatic N-oxides, such as O=n1ccccc1
+    // RDKit❗❌:       // These only reach here if SANITIZE_CLEANUP is disabled.
+    // RDKit❗❌:       if (tbo == 5 && sbo == 4 && dv == 3 && totalDegree == 3 &&
+    // RDKit❗❌:           nRadicals == 0 && chrg == 0 && at->getTotalNumHs() == 0) {
+    // RDKit❗❌:         switch (at->getAtomicNum()) {
+    // RDKit❗❌:           case 7:   // N
+    // RDKit❗❌:           case 15:  // P
+    // RDKit❗❌:           case 33:  // As
+    // RDKit❗❌:             dv = 5;
+    // RDKit❗❌:             break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // std::cerr << "  kek: " << at->getIdx() << " tbo:" << tbo << " sbo:" <<
+    // RDKit❗❌:       // sbo
+    // RDKit❗❌:       //           << "  dv : " << dv << " totalDegree : " << totalDegree
+    // RDKit❗❌:       //           << " nRadicals: " << nRadicals << std::endl;
+    // RDKit❗❌:       if (totalDegree + nRadicals >= dv) {
+    // RDKit❗❌:         // if our degree + nRadicals exceeds the default valence,
+    // RDKit❗❌:         // there's no way we can take a double bond, just continue.
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       // we're a candidate if our total current bond order + nRadicals + 1
+    // RDKit❗❌:       // matches the valence state
+    // RDKit❗❌:       // (including nRadicals here was SF.net issue 3349243)
+    // RDKit❗❌:       if (dv == (sbo + 1 + nRadicals)) {
+    // RDKit❗❌:         dBndCands[allAtm] = 1;
+    // RDKit❗❌:       } else if (!nRadicals && at->getNoImplicit() && dv == (sbo + 2)) {
+    // RDKit❗❌:         // special case: there is currently no radical on the atom, but if
+    // RDKit❗❌:         // if we allow one then this is a candidate:
+    // RDKit❗❌:         dBndCands[allAtm] = 1;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }  // loop over all atoms in the fused system
+    // RDKit❗❌:
+    // RDKit❗❌:   // now turn all the aromatic bond in this fused system to single
+    // RDKit❗❌:   for (auto &bi : makeSingle) {
+    // RDKit❗❌:     bi->setBondType(Bond::SINGLE);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: markDbondCands (2026.03.6 complete)
+
     let mut seen = vec![false; topology.atoms.len()];
     for &atom in all_atoms {
         if atom.index() >= topology.atoms.len() {
@@ -1082,45 +1278,21 @@ fn mark_double_bond_candidates(
         }
     }
 
-    let mut working = topology.clone();
     let mut double_bond_candidates = vec![false; topology.atoms.len()];
     let mut questions = Vec::new();
     let mut done = Vec::new();
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: markDbondCands
-    // RDKit✔️✔️: bool hasAromaticOrDummyAtom =
-    // RDKit✔️✔️:     std::any_of(allAtms.begin(), allAtms.end(), [&mol](int allAtm) {
-    // RDKit✔️✔️:       return (!mol.getAtomWithIdx(allAtm)->getAtomicNum() ||
-    // RDKit✔️✔️:               isAromaticAtom(*mol.getAtomWithIdx(allAtm)));
-    // RDKit✔️✔️:     });
     let has_aromatic_or_dummy_atom = all_atoms.iter().any(|&atom| {
         topology.atoms[atom.index()].atomic_number() == 0
             || atom_is_aromatic_for_kekulize(topology, atom)
     });
-    // RDKit✔️✔️: if (!hasAromaticOrDummyAtom) {
-    // RDKit✔️✔️:   return;
-    // RDKit✔️✔️: }
     if !has_aromatic_or_dummy_atom {
-        return Ok(CandidateState {
-            topology: working,
+        return Ok(CandidateAttempt {
             double_bond_candidates,
             questions,
             done,
         });
     }
 
-    // RDKit✔️✔️: boost::dynamic_bitset<> isRingNotCand(mol.getRingInfo()->numRings());
-    // RDKit✔️✔️: unsigned int ri = 0;
-    // RDKit✔️✔️: for (const auto &aring : mol.getRingInfo()->atomRings()) {
-    // RDKit✔️✔️:   isRingNotCand.set(ri);
-    // RDKit✔️✔️:   for (auto ai : aring) {
-    // RDKit✔️✔️:     const auto at = mol.getAtomWithIdx(ai);
-    // RDKit✔️✔️:     if (isAromaticAtom(*at) && mol.getRingInfo()->numAtomRings(ai) == 1) {
-    // RDKit✔️✔️:       isRingNotCand.reset(ri);
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   ++ri;
-    // RDKit✔️✔️: }
     let is_ring_not_candidate = rings
         .atom_rings()
         .iter()
@@ -1133,48 +1305,26 @@ fn mark_double_bond_candidates(
     let mut make_single = vec![false; topology.bonds.len()];
     let mut in_all_atoms = vec![false; topology.atoms.len()];
 
-    // RDKit✔️✔️: boost::dynamic_bitset<> inAllAtms(mol.getNumAtoms());
-    // RDKit✔️✔️: for (int allAtm : allAtms) {
     for &atom_id in all_atoms {
-        // RDKit✔️✔️:   inAllAtms.set(allAtm);
-        // RDKit✔️✔️:   Atom *at = mol.getAtomWithIdx(allAtm);
         in_all_atoms[atom_id.index()] = true;
         let atom = &topology.atoms[atom_id.index()];
-        // RDKit✔️✔️:   if (at->getAtomicNum() && !isAromaticAtom(*at)) {
-        // RDKit✔️✔️:     done.push_back(allAtm);
-        // RDKit✔️✔️:     continue;
-        // RDKit✔️✔️:   }
         if atom.atomic_number() != 0 && !atom_is_aromatic_for_kekulize(topology, atom_id) {
             done.push(atom_id);
             continue;
         }
 
-        // RDKit✔️✔️:   int sbo = 0;
-        // RDKit✔️✔️:   unsigned nToIgnore = 0;
-        // RDKit✔️✔️:   unsigned int nonArNonDummyNbr = 0;
         let mut single_bond_order = 0i32;
         let mut neighbors_to_ignore = 0usize;
         let mut non_aromatic_non_dummy_neighbors = 0usize;
-        // RDKit✔️✔️:   for (const auto bond : mol.atomBonds(at)) {
         for neighbor in topology.adjacency.neighbors_of(atom_id.index()) {
             let bond = &topology.bonds[neighbor.bond.index()];
             let other = &topology.atoms[neighbor.atom_index];
-            // RDKit✔️✔️:     auto otherAt = bond->getOtherAtom(at);
-            // RDKit✔️✔️:     if (otherAt->getAtomicNum() && !otherAt->getIsAromatic() &&
-            // RDKit✔️✔️:         inAllAtms.test(otherAt->getIdx())) {
-            // RDKit✔️✔️:       ++nonArNonDummyNbr;
-            // RDKit✔️✔️:     }
             if other.atomic_number() != 0
                 && !other.is_aromatic()
                 && in_all_atoms[neighbor.atom_index]
             {
                 non_aromatic_non_dummy_neighbors += 1;
             }
-            // RDKit✔️✔️:     if (bond->getIsAromatic() && (bond->getBondType() == Bond::SINGLE ||
-            // RDKit✔️✔️:                                   bond->getBondType() == Bond::DOUBLE ||
-            // RDKit✔️✔️:                                   bond->getBondType() == Bond::AROMATIC)) {
-            // RDKit✔️✔️:       ++sbo;
-            // RDKit✔️✔️:       makeSingle.push_back(bond);
             if bond.is_aromatic()
                 && matches!(
                     bond.order(),
@@ -1190,13 +1340,6 @@ fn mark_double_bond_candidates(
                         })?;
                 make_single[bond.id().index()] = true;
             } else {
-                // RDKit✔️✔️:     } else {
-                // RDKit✔️✔️:       int bondContrib = std::lround(bond->getValenceContrib(at));
-                // RDKit✔️✔️:       sbo += bondContrib;
-                // RDKit✔️✔️:       if (!bondContrib) {
-                // RDKit✔️✔️:         ++nToIgnore;
-                // RDKit✔️✔️:       }
-                // RDKit✔️✔️:     }
                 let contribution = crate::bond_valence_contrib(bond, atom_id)?.round() as i32;
                 single_bond_order = single_bond_order.checked_add(contribution).ok_or(
                     KekulizeError::IntegerOverflow {
@@ -1210,29 +1353,19 @@ fn mark_double_bond_candidates(
             }
         }
 
-        // RDKit✔️✔️:   auto numAtomRings = mol.getRingInfo()->numAtomRings(at->getIdx());
-        // RDKit✔️✔️:   const auto &riVect = mol.getRingInfo()->atomMembers(at->getIdx());
-        // RDKit✔️✔️:   size_t numNonCandRings = std::count_if(
-        // RDKit✔️✔️:       riVect.begin(), riVect.end(),
-        // RDKit✔️✔️:       [&isRingNotCand](int ri) { return isRingNotCand.test(ri); });
         let atom_ring_count = rings.num_atom_rings(atom_id);
         let non_candidate_ring_count = rings
             .atom_members(atom_id)
             .iter()
             .filter(|&&ring| is_ring_not_candidate[ring])
             .count();
-        // RDKit✔️✔️:   if (!at->getAtomicNum() && nonArNonDummyNbr < numAtomRings &&
-        // RDKit✔️✔️:       numNonCandRings < numAtomRings) {
         if atom.atomic_number() == 0
             && non_aromatic_non_dummy_neighbors < atom_ring_count
             && non_candidate_ring_count < atom_ring_count
         {
-            // RDKit✔️✔️:     dBndCands[allAtm] = 1;
-            // RDKit✔️✔️:     questions.push_back(allAtm);
             double_bond_candidates[atom_id.index()] = true;
             questions.push(atom_id);
         } else {
-            // RDKit✔️✔️:     sbo += at->getTotalNumHs();
             let total_hydrogens = i32::from(atom.explicit_hydrogens())
                 .checked_add(valence.implicit_hydrogens[atom_id.index()])
                 .ok_or(KekulizeError::IntegerOverflow {
@@ -1245,16 +1378,6 @@ fn mark_double_bond_candidates(
                     field: "candidate bond-order and hydrogen sum",
                 },
             )?;
-            // RDKit✔️✔️:     auto dv =
-            // RDKit✔️✔️:         PeriodicTable::getTable()->getDefaultValence(at->getAtomicNum());
-            // RDKit✔️✔️:     auto chrg = at->getFormalCharge();
-            // RDKit✔️✔️:     if (isEarlyAtom(at->getAtomicNum())) {
-            // RDKit✔️✔️:       chrg = -chrg;
-            // RDKit✔️✔️:     }
-            // RDKit✔️✔️:     if (at->getAtomicNum() == 6 && chrg > 0) {
-            // RDKit✔️✔️:       chrg = -chrg;
-            // RDKit✔️✔️:     }
-            // RDKit✔️✔️:     dv += chrg;
             let mut charge = i32::from(atom.formal_charge());
             if is_early_atom_for_kekulize(atom.atomic_number()) {
                 charge = -charge;
@@ -1268,10 +1391,6 @@ fn mark_double_bond_candidates(
                     atom: atom_id,
                     field: "charged default valence",
                 })?;
-            // RDKit✔️✔️:     int tbo = at->getTotalValence();
-            // RDKit✔️✔️:     int nRadicals = at->getNumRadicalElectrons();
-            // RDKit✔️✔️:     int totalDegree = at->getDegree() +
-            // RDKit✔️✔️:                       at->getValence(Atom::ValenceType::IMPLICIT) - nToIgnore;
             let total_bond_order = checked_total_valence(valence, atom)?;
             let radical_electrons = i32::from(atom.radical_electrons());
             let degree = i32::try_from(topology.adjacency.neighbors_of(atom_id.index()).len())
@@ -1291,13 +1410,6 @@ fn mark_double_bond_candidates(
                     atom: atom_id,
                     field: "total degree",
                 })?;
-            // RDKit✔️✔️:     const auto &valList =
-            // RDKit✔️✔️:         PeriodicTable::getTable()->getValenceList(at->getAtomicNum());
-            // RDKit✔️✔️:     unsigned int vi = 1;
-            // RDKit✔️✔️:     while (tbo > dv && vi < valList.size() && valList[vi] > 0) {
-            // RDKit✔️✔️:       dv = valList[vi] + chrg;
-            // RDKit✔️✔️:       ++vi;
-            // RDKit✔️✔️:     }
             let valence_list = crate::required_valence_list(atom.atomic_number())?;
             let mut valence_index = 1usize;
             while total_bond_order > default_valence
@@ -1312,16 +1424,6 @@ fn mark_double_bond_candidates(
                 )?;
                 valence_index += 1;
             }
-            // RDKit✔️✔️:     if (tbo == 5 && sbo == 4 && dv == 3 && totalDegree == 3 &&
-            // RDKit✔️✔️:         nRadicals == 0 && chrg == 0 && at->getTotalNumHs() == 0) {
-            // RDKit✔️✔️:       switch (at->getAtomicNum()) {
-            // RDKit✔️✔️:         case 7:
-            // RDKit✔️✔️:         case 15:
-            // RDKit✔️✔️:         case 33:
-            // RDKit✔️✔️:           dv = 5;
-            // RDKit✔️✔️:           break;
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:     }
             if total_bond_order == 5
                 && single_bond_order == 4
                 && default_valence == 3
@@ -1333,17 +1435,9 @@ fn mark_double_bond_candidates(
             {
                 default_valence = 5;
             }
-            // RDKit✔️✔️:     if (totalDegree + nRadicals >= dv) {
-            // RDKit✔️✔️:       continue;
-            // RDKit✔️✔️:     }
             if total_degree + radical_electrons >= default_valence {
                 continue;
             }
-            // RDKit✔️✔️:     if (dv == (sbo + 1 + nRadicals)) {
-            // RDKit✔️✔️:       dBndCands[allAtm] = 1;
-            // RDKit✔️✔️:     } else if (!nRadicals && at->getNoImplicit() && dv == (sbo + 2)) {
-            // RDKit✔️✔️:       dBndCands[allAtm] = 1;
-            // RDKit✔️✔️:     }
             if default_valence == single_bond_order + 1 + radical_electrons
                 || (radical_electrons == 0
                     && atom.no_implicit()
@@ -1353,18 +1447,12 @@ fn mark_double_bond_candidates(
             }
         }
     }
-    // RDKit✔️✔️: }  // loop over all atoms in the fused system
-    // RDKit✔️✔️: for (auto &bi : makeSingle) {
-    // RDKit✔️✔️:   bi->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️: }
     for (bond_idx, should_make_single) in make_single.into_iter().enumerate() {
         if should_make_single {
-            working.bonds[bond_idx].set_order(BondOrder::Single);
+            topology.bonds[bond_idx].set_order(BondOrder::Single);
         }
     }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: markDbondCands
-    Ok(CandidateState {
-        topology: working,
+    Ok(CandidateAttempt {
         double_bond_candidates,
         questions,
         done,
@@ -1460,6 +1548,270 @@ fn kekulize_matching_worker(
     atom_ranks: &[usize],
     max_backtracks: u32,
 ) -> Result<MatchingState, KekulizeError> {
+    let state = kekulize_matching_worker_mut(
+        &mut topology,
+        all_atoms,
+        initial_candidates,
+        initial_bonds_added,
+        initial_done,
+        atom_ranks,
+        max_backtracks,
+    )?;
+    Ok(MatchingState {
+        topology,
+        succeeded: state.succeeded,
+        double_bond_candidates: state.double_bond_candidates,
+        double_bonds_added: state.double_bonds_added,
+        done: state.done,
+        problem_atoms: state.problem_atoms,
+        backtracks: state.backtracks,
+    })
+}
+
+fn kekulize_matching_worker_mut(
+    topology: &mut TopologyBlock,
+    all_atoms: &[AtomId],
+    initial_candidates: &[bool],
+    initial_bonds_added: &[bool],
+    initial_done: &[AtomId],
+    atom_ranks: &[usize],
+    max_backtracks: u32,
+) -> Result<MatchingAttempt, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker (2026.03.6 complete)
+    // RDKit❗❌: bool kekulizeWorker(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗❌:                     boost::dynamic_bitset<> dBndCands,
+    // RDKit❗❌:                     boost::dynamic_bitset<> dBndAdds, INT_VECT done,
+    // RDKit❗❌:                     const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
+    // RDKit❗❌:   INT_DEQUE astack;
+    // RDKit❗❌:   INT_INT_DEQ_MAP options;
+    // RDKit❗❌:   int lastOpt = -1;
+    // RDKit❗❌:   boost::dynamic_bitset<> localBondsAdded(mol.getNumBonds());
+    // RDKit❗❌:   boost::dynamic_bitset<> inAllAtms(mol.getNumAtoms());
+    // RDKit❗❌:   for (int allAtm : allAtms) {
+    // RDKit❗❌:     inAllAtms.set(allAtm);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   auto lessByRank = [&atomRanks](int a, int b) {
+    // RDKit❗❌:     const auto ra = atomRanks.at(static_cast<unsigned int>(a));
+    // RDKit❗❌:     const auto rb = atomRanks.at(static_cast<unsigned int>(b));
+    // RDKit❗❌:     return (ra < rb) || (ra == rb && a < b);
+    // RDKit❗❌:   };
+    // RDKit❗❌:
+    // RDKit❗❌:   // Prefer starting traversal at atoms which are the *end* of wedged/dashed
+    // RDKit❗❌:   // bonds. Wedged bonds encode stereo and must remain single bonds; by starting
+    // RDKit❗❌:   // the kekulization walk at wedge-end atoms we assign their double bond to a
+    // RDKit❗❌:   // *different* neighbor first, giving the algorithm more freedom to keep the
+    // RDKit❗❌:   // wedged bond single.
+    // RDKit❗❌:   boost::dynamic_bitset<> wedgeEndAtoms(mol.getNumAtoms());
+    // RDKit❗❌:   for (const auto bond : mol.bonds()) {
+    // RDKit❗❌:     if (bond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
+    // RDKit❗❌:         bond->getBondDir() == Bond::BondDir::BEGINDASH) {
+    // RDKit❗❌:       const auto endIdx = bond->getEndAtomIdx();
+    // RDKit❗❌:       if (inAllAtms.test(endIdx)) {
+    // RDKit❗❌:         wedgeEndAtoms.set(endIdx);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // Pre-sort allAtms: wedge-end atoms first, then by canonical rank.
+    // RDKit❗❌:   // This way the first not-yet-done atom is always the best starting point.
+    // RDKit❗❌:   INT_VECT sortedAtms(allAtms);
+    // RDKit❗❌:   std::sort(sortedAtms.begin(), sortedAtms.end(),
+    // RDKit❗❌:             [&wedgeEndAtoms, &lessByRank](int a, int b) {
+    // RDKit❗❌:               const bool wa = wedgeEndAtoms.test(a);
+    // RDKit❗❌:               const bool wb = wedgeEndAtoms.test(b);
+    // RDKit❗❌:               if (wa != wb) {
+    // RDKit❗❌:                 return wa;  // wedge-end atoms come first
+    // RDKit❗❌:               }
+    // RDKit❗❌:               return lessByRank(a, b);
+    // RDKit❗❌:             });
+    // RDKit❗❌:
+    // RDKit❗❌:   // ok the algorithm goes something like this
+    // RDKit❗❌:   // - start with an atom that has been marked aromatic before
+    // RDKit❗❌:   // - check if it can have a double bond
+    // RDKit❗❌:   // - add its neighbors to the stack
+    // RDKit❗❌:   // - check if one of its neighbors can also have a double bond
+    // RDKit❗❌:   // - if yes add a double bond.
+    // RDKit❗❌:   // - if multiple neighbors can have double bonds - add them to a
+    // RDKit❗❌:   //   options stack we may have to retrace out path if we chose the
+    // RDKit❗❌:   //   wrong neighbor to add the double bond
+    // RDKit❗❌:   // - if double bond added update the candidates for double bond
+    // RDKit❗❌:   // - move to the next atom on the stack and repeat the process
+    // RDKit❗❌:   // - if an atom that can have multiple a double bond has no
+    // RDKit❗❌:   //   neighbors that can take double bond - we made a mistake
+    // RDKit❗❌:   //   earlier by picking a wrong candidate for double bond
+    // RDKit❗❌:   // - in this case back track to where we made the mistake
+    // RDKit❗❌:
+    // RDKit❗❌:   int curr = -1;
+    // RDKit❗❌:   INT_DEQUE btmoves;
+    // RDKit❗❌:   unsigned int numBT = 0;  // number of back tracks so far
+    // RDKit❗❌:   while ((done.size() < sortedAtms.size()) || !astack.empty()) {
+    // RDKit❗❌:     // pick a curr atom to work with
+    // RDKit❗❌:     if (astack.size() > 0) {
+    // RDKit❗❌:       curr = astack.front();
+    // RDKit❗❌:       astack.pop_front();
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       curr = -1;
+    // RDKit❗❌:       for (int allAtm : sortedAtms) {
+    // RDKit❗❌:         if (std::find(done.begin(), done.end(), allAtm) == done.end()) {
+    // RDKit❗❌:           curr = allAtm;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     CHECK_INVARIANT(curr >= 0, "starting point not found");
+    // RDKit❗❌:     done.push_back(curr);
+    // RDKit❗❌:
+    // RDKit❗❌:     // loop over the neighbors if we can add double bonds or
+    // RDKit❗❌:     // simply push them onto the stack
+    // RDKit❗❌:     INT_DEQUE opts;
+    // RDKit❗❌:     bool cCand = false;
+    // RDKit❗❌:     if (dBndCands[curr]) {
+    // RDKit❗❌:       cCand = true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     int ncnd;
+    // RDKit❗❌:     // if we are here because of backtracking
+    // RDKit❗❌:     if (options.find(curr) != options.end()) {
+    // RDKit❗❌:       opts = options[curr];
+    // RDKit❗❌:       CHECK_INVARIANT(opts.size() > 0, "");
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       INT_DEQUE lstack;
+    // RDKit❗❌:       std::vector<int> optsV;
+    // RDKit❗❌:       std::vector<int> wedgedOptsV;
+    // RDKit❗❌:       std::vector<int> nbrs;
+    // RDKit❗❌:       for (auto nbrAtom : mol.atomNeighbors(mol.getAtomWithIdx(curr))) {
+    // RDKit❗❌:         const auto nbrIdx = static_cast<int>(nbrAtom->getIdx());
+    // RDKit❗❌:         // ignore if the neighbor is not part of the fused system
+    // RDKit❗❌:         if (!inAllAtms.test(nbrIdx)) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // ignore if the neighbor has already been dealt with before
+    // RDKit❗❌:         if (std::find(done.begin(), done.end(), nbrIdx) != done.end()) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         nbrs.push_back(nbrIdx);
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       std::sort(nbrs.begin(), nbrs.end(), lessByRank);
+    // RDKit❗❌:
+    // RDKit❗❌:       for (int nbrIdx : nbrs) {
+    // RDKit❗❌:         auto nbrBond = mol.getBondBetweenAtoms(curr, nbrIdx);
+    // RDKit❗❌:
+    // RDKit❗❌:         // if the neighbor is not on the stack add it
+    // RDKit❗❌:         if (std::find(astack.begin(), astack.end(), nbrIdx) == astack.end()) {
+    // RDKit❗❌:           lstack.push_back(nbrIdx);
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:         // check if the neighbor is also a candidate for a double bond
+    // RDKit❗❌:         // the refinement that we'll make to the candidate check we've already
+    // RDKit❗❌:         // done is to make sure that the bond is either flagged as aromatic
+    // RDKit❗❌:         // or involves a dummy atom. This was Issue 3525076.
+    // RDKit❗❌:         // This fix is not really 100% of the way there: a situation like
+    // RDKit❗❌:         // that for Issue 3525076 but involving a dummy atom in the cage
+    // RDKit❗❌:         // could lead to the same failure. The full fix would require
+    // RDKit❗❌:         // a fairly detailed analysis of all bonds in the molecule to determine
+    // RDKit❗❌:         // which of them is eligible to be converted.
+    // RDKit❗❌:         if (cCand && dBndCands[nbrIdx] &&
+    // RDKit❗❌:             (nbrBond->getIsAromatic() ||
+    // RDKit❗❌:              mol.getAtomWithIdx(curr)->getAtomicNum() == 0 ||
+    // RDKit❗❌:              mol.getAtomWithIdx(nbrIdx)->getAtomicNum() == 0)) {
+    // RDKit❗❌:           // in order to try and avoid making wedged bonds double, we will add
+    // RDKit❗❌:           // this neighbor at the back of the options after this loop if the
+    // RDKit❗❌:           // bond is wedged. otherwise we append it to the options directly
+    // RDKit❗❌:           if (nbrBond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
+    // RDKit❗❌:               nbrBond->getBondDir() == Bond::BondDir::BEGINDASH) {
+    // RDKit❗❌:             wedgedOptsV.push_back(nbrIdx);
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             optsV.push_back(nbrIdx);
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }  // end of curr atoms can have a double bond
+    // RDKit❗❌:       }  // end of looping over neighbors
+    // RDKit❗❌:
+    // RDKit❗❌:       // Non-wedged options first, then wedged — both already in rank order
+    // RDKit❗❌:       // because nbrs was pre-sorted by lessByRank above.
+    // RDKit❗❌:       for (int v : optsV) {
+    // RDKit❗❌:         opts.push_back(v);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       for (int v : wedgedOptsV) {
+    // RDKit❗❌:         opts.push_back(v);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       astack.insert(astack.end(), lstack.begin(), lstack.end());
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // now add a double bond from current to one of the neighbors if we can
+    // RDKit❗❌:     if (cCand) {
+    // RDKit❗❌:       if (!opts.empty()) {
+    // RDKit❗❌:         ncnd = opts.front();
+    // RDKit❗❌:         opts.pop_front();
+    // RDKit❗❌:         auto bnd = mol.getBondBetweenAtoms(curr, ncnd);
+    // RDKit❗❌:         bnd->setBondType(Bond::DOUBLE);
+    // RDKit❗❌:         if (bnd->getBondDir() != Bond::BondDir::NONE) {
+    // RDKit❗❌:           bnd->setBondDir(Bond::BondDir::NONE);
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:         // remove current and the neighbor from the dBndCands list
+    // RDKit❗❌:         dBndCands[curr] = 0;
+    // RDKit❗❌:         dBndCands[ncnd] = 0;
+    // RDKit❗❌:
+    // RDKit❗❌:         // add them to the list of bonds to which have been made double
+    // RDKit❗❌:         dBndAdds[bnd->getIdx()] = 1;
+    // RDKit❗❌:         localBondsAdded[bnd->getIdx()] = 1;
+    // RDKit❗❌:
+    // RDKit❗❌:         // if this is an atom we previously visted and picked we
+    // RDKit❗❌:         // simply tried a different option now, overwrite the options
+    // RDKit❗❌:         // stored for this atoms
+    // RDKit❗❌:         if (options.find(curr) != options.end()) {
+    // RDKit❗❌:           if (opts.size() == 0) {
+    // RDKit❗❌:             options.erase(curr);
+    // RDKit❗❌:             btmoves.pop_back();
+    // RDKit❗❌:             if (btmoves.size() > 0) {
+    // RDKit❗❌:               lastOpt = btmoves.back();
+    // RDKit❗❌:             } else {
+    // RDKit❗❌:               lastOpt = -1;
+    // RDKit❗❌:             }
+    // RDKit❗❌:           } else {
+    // RDKit❗❌:             options[curr] = opts;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           // this is new atoms we are trying and have other
+    // RDKit❗❌:           // neighbors as options to add double bond store this to
+    // RDKit❗❌:           // the options stack, we may have made a mistake in
+    // RDKit❗❌:           // which one we chose and have to return here
+    // RDKit❗❌:           if (opts.size() > 0) {
+    // RDKit❗❌:             lastOpt = curr;
+    // RDKit❗❌:             btmoves.push_back(lastOpt);
+    // RDKit❗❌:             options[curr] = opts;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:       }  // end of adding a double bond
+    // RDKit❗❌:       else if (mol.getAtomWithIdx(curr)->getAtomicNum()) {
+    // RDKit❗❌:         // we have a non-dummy atom that should be getting a double
+    // RDKit❗❌:         // bond but none of the neighbors can take one. Most likely
+    // RDKit❗❌:         // because of a wrong choice earlier so back track
+    // RDKit❗❌:         if ((lastOpt >= 0) && (numBT < maxBackTracks)) {
+    // RDKit❗❌:           // std::cerr << "PRE BACKTRACK" << std::endl;
+    // RDKit❗❌:           // mol.debugMol(std::cerr);
+    // RDKit❗❌:           backTrack(mol, options, lastOpt, done, astack, dBndCands, dBndAdds);
+    // RDKit❗❌:           // std::cerr << "POST BACKTRACK" << std::endl;
+    // RDKit❗❌:           // mol.debugMol(std::cerr);
+    // RDKit❗❌:           ++numBT;
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           // undo any remaining changes we made while here
+    // RDKit❗❌:           // this was github #962
+    // RDKit❗❌:           for (unsigned int bidx = 0; bidx < mol.getNumBonds(); ++bidx) {
+    // RDKit❗❌:             if (localBondsAdded[bidx]) {
+    // RDKit❗❌:               mol.getBondWithIdx(bidx)->setBondType(Bond::SINGLE);
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:           return false;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }  // end of else try to backtrack
+    // RDKit❗❌:     }  // end of curr atom atom being a cand for double bond
+    // RDKit❗❌:   }  // end of while we are not done with all atoms
+    // RDKit❗❌:   return true;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker (2026.03.6 complete)
+
     topology.validate()?;
     for (field, expected, actual) in [
         (
@@ -1507,15 +1859,6 @@ fn kekulize_matching_worker(
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker
-    // RDKit✔️✔️: bool kekulizeWorker(RWMol &mol, const INT_VECT &allAtms,
-    // RDKit✔️✔️:                     boost::dynamic_bitset<> dBndCands,
-    // RDKit✔️✔️:                     boost::dynamic_bitset<> dBndAdds, INT_VECT done,
-    // RDKit✔️✔️:                     const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
-    // RDKit✔️✔️:   INT_DEQUE astack;
-    // RDKit✔️✔️:   INT_INT_DEQ_MAP options;
-    // RDKit✔️✔️:   int lastOpt = -1;
-    // RDKit✔️✔️:   boost::dynamic_bitset<> localBondsAdded(mol.getNumBonds());
     let mut atom_stack = VecDeque::new();
     let mut options = BTreeMap::<AtomId, VecDeque<AtomId>>::new();
     let mut last_option = None;
@@ -1524,27 +1867,6 @@ fn kekulize_matching_worker(
     let mut double_bonds_added = initial_bonds_added.to_vec();
     let mut done = initial_done.to_vec();
 
-    // RDKit✔️✔️:   boost::dynamic_bitset<> inAllAtms(mol.getNumAtoms());
-    // RDKit✔️✔️:   for (int allAtm : allAtms) {
-    // RDKit✔️✔️:     inAllAtms.set(allAtm);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   auto lessByRank = [&atomRanks](int a, int b) {
-    // RDKit✔️✔️:     const auto ra = atomRanks.at(static_cast<unsigned int>(a));
-    // RDKit✔️✔️:     const auto rb = atomRanks.at(static_cast<unsigned int>(b));
-    // RDKit✔️✔️:     return (ra < rb) || (ra == rb && a < b);
-    // RDKit✔️✔️:   };
-    // `in_all_atoms` was populated during checked input validation above.
-
-    // RDKit✔️✔️:   boost::dynamic_bitset<> wedgeEndAtoms(mol.getNumAtoms());
-    // RDKit✔️✔️:   for (const auto bond : mol.bonds()) {
-    // RDKit✔️✔️:     if (bond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
-    // RDKit✔️✔️:         bond->getBondDir() == Bond::BondDir::BEGINDASH) {
-    // RDKit✔️✔️:       const auto endIdx = bond->getEndAtomIdx();
-    // RDKit✔️✔️:       if (inAllAtms.test(endIdx)) {
-    // RDKit✔️✔️:         wedgeEndAtoms.set(endIdx);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
     let mut wedge_end_atoms = vec![false; topology.atoms.len()];
     for bond in &topology.bonds {
         if matches!(
@@ -1556,16 +1878,6 @@ fn kekulize_matching_worker(
         }
     }
 
-    // RDKit✔️✔️:   INT_VECT sortedAtms(allAtms);
-    // RDKit✔️✔️:   std::sort(sortedAtms.begin(), sortedAtms.end(),
-    // RDKit✔️✔️:             [&wedgeEndAtoms, &lessByRank](int a, int b) {
-    // RDKit✔️✔️:               const bool wa = wedgeEndAtoms.test(a);
-    // RDKit✔️✔️:               const bool wb = wedgeEndAtoms.test(b);
-    // RDKit✔️✔️:               if (wa != wb) {
-    // RDKit✔️✔️:                 return wa;
-    // RDKit✔️✔️:               }
-    // RDKit✔️✔️:               return lessByRank(a, b);
-    // RDKit✔️✔️:             });
     let mut sorted_atoms = all_atoms.to_vec();
     sorted_atoms.sort_by_key(|atom| {
         (
@@ -1575,27 +1887,9 @@ fn kekulize_matching_worker(
         )
     });
 
-    // RDKit✔️✔️:   int curr = -1;
-    // RDKit✔️✔️:   INT_DEQUE btmoves;
-    // RDKit✔️✔️:   unsigned int numBT = 0;
-    // RDKit✔️✔️:   while ((done.size() < sortedAtms.size()) || !astack.empty()) {
     let mut backtrack_moves = Vec::new();
     let mut backtracks = 0u32;
     while done.len() < sorted_atoms.len() || !atom_stack.is_empty() {
-        // RDKit✔️✔️:     if (astack.size() > 0) {
-        // RDKit✔️✔️:       curr = astack.front();
-        // RDKit✔️✔️:       astack.pop_front();
-        // RDKit✔️✔️:     } else {
-        // RDKit✔️✔️:       curr = -1;
-        // RDKit✔️✔️:       for (int allAtm : sortedAtms) {
-        // RDKit✔️✔️:         if (std::find(done.begin(), done.end(), allAtm) == done.end()) {
-        // RDKit✔️✔️:           curr = allAtm;
-        // RDKit✔️✔️:           break;
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     CHECK_INVARIANT(curr >= 0, "starting point not found");
-        // RDKit✔️✔️:     done.push_back(curr);
         let current = atom_stack
             .pop_front()
             .or_else(|| {
@@ -1609,36 +1903,13 @@ fn kekulize_matching_worker(
             })?;
         done.push(current);
 
-        // RDKit✔️✔️:     INT_DEQUE opts;
-        // RDKit✔️✔️:     bool cCand = false;
-        // RDKit✔️✔️:     if (dBndCands[curr]) {
-        // RDKit✔️✔️:       cCand = true;
-        // RDKit✔️✔️:     }
         let current_is_candidate = double_bond_candidates[current.index()];
-        // RDKit✔️✔️:     if (options.find(curr) != options.end()) {
-        // RDKit✔️✔️:       opts = options[curr];
-        // RDKit✔️✔️:       CHECK_INVARIANT(opts.size() > 0, "");
-        // RDKit✔️✔️:     } else {
         let mut current_options = if let Some(stored) = options.get(&current) {
             stored.clone()
         } else {
-            // RDKit✔️✔️:       INT_DEQUE lstack;
-            // RDKit✔️✔️:       std::vector<int> optsV;
-            // RDKit✔️✔️:       std::vector<int> wedgedOptsV;
-            // RDKit✔️✔️:       std::vector<int> nbrs;
             let mut local_stack = VecDeque::new();
             let mut ordinary_options = VecDeque::new();
             let mut wedged_options = VecDeque::new();
-            // RDKit✔️✔️:       for (auto nbrAtom : mol.atomNeighbors(mol.getAtomWithIdx(curr))) {
-            // RDKit✔️✔️:         const auto nbrIdx = static_cast<int>(nbrAtom->getIdx());
-            // RDKit✔️✔️:         if (!inAllAtms.test(nbrIdx)) {
-            // RDKit✔️✔️:           continue;
-            // RDKit✔️✔️:         }
-            // RDKit✔️✔️:         if (std::find(done.begin(), done.end(), nbrIdx) != done.end()) {
-            // RDKit✔️✔️:           continue;
-            // RDKit✔️✔️:         }
-            // RDKit✔️✔️:         nbrs.push_back(nbrIdx);
-            // RDKit✔️✔️:       }
             let mut neighbors = topology
                 .adjacency
                 .neighbors_of(current.index())
@@ -1646,36 +1917,20 @@ fn kekulize_matching_worker(
                 .map(|neighbor| AtomId::new(neighbor.atom_index))
                 .filter(|neighbor| in_all_atoms[neighbor.index()] && !done.contains(neighbor))
                 .collect::<Vec<_>>();
-            // RDKit✔️✔️:       std::sort(nbrs.begin(), nbrs.end(), lessByRank);
             neighbors.sort_by_key(|atom| (atom_ranks[atom.index()], atom.index()));
 
-            // RDKit✔️✔️:       for (int nbrIdx : nbrs) {
-            // RDKit✔️✔️:         auto nbrBond = mol.getBondBetweenAtoms(curr, nbrIdx);
             for neighbor in neighbors {
-                let bond_id = bond_between_atoms(&topology, current, neighbor)?;
+                let bond_id = bond_between_atoms(topology, current, neighbor)?;
                 let bond = &topology.bonds[bond_id.index()];
-                // RDKit✔️✔️:         if (std::find(astack.begin(), astack.end(), nbrIdx) == astack.end()) {
-                // RDKit✔️✔️:           lstack.push_back(nbrIdx);
-                // RDKit✔️✔️:         }
                 if !atom_stack.contains(&neighbor) {
                     local_stack.push_back(neighbor);
                 }
-                // RDKit✔️✔️:         if (cCand && dBndCands[nbrIdx] &&
-                // RDKit✔️✔️:             (nbrBond->getIsAromatic() ||
-                // RDKit✔️✔️:              mol.getAtomWithIdx(curr)->getAtomicNum() == 0 ||
-                // RDKit✔️✔️:              mol.getAtomWithIdx(nbrIdx)->getAtomicNum() == 0)) {
                 if current_is_candidate
                     && double_bond_candidates[neighbor.index()]
                     && (bond.is_aromatic()
                         || topology.atoms[current.index()].atomic_number() == 0
                         || topology.atoms[neighbor.index()].atomic_number() == 0)
                 {
-                    // RDKit✔️✔️:           if (nbrBond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
-                    // RDKit✔️✔️:               nbrBond->getBondDir() == Bond::BondDir::BEGINDASH) {
-                    // RDKit✔️✔️:             wedgedOptsV.push_back(nbrIdx);
-                    // RDKit✔️✔️:           } else {
-                    // RDKit✔️✔️:             optsV.push_back(nbrIdx);
-                    // RDKit✔️✔️:           }
                     if matches!(
                         bond.direction(),
                         BondDirection::BeginWedge | BondDirection::BeginDash
@@ -1686,56 +1941,24 @@ fn kekulize_matching_worker(
                     }
                 }
             }
-            // RDKit✔️✔️:       for (int v : optsV) {
-            // RDKit✔️✔️:         opts.push_back(v);
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:       for (int v : wedgedOptsV) {
-            // RDKit✔️✔️:         opts.push_back(v);
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:       astack.insert(astack.end(), lstack.begin(), lstack.end());
             ordinary_options.append(&mut wedged_options);
             atom_stack.append(&mut local_stack);
             ordinary_options
         };
 
-        // RDKit✔️✔️:     if (cCand) {
         if current_is_candidate {
-            // RDKit✔️✔️:       if (!opts.empty()) {
             if let Some(neighbor) = current_options.pop_front() {
-                // RDKit✔️✔️:         ncnd = opts.front();
-                // RDKit✔️✔️:         opts.pop_front();
-                // RDKit✔️✔️:         auto bnd = mol.getBondBetweenAtoms(curr, ncnd);
-                // RDKit✔️✔️:         bnd->setBondType(Bond::DOUBLE);
-                // RDKit✔️✔️:         if (bnd->getBondDir() != Bond::BondDir::NONE) {
-                // RDKit✔️✔️:           bnd->setBondDir(Bond::BondDir::NONE);
-                // RDKit✔️✔️:         }
-                let bond_id = bond_between_atoms(&topology, current, neighbor)?;
+                let bond_id = bond_between_atoms(topology, current, neighbor)?;
                 topology.bonds[bond_id.index()].set_order(BondOrder::Double);
                 if topology.bonds[bond_id.index()].direction() != BondDirection::None {
                     topology.bonds[bond_id.index()].set_direction(BondDirection::None);
                 }
-                // RDKit✔️✔️:         dBndCands[curr] = 0;
-                // RDKit✔️✔️:         dBndCands[ncnd] = 0;
-                // RDKit✔️✔️:         dBndAdds[bnd->getIdx()] = 1;
-                // RDKit✔️✔️:         localBondsAdded[bnd->getIdx()] = 1;
                 double_bond_candidates[current.index()] = false;
                 double_bond_candidates[neighbor.index()] = false;
                 double_bonds_added[bond_id.index()] = true;
                 local_bonds_added[bond_id.index()] = true;
 
-                // RDKit✔️✔️:         if (options.find(curr) != options.end()) {
                 if options.contains_key(&current) {
-                    // RDKit✔️✔️:           if (opts.size() == 0) {
-                    // RDKit✔️✔️:             options.erase(curr);
-                    // RDKit✔️✔️:             btmoves.pop_back();
-                    // RDKit✔️✔️:             if (btmoves.size() > 0) {
-                    // RDKit✔️✔️:               lastOpt = btmoves.back();
-                    // RDKit✔️✔️:             } else {
-                    // RDKit✔️✔️:               lastOpt = -1;
-                    // RDKit✔️✔️:             }
-                    // RDKit✔️✔️:           } else {
-                    // RDKit✔️✔️:             options[curr] = opts;
-                    // RDKit✔️✔️:           }
                     if current_options.is_empty() {
                         options.remove(&current);
                         backtrack_moves.pop();
@@ -1744,13 +1967,6 @@ fn kekulize_matching_worker(
                         options.insert(current, current_options);
                     }
                 } else {
-                    // RDKit✔️✔️:         } else {
-                    // RDKit✔️✔️:           if (opts.size() > 0) {
-                    // RDKit✔️✔️:             lastOpt = curr;
-                    // RDKit✔️✔️:             btmoves.push_back(lastOpt);
-                    // RDKit✔️✔️:             options[curr] = opts;
-                    // RDKit✔️✔️:           }
-                    // RDKit✔️✔️:         }
                     if !current_options.is_empty() {
                         last_option = Some(current);
                         backtrack_moves.push(current);
@@ -1758,14 +1974,9 @@ fn kekulize_matching_worker(
                     }
                 }
             } else if topology.atoms[current.index()].atomic_number() != 0 {
-                // RDKit✔️✔️:       } else if (mol.getAtomWithIdx(curr)->getAtomicNum()) {
-                // RDKit✔️✔️:         if ((lastOpt >= 0) && (numBT < maxBackTracks)) {
                 if let Some(anchor) = last_option.filter(|_| backtracks < max_backtracks) {
-                    // RDKit✔️✔️:           backTrack(mol, options, lastOpt, done, astack,
-                    // RDKit✔️✔️:                     dBndCands, dBndAdds);
-                    // RDKit✔️✔️:           ++numBT;
                     backtrack_kekulize(
-                        &mut topology,
+                        topology,
                         anchor,
                         &mut done,
                         &mut atom_stack,
@@ -1774,13 +1985,6 @@ fn kekulize_matching_worker(
                     )?;
                     backtracks += 1;
                 } else {
-                    // RDKit✔️✔️:         } else {
-                    // RDKit✔️✔️:           for (unsigned int bidx = 0; bidx < mol.getNumBonds(); ++bidx) {
-                    // RDKit✔️✔️:             if (localBondsAdded[bidx]) {
-                    // RDKit✔️✔️:               mol.getBondWithIdx(bidx)->setBondType(Bond::SINGLE);
-                    // RDKit✔️✔️:             }
-                    // RDKit✔️✔️:           }
-                    // RDKit✔️✔️:           return false;
                     for (bond_idx, was_added) in local_bonds_added.iter().copied().enumerate() {
                         if was_added {
                             topology.bonds[bond_idx].set_order(BondOrder::Single);
@@ -1791,15 +1995,7 @@ fn kekulize_matching_worker(
                         .copied()
                         .filter(|atom| double_bond_candidates[atom.index()])
                         .collect();
-                    // RDKit✔️✔️:         }
-                    // RDKit✔️✔️:       }
-                    // RDKit✔️✔️:     }
-                    // RDKit✔️✔️:   }
-                    // RDKit✔️✔️:   return true;
-                    // RDKit✔️✔️: }
-                    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker
-                    return Ok(MatchingState {
-                        topology,
+                    return Ok(MatchingAttempt {
                         succeeded: false,
                         double_bond_candidates,
                         double_bonds_added,
@@ -1811,11 +2007,7 @@ fn kekulize_matching_worker(
             }
         }
     }
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker
-    Ok(MatchingState {
-        topology,
+    Ok(MatchingAttempt {
         succeeded: true,
         double_bond_candidates,
         double_bonds_added,
@@ -1828,23 +2020,25 @@ fn kekulize_matching_worker(
 impl QuestionEnumerator {
     fn new(questions: Vec<AtomId>) -> Result<Self, KekulizeError> {
         // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: QuestionEnumerator::QuestionEnumerator
-        // RDKit✔️✔️: class QuestionEnumerator {
-        // RDKit✔️✔️:  public:
         // RDKit✔️✔️:   QuestionEnumerator(INT_VECT questions)
-        // RDKit✔️✔️:       : d_questions(std::move(questions)), d_pos(1) {};
+        // RDKit✔️✔️:       : d_questions(std::move(questions)), d_state(d_questions.size()) {
+        // RDKit✔️✔️:     if (!d_state.empty()) {
+        // RDKit✔️✔️:       // Start at one because the empty subset has already been attempted.
+        // RDKit✔️✔️:       d_state.set(0);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
         // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: QuestionEnumerator::QuestionEnumerator
-        let question_count = questions.len();
-        if question_count >= u32::BITS as usize {
-            return Err(KekulizeError::QuestionSubsetOverflow {
-                questions: question_count,
-                bit_width: u32::BITS,
-            });
+        // RDKit✔️✔️: dynamic_bitset-equivalent packed words; preserve the
+        // existing private Result signature while removing its fixed-width gate.
+        // Space is ceil(Q/64) words, not the one-byte-per-bool Vec<bool> layout.
+        let mut state = vec![0; questions.len().div_ceil(64)];
+        if !questions.is_empty() {
+            state[0] = 1;
         }
-        let end = 1u32 << question_count;
         Ok(Self {
             questions,
-            position: 1,
-            end,
+            state,
+            done: false,
         })
     }
 
@@ -1852,33 +2046,49 @@ impl QuestionEnumerator {
         // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: QuestionEnumerator::next
         // RDKit✔️✔️:   INT_VECT next() {
         // RDKit✔️✔️:     INT_VECT res;
-        // RDKit✔️✔️:     if (d_pos >= (0x1u << d_questions.size())) {
+        // RDKit✔️✔️:     if (d_done) {
         // RDKit✔️✔️:       return res;
         // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     for (unsigned int i = 0; i < d_questions.size(); ++i) {
-        // RDKit✔️✔️:       if (d_pos & (0x1u << i)) {
+        // RDKit✔️✔️:     for (size_t i = 0; i < d_questions.size(); ++i) {
+        // RDKit✔️✔️:       if (d_state.test(i)) {
         // RDKit✔️✔️:         res.push_back(d_questions[i]);
         // RDKit✔️✔️:       }
         // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     ++d_pos;
-        // RDKit✔️✔️:     return res;
-        // RDKit✔️✔️:   };
         // RDKit✔️✔️:
-        // RDKit✔️✔️:  private:
-        // RDKit✔️✔️:   INT_VECT d_questions;
-        // RDKit✔️✔️:   unsigned int d_pos;
-        // RDKit✔️✔️: };
+        // RDKit✔️✔️:     size_t pos = 0;
+        // RDKit✔️✔️:     while (pos < d_state.size() && d_state.test(pos)) {
+        // RDKit✔️✔️:       d_state.reset(pos++);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (pos == d_state.size()) {
+        // RDKit✔️✔️:       d_done = true;
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       d_state.set(pos);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     return res;
+        // RDKit✔️✔️:   }
         // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: QuestionEnumerator::next
-        if self.position >= self.end {
+        // RDKit✔️✔️: scan Q positions and allocate only this subset, as source.
+        // The packed carry performs the same ordered bit reset/set operations;
+        // bits outside Q in the last word are never read, set or shifted into.
+        if self.done {
             return Vec::new();
         }
         let mut selected = Vec::new();
         for (index, &question) in self.questions.iter().enumerate() {
-            if self.position & (1u32 << index) != 0 {
+            if self.state[index / 64] & (1u64 << (index % 64)) != 0 {
                 selected.push(question);
             }
         }
-        self.position += 1;
+        let mut pos = 0;
+        while pos < self.questions.len() && self.state[pos / 64] & (1u64 << (pos % 64)) != 0 {
+            self.state[pos / 64] &= !(1u64 << (pos % 64));
+            pos += 1;
+        }
+        if pos == self.questions.len() {
+            self.done = true;
+        } else {
+            self.state[pos / 64] |= 1u64 << (pos % 64);
+        }
         selected
     }
 }
@@ -1891,36 +2101,75 @@ fn permute_dummies_and_kekulize(
     atom_ranks: &[usize],
     max_backtracks: u32,
 ) -> Result<FusedKekulizeState, KekulizeError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: permuteDummiesAndKekulize
-    // RDKit✔️✔️: bool permuteDummiesAndKekulize(RWMol &mol, const INT_VECT &allAtms,
-    // RDKit✔️✔️:                                boost::dynamic_bitset<> dBndCands,
-    // RDKit✔️✔️:                                INT_VECT &questions,
-    // RDKit✔️✔️:                                const UINT_VECT &atomRanks,
-    // RDKit✔️✔️:                                unsigned int maxBackTracks) {
-    // RDKit✔️✔️:   boost::dynamic_bitset<> atomsInPlay(mol.getNumAtoms());
-    // RDKit✔️✔️:   for (int allAtm : allAtms) {
-    // RDKit✔️✔️:     atomsInPlay[allAtm] = 1;
-    // RDKit✔️✔️:   }
+    let state = permute_dummies_and_kekulize_mut(
+        &mut topology,
+        all_atoms,
+        initial_candidates,
+        questions,
+        atom_ranks,
+        max_backtracks,
+    )?;
+    Ok(FusedKekulizeState {
+        topology,
+        succeeded: state.succeeded,
+        problem_atoms: state.problem_atoms,
+    })
+}
+
+fn permute_dummies_and_kekulize_mut(
+    topology: &mut TopologyBlock,
+    all_atoms: &[AtomId],
+    initial_candidates: &[bool],
+    questions: &[AtomId],
+    atom_ranks: &[usize],
+    max_backtracks: u32,
+) -> Result<FusedAttempt, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: permuteDummiesAndKekulize (2026.03.6 complete)
+    // RDKit❗❌: bool permuteDummiesAndKekulize(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗❌:                                boost::dynamic_bitset<> dBndCands,
+    // RDKit❗❌:                                INT_VECT &questions, const UINT_VECT &atomRanks,
+    // RDKit❗❌:                                unsigned int maxBackTracks) {
+    // RDKit❗❌:   boost::dynamic_bitset<> atomsInPlay(mol.getNumAtoms());
+    // RDKit❗❌:   for (int allAtm : allAtms) {
+    // RDKit❗❌:     atomsInPlay[allAtm] = 1;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   bool kekulized = false;
+    // RDKit❗❌:   QuestionEnumerator qEnum(questions);
+    // RDKit❗❌:   while (!kekulized && questions.size()) {
+    // RDKit❗❌:     boost::dynamic_bitset<> dBndAdds(mol.getNumBonds());
+    // RDKit❗❌:     INT_VECT done;
+    // RDKit❗❌:     // reset the state: all aromatic bonds are remarked to single:
+    // RDKit❗❌:     for (const auto bond : mol.bonds()) {
+    // RDKit❗❌:       if (bond->getIsAromatic() && bond->getBondType() != Bond::SINGLE &&
+    // RDKit❗❌:           atomsInPlay[bond->getBeginAtomIdx()] &&
+    // RDKit❗❌:           atomsInPlay[bond->getEndAtomIdx()]) {
+    // RDKit❗❌:         bond->setBondType(Bond::SINGLE);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // pick a new permutation of the questionable atoms:
+    // RDKit❗❌:     const auto &switchOff = qEnum.next();
+    // RDKit❗❌:     if (!switchOff.size()) {
+    // RDKit❗❌:       break;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     auto tCands = dBndCands;
+    // RDKit❗❌:     for (int it : switchOff) {
+    // RDKit❗❌:       tCands[it] = 0;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // try kekulizing again:
+    // RDKit❗❌:     kekulized = kekulizeWorker(mol, allAtms, tCands, dBndAdds, done, atomRanks,
+    // RDKit❗❌:                                maxBackTracks);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return kekulized;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: permuteDummiesAndKekulize (2026.03.6 complete)
+
     let mut atoms_in_play = vec![false; topology.atoms.len()];
     for &atom in all_atoms {
         atoms_in_play[atom.index()] = true;
     }
-    // RDKit✔️✔️:   bool kekulized = false;
-    // RDKit✔️✔️:   QuestionEnumerator qEnum(questions);
     let mut question_enumerator = QuestionEnumerator::new(questions.to_vec())?;
-    // RDKit✔️✔️:   while (!kekulized && questions.size()) {
     while !questions.is_empty() {
-        // RDKit✔️✔️:     boost::dynamic_bitset<> dBndAdds(mol.getNumBonds());
-        // RDKit✔️✔️:     INT_VECT done;
         let double_bonds_added = vec![false; topology.bonds.len()];
-        // RDKit✔️✔️:     // reset the state: all aromatic bonds are remarked to single:
-        // RDKit✔️✔️:     for (const auto bond : mol.bonds()) {
-        // RDKit✔️✔️:       if (bond->getIsAromatic() && bond->getBondType() != Bond::SINGLE &&
-        // RDKit✔️✔️:           atomsInPlay[bond->getBeginAtomIdx()] &&
-        // RDKit✔️✔️:           atomsInPlay[bond->getEndAtomIdx()]) {
-        // RDKit✔️✔️:         bond->setBondType(Bond::SINGLE);
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
         for bond in &mut topology.bonds {
             if bond.is_aromatic()
                 && bond.order() != BondOrder::Single
@@ -1930,28 +2179,15 @@ fn permute_dummies_and_kekulize(
                 bond.set_order(BondOrder::Single);
             }
         }
-        // RDKit✔️✔️:     // pick a new permutation of the questionable atoms:
-        // RDKit✔️✔️:     const auto &switchOff = qEnum.next();
-        // RDKit✔️✔️:     if (!switchOff.size()) {
-        // RDKit✔️✔️:       break;
-        // RDKit✔️✔️:     }
         let switch_off = question_enumerator.next();
         if switch_off.is_empty() {
             break;
         }
-        // RDKit✔️✔️:     auto tCands = dBndCands;
-        // RDKit✔️✔️:     for (int it : switchOff) {
-        // RDKit✔️✔️:       tCands[it] = 0;
-        // RDKit✔️✔️:     }
         let mut trial_candidates = initial_candidates.to_vec();
         for atom in switch_off {
             trial_candidates[atom.index()] = false;
         }
-        // RDKit✔️✔️:     // try kekulizing again:
-        // RDKit✔️✔️:     kekulized =
-        // RDKit✔️✔️:         kekulizeWorker(mol, allAtms, tCands, dBndAdds, done, atomRanks,
-        // RDKit✔️✔️:                        maxBackTracks);
-        let trial = kekulize_matching_worker(
+        let trial = kekulize_matching_worker_mut(
             topology,
             all_atoms,
             &trial_candidates,
@@ -1960,25 +2196,14 @@ fn permute_dummies_and_kekulize(
             atom_ranks,
             max_backtracks,
         )?;
-        topology = trial.topology;
         if trial.succeeded {
-            // RDKit✔️✔️:   }
-            // RDKit✔️✔️:   return kekulized;
-            // RDKit✔️✔️: }
-            // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: permuteDummiesAndKekulize
-            return Ok(FusedKekulizeState {
-                topology,
+            return Ok(FusedAttempt {
                 succeeded: true,
                 problem_atoms: Vec::new(),
             });
         }
     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return kekulized;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: permuteDummiesAndKekulize
-    Ok(FusedKekulizeState {
-        topology,
+    Ok(FusedAttempt {
         succeeded: false,
         problem_atoms: initial_candidates
             .iter()
@@ -2073,42 +2298,82 @@ fn pick_fused_rings(current: usize, neighbor_map: &[Vec<usize>], done: &mut [boo
 }
 
 fn kekulize_fused_system(
-    topology: TopologyBlock,
+    mut topology: TopologyBlock,
     atom_rings: &[Vec<AtomId>],
     all_rings: &RingInfo,
     valence: &ValenceAssignment,
     atom_ranks: &[usize],
     max_backtracks: u32,
 ) -> Result<FusedKekulizeState, KekulizeError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeFused
-    // RDKit✔️✔️: void kekulizeFused(RWMol &mol, const VECT_INT_VECT &arings,
-    // RDKit✔️✔️:                    const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
-    // RDKit✔️✔️:   // get all the atoms in the ring system
-    // RDKit✔️✔️:   INT_VECT allAtms;
-    // RDKit✔️✔️:   Union(arings, allAtms);
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/types.cpp :: Union(VECT_INT_VECT)
-    // RDKit✔️✔️: void Union(const VECT_INT_VECT &rings, INT_VECT &res, const INT_VECT *exclude) {
-    // RDKit✔️✔️:   res.resize(0);
-    // RDKit✔️✔️:   INT_VECT ring;
-    // RDKit✔️✔️:   unsigned int id;
-    // RDKit✔️✔️:   auto nrings = static_cast<unsigned int>(rings.size());
-    // RDKit✔️✔️:   INT_VECT_CI ri;
-    // RDKit✔️✔️:   for (id = 0; id < nrings; id++) {
-    // RDKit✔️✔️:     if (exclude) {
-    // RDKit✔️✔️:       if (std::find(exclude->begin(), exclude->end(), static_cast<int>(id)) !=
-    // RDKit✔️✔️:           exclude->end()) {
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     ring = rings[id];
-    // RDKit✔️✔️:     for (ri = ring.begin(); ri != ring.end(); ri++) {
-    // RDKit✔️✔️:       if (std::find(res.begin(), res.end(), (*ri)) == res.end()) {
-    // RDKit✔️✔️:         res.push_back(*ri);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/types.cpp :: Union(VECT_INT_VECT)
+    let state = kekulize_fused_system_mut(
+        &mut topology,
+        atom_rings,
+        all_rings,
+        valence,
+        atom_ranks,
+        max_backtracks,
+    )?;
+    Ok(FusedKekulizeState {
+        topology,
+        succeeded: state.succeeded,
+        problem_atoms: state.problem_atoms,
+    })
+}
+
+fn kekulize_fused_system_mut(
+    topology: &mut TopologyBlock,
+    atom_rings: &[Vec<AtomId>],
+    all_rings: &RingInfo,
+    valence: &ValenceAssignment,
+    atom_ranks: &[usize],
+    max_backtracks: u32,
+) -> Result<FusedAttempt, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeFused (2026.03.6 complete)
+    // RDKit❗❌: void kekulizeFused(RWMol &mol, const VECT_INT_VECT &arings,
+    // RDKit❗❌:                    const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
+    // RDKit❗❌:   // get all the atoms in the ring system
+    // RDKit❗❌:   INT_VECT allAtms;
+    // RDKit❗❌:   Union(arings, allAtms);
+    // RDKit❗❌:   // get all the atoms that are candidates to receive a double bond
+    // RDKit❗❌:   // also mark atoms in the fused system that are not aromatic to begin with
+    // RDKit❗❌:   // as done. Mark all the bonds that are part of the aromatic system
+    // RDKit❗❌:   // to be single bonds
+    // RDKit❗❌:   INT_VECT done;
+    // RDKit❗❌:   INT_VECT questions;
+    // RDKit❗❌:   auto nats = mol.getNumAtoms();
+    // RDKit❗❌:   auto nbnds = mol.getNumBonds();
+    // RDKit❗❌:   boost::dynamic_bitset<> dBndCands(nats);
+    // RDKit❗❌:   boost::dynamic_bitset<> dBndAdds(nbnds);
+    // RDKit❗❌:   markDbondCands(mol, allAtms, dBndCands, questions, done);
+    // RDKit❗❌:
+    // RDKit❗❌:   auto kekulized = kekulizeWorker(mol, allAtms, dBndCands, dBndAdds, done,
+    // RDKit❗❌:                                   atomRanks, maxBackTracks);
+    // RDKit❗❌:   if (!kekulized && questions.size()) {
+    // RDKit❗❌:     // we failed, but there are some dummy atoms we can try permuting.
+    // RDKit❗❌:     kekulized = permuteDummiesAndKekulize(mol, allAtms, dBndCands, questions,
+    // RDKit❗❌:                                           atomRanks, maxBackTracks);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!kekulized) {
+    // RDKit❗❌:     // we exhausted all option (or crossed the allowed
+    // RDKit❗❌:     // number of backTracks) and we still need to backtrack
+    // RDKit❗❌:     // can't kekulize this thing
+    // RDKit❗❌:     std::vector<unsigned int> problemAtoms;
+    // RDKit❗❌:     std::ostringstream errout;
+    // RDKit❗❌:     errout << "Can't kekulize mol.";
+    // RDKit❗❌:     errout << "  Unkekulized atoms:";
+    // RDKit❗❌:     for (unsigned int i = 0; i < nats; ++i) {
+    // RDKit❗❌:       if (dBndCands[i]) {
+    // RDKit❗❌:         errout << " " << i;
+    // RDKit❗❌:         problemAtoms.push_back(i);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::string msg = errout.str();
+    // RDKit❗❌:     BOOST_LOG(rdErrorLog) << msg << std::endl;
+    // RDKit❗❌:     throw KekulizeException(msg, problemAtoms);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeFused (2026.03.6 complete)
+
     let mut all_atoms = Vec::new();
     for ring in atom_rings {
         for &atom in ring {
@@ -2117,47 +2382,29 @@ fn kekulize_fused_system(
             }
         }
     }
-    // RDKit✔️✔️:   // get all the atoms that are candidates to receive a double bond
-    // RDKit✔️✔️:   // also mark atoms in the fused system that are not aromatic to begin with
-    // RDKit✔️✔️:   // as done. Mark all the bonds that are part of the aromatic system
-    // RDKit✔️✔️:   // to be single bonds
-    // RDKit✔️✔️:   INT_VECT done;
-    // RDKit✔️✔️:   INT_VECT questions;
-    // RDKit✔️✔️:   auto nats = mol.getNumAtoms();
-    // RDKit✔️✔️:   auto nbnds = mol.getNumBonds();
-    // RDKit✔️✔️:   boost::dynamic_bitset<> dBndCands(nats);
-    // RDKit✔️✔️:   boost::dynamic_bitset<> dBndAdds(nbnds);
-    // RDKit✔️✔️:   markDbondCands(mol, allAtms, dBndCands, questions, done);
-    let candidate_state = mark_double_bond_candidates(&topology, &all_atoms, all_rings, valence)?;
+    let candidate_state =
+        mark_double_bond_candidates_mut(topology, &all_atoms, all_rings, valence)?;
     let initial_candidates = candidate_state.double_bond_candidates.clone();
     let questions = candidate_state.questions.clone();
-    // RDKit✔️✔️:   auto kekulized =
-    // RDKit✔️✔️:       kekulizeWorker(mol, allAtms, dBndCands, dBndAdds, done, atomRanks,
-    // RDKit✔️✔️:                      maxBackTracks);
-    let first_attempt = kekulize_matching_worker(
-        candidate_state.topology,
+    let initial_bonds_added = vec![false; topology.bonds.len()];
+    let first_attempt = kekulize_matching_worker_mut(
+        topology,
         &all_atoms,
         &initial_candidates,
-        &vec![false; topology.bonds.len()],
+        &initial_bonds_added,
         &candidate_state.done,
         atom_ranks,
         max_backtracks,
     )?;
     if first_attempt.succeeded {
-        return Ok(FusedKekulizeState {
-            topology: first_attempt.topology,
+        return Ok(FusedAttempt {
             succeeded: true,
             problem_atoms: Vec::new(),
         });
     }
-    // RDKit✔️✔️:   if (!kekulized && questions.size()) {
-    // RDKit✔️✔️:     // we failed, but there are some dummy atoms we can try permuting.
-    // RDKit✔️✔️:     kekulized = permuteDummiesAndKekulize(mol, allAtms, dBndCands, questions,
-    // RDKit✔️✔️:                                           atomRanks, maxBackTracks);
-    // RDKit✔️✔️:   }
     if !questions.is_empty() {
-        let permuted = permute_dummies_and_kekulize(
-            first_attempt.topology,
+        let permuted = permute_dummies_and_kekulize_mut(
+            topology,
             &all_atoms,
             &initial_candidates,
             &questions,
@@ -2169,28 +2416,7 @@ fn kekulize_fused_system(
         }
         return Ok(permuted);
     }
-    // RDKit✔️✔️:   if (!kekulized) {
-    // RDKit✔️✔️:     // we exhausted all option (or crossed the allowed
-    // RDKit✔️✔️:     // number of backTracks) and we still need to backtrack
-    // RDKit✔️✔️:     // can't kekulize this thing
-    // RDKit✔️✔️:     std::vector<unsigned int> problemAtoms;
-    // RDKit✔️✔️:     std::ostringstream errout;
-    // RDKit✔️✔️:     errout << "Can't kekulize mol.";
-    // RDKit✔️✔️:     errout << "  Unkekulized atoms:";
-    // RDKit✔️✔️:     for (unsigned int i = 0; i < nats; ++i) {
-    // RDKit✔️✔️:       if (dBndCands[i]) {
-    // RDKit✔️✔️:         errout << " " << i;
-    // RDKit✔️✔️:         problemAtoms.push_back(i);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     std::string msg = errout.str();
-    // RDKit✔️✔️:     BOOST_LOG(rdErrorLog) << msg << std::endl;
-    // RDKit✔️✔️:     throw KekulizeException(msg, problemAtoms);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeFused
-    Ok(FusedKekulizeState {
-        topology: first_attempt.topology,
+    Ok(FusedAttempt {
         succeeded: false,
         problem_atoms: initial_candidates
             .iter()
@@ -2210,35 +2436,43 @@ fn kekulize_fused_components(
     atom_ranks: &[usize],
     max_backtracks: u32,
 ) -> Result<FusedKekulizeState, KekulizeError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment fused-system dispatch
-    // RDKit✔️✔️:     // make a neighbor map for the rings i.e. a ring is a
-    // RDKit✔️✔️:     // neighbor to another candidate ring if it shares at least
-    // RDKit✔️✔️:     // one bond
-    // RDKit✔️✔️:     // useful to figure out fused systems
-    // RDKit✔️✔️:     INT_INT_VECT_MAP neighMap;
-    // RDKit✔️✔️:     RingUtils::makeRingNeighborMap(brings, neighMap);
+    let state = kekulize_fused_components_mut(
+        &mut topology,
+        atom_rings,
+        bond_rings,
+        all_rings,
+        valence,
+        atom_ranks,
+        max_backtracks,
+    )?;
+    Ok(FusedKekulizeState {
+        topology,
+        succeeded: state.succeeded,
+        problem_atoms: state.problem_atoms,
+    })
+}
+
+fn kekulize_fused_components_mut(
+    topology: &mut TopologyBlock,
+    atom_rings: &[Vec<AtomId>],
+    bond_rings: &[Vec<BondId>],
+    all_rings: &RingInfo,
+    valence: &ValenceAssignment,
+    atom_ranks: &[usize],
+    max_backtracks: u32,
+) -> Result<FusedAttempt, KekulizeError> {
     let neighbor_map = make_ring_neighbor_map(bond_rings);
-    // RDKit✔️✔️:     int curr = 0;
-    // RDKit✔️✔️:     int cnrs = rdcast<int>(arings.size());
-    // RDKit✔️✔️:     boost::dynamic_bitset<> fusDone(cnrs);
     let mut done = vec![false; atom_rings.len()];
-    // RDKit✔️✔️:     while (curr < cnrs) {
     for current in 0..atom_rings.len() {
         if done[current] {
             continue;
         }
-        // RDKit✔️✔️:       INT_VECT fused;
-        // RDKit✔️✔️:       RingUtils::pickFusedRings(curr, neighMap, fused, fusDone);
         let fused = pick_fused_rings(current, &neighbor_map, &mut done);
-        // RDKit✔️✔️:       VECT_INT_VECT frings(fused.size());
-        // RDKit✔️✔️:       std::transform(fused.begin(), fused.end(), frings.begin(),
-        // RDKit✔️✔️:                      [&arings](const int ri) { return arings[ri]; });
         let fused_atom_rings = fused
             .into_iter()
             .map(|ring| atom_rings[ring].clone())
             .collect::<Vec<_>>();
-        // RDKit✔️✔️:       kekulizeFused(mol, frings, atomRanks, maxBackTracks);
-        let state = kekulize_fused_system(
+        let state = kekulize_fused_system_mut(
             topology,
             &fused_atom_rings,
             all_rings,
@@ -2246,29 +2480,14 @@ fn kekulize_fused_components(
             atom_ranks,
             max_backtracks,
         )?;
-        topology = state.topology;
         if !state.succeeded {
-            return Ok(FusedKekulizeState {
-                topology,
+            return Ok(FusedAttempt {
                 succeeded: false,
                 problem_atoms: state.problem_atoms,
             });
         }
-        // RDKit✔️✔️:       int rix;
-        // RDKit✔️✔️:       for (rix = 0; rix < cnrs; ++rix) {
-        // RDKit✔️✔️:         if (!fusDone[rix]) {
-        // RDKit✔️✔️:           curr = rix;
-        // RDKit✔️✔️:           break;
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       if (rix == cnrs) {
-        // RDKit✔️✔️:         break;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
     }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment fused-system dispatch
-    Ok(FusedKekulizeState {
-        topology,
+    Ok(FusedAttempt {
         succeeded: true,
         problem_atoms: Vec::new(),
     })
@@ -2283,68 +2502,306 @@ fn kekulize_fragment(
     rings: Option<&RingInfo>,
     source_valence: Option<&ValenceAssignment>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
-    // Step 1-2: selection dimensions/query validation, source selection and
-    // valence work, then the atoms-none / no-aromatic early returns before
-    // any ring fetch, validation or ranking (an otherwise unused supplied
-    // assignment is never touched on these paths).
-    let prepared = prepare_kekulize_core(
-        topology,
+    let mut working = topology.clone();
+    let mut valence = source_valence
+        .cloned()
+        .unwrap_or_else(|| ValenceAssignment {
+            explicit_valence: vec![-1; topology.atoms.len()],
+            implicit_hydrogens: vec![-1; topology.atoms.len()],
+        });
+    let mut rows = match rings {
+        Some(rings) if rings.is_initialized() => KekulizeRingRows::Borrowed(rings),
+        _ => KekulizeRingRows::Uninitialized,
+    };
+    let (refreshed_valence_atoms, reset) = kekulize_fragment_attempt(
+        &mut working,
+        &mut valence,
+        &mut rows,
         atoms_in_play,
         bonds_in_play,
+        params,
         query_state,
-        source_valence,
     )?;
-    if !prepared.found_aromatic {
-        return Ok(KekulizeAssignment {
-            topology: topology.clone(),
-            // atoms-none returns before scalar work; nonaromatic returns after
-            // selected calcImplicitValence writes. Move that exact state.
-            final_valence: if atoms_in_play.iter().any(|selected| *selected) {
-                Some(prepared.valence)
-            } else {
-                source_valence.cloned()
-            },
-            refreshed_valence_atoms: Vec::new(),
-            ring_update: None,
-        });
-    }
+    Ok(KekulizeAssignment {
+        topology: working,
+        final_valence: if atoms_in_play.iter().any(|selected| *selected) {
+            Some(valence)
+        } else {
+            source_valence.cloned()
+        },
+        refreshed_valence_atoms,
+        ring_update: rows.into_update(reset),
+    })
+}
 
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
-    // RDKit✔️✔️:   UINT_VECT atomRanks(mol.getNumAtoms());
-    // RDKit✔️✔️:   if (canonical) {
-    // RDKit✔️✔️:     Canon::rankFragmentAtoms(mol, atomRanks, atomsToUse, bondsToUse);
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     // When canonical=false (e.g. during sanitization), we skip the
-    // RDKit✔️✔️:     // expensive ranking step and use atom indices directly.  This is
-    // RDKit✔️✔️:     // appropriate because sanitization runs *before* stereo perception:
-    // RDKit✔️✔️:     // canonical ranking would be based on incomplete chemistry and the
-    // RDKit✔️✔️:     // "deterministic" result would be meaningless.  Callers who need a
-    // RDKit✔️✔️:     // canonical Kekulé form should call Kekulize() with canonical=true
-    // RDKit✔️✔️:     // after the molecule is fully sanitized and stereo has been assigned.
-    // RDKit✔️✔️:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
-    // RDKit✔️✔️:   }
-    // Steps 3-4: optional canonical ranking over the supplied state and the
-    // candidate SSSR acquisition restricted to effective bondsToUse.any(),
-    // both owned by the single ring-state transition owner.
+fn kekulize_fragment_attempt(
+    topology: &mut TopologyBlock,
+    valence: &mut ValenceAssignment,
+    rows: &mut KekulizeRingRows<'_>,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<(Vec<AtomId>, bool), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment (2026.03.6 complete)
+    // RDKit❗❌: void KekulizeFragment(RWMol &mol, const boost::dynamic_bitset<> &atomsToUse,
+    // RDKit❗❌:                       boost::dynamic_bitset<> bondsToUse, bool markAtomsBonds,
+    // RDKit❗❌:                       bool canonical, unsigned int maxBackTracks) {
+    // RDKit❗❌:   PRECONDITION(atomsToUse.size() == mol.getNumAtoms(),
+    // RDKit❗❌:                "atomsToUse is wrong size");
+    // RDKit❗❌:   PRECONDITION(bondsToUse.size() == mol.getNumBonds(),
+    // RDKit❗❌:                "bondsToUse is wrong size");
+    // RDKit❗❌:   // if there are no atoms to use we can directly return
+    // RDKit❗❌:   if (atomsToUse.none()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // there's no point doing kekulization if there are no aromatic bonds
+    // RDKit❗❌:   // without queries:
+    // RDKit❗❌:   bool foundAromatic = false;
+    // RDKit❗❌:   for (const auto bond : mol.bonds()) {
+    // RDKit❗❌:     if (bondsToUse[bond->getIdx()]) {
+    // RDKit❗❌:       if (QueryOps::hasBondTypeQuery(*bond)) {
+    // RDKit❗❌:         // we don't kekulize bonds with bond type queries
+    // RDKit❗❌:         bondsToUse[bond->getIdx()] = 0;
+    // RDKit❗❌:       } else if (bond->getIsAromatic()) {
+    // RDKit❗❌:         foundAromatic = true;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // before everything do implicit valence calculation and store them
+    // RDKit❗❌:   // we will repeat after kekulization and compare for the sake of error
+    // RDKit❗❌:   // checking
+    // RDKit❗❌:   auto numAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   INT_VECT valences(numAtoms);
+    // RDKit❗❌:   boost::dynamic_bitset<> dummyAts(numAtoms);
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto atom : mol.atoms()) {
+    // RDKit❗❌:     if (!atomsToUse[atom->getIdx()]) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     atom->calcImplicitValence(false);
+    // RDKit❗❌:     valences[atom->getIdx()] = atom->getTotalValence();
+    // RDKit❗❌:     if (isAromaticAtom(*atom)) {
+    // RDKit❗❌:       foundAromatic = true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (!atom->getAtomicNum()) {
+    // RDKit❗❌:       dummyAts[atom->getIdx()] = 1;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!foundAromatic) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   UINT_VECT atomRanks(mol.getNumAtoms());
+    // RDKit❗❌:   if (canonical) {
+    // RDKit❗❌:     Canon::rankFragmentAtoms(mol, atomRanks, atomsToUse, bondsToUse);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     // When canonical=false (e.g. during sanitization), we skip the
+    // RDKit❗❌:     // expensive ranking step and use atom indices directly.  This is
+    // RDKit❗❌:     // appropriate because sanitization runs *before* stereo perception:
+    // RDKit❗❌:     // canonical ranking would be based on incomplete chemistry and the
+    // RDKit❗❌:     // "deterministic" result would be meaningless.  Callers who need a
+    // RDKit❗❌:     // canonical Kekulé form should call Kekulize() with canonical=true
+    // RDKit❗❌:     // after the molecule is fully sanitized and stereo has been assigned.
+    // RDKit❗❌:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // if any bonds to kekulize then give it a try:
+    // RDKit❗❌:   if (bondsToUse.any()) {
+    // RDKit❗❌:     // mark atoms at the beginning of wedged bonds
+    // RDKit❗❌:     boost::dynamic_bitset<> wedgedAtoms(numAtoms);
+    // RDKit❗❌:     for (const auto bond : mol.bonds()) {
+    // RDKit❗❌:       if (bondsToUse[bond->getIdx()] &&
+    // RDKit❗❌:           (bond->getBondDir() == Bond::BEGINWEDGE ||
+    // RDKit❗❌:            bond->getBondDir() == Bond::BEGINDASH)) {
+    // RDKit❗❌:         wedgedAtoms.set(bond->getBeginAtomIdx());
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // A bit on the state of the molecule at this point
+    // RDKit❗❌:     // - aromatic and non aromatic atoms and bonds may be mixed up
+    // RDKit❗❌:
+    // RDKit❗❌:     // - for all aromatic bonds it is assumed that that both the following
+    // RDKit❗❌:     //   are true:
+    // RDKit❗❌:     //       - getIsAromatic returns true
+    // RDKit❗❌:     //       - getBondType return aromatic
+    // RDKit❗❌:     // - all aromatic atoms return true for "getIsAromatic"
+    // RDKit❗❌:
+    // RDKit❗❌:     // first find all the simple rings in the molecule that are not
+    // RDKit❗❌:     // completely composed of dummy atoms
+    // RDKit❗❌:     VECT_INT_VECT allringsSSSR;
+    // RDKit❗❌:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit❗❌:       MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     const VECT_INT_VECT &allrings =
+    // RDKit❗❌:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+    // RDKit❗❌:     std::deque<INT_VECT> tmpRings;
+    // RDKit❗❌:     auto containsNonDummy = [&atomsToUse, &dummyAts](const INT_VECT &ring) {
+    // RDKit❗❌:       bool ringOk = false;
+    // RDKit❗❌:       for (auto ai : ring) {
+    // RDKit❗❌:         if (!atomsToUse[ai]) {
+    // RDKit❗❌:           return false;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (!dummyAts[ai]) {
+    // RDKit❗❌:           ringOk = true;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       return ringOk;
+    // RDKit❗❌:     };
+    // RDKit❗❌:     // we can't just copy the rings over: we're going to rearrange them so that
+    // RDKit❗❌:     // we try to favor starting the traversal of any ring from an atom that is
+    // RDKit❗❌:     // at the end of a wedged ring bond. This is part of our attempt to avoid
+    // RDKit❗❌:     // assigning double bonds to bonds with wedging
+    // RDKit❗❌:     for (const auto &ring : allrings) {
+    // RDKit❗❌:       if (containsNonDummy(ring)) {
+    // RDKit❗❌:         unsigned int startPos = 0;
+    // RDKit❗❌:         bool hasWedge = false;
+    // RDKit❗❌:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit❗❌:           if (wedgedAtoms[ring[ri]]) {
+    // RDKit❗❌:             startPos = ri;
+    // RDKit❗❌:             hasWedge = true;
+    // RDKit❗❌:             break;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         INT_VECT nring(ring.size());
+    // RDKit❗❌:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit❗❌:           nring[ri] = ring.at((ri + startPos) % ring.size());
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (!hasWedge) {
+    // RDKit❗❌:           tmpRings.push_back(nring);
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           tmpRings.push_front(nring);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     VECT_INT_VECT arings;
+    // RDKit❗❌:     arings.reserve(allrings.size());
+    // RDKit❗❌:     arings.insert(arings.end(), tmpRings.begin(), tmpRings.end());
+    // RDKit❗❌:     VECT_INT_VECT allbrings;
+    // RDKit❗❌:     RingUtils::convertToBonds(arings, allbrings, mol);
+    // RDKit❗❌:     VECT_INT_VECT brings;
+    // RDKit❗❌:     brings.reserve(allbrings.size());
+    // RDKit❗❌:     auto copyBondRingsWithinFragment = [&bondsToUse](const INT_VECT &ring) {
+    // RDKit❗❌:       return std::all_of(ring.begin(), ring.end(), [&bondsToUse](const int bi) {
+    // RDKit❗❌:         return bondsToUse[bi];
+    // RDKit❗❌:       });
+    // RDKit❗❌:     };
+    // RDKit❗❌:     VECT_INT_VECT aringsRemaining;
+    // RDKit❗❌:     aringsRemaining.reserve(arings.size());
+    // RDKit❗❌:     for (unsigned i = 0; i < allbrings.size(); ++i) {
+    // RDKit❗❌:       if (copyBondRingsWithinFragment(allbrings[i])) {
+    // RDKit❗❌:         brings.push_back(allbrings[i]);
+    // RDKit❗❌:         aringsRemaining.push_back(arings[i]);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     arings = std::move(aringsRemaining);
+    // RDKit❗❌:
+    // RDKit❗❌:     // make a neighbor map for the rings i.e. a ring is a
+    // RDKit❗❌:     // neighbor to another candidate ring if it shares at least
+    // RDKit❗❌:     // one bond
+    // RDKit❗❌:     // useful to figure out fused systems
+    // RDKit❗❌:     INT_INT_VECT_MAP neighMap;
+    // RDKit❗❌:     RingUtils::makeRingNeighborMap(brings, neighMap);
+    // RDKit❗❌:
+    // RDKit❗❌:     int curr = 0;
+    // RDKit❗❌:     int cnrs = rdcast<int>(arings.size());
+    // RDKit❗❌:     boost::dynamic_bitset<> fusDone(cnrs);
+    // RDKit❗❌:     while (curr < cnrs) {
+    // RDKit❗❌:       INT_VECT fused;
+    // RDKit❗❌:       RingUtils::pickFusedRings(curr, neighMap, fused, fusDone);
+    // RDKit❗❌:       VECT_INT_VECT frings(fused.size());
+    // RDKit❗❌:       std::transform(fused.begin(), fused.end(), frings.begin(),
+    // RDKit❗❌:                      [&arings](const int ri) { return arings[ri]; });
+    // RDKit❗❌:       kekulizeFused(mol, frings, atomRanks, maxBackTracks);
+    // RDKit❗❌:       int rix;
+    // RDKit❗❌:       for (rix = 0; rix < cnrs; ++rix) {
+    // RDKit❗❌:         if (!fusDone[rix]) {
+    // RDKit❗❌:           curr = rix;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (rix == cnrs) {
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (markAtomsBonds) {
+    // RDKit❗❌:     // if we want the atoms and bonds to be marked non-aromatic do
+    // RDKit❗❌:     // that here.
+    // RDKit❗❌:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit❗❌:       MolOps::findSSSR(mol);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto bond : mol.bonds()) {
+    // RDKit❗❌:       if (bondsToUse[bond->getIdx()]) {
+    // RDKit❗❌:         bond->setIsAromatic(false);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto atom : mol.atoms()) {
+    // RDKit❗❌:       if (atomsToUse[atom->getIdx()] && atom->getIsAromatic()) {
+    // RDKit❗❌:         // if we're doing the full molecule and there are aromatic atoms not in
+    // RDKit❗❌:         // a ring, throw an exception
+    // RDKit❗❌:         if (atomsToUse.all() && bondsToUse.all() &&
+    // RDKit❗❌:             !mol.getRingInfo()->numAtomRings(atom->getIdx())) {
+    // RDKit❗❌:           std::ostringstream errout;
+    // RDKit❗❌:           errout << "non-ring atom " << atom->getIdx() << " marked aromatic";
+    // RDKit❗❌:           auto msg = errout.str();
+    // RDKit❗❌:           BOOST_LOG(rdErrorLog) << msg << std::endl;
+    // RDKit❗❌:           throw AtomKekulizeException(msg, atom->getIdx());
+    // RDKit❗❌:         }
+    // RDKit❗❌:         atom->setIsAromatic(false);
+    // RDKit❗❌:         // make sure "explicit" Hs on things like pyrroles don't hang around
+    // RDKit❗❌:         // this was Github Issue 141
+    // RDKit❗❌:         if ((atom->getAtomicNum() == 7 || atom->getAtomicNum() == 15) &&
+    // RDKit❗❌:             atom->getFormalCharge() == 0 && atom->getNumExplicitHs() == 1) {
+    // RDKit❗❌:           atom->setNoImplicit(false);
+    // RDKit❗❌:           atom->setNumExplicitHs(0);
+    // RDKit❗❌:           atom->updatePropertyCache(false);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // ok some error checking here force a implicit valence
+    // RDKit❗❌:   // calculation that should do some error checking by itself. In
+    // RDKit❗❌:   // addition compare them to what they were before kekulizing
+    // RDKit❗❌:   for (auto atom : mol.atoms()) {
+    // RDKit❗❌:     if (!atomsToUse[atom->getIdx()]) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     int val = atom->getTotalValence();
+    // RDKit❗❌:     if (val != valences[atom->getIdx()]) {
+    // RDKit❗❌:       std::ostringstream errout;
+    // RDKit❗❌:       errout << "Kekulization somehow screwed up valence on " << atom->getIdx()
+    // RDKit❗❌:              << ": " << val << "!=" << valences[atom->getIdx()] << std::endl;
+    // RDKit❗❌:       auto msg = errout.str();
+    // RDKit❗❌:       BOOST_LOG(rdErrorLog) << msg << std::endl;
+    // RDKit❗❌:       throw AtomKekulizeException(msg, atom->getIdx());
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment (2026.03.6 complete)
+    // ❗❌ qualification applies to unchanged detached validation, Vec<bool>
+    // masks and candidate copying vs source packed bitsets, not silent fallback.
+    // Graph, valence rows and live ring state are mutated at each source store.
+    let prepared =
+        prepare_kekulize_inputs(topology, atoms_in_play, bonds_in_play, query_state, valence)?;
+    if !prepared.found_aromatic {
+        return Ok((Vec::new(), false));
+    }
     let effective_bonds_any = prepared.bonds_in_play.iter().any(|selected| *selected);
-    let (rows, replaced_by_reset, atom_ranks) = kekulize_ring_state_transition(
+    let (replaced_by_reset, atom_ranks) = kekulize_ring_state_transition_mut(
         topology,
-        &prepared.valence,
+        valence,
         &prepared.atoms_in_play,
         &prepared.bonds_in_play,
         params.canonical,
         effective_bonds_any,
-        rings,
+        rows,
     )?;
 
-    // RDKit✔️✔️:   // if any bonds to kekulize then give it a try:
-    // RDKit✔️✔️:   if (bondsToUse.any()) {
-    let mut working = topology.clone();
     let (candidate_atom_rings, candidate_bond_rings) = if effective_bonds_any {
         match rows.as_ring_info() {
             Some(effective) => {
-                // Consumed initialized rows: validate membership dimensions
-                // with the existing typed category before any row read.
                 validate_consumed_ring_dimensions(topology, effective)?;
                 #[cfg(test)]
                 ring_transport_probe::record_borrow(effective);
@@ -2363,197 +2820,94 @@ fn kekulize_fragment(
         (Vec::new(), Vec::new())
     };
     if effective_bonds_any && !candidate_atom_rings.is_empty() {
-        let fused = kekulize_fused_components(
-            working,
+        let fused = kekulize_fused_components_mut(
+            topology,
             &candidate_atom_rings,
             &candidate_bond_rings,
             rows.as_ring_info()
                 .expect("candidate rows imply initialized ring state"),
-            &prepared.valence,
+            valence,
             &atom_ranks,
             params.max_backtracks,
         )?;
-        working = fused.topology;
         if !fused.succeeded {
             return Err(KekulizeError::NotKekulizable {
                 problem_atoms: fused.problem_atoms,
             });
         }
     }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
 
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
-    // Move the cache computed by selection preparation. The source's final
-    // getTotalValence() reads these cached rows; it does not recalculate them.
-    let mut final_valence = prepared.valence;
     let mut refreshed_valence_atoms = Vec::new();
-    let mut marking_rows_storage: Option<RingInfo> = None;
-    // RDKit✔️✔️:   if (markAtomsBonds) {
-    // RDKit✔️✔️:     // if we want the atoms and bonds to be marked non-aromatic do
-    // RDKit✔️✔️:     // that here.
     if params.mark_atoms_bonds {
-        // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
-        // RDKit✔️✔️:       MolOps::findSSSR(mol);
-        // RDKit✔️✔️:     }
-        // Independent marking guard: a fresh SSSR acquisition is made only
-        // when the effective state is still uninitialized, and an acquisition
-        // made for the candidates is reused without a second find.
-        let marking_rows: &RingInfo = match rows.as_ring_info() {
-            Some(effective) => {
-                validate_consumed_ring_dimensions(topology, effective)?;
-                effective
-            }
-            None => marking_rows_storage.insert(
-                // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
-                // RDKit✔️✔️:       MolOps::findSSSR(mol);
-                // RDKit✔️✔️:     }
-                {
-                    #[cfg(test)]
-                    ring_transport_probe::record_sssr();
-                    acquire_sssr_rows(topology)?
-                },
-            ),
-        };
-        // RDKit✔️✔️:     for (auto bond : mol.bonds()) {
-        // RDKit✔️✔️:       if (bondsToUse[bond->getIdx()]) {
-        // RDKit✔️✔️:         bond->setIsAromatic(false);
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
+        if rows.as_ring_info().is_none() {
+            #[cfg(test)]
+            ring_transport_probe::record_sssr();
+            rows.install(acquire_sssr_rows(topology)?);
+        }
+        let marking_rows = rows.as_ring_info().expect("marking rows installed");
+        validate_consumed_ring_dimensions(topology, marking_rows)?;
         for (bond_idx, selected) in prepared.bonds_in_play.iter().copied().enumerate() {
             if selected {
-                working.bonds[bond_idx].set_aromatic(false);
+                topology.bonds[bond_idx].set_aromatic(false);
             }
         }
-        // RDKit✔️✔️:     for (auto atom : mol.atoms()) {
-        // RDKit✔️✔️:       if (atomsToUse[atom->getIdx()] && atom->getIsAromatic()) {
         for (atom_idx, selected) in prepared.atoms_in_play.iter().copied().enumerate() {
-            if !selected || !working.atoms[atom_idx].is_aromatic() {
+            if !selected || !topology.atoms[atom_idx].is_aromatic() {
                 continue;
             }
             let atom_id = AtomId::new(atom_idx);
-            // RDKit✔️✔️:         // if we're doing the full molecule and there are aromatic atoms not in
-            // RDKit✔️✔️:         // a ring, throw an exception
-            // RDKit✔️✔️:         if (atomsToUse.all() && bondsToUse.all() &&
-            // RDKit✔️✔️:             !mol.getRingInfo()->numAtomRings(atom->getIdx())) {
-            // RDKit✔️✔️:           std::ostringstream errout;
-            // RDKit✔️✔️:           errout << "non-ring atom " << atom->getIdx() << " marked aromatic";
-            // RDKit✔️✔️:           auto msg = errout.str();
-            // RDKit✔️✔️:           BOOST_LOG(rdErrorLog) << msg << std::endl;
-            // RDKit✔️✔️:           throw AtomKekulizeException(msg, atom->getIdx());
-            // RDKit✔️✔️:         }
             if prepared.atoms_in_play.iter().all(|selected| *selected)
                 && prepared.bonds_in_play.iter().all(|selected| *selected)
                 && marking_rows.num_atom_rings(atom_id) == 0
             {
                 return Err(KekulizeError::AromaticAtomOutsideRing { atom: atom_id });
             }
-            // RDKit✔️✔️:         atom->setIsAromatic(false);
-            working.atoms[atom_idx].set_aromatic(false);
-            // RDKit✔️✔️:         // make sure "explicit" Hs on things like pyrroles don't hang around
-            // RDKit✔️✔️:         // this was Github Issue 141
-            // RDKit✔️✔️:         if ((atom->getAtomicNum() == 7 || atom->getAtomicNum() == 15) &&
-            // RDKit✔️✔️:             atom->getFormalCharge() == 0 && atom->getNumExplicitHs() == 1) {
-            // RDKit✔️✔️:           atom->setNoImplicit(false);
-            // RDKit✔️✔️:           atom->setNumExplicitHs(0);
-            // RDKit✔️✔️:           atom->updatePropertyCache(false);
-            // RDKit✔️✔️:         }
-            if matches!(working.atoms[atom_idx].atomic_number(), 7 | 15)
-                && working.atoms[atom_idx].formal_charge() == 0
-                && working.atoms[atom_idx].explicit_hydrogens() == 1
+            topology.atoms[atom_idx].set_aromatic(false);
+            if matches!(topology.atoms[atom_idx].atomic_number(), 7 | 15)
+                && topology.atoms[atom_idx].formal_charge() == 0
+                && topology.atoms[atom_idx].explicit_hydrogens() == 1
             {
-                working.atoms[atom_idx].set_no_implicit(false);
-                working.atoms[atom_idx].set_explicit_hydrogens(0);
-                let (explicit, implicit) = crate::assign_valence_state_for_atom_from_parts(
-                    &working.atoms,
-                    &working.bonds,
-                    &working.adjacency,
+                topology.atoms[atom_idx].set_no_implicit(false);
+                topology.atoms[atom_idx].set_explicit_hydrogens(0);
+                valence.explicit_valence[atom_idx] =
+                    crate::assign_explicit_valence_for_atom_from_parts(
+                        &topology.atoms,
+                        &topology.bonds,
+                        &topology.adjacency,
+                        atom_id,
+                        false,
+                    )?;
+                crate::valence::source_calc_implicit_cache_row(
+                    &topology.atoms,
+                    &topology.bonds,
+                    &topology.adjacency,
                     atom_id,
+                    &mut valence.explicit_valence[atom_idx],
+                    &mut valence.implicit_hydrogens[atom_idx],
                     false,
                 )?;
-                final_valence.explicit_valence[atom_idx] = explicit;
-                final_valence.implicit_hydrogens[atom_idx] = implicit;
                 refreshed_valence_atoms.push(atom_id);
             }
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:     }
         }
-        // RDKit✔️✔️:   }
     }
 
-    // RDKit✔️✔️:   // ok some error checking here force a implicit valence
-    // RDKit✔️✔️:   // calculation that should do some error checking by itself. In
-    // RDKit✔️✔️:   // addition compare them to what they were before kekulizing
-    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
-    // RDKit✔️✔️:     if (!atomsToUse[atom->getIdx()]) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
     for (atom_idx, selected) in prepared.atoms_in_play.iter().copied().enumerate() {
         if !selected {
             continue;
         }
         let atom_id = AtomId::new(atom_idx);
-        // RDKit✔️✔️:     int val = atom->getTotalValence();
-        // RDKit✔️✔️:     if (val != valences[atom->getIdx()]) {
-        let after = checked_total_valence(&final_valence, &working.atoms[atom_idx])?;
+        let after = checked_total_valence(valence, &topology.atoms[atom_idx])?;
         let before = prepared.original_total_valences[atom_idx];
         if after != before {
-            // RDKit✔️✔️:       std::ostringstream errout;
-            // RDKit✔️✔️:       errout << "Kekulization somehow screwed up valence on " << atom->getIdx()
-            // RDKit✔️✔️:              << ": " << val << "!=" << valences[atom->getIdx()] << std::endl;
-            // RDKit✔️✔️:       auto msg = errout.str();
-            // RDKit✔️✔️:       BOOST_LOG(rdErrorLog) << msg << std::endl;
-            // RDKit✔️✔️:       throw AtomKekulizeException(msg, atom->getIdx());
             return Err(KekulizeError::PostconditionValenceMismatch {
                 atom: atom_id,
                 before,
                 after,
             });
-            // RDKit✔️✔️:     }
         }
-        // RDKit✔️✔️:   }
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
-    working.validate()?;
-    // Step 7 final transport: the ONE acquired assignment (candidate guard
-    // or marking guard) is consumed by move only now, after every
-    // candidate/fused/marking/postcondition read has finished successfully;
-    // borrowed states publish None; an unsuperseded canonical Other reset
-    // publishes the cleared replacement.
-    let ring_update = if let Some(marking) = marking_rows_storage {
-        Some(marking)
-    } else {
-        match rows {
-            KekulizeRingRows::Acquired(acquired) => Some(acquired),
-            _ if replaced_by_reset => {
-                let mut cleared = RingInfo::new(RingFindType::OtherOrUnknown, 0, 0);
-                cleared.reset();
-                Some(cleared)
-            }
-            _ => None,
-        }
-    };
-    // RDKit✔️✔️: void Atom::updatePropertyCache(bool strict) {
-    // RDKit✔️✔️:   calcExplicitValence(strict);
-    // RDKit✔️✔️:   calcImplicitValence(strict);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
-    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
-    // RDKit✔️✔️: }
-    // Behavior: `getTotalValence()` reads the pre-existing explicit and
-    // implicit cache entries. The source `updatePropertyCache(false)` branch
-    // above refreshes only the neutral aromatic N/P rows whose H fields change;
-    // every other row remains the prepared source cache through the comparison.
-    // Complexity: move the two existing O(A) cache vectors, refresh only the
-    // source-selected rows through the existing per-atom helper, and keep the
-    // existing O(selected atoms) indexed postcondition loop. No whole-graph
-    // reassignment, cache clone, or repeated search is added.
-    Ok(KekulizeAssignment {
-        topology: working,
-        final_valence: Some(final_valence),
-        refreshed_valence_atoms,
-        ring_update,
-    })
+    topology.validate()?;
+    Ok((refreshed_valence_atoms, replaced_by_reset))
 }
 
 pub fn kekulize(
@@ -2594,6 +2948,188 @@ pub fn kekulize_with_query_state_and_ring_info(
         rings,
         source_valence,
     )
+}
+
+/// One source attempt over borrowed detached values; completed stores survive Err.
+/// This carries no live Molecule/runtime authority and performs no recovery.
+#[doc(hidden)]
+pub fn source_kekulize_attempt(
+    topology: &mut TopologyBlock,
+    valence: &mut ValenceAssignment,
+    rings: &mut RingInfo,
+    params: &KekulizeParams,
+) -> Result<(), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize (2026.03.6 complete)
+    // RDKit✔️✔️: void Kekulize(RWMol &mol, bool markAtomsBonds, bool canonical,
+    // RDKit✔️✔️:               unsigned int maxBackTracks) {
+    // RDKit✔️✔️:   boost::dynamic_bitset<> atomsToUse(mol.getNumAtoms());
+    // RDKit✔️✔️:   atomsToUse.set();
+    // RDKit✔️✔️:   boost::dynamic_bitset<> bondsToUse(mol.getNumBonds());
+    // RDKit✔️✔️:   bondsToUse.set();
+    // RDKit✔️✔️:   details::KekulizeFragment(mol, atomsToUse, bondsToUse, markAtomsBonds,
+    // RDKit✔️✔️:                             canonical, maxBackTracks);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize (2026.03.6 complete)
+    let atoms = vec![true; topology.atoms.len()];
+    let bonds = vec![true; topology.bonds.len()];
+    let mut rows = KekulizeRingRows::Live(rings);
+    kekulize_fragment_attempt(topology, valence, &mut rows, &atoms, &bonds, params, None)
+        .map(|_| ())
+}
+
+fn source_sanitize_kekulize_error(error: &KekulizeError) -> bool {
+    matches!(
+        error,
+        KekulizeError::NotKekulizable { .. }
+            | KekulizeError::AromaticAtomOutsideRing { .. }
+            | KekulizeError::PostconditionValenceMismatch { .. }
+            | KekulizeError::Valence(ValenceError::InvalidValence { .. })
+    )
+}
+
+fn restore_source_aromatic_membership(
+    topology: &mut TopologyBlock,
+    aromatic_atoms: &[bool],
+    aromatic_bonds: &[bool],
+) {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeIfPossible aromatic recovery block (2026.03.6 complete)
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
+    // RDKit✔️✔️:       if (aromaticBonds[i]) {
+    // RDKit✔️✔️:         auto bond = mol.getBondWithIdx(i);
+    // RDKit✔️✔️:         bond->setIsAromatic(true);
+    // RDKit✔️✔️:         bond->setBondType(Bond::BondType::AROMATIC);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:       if (aromaticAtoms[i]) {
+    // RDKit✔️✔️:         mol.getAtomWithIdx(i)->setIsAromatic(true);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeIfPossible aromatic recovery block (2026.03.6 complete)
+    // The complete source recovery owner is source_kekulize_for_sanitize below.
+    // Deliberately restore AROMATIC order, not the original single/double order.
+    for (bond, &was_aromatic) in topology.bonds.iter_mut().zip(aromatic_bonds) {
+        if was_aromatic {
+            bond.set_aromatic(true);
+            bond.set_order(BondOrder::Aromatic);
+        }
+    }
+    for (atom, &was_aromatic) in topology.atoms.iter_mut().zip(aromatic_atoms) {
+        if was_aromatic {
+            atom.set_aromatic(true);
+        }
+    }
+}
+
+pub(crate) fn source_kekulize_for_sanitize(
+    topology: &mut TopologyBlock,
+    valence: &mut ValenceAssignment,
+    rings: &mut Option<RingInfo>,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<(), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: kekulizeForSanitize (2026.03.6 complete)
+    // RDKit✔️✔️: void kekulizeForSanitize(RWMol &mol) {
+    // RDKit✔️✔️:   if (!MolOps::KekulizeIfPossible(mol, true, false)) {
+    // RDKit✔️✔️:     MolOps::Kekulize(mol, true, true);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: kekulizeForSanitize (2026.03.6 complete)
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible (2026.03.6 complete)
+    // RDKit✔️✔️: bool KekulizeIfPossible(RWMol &mol, bool markAtomsBonds, bool canonical,
+    // RDKit✔️✔️:                         unsigned int maxBackTracks) {
+    // RDKit✔️✔️:   boost::dynamic_bitset<> aromaticBonds(mol.getNumBonds());
+    // RDKit✔️✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getIsAromatic()) {
+    // RDKit✔️✔️:       aromaticBonds.set(bond->getIdx());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   boost::dynamic_bitset<> aromaticAtoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (isAromaticAtom(*atom)) {
+    // RDKit✔️✔️:       aromaticAtoms.set(atom->getIdx());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   bool res = true;
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     Kekulize(mol, markAtomsBonds, canonical, maxBackTracks);
+    // RDKit✔️✔️:   } catch (const MolSanitizeException &) {
+    // RDKit✔️✔️:     res = false;
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
+    // RDKit✔️✔️:       if (aromaticBonds[i]) {
+    // RDKit✔️✔️:         auto bond = mol.getBondWithIdx(i);
+    // RDKit✔️✔️:         bond->setIsAromatic(true);
+    // RDKit✔️✔️:         bond->setBondType(Bond::BondType::AROMATIC);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:       if (aromaticAtoms[i]) {
+    // RDKit✔️✔️:         mol.getAtomWithIdx(i)->setIsAromatic(true);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible (2026.03.6 complete)
+    let aromatic_atoms = topology
+        .atoms
+        .iter()
+        .map(|a| atom_is_aromatic_for_kekulize(topology, a.id()))
+        .collect::<Vec<_>>();
+    let aromatic_bonds = topology
+        .bonds
+        .iter()
+        .map(Bond::is_aromatic)
+        .collect::<Vec<_>>();
+    let atoms = vec![true; topology.atoms.len()];
+    let bonds = vec![true; topology.bonds.len()];
+    let was_absent = rings.is_none();
+    let live = rings.get_or_insert_with(|| {
+        let mut r = RingInfo::new(RingFindType::OtherOrUnknown, 0, 0);
+        r.reset();
+        r
+    });
+    let mut rows = KekulizeRingRows::Live(live);
+    let first = kekulize_fragment_attempt(
+        topology,
+        valence,
+        &mut rows,
+        &atoms,
+        &bonds,
+        &KekulizeParams {
+            mark_atoms_bonds: true,
+            canonical: false,
+            max_backtracks: 100,
+        },
+        query_state,
+    );
+    let result = match first {
+        Ok(_) => Ok(()),
+        Err(error) if source_sanitize_kekulize_error(&error) => {
+            restore_source_aromatic_membership(topology, &aromatic_atoms, &aromatic_bonds);
+            kekulize_fragment_attempt(
+                topology,
+                valence,
+                &mut rows,
+                &atoms,
+                &bonds,
+                &KekulizeParams {
+                    mark_atoms_bonds: true,
+                    canonical: true,
+                    max_backtracks: 100,
+                },
+                query_state,
+            )
+            .map(|_| ())
+        }
+        Err(error) => Err(error),
+    };
+    // Option is detached transport only: do not manufacture an initialized
+    // carrier for a source-uninitialized early return; actual Fast/SSSR survives.
+    let remains_uninitialized = rows.as_ring_info().is_none();
+    if was_absent && remains_uninitialized {
+        *rings = None;
+    }
+    result
 }
 
 /// Kekulizes selected original-index atoms and bonds in a detached topology.
@@ -3256,7 +3792,7 @@ fn rank_initialized_atoms(
     Ok(res)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct CanonBondHolder<'a> {
     bond_type: BondOrder,
     bond_stereo: u8,
@@ -3835,6 +4371,24 @@ fn make_canon_bond_holder<'a>(
     })
 }
 
+fn new_hanoi_scratch_for_canonical_rank(len: usize, top_level: bool) -> Vec<usize> {
+    // RDKit❗❌:   std::vector<int> hanoiTemp(nAts);
+    // RDKit❗❌:     localHanoiTemp.resize(nAtoms);
+    // Exact constructor scope and O(n) zero-fill. Existing usize indices use
+    // 8-byte slots on64-bit targets versus C++ int4; preserve that baseline
+    // representation and qualify its cache/space cost, not a new width rewrite.
+    let scratch = vec![0; len];
+    #[cfg(test)]
+    chem31_scratch_trace::record(chem31_scratch_trace::Event::Construct(
+        top_level,
+        len,
+        scratch.as_ptr() as usize,
+    ));
+    #[cfg(not(test))]
+    let _ = top_level;
+    scratch
+}
+
 fn rank_with_atom_compare_functor_for_kekulize(
     view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
@@ -3843,31 +4397,132 @@ fn rank_with_atom_compare_functor_for_kekulize(
     flags: CanonRankFlags,
     order: &mut [usize],
 ) -> Result<(), CanonicalRankError> {
-    // BEGIN RDKIT CPP FUNCTION detail::rankWithFunctor
-    // RDKit✔️✔️: template <typename T>
-    // RDKit✔️✔️: void rankWithFunctor(T &ftor, bool breakTies, std::vector<int> &order,
-    // RDKit✔️✔️:                      bool useSpecial, bool useChirality, bool includeRingStereo,
-    // RDKit✔️✔️:                      const boost::dynamic_bitset<> *atomsInPlay,
-    // RDKit✔️✔️:                      const boost::dynamic_bitset<> *bondsInPlay) {
-    // RDKit✔️✔️:   PRECONDITION(!order.empty(), "order should not be empty");
-    // RDKit✔️✔️:   const ROMol &mol = *ftor.dp_mol;
-    // RDKit✔️✔️:   canon_atom *atoms = ftor.dp_atoms;
-    // RDKit✔️✔️:   const unsigned int nAts = mol.getNumAtoms();
+    // BEGIN COMPLETE RDKit .6 CHEM31 rankWithFunctor
+    // RDKit❗❌: template <typename T>
+    // RDKit❗❌: void rankWithFunctor(T &ftor, bool breakTies, std::vector<int> &order,
+    // RDKit❗❌:                      bool useSpecial, bool useChirality, bool includeRingStereo,
+    // RDKit❗❌:                      const boost::dynamic_bitset<> *atomsInPlay,
+    // RDKit❗❌:                      const boost::dynamic_bitset<> *bondsInPlay) {
+    // RDKit❗❌:   PRECONDITION(!order.empty(), "order should not be empty");
+    // RDKit❗❌:   const ROMol &mol = *ftor.dp_mol;
+    // RDKit❗❌:   canon_atom *atoms = ftor.dp_atoms;
+    // RDKit❗❌:   const unsigned int nAts = mol.getNumAtoms();
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<int> count(nAts);
+    // RDKit❗❌:   std::vector<int> next(nAts);
+    // RDKit❗❌:   std::vector<int> changed(nAts, 1);
+    // RDKit❗❌:   std::vector<char> touched(nAts, 0);
+    // RDKit❗❌:   std::vector<int> hanoiTemp(nAts);
+    // RDKit❗❌:   int activeset;
+    // RDKit❗❌:   CreateSinglePartition(nAts, order, count, atoms);
+    // RDKit❗❌: // ActivatePartitions(nAts,order,count,activeset,next,changed);
+    // RDKit❗❌: // RefinePartitions(mol,atoms,ftor,false,order,count,activeset,next,changed,touched);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:   std::cerr << "1--------" << std::endl;
+    // RDKit❗❌:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:     std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:               << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:   }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   ftor.df_useNbrs = true;
+    // RDKit❗❌:   ActivatePartitions(nAts, order, count, activeset, next, changed);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:   std::cerr << "1a--------" << std::endl;
+    // RDKit❗❌:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:     std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:               << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:   }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   RefinePartitions(mol, atoms, ftor, true, order, count, activeset, next,
+    // RDKit❗❌:                    changed, touched, &hanoiTemp);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:   std::cerr << "2--------" << std::endl;
+    // RDKit❗❌:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:     std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:               << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:   }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   bool ties = false;
+    // RDKit❗❌:   for (unsigned i = 0; i < nAts; ++i) {
+    // RDKit❗❌:     if (!count[i]) {
+    // RDKit❗❌:       ties = true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (useChirality && ties && includeRingStereo) {
+    // RDKit❗❌:     SpecialChiralityAtomCompareFunctor scftor(atoms, mol, atomsInPlay,
+    // RDKit❗❌:                                               bondsInPlay);
+    // RDKit❗❌:     ActivatePartitions(nAts, order, count, activeset, next, changed);
+    // RDKit❗❌:     RefinePartitions(mol, atoms, scftor, true, order, count, activeset, next,
+    // RDKit❗❌:                      changed, touched, &hanoiTemp);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:     std::cerr << "2a--------" << std::endl;
+    // RDKit❗❌:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:       std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:                 << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   }
+    // RDKit❗❌:   ties = false;
+    // RDKit❗❌:   unsigned symRingAtoms = 0;
+    // RDKit❗❌:   unsigned ringAtoms = 0;
+    // RDKit❗❌:   bool branchingRingAtom = false;
+    // RDKit❗❌:   RingInfo *ringInfo = mol.getRingInfo();
+    // RDKit❗❌:   for (unsigned i = 0; i < nAts; ++i) {
+    // RDKit❗❌:     if (ringInfo->isInitialized() && ringInfo->numAtomRings(order[i])) {
+    // RDKit❗❌:       if (count[order[i]] > 2) {
+    // RDKit❗❌:         symRingAtoms += count[order[i]];
+    // RDKit❗❌:       }
+    // RDKit❗❌:       ringAtoms++;
+    // RDKit❗❌:       if (ringInfo->isInitialized() && ringInfo->numAtomRings(order[i]) > 1 &&
+    // RDKit❗❌:           count[order[i]] > 1) {
+    // RDKit❗❌:         branchingRingAtom = true;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (!count[i]) {
+    // RDKit❗❌:       ties = true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   //      std::cout << " " << ringAtoms << " "  << symRingAtoms << std::endl;
+    // RDKit❗❌:   if (useSpecial && ties && ringAtoms > 0 &&
+    // RDKit❗❌:       static_cast<float>(symRingAtoms) / ringAtoms > 0.5 && branchingRingAtom) {
+    // RDKit❗❌:     SpecialSymmetryAtomCompareFunctor sftor(atoms, mol, atomsInPlay,
+    // RDKit❗❌:                                             bondsInPlay);
+    // RDKit❗❌:     compareRingAtomsConcerningNumNeighbors(atoms, nAts, mol);
+    // RDKit❗❌:     ActivatePartitions(nAts, order, count, activeset, next, changed);
+    // RDKit❗❌:     RefinePartitions(mol, atoms, sftor, true, order, count, activeset, next,
+    // RDKit❗❌:                      changed, touched, &hanoiTemp);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:     std::cerr << "2b--------" << std::endl;
+    // RDKit❗❌:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:       std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:                 << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (breakTies) {
+    // RDKit❗❌:     BreakTies(mol, atoms, ftor, true, order, count, activeset, next, changed,
+    // RDKit❗❌:               touched, &hanoiTemp);
+    // RDKit❗❌: #ifdef VERBOSE_CANON
+    // RDKit❗❌:     std::cerr << "3--------" << std::endl;
+    // RDKit❗❌:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗❌:       std::cerr << order[i] + 1 << " " << " index: " << atoms[order[i]].index
+    // RDKit❗❌:                 << " count: " << count[order[i]] << std::endl;
+    // RDKit❗❌:     }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END COMPLETE RDKit .6 CHEM31 rankWithFunctor
+    // Existing comparer/helper allocations and useSpecial/typed-state baseline
+    // remain qualified; this delta shares one scratch across all reached modes.
+
     let n_atoms = view.num_atoms();
-    // RDKit✔️✔️:   std::vector<int> count(nAts);
-    // RDKit✔️✔️:   std::vector<int> next(nAts);
-    // RDKit✔️✔️:   std::vector<int> changed(nAts, 1);
-    // RDKit✔️✔️:   std::vector<char> touched(nAts, 0);
-    // RDKit✔️✔️:   int activeset;
     let mut count = vec![0usize; n_atoms];
     let mut next = vec![-2isize; n_atoms];
     let mut changed = vec![true; n_atoms];
     let mut touched = vec![false; n_atoms];
+    let mut hanoi_temp = new_hanoi_scratch_for_canonical_rank(n_atoms, true);
     let mut active_set = -1isize;
-    // RDKit✔️✔️:   CreateSinglePartition(nAts, order, count, atoms);
     create_single_partition_for_kekulize(n_atoms, order, &mut count, atoms);
-    // RDKit✔️✔️:   ftor.df_useNbrs = true;
-    // RDKit✔️✔️:   ActivatePartitions(nAts, order, count, activeset, next, changed);
     activate_partitions_for_kekulize(
         n_atoms,
         order,
@@ -3876,8 +4531,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
         &mut next,
         &mut changed,
     );
-    // RDKit✔️✔️:   RefinePartitions(mol, atoms, ftor, true, order, count, activeset, next,
-    // RDKit✔️✔️:                    changed, touched);
     refine_partitions_for_kekulize(
         view,
         atoms,
@@ -3890,21 +4543,9 @@ fn rank_with_atom_compare_functor_for_kekulize(
         &mut next,
         &mut changed,
         &mut touched,
+        Some(&mut hanoi_temp),
     )?;
-    // RDKit✔️✔️:   bool ties = false;
-    // RDKit✔️✔️:   for (unsigned i = 0; i < nAts; ++i) {
-    // RDKit✔️✔️:     if (!count[i]) {
-    // RDKit✔️✔️:       ties = true;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
     let ties = count.iter().any(|&value| value == 0);
-    // RDKit✔️✔️:   if (useChirality && ties && includeRingStereo) {
-    // RDKit✔️✔️:     SpecialChiralityAtomCompareFunctor scftor(atoms, mol, atomsInPlay,
-    // RDKit✔️✔️:                                               bondsInPlay);
-    // RDKit✔️✔️:     ActivatePartitions(nAts, order, count, activeset, next, changed);
-    // RDKit✔️✔️:     RefinePartitions(mol, atoms, scftor, true, order, count, activeset, next,
-    // RDKit✔️✔️:                      changed, touched);
-    // RDKit✔️✔️:   }
     if flags.use_chirality && ties && include_ring_stereo {
         activate_partitions_for_kekulize(
             n_atoms,
@@ -3926,23 +4567,10 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
+            Some(&mut hanoi_temp),
         )?;
     }
-    // RDKit✔️✔️:   ties = false;
-    // RDKit✔️✔️:   unsigned symRingAtoms = 0;
-    // RDKit✔️✔️:   unsigned ringAtoms = 0;
-    // RDKit✔️✔️:   bool branchingRingAtom = false;
-    // RDKit✔️✔️:   RingInfo *ringInfo = mol.getRingInfo();
     let use_special_symmetry = special_symmetry_rank_refinement_required(view, order, &count);
-    // RDKit✔️✔️:   if (useSpecial && ties && ringAtoms > 0 &&
-    // RDKit✔️✔️:       static_cast<float>(symRingAtoms) / ringAtoms > 0.5 && branchingRingAtom) {
-    // RDKit✔️✔️:     SpecialSymmetryAtomCompareFunctor sftor(atoms, mol, atomsInPlay,
-    // RDKit✔️✔️:                                             bondsInPlay);
-    // RDKit✔️✔️:     compareRingAtomsConcerningNumNeighbors(atoms, nAts, mol);
-    // RDKit✔️✔️:     ActivatePartitions(nAts, order, count, activeset, next, changed);
-    // RDKit✔️✔️:     RefinePartitions(mol, atoms, sftor, true, order, count, activeset, next,
-    // RDKit✔️✔️:                      changed, touched);
-    // RDKit✔️✔️:   }
     if use_special_symmetry {
         compare_ring_atoms_concerning_num_neighbors_for_kekulize(view, atoms);
         activate_partitions_for_kekulize(
@@ -3965,12 +4593,9 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
+            Some(&mut hanoi_temp),
         )?;
     }
-    // RDKit✔️✔️:   if (breakTies) {
-    // RDKit✔️✔️:     BreakTies(mol, atoms, ftor, true, order, count, activeset, next, changed,
-    // RDKit✔️✔️:               touched);
-    // RDKit✔️✔️:   }
     if break_ties {
         break_ties_for_kekulize(
             view,
@@ -3984,10 +4609,9 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
+            Some(&mut hanoi_temp),
         )?;
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION detail::rankWithFunctor
     Ok(())
 }
 
@@ -4085,56 +4709,165 @@ fn refine_partitions_for_kekulize(
     next: &mut [isize],
     changed: &mut [bool],
     touched_partitions: &mut [bool],
+    hanoi_temp: Option<&mut [usize]>,
 ) -> Result<(), CanonicalRankError> {
-    // BEGIN RDKIT CPP FUNCTION RefinePartitions
-    // RDKit✔️✔️: template <typename CompareFunc>
-    // RDKit✔️✔️: void RefinePartitions(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
-    // RDKit✔️✔️:                       int mode, std::vector<int> &order,
-    // RDKit✔️✔️:                       std::vector<int> &count, int &activeset,
-    // RDKit✔️✔️:                       std::vector<int> &next, std::vector<int> &changed,
-    // RDKit✔️✔️:                       std::vector<char> &touchedPartitions) {
-    // RDKit✔️✔️:   unsigned int nAtoms = mol.getNumAtoms();
+    // BEGIN COMPLETE RDKit .6 CHEM31 RefinePartitions
+    // RDKit❗❌: template <typename CompareFunc>
+    // RDKit❗❌: void RefinePartitions(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
+    // RDKit❗❌:                       int mode, std::vector<int> &order,
+    // RDKit❗❌:                       std::vector<int> &count, int &activeset,
+    // RDKit❗❌:                       std::vector<int> &next, std::vector<int> &changed,
+    // RDKit❗❌:                       std::vector<char> &touchedPartitions,
+    // RDKit❗❌:                       std::vector<int> *hanoiTemp = nullptr) {
+    // RDKit❗❌:   unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   std::vector<int> localHanoiTemp;
+    // RDKit❗❌:   if (!hanoiTemp) {
+    // RDKit❗❌:     localHanoiTemp.resize(nAtoms);
+    // RDKit❗❌:     hanoiTemp = &localHanoiTemp;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   int partition;
+    // RDKit❗❌:   int symclass = 0;
+    // RDKit❗❌:   int offset;
+    // RDKit❗❌:   int index;
+    // RDKit❗❌:   int len;
+    // RDKit❗❌:   int i;
+    // RDKit❗❌:   PRECONDITION(hanoiTemp->size() >= nAtoms, "hanoi scratch is too small");
+    // RDKit❗❌:   // std::vector<char> touchedPartitions(mol.getNumAtoms(),0);
+    // RDKit❗❌:
+    // RDKit❗❌:   // std::cerr<<"&&&&&&&&&&&&&&&& RP"<<std::endl;
+    // RDKit❗❌:   while (activeset != -1) {
+    // RDKit❗❌:     // std::cerr<<"ITER: "<<activeset<<" next: "<<next[activeset]<<std::endl;
+    // RDKit❗❌:     // std::cerr<<" next: ";
+    // RDKit❗❌:     // for(unsigned int ii=0;ii<nAtoms;++ii){
+    // RDKit❗❌:     //   std::cerr<<ii<<":"<<next[ii]<<" ";
+    // RDKit❗❌:     // }
+    // RDKit❗❌:     // std::cerr<<std::endl;
+    // RDKit❗❌:     // for(unsigned int ii=0;ii<nAtoms;++ii){
+    // RDKit❗❌:     //   std::cerr<<order[ii]<<" count: "<<count[order[ii]]<<" index:
+    // RDKit❗❌:     //   "<<atoms[order[ii]].index<<std::endl;
+    // RDKit❗❌:     // }
+    // RDKit❗❌:
+    // RDKit❗❌:     partition = activeset;
+    // RDKit❗❌:     activeset = next[partition];
+    // RDKit❗❌:     next[partition] = -2;
+    // RDKit❗❌:
+    // RDKit❗❌:     len = count[partition];
+    // RDKit❗❌:     offset = atoms[partition].index;
+    // RDKit❗❌:     auto start = std::span<int>(&order[offset], len);
+    // RDKit❗❌:     // std::cerr<<"\n\n**************************************************************"<<std::endl;
+    // RDKit❗❌:     // std::cerr<<"  sort - class:"<<atoms[partition].index<<" len:
+    // RDKit❗❌:     // "<<len<<":"; for(unsigned int ii=0;ii<len;++ii){
+    // RDKit❗❌:     //   std::cerr<<" "<<order[offset+ii]+1;
+    // RDKit❗❌:     // }
+    // RDKit❗❌:     // std::cerr<<std::endl;
+    // RDKit❗❌:     // for(unsigned int ii=0;ii<nAtoms;++ii){
+    // RDKit❗❌:     //   std::cerr<<order[ii]+1<<" count: "<<count[order[ii]]<<" index:
+    // RDKit❗❌:     //   "<<atoms[order[ii]].index<<std::endl;
+    // RDKit❗❌:     // }
+    // RDKit❗❌:     if (RDKit::detail::hanoi(start.data(), len, hanoiTemp->data(), count.data(),
+    // RDKit❗❌:                              changed.data(), compar)) {
+    // RDKit❗❌:       std::copy_n(hanoiTemp->begin(), len, start.begin());
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // std::cerr<<"*_*_*_*_*_*_*_*_*_*_*_*_*_*_*_*"<<std::endl;
+    // RDKit❗❌:     // std::cerr<<"  result:";
+    // RDKit❗❌:     // for(unsigned int ii=0;ii<nAtoms;++ii){
+    // RDKit❗❌:     //    std::cerr<<order[ii]+1<<" count: "<<count[order[ii]]<<" index:
+    // RDKit❗❌:     //    "<<atoms[order[ii]].index<<std::endl;
+    // RDKit❗❌:     //  }
+    // RDKit❗❌:     for (int k = 0; k < len; ++k) {
+    // RDKit❗❌:       changed[start[k]] = 0;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     index = start[0];
+    // RDKit❗❌:     // std::cerr<<"  len:"<<len<<" index:"<<index<<"
+    // RDKit❗❌:     // count:"<<count[index]<<std::endl;
+    // RDKit❗❌:     for (i = count[index]; i < len; i++) {
+    // RDKit❗❌:       index = start[i];
+    // RDKit❗❌:       if (count[index]) {
+    // RDKit❗❌:         symclass = offset + i;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       atoms[index].index = symclass;
+    // RDKit❗❌:       // std::cerr<<" "<<index+1<<"("<<symclass<<")";
+    // RDKit❗❌:       // if(mode && (activeset<0 || count[index]>count[activeset]) ){
+    // RDKit❗❌:       //  activeset=index;
+    // RDKit❗❌:       //}
+    // RDKit❗❌:       for (unsigned j = 0; j < atoms[index].degree; ++j) {
+    // RDKit❗❌:         changed[atoms[index].nbrIds[j]] = 1;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // std::cerr<<std::endl;
+    // RDKit❗❌:
+    // RDKit❗❌:     if (mode) {
+    // RDKit❗❌:       index = start[0];
+    // RDKit❗❌:       for (i = count[index]; i < len; i++) {
+    // RDKit❗❌:         index = start[i];
+    // RDKit❗❌:         for (unsigned j = 0; j < atoms[index].degree; ++j) {
+    // RDKit❗❌:           unsigned int nbor = atoms[index].nbrIds[j];
+    // RDKit❗❌:           touchedPartitions[atoms[nbor].index] = 1;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       for (unsigned int ii = 0; ii < nAtoms; ++ii) {
+    // RDKit❗❌:         if (touchedPartitions[ii]) {
+    // RDKit❗❌:           partition = order[ii];
+    // RDKit❗❌:           if ((count[partition] > 1) && (next[partition] == -2)) {
+    // RDKit❗❌:             next[partition] = activeset;
+    // RDKit❗❌:             activeset = partition;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           touchedPartitions[ii] = 0;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }  // end of RefinePartitions()
+    // END COMPLETE RDKit .6 CHEM31 RefinePartitions
+
     let n_atoms = view.num_atoms();
-    // RDKit✔️✔️:   while (activeset != -1) {
+    let mut local_hanoi_temp;
+    let hanoi_temp = match hanoi_temp {
+        Some(scratch) => scratch,
+        None => {
+            local_hanoi_temp = new_hanoi_scratch_for_canonical_rank(n_atoms, false);
+            &mut local_hanoi_temp
+        }
+    };
+    // Source validates full-molecule scratch before even inactive activeset.
+    if hanoi_temp.len() < n_atoms {
+        return Err(CanonicalRankError::HanoiScratchTooSmall);
+    }
+    #[cfg(test)]
+    chem31_scratch_trace::record(chem31_scratch_trace::Event::Refine(
+        compare_mode,
+        hanoi_temp.as_ptr() as usize,
+        hanoi_temp.len(),
+    ));
     while *active_set != -1 {
-        // RDKit✔️✔️:     partition = activeset;
-        // RDKit✔️✔️:     activeset = next[partition];
-        // RDKit✔️✔️:     next[partition] = -2;
         let partition = usize::try_from(*active_set).expect("active partition is non-negative");
         *active_set = next[partition];
         next[partition] = -2;
-        // RDKit✔️✔️:     len = count[partition];
-        // RDKit✔️✔️:     offset = atoms[partition].index;
         let len = count[partition];
         let offset = usize::try_from(atoms[partition].index).unwrap_or(usize::MAX);
-        // RDKit✔️✔️:     auto start = std::span<int>(&order[offset], len);
-        hanoi_sort_order_for_kekulize(
-            order,
-            offset,
-            len,
+        let result_in_temp = hanoi_order_for_kekulize(
+            &mut order[offset..offset + len],
+            &mut hanoi_temp[..len],
             count,
             changed,
             atoms,
             compare_mode,
             flags,
         )?;
-        // RDKit✔️✔️:     for (int k = 0; k < len; ++k) {
-        // RDKit✔️✔️:       changed[start[k]] = 0;
-        // RDKit✔️✔️:     }
+        #[cfg(test)]
+        chem31_scratch_trace::record(chem31_scratch_trace::Event::Sort(
+            offset,
+            len,
+            result_in_temp,
+            hanoi_temp.as_ptr() as usize,
+        ));
+        if result_in_temp {
+            order[offset..offset + len].copy_from_slice(&hanoi_temp[..len]);
+        }
         for k in 0..len {
             changed[order[offset + k]] = false;
         }
-        // RDKit✔️✔️:     index = start[0];
-        // RDKit✔️✔️:     for (i = count[index]; i < len; i++) {
-        // RDKit✔️✔️:       index = start[i];
-        // RDKit✔️✔️:       if (count[index]) {
-        // RDKit✔️✔️:         symclass = offset + i;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       atoms[index].index = symclass;
-        // RDKit✔️✔️:       for (unsigned j = 0; j < atoms[index].degree; ++j) {
-        // RDKit✔️✔️:         changed[atoms[index].nbrIds[j]] = 1;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
         let mut index = order[offset];
         let mut sym_class = 0usize;
         let mut i = count[index];
@@ -4149,26 +4882,6 @@ fn refine_partitions_for_kekulize(
             }
             i += 1;
         }
-        // RDKit✔️✔️:     if (mode) {
-        // RDKit✔️✔️:       index = start[0];
-        // RDKit✔️✔️:       for (i = count[index]; i < len; i++) {
-        // RDKit✔️✔️:         index = start[i];
-        // RDKit✔️✔️:         for (unsigned j = 0; j < atoms[index].degree; ++j) {
-        // RDKit✔️✔️:           unsigned int nbor = atoms[index].nbrIds[j];
-        // RDKit✔️✔️:           touchedPartitions[atoms[nbor].index] = 1;
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       for (unsigned int ii = 0; ii < nAtoms; ++ii) {
-        // RDKit✔️✔️:         if (touchedPartitions[ii]) {
-        // RDKit✔️✔️:           partition = order[ii];
-        // RDKit✔️✔️:           if ((count[partition] > 1) && (next[partition] == -2)) {
-        // RDKit✔️✔️:             next[partition] = activeset;
-        // RDKit✔️✔️:             activeset = partition;
-        // RDKit✔️✔️:           }
-        // RDKit✔️✔️:           touchedPartitions[ii] = 0;
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
         if mode {
             index = order[offset];
             let mut i = count[index];
@@ -4194,8 +4907,6 @@ fn refine_partitions_for_kekulize(
             }
         }
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RefinePartitions
     Ok(())
 }
 
@@ -4211,48 +4922,80 @@ fn break_ties_for_kekulize(
     next: &mut [isize],
     changed: &mut [bool],
     touched_partitions: &mut [bool],
+    mut hanoi_temp: Option<&mut [usize]>,
 ) -> Result<(), CanonicalRankError> {
-    // BEGIN RDKIT CPP FUNCTION BreakTies
-    // RDKit✔️✔️: template <typename CompareFunc>
-    // RDKit✔️✔️: void BreakTies(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
-    // RDKit✔️✔️:                int mode, std::vector<int> &order, std::vector<int> &count,
-    // RDKit✔️✔️:                int &activeset, std::vector<int> &next,
-    // RDKit✔️✔️:                std::vector<int> &changed,
-    // RDKit✔️✔️:                std::vector<char> &touchedPartitions) {
-    // RDKit✔️✔️:   unsigned int nAtoms = mol.getNumAtoms();
+    // BEGIN COMPLETE RDKit .6 CHEM31 BreakTies
+    // RDKit❗❌: template <typename CompareFunc>
+    // RDKit❗❌: void BreakTies(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
+    // RDKit❗❌:                int mode, std::vector<int> &order, std::vector<int> &count,
+    // RDKit❗❌:                int &activeset, std::vector<int> &next,
+    // RDKit❗❌:                std::vector<int> &changed,
+    // RDKit❗❌:                std::vector<char> &touchedPartitions,
+    // RDKit❗❌:                std::vector<int> *hanoiTemp = nullptr) {
+    // RDKit❗❌:   unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   int partition;
+    // RDKit❗❌:   int offset;
+    // RDKit❗❌:   int index;
+    // RDKit❗❌:   int len;
+    // RDKit❗❌:   int oldPart = 0;
+    // RDKit❗❌:
+    // RDKit❗❌:   for (unsigned int i = 0; i < nAtoms; i++) {
+    // RDKit❗❌:     partition = order[i];
+    // RDKit❗❌:     oldPart = atoms[partition].index;
+    // RDKit❗❌:     while (count[partition] > 1) {
+    // RDKit❗❌:       len = count[partition];
+    // RDKit❗❌:       offset = atoms[partition].index + len - 1;
+    // RDKit❗❌:       index = order[offset];
+    // RDKit❗❌:       atoms[index].index = offset;
+    // RDKit❗❌:       count[partition] = len - 1;
+    // RDKit❗❌:       count[index] = 1;
+    // RDKit❗❌:
+    // RDKit❗❌:       // test for ions, water molecules with no
+    // RDKit❗❌:       if (atoms[index].degree < 1) {
+    // RDKit❗❌:         continue;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       for (unsigned j = 0; j < atoms[index].degree; ++j) {
+    // RDKit❗❌:         unsigned int nbor = atoms[index].nbrIds[j];
+    // RDKit❗❌:         touchedPartitions[atoms[nbor].index] = 1;
+    // RDKit❗❌:         changed[nbor] = 1;
+    // RDKit❗❌:       }
+    // RDKit❗❌:
+    // RDKit❗❌:       for (unsigned int ii = 0; ii < nAtoms; ++ii) {
+    // RDKit❗❌:         if (touchedPartitions[ii]) {
+    // RDKit❗❌:           int npart = order[ii];
+    // RDKit❗❌:           if ((count[npart] > 1) && (next[npart] == -2)) {
+    // RDKit❗❌:             next[npart] = activeset;
+    // RDKit❗❌:             activeset = npart;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           touchedPartitions[ii] = 0;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       RefinePartitions(mol, atoms, compar, mode, order, count, activeset, next,
+    // RDKit❗❌:                        changed, touchedPartitions, hanoiTemp);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // not sure if this works each time
+    // RDKit❗❌:     if (atoms[partition].index != oldPart) {
+    // RDKit❗❌:       i -= 1;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }  // end of BreakTies()
+    // END COMPLETE RDKit .6 CHEM31 BreakTies
+
     let n_atoms = view.num_atoms();
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < nAtoms; i++) {
     let mut i = 0usize;
     while i < n_atoms {
-        // RDKit✔️✔️:     partition = order[i];
-        // RDKit✔️✔️:     oldPart = atoms[partition].index;
         let partition = order[i];
         let old_part = atoms[partition].index;
-        // RDKit✔️✔️:     while (count[partition] > 1) {
         while count[partition] > 1 {
-            // RDKit✔️✔️:       len = count[partition];
-            // RDKit✔️✔️:       offset = atoms[partition].index + len - 1;
-            // RDKit✔️✔️:       index = order[offset];
-            // RDKit✔️✔️:       atoms[index].index = offset;
-            // RDKit✔️✔️:       count[partition] = len - 1;
-            // RDKit✔️✔️:       count[index] = 1;
             let len = count[partition];
             let offset = usize::try_from(atoms[partition].index).unwrap_or(usize::MAX) + len - 1;
             let index = order[offset];
             atoms[index].index = i32::try_from(offset).unwrap_or(i32::MAX);
             count[partition] = len - 1;
             count[index] = 1;
-            // RDKit✔️✔️:       if (atoms[index].degree < 1) {
-            // RDKit✔️✔️:         continue;
-            // RDKit✔️✔️:       }
             if atoms[index].degree < 1 {
                 continue;
             }
-            // RDKit✔️✔️:       for (unsigned j = 0; j < atoms[index].degree; ++j) {
-            // RDKit✔️✔️:         unsigned int nbor = atoms[index].nbrIds[j];
-            // RDKit✔️✔️:         touchedPartitions[atoms[nbor].index] = 1;
-            // RDKit✔️✔️:         changed[nbor] = 1;
-            // RDKit✔️✔️:       }
             for nbr in atoms[index].nbr_ids.iter().copied() {
                 let partition_idx = usize::try_from(atoms[nbr].index).unwrap_or(usize::MAX);
                 if partition_idx < touched_partitions.len() {
@@ -4260,16 +5003,6 @@ fn break_ties_for_kekulize(
                 }
                 changed[nbr] = true;
             }
-            // RDKit✔️✔️:       for (unsigned int ii = 0; ii < nAtoms; ++ii) {
-            // RDKit✔️✔️:         if (touchedPartitions[ii]) {
-            // RDKit✔️✔️:           int npart = order[ii];
-            // RDKit✔️✔️:           if ((count[npart] > 1) && (next[npart] == -2)) {
-            // RDKit✔️✔️:             next[npart] = activeset;
-            // RDKit✔️✔️:             activeset = npart;
-            // RDKit✔️✔️:           }
-            // RDKit✔️✔️:           touchedPartitions[ii] = 0;
-            // RDKit✔️✔️:         }
-            // RDKit✔️✔️:       }
             for ii in 0..n_atoms {
                 if touched_partitions[ii] {
                     let npart = order[ii];
@@ -4280,8 +5013,6 @@ fn break_ties_for_kekulize(
                     touched_partitions[ii] = false;
                 }
             }
-            // RDKit✔️✔️:       RefinePartitions(mol, atoms, compar, mode, order, count, activeset, next,
-            // RDKit✔️✔️:                        changed, touchedPartitions);
             refine_partitions_for_kekulize(
                 view,
                 atoms,
@@ -4294,11 +5025,9 @@ fn break_ties_for_kekulize(
                 next,
                 changed,
                 touched_partitions,
+                hanoi_temp.as_deref_mut(),
             )?;
         }
-        // RDKit✔️✔️:     if (atoms[partition].index != oldPart) {
-        // RDKit✔️✔️:       i -= 1;
-        // RDKit✔️✔️:     }
         if atoms[partition].index != old_part {
             if i > 0 {
                 i -= 1;
@@ -4307,8 +5036,6 @@ fn break_ties_for_kekulize(
             i += 1;
         }
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION BreakTies
     Ok(())
 }
 
@@ -6231,14 +6958,35 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
 }
 
 fn update_atom_neighbor_index_for_kekulize(atoms: &mut [CanonAtom<'_>], atom_idx: usize) {
-    // BEGIN RDKIT CPP FUNCTION updateAtomNeighborIndex
-    // RDKit✔️✔️: void updateAtomNeighborIndex(canon_atom *atoms, std::vector<bondholder> &nbrs) {
-    // RDKit✔️✔️:   PRECONDITION(atoms, "bad pointer");
-    // RDKit✔️✔️:   for (auto &nbr : nbrs) {
-    // RDKit✔️✔️:     unsigned nbrIdx = nbr.nbrIdx;
-    // RDKit✔️✔️:     unsigned newSymClass = atoms[nbrIdx].index;
-    // RDKit✔️✔️:     nbr.nbrSymClass = newSymClass;
-    // RDKit✔️✔️:   }
+    // BEGIN COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex
+    // RDKit❗❌: void updateAtomNeighborIndex(canon_atom *atoms, std::vector<bondholder> &nbrs) {
+    // RDKit❗❌:   PRECONDITION(atoms, "bad pointer");
+    // RDKit❗❌:   for (auto &nbr : nbrs) {
+    // RDKit❗❌:     unsigned nbrIdx = nbr.nbrIdx;
+    // RDKit❗❌:     unsigned newSymClass = atoms[nbrIdx].index;
+    // RDKit❗❌:     nbr.nbrSymClass = newSymClass;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // Neighbor lists are normally very short and already close to sorted after
+    // RDKit❗❌:   // partition refinement. Insertion sort avoids std::sort's setup overhead and
+    // RDKit❗❌:   // minimizes movement in that common case.
+    // RDKit❗❌:   for (size_t i = 1; i < nbrs.size(); ++i) {
+    // RDKit❗❌:     if (!bondholder::greater(nbrs[i], nbrs[i - 1])) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     auto value = std::move(nbrs[i]);
+    // RDKit❗❌:     size_t j = i;
+    // RDKit❗❌:     do {
+    // RDKit❗❌:       nbrs[j] = std::move(nbrs[j - 1]);
+    // RDKit❗❌:       --j;
+    // RDKit❗❌:     } while (j && bondholder::greater(value, nbrs[j - 1]));
+    // RDKit❗❌:     nbrs[j] = std::move(value);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex
+    // Only this actual repeated-update owner changes sort. Existing update Vec
+    // and whole-atom rank snapshot costs remain qualified (❌); the shared
+    // initial sort owner for both source initialization paths remains untouched.
+
     let updates = atoms[atom_idx]
         .bonds
         .iter()
@@ -6247,11 +6995,49 @@ fn update_atom_neighbor_index_for_kekulize(atoms: &mut [CanonAtom<'_>], atom_idx
     for (bond, nbr_sym_class) in atoms[atom_idx].bonds.iter_mut().zip(updates) {
         bond.nbr_sym_class = nbr_sym_class;
     }
-    // RDKit✔️✔️:   std::sort(nbrs.begin(), nbrs.end(), bondholder::greater);
-    // RDKit✔️✔️: }
     let ranks = canon_atom_rank_snapshot(atoms);
-    sort_canon_bonds_descending(&mut atoms[atom_idx].bonds, &ranks);
-    // END RDKIT CPP FUNCTION updateAtomNeighborIndex
+    insertion_sort_canon_bonds_for_update(&mut atoms[atom_idx].bonds, |left, right| {
+        compare_canon_bond_holder(left, right, &ranks) == Ordering::Greater
+    });
+}
+
+fn insertion_sort_canon_bonds_for_update<'a, F>(nbrs: &mut [CanonBondHolder<'a>], mut greater: F)
+where
+    F: FnMut(&CanonBondHolder<'a>, &CanonBondHolder<'a>) -> bool,
+{
+    // BEGIN COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex_insertion_loop
+    // RDKit✔️✔️:   for (size_t i = 1; i < nbrs.size(); ++i) {
+    // RDKit✔️✔️:     if (!bondholder::greater(nbrs[i], nbrs[i - 1])) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto value = std::move(nbrs[i]);
+    // RDKit✔️✔️:     size_t j = i;
+    // RDKit✔️✔️:     do {
+    // RDKit✔️✔️:       nbrs[j] = std::move(nbrs[j - 1]);
+    // RDKit✔️✔️:       --j;
+    // RDKit✔️✔️:     } while (j && bondholder::greater(value, nbrs[j - 1]));
+    // RDKit✔️✔️:     nbrs[j] = std::move(value);
+    // RDKit✔️✔️:   }
+    // END COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex_insertion_loop
+    // Copy holder contains only scalars, fixed arrays, and borrowed str. One
+    // shallow local record and fixed-size shifts reproduce std::move with no
+    // allocation. Equal keys never shift; sorted n-1, reverse n(n-1)/2 compares,
+    // O(1) auxiliary state and O(n^2) worst case, matching the source loop.
+    for i in 1..nbrs.len() {
+        if !greater(&nbrs[i], &nbrs[i - 1]) {
+            continue;
+        }
+        let value = nbrs[i];
+        let mut j = i;
+        loop {
+            nbrs[j] = nbrs[j - 1];
+            j -= 1;
+            if j == 0 || !greater(&value, &nbrs[j - 1]) {
+                break;
+            }
+        }
+        nbrs[j] = value;
+    }
 }
 
 fn update_atom_neighbor_num_swaps_for_kekulize(
@@ -7805,6 +8591,9 @@ mod tests {
                         }
                         KekulizeRingRows::Acquired(_) => {
                             panic!("{name}: unexpected acquisition")
+                        }
+                        KekulizeRingRows::Live(_) => {
+                            panic!("readonly transition never yields live rows")
                         }
                     }
                 }
@@ -11047,7 +11836,7 @@ mod tests {
     }
 
     #[test]
-    fn fused_dummy_subsets_follow_source_bit_order_and_reject_counter_overflow() {
+    fn fused_dummy_subsets_follow_source_bit_order_without_counter_limit() {
         let questions = vec![AtomId::new(2), AtomId::new(4), AtomId::new(6)];
         let mut enumerator = QuestionEnumerator::new(questions).unwrap();
         assert_eq!(enumerator.next(), vec![AtomId::new(2)]);
@@ -11062,13 +11851,8 @@ mod tests {
         );
         assert!(enumerator.next().is_empty());
 
-        assert!(matches!(
-            QuestionEnumerator::new(vec![AtomId::new(0); u32::BITS as usize]),
-            Err(KekulizeError::QuestionSubsetOverflow {
-                questions: 32,
-                bit_width: 32
-            })
-        ));
+        let mut wide = QuestionEnumerator::new(vec![AtomId::new(0); 32]).unwrap();
+        assert_eq!(wide.next(), vec![AtomId::new(0)]);
     }
 
     #[test]
@@ -15634,5 +16418,1084 @@ mod uint_complete_source_condition_cells {
             compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
             Err(bad(1, PropertyValueKind::IntVector))
         );
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem16 {
+    use super::*;
+    fn enumerator(n: usize) -> QuestionEnumerator {
+        QuestionEnumerator::new((0..n).map(AtomId::new).collect()).unwrap()
+    }
+    #[test]
+    fn zero_question_first_next_finishes_and_repeats_empty() {
+        let mut e = enumerator(0);
+        assert!(!e.done);
+        assert_eq!(e.state.len(), 0);
+        assert!(e.next().is_empty());
+        assert!(e.done);
+        assert!(e.next().is_empty());
+    }
+    #[test]
+    fn complete_small_binary_order_matches_source_subsets() {
+        for n in 1..=6 {
+            let mut e = enumerator(n);
+            for bits in 1usize..(1usize << n) {
+                let expected = (0..n)
+                    .filter(|i| bits & (1 << i) != 0)
+                    .map(AtomId::new)
+                    .collect::<Vec<_>>();
+                assert_eq!(e.next(), expected);
+                assert_eq!(e.done, bits == (1 << n) - 1);
+            }
+            assert!(e.next().is_empty());
+            assert!(e.next().is_empty());
+        }
+    }
+    #[test]
+    fn wide_questions_start_lazily_without_integer_width_rejection() {
+        for n in [31, 32, 33, 63, 64, 65, 130] {
+            let mut e = enumerator(n);
+            assert_eq!(e.state.len(), n.div_ceil(64));
+            assert_eq!(e.next(), vec![AtomId::new(0)]);
+            assert_eq!(e.next(), vec![AtomId::new(1)]);
+            assert_eq!(e.next(), vec![AtomId::new(0), AtomId::new(1)]);
+            assert!(!e.done);
+        }
+    }
+    #[test]
+    fn packed_carry_crosses_word_boundary_and_terminal_tail() {
+        let mut e = enumerator(130);
+        e.state = vec![u64::MAX, 0, 0];
+        assert_eq!(e.next(), (0..64).map(AtomId::new).collect::<Vec<_>>());
+        assert_eq!(e.state, vec![0, 1, 0]);
+        assert_eq!(e.next(), vec![AtomId::new(64)]);
+        e.state = vec![u64::MAX, u64::MAX, 1];
+        assert_eq!(e.next(), (0..129).map(AtomId::new).collect::<Vec<_>>());
+        assert_eq!(e.state, vec![0, 0, 2]);
+        e.state = vec![u64::MAX, u64::MAX, 3];
+        assert_eq!(e.next(), (0..130).map(AtomId::new).collect::<Vec<_>>());
+        assert!(e.done);
+        assert_eq!(e.state, vec![0, 0, 0]);
+        assert!(e.next().is_empty());
+    }
+}
+#[cfg(test)]
+mod recovery_chem17 {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+    fn graph(specs: Vec<AtomSpec>, edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            specs
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| Atom::from_spec(AtomId::new(i), s))
+                .collect(),
+            edges
+                .iter()
+                .enumerate()
+                .map(|(i, &(a, b, o))| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn ring(n: usize) -> TopologyBlock {
+        let mut t = graph(
+            vec![AtomSpec::new(Element::C).with_aromatic(true); n],
+            &(0..n)
+                .map(|i| (i, (i + 1) % n, BondOrder::Aromatic))
+                .collect::<Vec<_>>(),
+        );
+        for b in &mut t.bonds {
+            b.set_aromatic(true);
+        }
+        t
+    }
+    fn cold(n: usize) -> ValenceAssignment {
+        ValenceAssignment {
+            explicit_valence: vec![-1; n],
+            implicit_hydrogens: vec![-1; n],
+        }
+    }
+    fn reset() -> RingInfo {
+        let mut r = RingInfo::new(RingFindType::OtherOrUnknown, 0, 0);
+        r.reset();
+        r
+    }
+    #[test]
+    fn direct_nonaromatic_attempt_retains_cache_without_manufacturing_rings() {
+        let mut t = graph(vec![AtomSpec::new(Element::C)], &[]);
+        let before = t.clone();
+        let mut v = ValenceAssignment {
+            explicit_valence: vec![3],
+            implicit_hydrogens: vec![-1],
+        };
+        let mut r = reset();
+        source_kekulize_attempt(&mut t, &mut v, &mut r, &KekulizeParams::default()).unwrap();
+        assert_eq!(t, before);
+        assert_eq!(v.explicit_valence, vec![3]);
+        assert_eq!(v.implicit_hydrogens, vec![1]);
+        assert!(!r.is_initialized());
+    }
+    #[test]
+    fn atoms_none_precedes_cache_length_and_preserves_all_three_states() {
+        let mut t = graph(vec![AtomSpec::new(Element::C)], &[]);
+        let before = t.clone();
+        let mut v = cold(0);
+        let old = v.clone();
+        let mut r = reset();
+        let mut rows = KekulizeRingRows::Live(&mut r);
+        let result = kekulize_fragment_attempt(
+            &mut t,
+            &mut v,
+            &mut rows,
+            &[false],
+            &[],
+            &KekulizeParams::default(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result, (vec![], false));
+        assert_eq!(t, before);
+        assert_eq!(v, old);
+        assert!(!r.is_initialized());
+    }
+    #[test]
+    fn earlier_cache_rows_survive_later_stale_explicit_getter_error() {
+        let t = graph(vec![AtomSpec::new(Element::C); 2], &[]);
+        let mut v = ValenceAssignment {
+            explicit_valence: vec![-1, -2],
+            implicit_hydrogens: vec![-1, -1],
+        };
+        let err = prepare_kekulize_inputs(&t, &[true; 2], &[], None, &mut v).unwrap_err();
+        assert!(
+            matches!(err,KekulizeError::Valence(ValenceError::ExplicitValenceCacheNotInitialized{atom}) if atom==AtomId::new(1))
+        );
+        assert_eq!(v.explicit_valence, vec![0, -2]);
+        assert_eq!(v.implicit_hydrogens, vec![4, 6]);
+    }
+    #[test]
+    fn failed_matching_keeps_direction_clears_and_single_reset_in_live_graph() {
+        let mut t = ring(5);
+        for b in &mut t.bonds {
+            b.set_direction(BondDirection::EndUpRight);
+        }
+        let before = t.clone();
+        let mut v = cold(5);
+        let mut r = reset();
+        let err = source_kekulize_attempt(
+            &mut t,
+            &mut v,
+            &mut r,
+            &KekulizeParams {
+                mark_atoms_bonds: false,
+                canonical: false,
+                max_backtracks: 0,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, KekulizeError::NotKekulizable { .. }));
+        assert!(
+            t.bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Single && b.is_aromatic())
+        );
+        assert!(t.bonds.iter().any(|b| b.direction() == BondDirection::None));
+        assert!(t.atoms.iter().all(Atom::is_aromatic));
+        assert!(r.is_initialized());
+        assert_eq!(r.find_type(), RingFindType::Sssr);
+        assert!(v.explicit_valence.iter().all(|&x| x == 3));
+        assert!(v.implicit_hydrogens.iter().all(|&x| x == 1));
+        assert_ne!(t, before);
+    }
+    #[test]
+    fn readonly_failure_keeps_original_graph_cache_and_borrowed_ring_rows() {
+        let t = ring(5);
+        let v = cold(5);
+        let r = crate::find_sssr_from_parts(5, &t.bonds, &t.adjacency).unwrap();
+        let before = (t.clone(), v.clone(), r.clone());
+        assert!(
+            kekulize_with_query_state_and_ring_info(
+                &t,
+                &KekulizeParams {
+                    canonical: false,
+                    ..KekulizeParams::default()
+                },
+                None,
+                Some(&r),
+                Some(&v)
+            )
+            .is_err()
+        );
+        assert_eq!((t, v, r), before);
+    }
+    #[test]
+    fn source_recovery_restores_membership_not_old_order_hydrogen_or_direction() {
+        let mut t = ring(6);
+        t.atoms[0] = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::N)
+                .with_aromatic(true)
+                .with_no_implicit(true)
+                .with_explicit_hydrogens(1),
+        );
+        for b in &mut t.bonds {
+            b.set_order(BondOrder::Single);
+            b.set_direction(BondDirection::EndUpRight);
+        }
+        let aromatic_atoms = t.atoms.iter().map(Atom::is_aromatic).collect::<Vec<_>>();
+        let aromatic_bonds = vec![true; 6];
+        t.atoms[0].set_aromatic(false);
+        t.atoms[0].set_no_implicit(false);
+        t.atoms[0].set_explicit_hydrogens(0);
+        t.bonds[0].set_aromatic(false);
+        t.bonds[0].set_order(BondOrder::Double);
+        t.bonds[0].set_direction(BondDirection::None);
+        restore_source_aromatic_membership(&mut t, &aromatic_atoms, &aromatic_bonds);
+        assert!(t.atoms.iter().all(Atom::is_aromatic));
+        assert!(
+            t.bonds
+                .iter()
+                .all(|b| b.is_aromatic() && b.order() == BondOrder::Aromatic)
+        );
+        assert_eq!(t.atoms[0].explicit_hydrogens(), 0);
+        assert!(!t.atoms[0].no_implicit());
+        assert_eq!(t.bonds[0].direction(), BondDirection::None);
+    }
+    #[test]
+    fn late_np_and_stray_aromatic_atom_failure_exposes_source_prefix() {
+        // Valid detached graph for source-derived [nH]1cccc1.c before sanitize.
+        let mut t = ring(5);
+        t.atoms[0] = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::N)
+                .with_aromatic(true)
+                .with_no_implicit(true)
+                .with_explicit_hydrogens(1),
+        );
+        t.atoms.push(Atom::from_spec(
+            AtomId::new(5),
+            AtomSpec::new(Element::C).with_aromatic(true),
+        ));
+        t.adjacency = AdjacencyList::try_from_topology(6, &t.bonds).unwrap();
+        t.validate().unwrap();
+        let aromatic_atoms = vec![true; 6];
+        let aromatic_bonds = vec![true; 5];
+        let mut v = cold(6);
+        let mut r = reset();
+        let error = source_kekulize_attempt(
+            &mut t,
+            &mut v,
+            &mut r,
+            &KekulizeParams {
+                canonical: false,
+                ..KekulizeParams::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error,KekulizeError::AromaticAtomOutsideRing{atom} if atom==AtomId::new(5))
+        );
+        assert_eq!(t.atoms[0].explicit_hydrogens(), 0);
+        assert!(!t.atoms[0].no_implicit());
+        assert!(!t.atoms[0].is_aromatic());
+        assert_eq!(v.explicit_valence[0], 2);
+        assert_eq!(v.implicit_hydrogens[0], 1);
+        assert!(t.bonds.iter().all(|b| !b.is_aromatic()));
+        restore_source_aromatic_membership(&mut t, &aromatic_atoms, &aromatic_bonds);
+        assert!(t.atoms[0].is_aromatic());
+        assert_eq!(t.atoms[0].explicit_hydrogens(), 0);
+        assert_eq!(v.explicit_valence[0], 2);
+        assert!(r.is_initialized());
+    }
+    #[test]
+    fn borrowed_invalid_dimensions_keep_prepared_valence_error_priority() {
+        let t = ring(6);
+        let v = cold(6);
+        let r = RingInfo::new(RingFindType::OtherOrUnknown, 7, 6);
+        let snapshot = r.clone();
+        let mut rows = KekulizeRingRows::Borrowed(&r);
+        let error = kekulize_ring_state_transition_mut(
+            &t, &v, &[true; 6], &[true; 6], true, true, &mut rows,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            KekulizeError::CanonicalRank(CanonicalRankError::PreparedValenceInvalid {
+                atom_index: 0
+            })
+        ));
+        assert_eq!(r, snapshot);
+    }
+
+    #[test]
+    fn rank_error_retains_published_fast_and_success_replaces_with_sssr() {
+        let t = ring(6);
+        let mut invalid = cold(6);
+        let mut r = reset();
+        {
+            let mut rows = KekulizeRingRows::Live(&mut r);
+            assert!(
+                kekulize_ring_state_transition_mut(
+                    &t, &invalid, &[true; 6], &[true; 6], true, true, &mut rows
+                )
+                .is_err()
+            );
+        }
+        assert!(r.is_find_fast_or_better());
+        assert_eq!(r.find_type(), RingFindType::Fast);
+        invalid =
+            crate::assign_valence_with_options_for_topology(&t, ValenceModel::RdkitLike, false)
+                .unwrap();
+        let mut r = reset();
+        let mut rows = KekulizeRingRows::Live(&mut r);
+        kekulize_ring_state_transition_mut(
+            &t, &invalid, &[true; 6], &[true; 6], true, true, &mut rows,
+        )
+        .unwrap();
+        assert_eq!(r.find_type(), RingFindType::Sssr);
+        let ptr = r.atom_rings().as_ptr();
+        let mut rows = KekulizeRingRows::Live(&mut r);
+        kekulize_ring_state_transition_mut(
+            &t, &invalid, &[true; 6], &[true; 6], true, true, &mut rows,
+        )
+        .unwrap();
+        assert_eq!(r.atom_rings().as_ptr(), ptr);
+    }
+    #[test]
+    fn retry_only_true_source_sanitize_errors_and_preserve_final_failed_state() {
+        assert!(source_sanitize_kekulize_error(
+            &KekulizeError::NotKekulizable {
+                problem_atoms: vec![]
+            }
+        ));
+        assert!(source_sanitize_kekulize_error(
+            &KekulizeError::AromaticAtomOutsideRing {
+                atom: AtomId::new(0)
+            }
+        ));
+        assert!(source_sanitize_kekulize_error(
+            &KekulizeError::PostconditionValenceMismatch {
+                atom: AtomId::new(0),
+                before: 3,
+                after: 4
+            }
+        ));
+        assert!(!source_sanitize_kekulize_error(
+            &KekulizeError::MatchingStateLength {
+                field: "cache",
+                expected: 1,
+                actual: 0
+            }
+        ));
+        assert!(!source_sanitize_kekulize_error(
+            &KekulizeError::CanonicalRank(CanonicalRankError::PreparedValenceInvalid {
+                atom_index: 0
+            })
+        ));
+        assert!(!source_sanitize_kekulize_error(&KekulizeError::Valence(
+            ValenceError::InvalidExplicitValenceInput {
+                atom: AtomId::new(0),
+                value: -2
+            }
+        )));
+        let mut t = ring(5);
+        let mut v = cold(5);
+        let mut rings = None;
+        assert!(matches!(
+            source_kekulize_for_sanitize(&mut t, &mut v, &mut rings, None),
+            Err(KekulizeError::NotKekulizable { .. })
+        ));
+        // Second canonical attempt has failed: first-only recovery did not
+        // restore its final single bond state back to aromatic order.
+        assert!(
+            t.bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Single && b.is_aromatic())
+        );
+        assert!(rings.unwrap().is_initialized());
+    }
+}
+
+// Private test-only scoped observations of scratch constructor/refinement calls. after rebasing CHEM17.
+#[cfg(test)]
+mod chem31_scratch_trace {
+    use super::CanonCompareMode;
+    use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+    #[derive(Debug, Clone)]
+    pub(super) enum Event {
+        Construct(bool, usize, usize), // top-level?, constructor length, data pointer
+        Refine(CanonCompareMode, usize, usize), // actual mode, scratch pointer, length
+        Sort(usize, usize, bool, usize), // base offset, length, result-in-temp, temp pointer
+    }
+    std::thread_local! {
+        static EVENTS: RefCell<Option<Vec<Event>>> = const { RefCell::new(None) };
+    }
+    pub(super) struct Capture {
+        _thread_bound: PhantomData<Rc<()>>,
+    }
+    pub(super) fn capture() -> Capture {
+        EVENTS.with(|events| {
+            let mut events = events.borrow_mut();
+            assert!(events.is_none(), "CHEM31 scratch capture cannot nest");
+            *events = Some(Vec::new());
+        });
+        Capture {
+            _thread_bound: PhantomData,
+        }
+    }
+    impl Capture {
+        pub(super) fn events(&self) -> Vec<Event> {
+            EVENTS.with(|events| events.borrow().as_ref().expect("active capture").clone())
+        }
+    }
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            EVENTS.with(|events| {
+                events.borrow_mut().take();
+            });
+        }
+    }
+    pub(super) fn record(event: Event) {
+        EVENTS.with(|events| {
+            if let Some(events) = events.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem31 {
+
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+    fn chem31_graph(n: usize, edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn chem31_isolated(n: usize) -> TopologyBlock {
+        chem31_graph(n, &[])
+    }
+    fn chem31_atoms<'a>(view: &CanonRankReadView<'a>) -> Vec<CanonAtom<'a>> {
+        init_fragment_canon_atoms(
+            view,
+            &vec![true; view.num_atoms()],
+            &vec![true; view.bonds.len()],
+            true,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+    fn chem31_flags() -> CanonRankFlags {
+        CanonRankFlags::from_fragment_options(CanonicalRankParams::kekulize_fragment_default())
+    }
+    #[test]
+    fn rdkit_2026_03_6_chem31_inactive_guard_preserves_all_state_and_dirty_supplied_scratch() {
+        use super::chem31_scratch_trace::{Event, capture};
+        let m = chem31_graph(2, &[(0, 1)]);
+        let view = CanonRankReadView::from_topology(&m).unwrap();
+        for scratch_len in [1, 2, 5] {
+            let mut atoms = chem31_atoms(&view);
+            atoms[0].index = 0;
+            atoms[1].index = 1;
+            let mut order = vec![0, 1];
+            let mut count = vec![1, 1];
+            let mut active = -1;
+            let mut next = vec![-2; 2];
+            let mut changed = vec![false; 2];
+            let mut touched = vec![false; 2];
+            let mut scratch = vec![usize::MAX; scratch_len];
+            let before = (
+                format!("{atoms:?}"),
+                order.clone(),
+                count.clone(),
+                active,
+                next.clone(),
+                changed.clone(),
+                touched.clone(),
+                scratch.clone(),
+            );
+            let trace = capture();
+            let result = super::refine_partitions_for_kekulize(
+                &view,
+                &mut atoms,
+                true,
+                CanonCompareMode::Atom,
+                chem31_flags(),
+                &mut order,
+                &mut count,
+                &mut active,
+                &mut next,
+                &mut changed,
+                &mut touched,
+                Some(&mut scratch),
+            );
+            if scratch_len < 2 {
+                let error = result.unwrap_err();
+                assert!(matches!(error, CanonicalRankError::HanoiScratchTooSmall));
+                assert_eq!(error.to_string(), "hanoi scratch is too small");
+                assert!(trace.events().is_empty());
+            } else {
+                result.unwrap();
+                assert!(
+                    matches!(trace.events().as_slice(),[Event::Refine(CanonCompareMode::Atom,_,n)] if *n==scratch_len)
+                );
+            }
+            assert_eq!(
+                (
+                    format!("{atoms:?}"),
+                    order,
+                    count,
+                    active,
+                    next,
+                    changed,
+                    touched,
+                    scratch
+                ),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem31_inactive_fallback_and_empty_constructor_are_distinct_from_heap_count()
+    {
+        use super::chem31_scratch_trace::{Event, capture};
+        for n in [0, 2] {
+            let m = chem31_isolated(n);
+            let view = CanonRankReadView::from_topology(&m).unwrap();
+            let mut atoms = chem31_atoms(&view);
+            let mut order = (0..n).collect::<Vec<_>>();
+            let mut count = vec![1; n];
+            let mut active = -1;
+            let mut next = vec![-2; n];
+            let mut changed = vec![false; n];
+            let mut touched = vec![false; n];
+            let trace = capture();
+            super::refine_partitions_for_kekulize(
+                &view,
+                &mut atoms,
+                false,
+                CanonCompareMode::Atom,
+                chem31_flags(),
+                &mut order,
+                &mut count,
+                &mut active,
+                &mut next,
+                &mut changed,
+                &mut touched,
+                None,
+            )
+            .unwrap();
+            assert!(
+                matches!(trace.events().as_slice(),[Event::Construct(false,len,p),Event::Refine(CanonCompareMode::Atom,r,len2)] if *len==n && *len2==n && p==r)
+            );
+            // A zero-length constructor invocation does not allocate a heap buffer.
+        }
+        let trace = capture();
+        assert!(
+            rank_mol_atoms(&TopologyBlock::default())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(trace.events().is_empty());
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem31_nonzero_partition_uses_scratch_prefix_and_false_does_not_copy() {
+        use super::chem31_scratch_trace::{Event, capture};
+        for (n, symbols, expected, expect_temp, len) in [
+            (
+                5,
+                vec!["0", "z", "x", "y", "4"],
+                vec![0, 2, 3, 1, 4],
+                true,
+                3,
+            ),
+            (4, vec!["0", "z", "x", "3"], vec![0, 2, 1, 3], false, 2),
+        ] {
+            let m = chem31_isolated(n);
+            let view = CanonRankReadView::from_topology(&m).unwrap();
+            let mut atoms = chem31_atoms(&view);
+            for i in 0..n {
+                atoms[i].index = if i > 0 && i <= len { 1 } else { i as i32 };
+                atoms[i].p_symbol = Some(symbols[i]);
+            }
+            let mut order = (0..n).collect::<Vec<_>>();
+            let mut count = vec![1; n];
+            count[1] = len;
+            for c in &mut count[2..=len] {
+                *c = 0;
+            }
+            let mut active = 1;
+            let mut next = vec![-2; n];
+            next[1] = -1;
+            let mut changed = vec![true; n];
+            let mut touched = vec![false; n];
+            let mut scratch = vec![usize::MAX; n + 2];
+            let ptr = scratch.as_ptr() as usize;
+            let trace = capture();
+            super::refine_partitions_for_kekulize(
+                &view,
+                &mut atoms,
+                false,
+                CanonCompareMode::Atom,
+                chem31_flags(),
+                &mut order,
+                &mut count,
+                &mut active,
+                &mut next,
+                &mut changed,
+                &mut touched,
+                Some(&mut scratch),
+            )
+            .unwrap();
+            assert_eq!(order, expected);
+            assert!(scratch[len..].iter().all(|&x| x == usize::MAX));
+            assert!(trace.events().iter().any(
+                |e| matches!(e,Event::Sort(1,k,temp,p) if *k==len && *temp==expect_temp && *p==ptr)
+            ));
+            if expect_temp {
+                assert_eq!(&scratch[..len], &order[1..1 + len]);
+            } else {
+                assert!(scratch.iter().all(|&x| x == usize::MAX));
+            }
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem31_breakties_none_degree_zero_skips_and_short_borrowed_keeps_partial_state()
+     {
+        use super::chem31_scratch_trace::capture;
+        let m = chem31_isolated(2);
+        let view = CanonRankReadView::from_topology(&m).unwrap();
+        let mut atoms = chem31_atoms(&view);
+        let mut order = vec![0, 1];
+        let mut count = vec![2, 0];
+        let mut active = -1;
+        let mut next = vec![-2; 2];
+        let mut changed = vec![false; 2];
+        let mut touched = vec![false; 2];
+        {
+            let trace = capture();
+            super::break_ties_for_kekulize(
+                &view,
+                &mut atoms,
+                true,
+                CanonCompareMode::Atom,
+                chem31_flags(),
+                &mut order,
+                &mut count,
+                &mut active,
+                &mut next,
+                &mut changed,
+                &mut touched,
+                None,
+            )
+            .unwrap();
+            assert!(trace.events().is_empty());
+        }
+        assert_eq!(count, vec![1, 1]);
+        assert_eq!(
+            atoms.iter().map(|a| a.index).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        let m = chem31_graph(2, &[(0, 1)]);
+        let view = CanonRankReadView::from_topology(&m).unwrap();
+        let mut atoms = chem31_atoms(&view);
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut order = vec![0, 1];
+        let mut count = vec![2, 0];
+        let mut active = -1;
+        let mut next = vec![-2; 2];
+        let mut changed = vec![false; 2];
+        let mut touched = vec![false; 2];
+        let mut scratch = vec![usize::MAX; 1];
+        let trace = capture();
+        let error = super::break_ties_for_kekulize(
+            &view,
+            &mut atoms,
+            true,
+            CanonCompareMode::Atom,
+            chem31_flags(),
+            &mut order,
+            &mut count,
+            &mut active,
+            &mut next,
+            &mut changed,
+            &mut touched,
+            Some(&mut scratch),
+        )
+        .unwrap_err();
+        assert!(matches!(error, CanonicalRankError::HanoiScratchTooSmall));
+        assert_eq!(count, vec![1, 1]);
+        assert_eq!(
+            atoms.iter().map(|a| a.index).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(changed, vec![true, false]);
+        assert_eq!(scratch, vec![usize::MAX]);
+        assert!(trace.events().is_empty());
+        // BreakTies changes partition state before Refine validates; no rollback claim.
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem31_breakties_none_allocates_once_per_actual_refine() {
+        use super::chem31_scratch_trace::{Event, capture};
+        let m = chem31_graph(3, &[(0, 1), (1, 2), (2, 0)]);
+        let view = CanonRankReadView::from_topology(&m).unwrap();
+        let mut atoms = chem31_atoms(&view);
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut order = vec![0, 1, 2];
+        let mut count = vec![3, 0, 0];
+        let mut active = -1;
+        let mut next = vec![-2; 3];
+        let mut changed = vec![false; 3];
+        let mut touched = vec![false; 3];
+        let trace = capture();
+        super::break_ties_for_kekulize(
+            &view,
+            &mut atoms,
+            true,
+            CanonCompareMode::Atom,
+            chem31_flags(),
+            &mut order,
+            &mut count,
+            &mut active,
+            &mut next,
+            &mut changed,
+            &mut touched,
+            None,
+        )
+        .unwrap();
+        let events = trace.events();
+        let fallback = events
+            .iter()
+            .filter(|e| matches!(e, Event::Construct(false, 3, _)))
+            .count();
+        let calls = events
+            .iter()
+            .filter(|e| matches!(e, Event::Refine(_, _, 3)))
+            .count();
+        assert!(calls >= 2, "{events:?}");
+        assert_eq!(fallback, calls);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::Construct(true, _, _)))
+        );
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem31_top_rank_reuses_one_buffer_across_reached_modes_and_fragment_scope() {
+        use super::chem31_scratch_trace::{Event, capture};
+        // This regular cubane graph reaches the special-symmetry gate; the trace
+        // assertion below observes actual routing rather than inferring it from ranks.
+        let cube = chem31_graph(
+            8,
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 4),
+                (0, 4),
+                (1, 5),
+                (2, 6),
+                (3, 7),
+            ],
+        );
+        for (m, expect_symmetry, fragment) in [
+            (chem31_graph(2, &[(0, 1)]), false, false),
+            (cube, true, false),
+            (chem31_graph(3, &[(0, 1), (1, 2)]), false, true),
+        ] {
+            let trace = capture();
+            let ranks = if fragment {
+                let atoms = vec![true, false, true];
+                let bonds = vec![false; m.bonds.len()];
+                rank_fragment_atoms(&m, &atoms, &bonds).unwrap()
+            } else {
+                rank_mol_atoms(&m).unwrap()
+            };
+            assert_eq!(ranks.len(), m.atoms.len());
+            let events = trace.events();
+            let constructions = events
+                .iter()
+                .filter_map(|e| {
+                    if let Event::Construct(top, n, p) = e {
+                        Some((*top, *n, *p))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(constructions.len(), 1, "{events:?}");
+            assert!(constructions[0].0);
+            assert_eq!(constructions[0].1, m.atoms.len());
+            let ptr = constructions[0].2;
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, Event::Refine(CanonCompareMode::Atom, _, _)))
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, Event::Refine(CanonCompareMode::SpecialChirality, _, _)))
+            );
+            if expect_symmetry {
+                assert!(
+                    events.iter().any(|e| matches!(
+                        e,
+                        Event::Refine(CanonCompareMode::SpecialSymmetry, _, _)
+                    )),
+                    "{events:?}"
+                );
+            }
+            assert!(
+                events
+                    .iter()
+                    .filter_map(|e| if let Event::Refine(_, p, n) = e {
+                        Some((*p, *n))
+                    } else {
+                        None
+                    })
+                    .all(|(p, n)| p == ptr && n == m.atoms.len())
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem32 {
+    use super::*;
+    // The comparison-count closure observes the actual private insertion owner.
+    fn chem32_holder(id: usize, key: usize) -> CanonBondHolder<'static> {
+        CanonBondHolder {
+            bond_type: BondOrder::Single,
+            bond_stereo: 0,
+            stype: BondStereo::None,
+            controlling_atoms: [Some(id), None, Some(id + 1), None],
+            nbr_sym_class: key,
+            nbr_idx: id + 10,
+            p_symbol: Some("shared-borrowed-symbol"),
+            bond_idx: id,
+        }
+    }
+    fn chem32_full_record<'a>(
+        b: &CanonBondHolder<'a>,
+    ) -> (
+        BondOrder,
+        u8,
+        BondStereo,
+        [Option<usize>; 4],
+        usize,
+        usize,
+        Option<&'a str>,
+        usize,
+    ) {
+        (
+            b.bond_type,
+            b.bond_stereo,
+            b.stype,
+            b.controlling_atoms,
+            b.nbr_sym_class,
+            b.nbr_idx,
+            b.p_symbol,
+            b.bond_idx,
+        )
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem32_insertion_stability_and_exact_source_comparison_counts() {
+        for keys in [
+            vec![],
+            vec![2],
+            vec![3, 2, 1],
+            vec![2, 2, 2],
+            vec![0, 1, 2, 3],
+            vec![4, 2, 3, 1],
+            vec![5, 1, 4, 2, 3, 0],
+            vec![2, 2, 3, 2],
+            (0..128).collect(),
+            (0..1024).rev().collect(),
+        ] {
+            let mut holders = keys
+                .iter()
+                .enumerate()
+                .map(|(id, &key)| chem32_holder(id, key))
+                .collect::<Vec<_>>();
+            let original = holders.clone();
+            let mut expected = holders.clone();
+            expected.sort_by(|l, r| r.nbr_sym_class.cmp(&l.nbr_sym_class));
+            let mut comparisons = 0;
+            insertion_sort_canon_bonds_for_update(&mut holders, |l, r| {
+                comparisons += 1;
+                compare_canon_bond_holder(l, r, &[]) == Ordering::Greater
+            });
+            assert_eq!(
+                holders.iter().map(chem32_full_record).collect::<Vec<_>>(),
+                expected.iter().map(chem32_full_record).collect::<Vec<_>>()
+            );
+            // Expected ordering uses only source comparator keys; complete record IDs
+            // remain payload and prove ties are not broken by neighbor/bond IDs.
+            for holder in &holders {
+                assert_eq!(
+                    chem32_full_record(holder),
+                    chem32_full_record(&original[holder.bond_idx])
+                );
+            }
+            if keys.windows(2).all(|w| w[0] >= w[1]) {
+                assert_eq!(comparisons, keys.len().saturating_sub(1));
+            }
+            if keys.windows(2).all(|w| w[0] < w[1]) {
+                assert_eq!(comparisons, keys.len() * keys.len().saturating_sub(1) / 2);
+            }
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem32_insertion_uses_complete_source_greater_precedence() {
+        let ranks = [0, 3, 1];
+        let mut cases = Vec::new();
+        let mut a = chem32_holder(0, 0);
+        let mut b = chem32_holder(1, 0);
+        a.p_symbol = Some("A");
+        b.p_symbol = Some("B");
+        a.bond_type = BondOrder::Triple;
+        cases.push((a, b));
+        let mut a = chem32_holder(0, 0);
+        let b = chem32_holder(1, 0);
+        a.p_symbol = None;
+        a.bond_type = BondOrder::Triple;
+        cases.push((b, a));
+        let a = chem32_holder(0, 0);
+        let mut b = chem32_holder(1, 0);
+        b.bond_type = BondOrder::Double;
+        cases.push((a, b));
+        for (low, high) in [
+            (BondStereo::None, BondStereo::Any),
+            (BondStereo::Z, BondStereo::E),
+            (BondStereo::E, BondStereo::Cis),
+        ] {
+            let mut a = chem32_holder(0, 0);
+            let mut b = chem32_holder(1, 0);
+            a.stype = low;
+            a.bond_stereo = rdkit_bond_stereo_rank(low);
+            b.stype = high;
+            b.bond_stereo = rdkit_bond_stereo_rank(high);
+            cases.push((a, b));
+        }
+        let a = chem32_holder(0, 1);
+        let b = chem32_holder(1, 2);
+        cases.push((a, b));
+        let mut a = chem32_holder(0, 4);
+        let mut b = chem32_holder(1, 4);
+        a.stype = BondStereo::Cis;
+        a.bond_stereo = rdkit_bond_stereo_rank(a.stype);
+        b.stype = a.stype;
+        b.bond_stereo = a.bond_stereo;
+        a.controlling_atoms = [Some(0), None, Some(2), None];
+        b.controlling_atoms = [Some(0), Some(1), Some(2), None];
+        cases.push((a, b));
+        for (low, high) in cases {
+            assert_eq!(
+                compare_canon_bond_holder(&low, &high, &ranks),
+                Ordering::Less
+            );
+            let mut values = [low, high];
+            insertion_sort_canon_bonds_for_update(&mut values, |l, r| {
+                compare_canon_bond_holder(l, r, &ranks) == Ordering::Greater
+            });
+            assert_eq!(values[0].bond_idx, high.bond_idx);
+            assert_eq!(values[1].bond_idx, low.bond_idx);
+        }
+    }
+
+    #[test]
+    fn rdkit_2026_03_6_chem32_actual_update_refreshes_all_classes_before_insertion() {
+        let source_atoms = (0..5)
+            .map(|i| {
+                Atom::from_spec(
+                    AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C),
+                )
+            })
+            .collect();
+        let source_bonds = [(0, 1), (1, 2), (1, 3), (1, 4)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        AtomId::new(a),
+                        AtomId::new(b),
+                        BondOrder::Single,
+                    ),
+                )
+            })
+            .collect();
+        let graph =
+            TopologyBlock::try_from_parts(source_atoms, source_bonds, vec![], vec![]).unwrap();
+        let view = CanonRankReadView::from_topology(&graph).unwrap();
+        let mut atoms =
+            init_fragment_canon_atoms(&view, &[true; 5], &[true; 4], true, None, None).unwrap();
+        for (atom, index) in atoms.iter_mut().zip([8, 0, 2, 7, 4]) {
+            atom.index = index;
+        }
+        for (i, bond) in atoms[1].bonds.iter_mut().enumerate() {
+            bond.nbr_sym_class = 100 + i;
+        }
+        let original = atoms[1].bonds.clone();
+        update_atom_neighbor_index_for_kekulize(&mut atoms, 1);
+        assert_eq!(
+            atoms[1]
+                .bonds
+                .iter()
+                .map(|b| b.nbr_sym_class)
+                .collect::<Vec<_>>(),
+            vec![8, 7, 4, 2]
+        );
+        for bond in &atoms[1].bonds {
+            assert_eq!(bond.nbr_sym_class, atoms[bond.nbr_idx].index as usize);
+            let mut expected = *original
+                .iter()
+                .find(|b| b.bond_idx == bond.bond_idx)
+                .unwrap();
+            expected.nbr_sym_class = bond.nbr_sym_class;
+            assert_eq!(chem32_full_record(bond), chem32_full_record(&expected));
+        }
     }
 }

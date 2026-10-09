@@ -408,9 +408,29 @@ fn cleanup_debug_and_post_parse_chemistry_flags_keep_their_layer_boundaries() {
         },
     )
     .expect("uncleaned");
+    assert_eq!(retained.topology.bonds[0].prop("_cxsmilesBondIdx"), None);
+
+    // .6 ordinary productions no longer install the property, while ring
+    // closures still do. Exercise cleanup using a property that actually exists.
+    let ring_retained = parse_smiles(
+        "C1CC1",
+        &SmilesParseParams {
+            skip_cleanup: true,
+            ..Default::default()
+        },
+    )
+    .expect("uncleaned ring");
     assert_eq!(
-        retained.topology.bonds[0].prop("_cxsmilesBondIdx"),
-        Some(&PropertyValue::UInt(0))
+        ring_retained.topology.bonds[2].prop("_cxsmilesBondIdx"),
+        Some(&PropertyValue::UInt(2))
+    );
+    let ring_cleaned = parse_smiles("C1CC1", &Default::default()).expect("cleaned ring");
+    assert!(
+        ring_cleaned
+            .topology
+            .bonds
+            .iter()
+            .all(|bond| bond.prop("_cxsmilesBondIdx").is_none())
     );
 
     let baseline = parse_smiles(

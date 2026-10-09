@@ -59,6 +59,12 @@ pub enum GenerationError {
     WorkerLaunch(#[source] std::io::Error),
     #[error("{0}")]
     Input(&'static str),
+    #[error("coordMap atom index is out of range")]
+    CoordinateMapIndex { atom_index: i32, atom_count: usize },
+    #[error("coordMap contains non-finite coordinates")]
+    CoordinateMapNonFinite { atom_index: i32 },
+    #[error("unsupported conformer implementation: {implementation}")]
+    UnsupportedImplementation { implementation: &'static str },
 }
 // The optimizer checks all pair indices against dimension before it reads bounds.
 // BoundsMatrix is the sole existing storage; this narrow reader owns no matrix copy.
@@ -1475,75 +1481,15 @@ mod original_numeric_generation_conditions {
 }
 
 static FAILURE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-static SOURCE_INTERRUPTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 fn source_got_signal() -> bool {
-    // BEGIN RDKIT CPP FUNCTION source_got_signal (RDGeneral/ControlCHandler.h)
-    // RDKit❗✔️:   static bool getGotSignal() { return d_gotSignal; }
-    // END RDKIT CPP FUNCTION source_got_signal
-
-    SOURCE_INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+    cosmolkit_core::source_control_c::got_signal()
 }
-#[cfg(not(target_arch = "wasm32"))]
-extern "C" fn source_signal_handler(signal_number: libc::c_int) {
-    // BEGIN RDKIT CPP FUNCTION source_signal_handler (RDGeneral/ControlCHandler.h)
-    // RDKit❗✔️:   static void signalHandler(int signalNumber) {
-    // RDKit❗✔️:     if (signalNumber == SIGINT) {
-    // RDKit❗✔️:       d_gotSignal = true;
-    // RDKit❗✔️:       std::signal(SIGINT, d_prev_handler);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // END RDKIT CPP FUNCTION source_signal_handler
-
-    if signal_number == libc::SIGINT {
-        SOURCE_INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
-        // Safety: this is the C signal() entrypoint with SIGINT and SIG_DFL, the
-        // zero-initialized prior handler in the source reset-only embedding path.
-        unsafe {
-            libc::signal(libc::SIGINT, libc::SIG_DFL);
-        }
-    }
-}
-#[cfg(not(target_arch = "wasm32"))]
 fn source_reset_interrupt() -> Result<(), GenerationError> {
-    // BEGIN RDKIT CPP FUNCTION source_reset_interrupt (RDGeneral/ControlCHandler.h)
-    // RDKit❗✔️:   static void reset() {
-    // RDKit❗✔️:     d_gotSignal = false;
-    // RDKit❗✔️:     std::signal(SIGINT, signalHandler);
-    // RDKit❗✔️:   }
-    // END RDKIT CPP FUNCTION source_reset_interrupt
-
-    SOURCE_INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
-    // Safety: the callback has the C signal handler ABI, static lifetime and
-    // performs only lock-free atomic storage and the source C signal reset.
-    let previous = unsafe {
-        libc::signal(
-            libc::SIGINT,
-            source_signal_handler as *const () as libc::sighandler_t,
-        )
-    };
-    // Windows declares SIG_ERR as c_int, while signal() returns sighandler_t.
-    // Convert the -1 sentinel to the return type without narrowing its bits.
-    if previous == libc::SIG_ERR as libc::sighandler_t {
+    if !cosmolkit_core::source_control_c::reset() {
         return Err(GenerationError::Input(
             "cannot install embedding SIGINT handler",
         ));
     }
-    Ok(())
-}
-#[cfg(target_arch = "wasm32")]
-fn source_reset_interrupt() -> Result<(), GenerationError> {
-    // BEGIN RDKIT CPP FUNCTION source_reset_interrupt (RDGeneral/ControlCHandler.h)
-    // RDKit❗✔️:   static void reset() {
-    // RDKit❗✔️:     d_gotSignal = false;
-    // RDKit❗✔️:     std::signal(SIGINT, signalHandler);
-    // RDKit❗✔️:   }
-    // END RDKIT CPP FUNCTION source_reset_interrupt
-    // Approved Web adaptation: browser/Node WASM has no process SIGINT handler.
-    // Reset the same interruption state without installing an OS handler;
-    // computation and deadline checks remain enabled. Host cancellation (e.g.
-    // terminating a Worker) is separate from synchronous chemistry execution.
-    SOURCE_INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
     Ok(())
 }
 fn embedder_double_bond_geometry_checks(
@@ -5204,6 +5150,218 @@ pub fn generate_conformers(
     params: &mut EmbedParams,
     project_query: crate::PruningQueryProjection,
 ) -> Result<GeneratedConformers, GenerationError> {
+    // BEGIN RECOVERY GEO-06 SOURCE generate_conformers
+    // RDKit❗❌: void EmbedMultipleConfs(ROMol &mol, INT_VECT &res, unsigned int numConfs,
+    // RDKit❗❌:                         EmbedParameters &params) {
+    // RDKit❗❌:   TimePoint *end_time = nullptr;
+    // RDKit❗❌:   TimePoint end_time_storage;
+    // RDKit❗❌:   if (params.timeout > 0) {
+    // RDKit❗❌:     end_time_storage = Clock::now() + std::chrono::seconds(params.timeout);
+    // RDKit❗❌:     end_time = &end_time_storage;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (params.trackFailures) {
+    // RDKit❗❌: #ifdef RDK_BUILD_THREADSAFE_SSS
+    // RDKit❗❌:     std::lock_guard<std::mutex> lock(GetFailMutex());
+    // RDKit❗❌: #endif
+    // RDKit❗❌:     params.failures.resize(EmbedFailureCauses::END_OF_ENUM);
+    // RDKit❗❌:     std::fill(params.failures.begin(), params.failures.end(), 0);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!mol.getNumAtoms()) {
+    // RDKit❗❌:     throw ValueErrorException("molecule has no atoms");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (params.ETversion < 1 || params.ETversion > 2) {
+    // RDKit❗❌:     throw ValueErrorException(
+    // RDKit❗❌:         "Only version 1 and 2 of the experimental "
+    // RDKit❗❌:         "torsion-angle preferences (ETversion) supported");
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (MolOps::needsHs(mol)) {
+    // RDKit❗❌:     BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:         << "Molecule does not have explicit Hs. Consider calling AddHs()"
+    // RDKit❗❌:         << std::endl;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // initialize the conformers we're going to be creating:
+    // RDKit❗❌:   if (params.clearConfs) {
+    // RDKit❗❌:     res.clear();
+    // RDKit❗❌:     mol.clearConformers();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::vector<std::unique_ptr<Conformer>> confs;
+    // RDKit❗❌:   confs.reserve(numConfs);
+    // RDKit❗❌:   for (unsigned int i = 0; i < numConfs; ++i) {
+    // RDKit❗❌:     confs.emplace_back(new Conformer(mol.getNumAtoms()));
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   boost::dynamic_bitset<> confsOk(numConfs);
+    // RDKit❗❌:   confsOk.set();
+    // RDKit❗❌:
+    // RDKit❗❌:   INT_VECT fragMapping;
+    // RDKit❗❌:   std::vector<ROMOL_SPTR> molFrags;
+    // RDKit❗❌:   if (params.embedFragmentsSeparately) {
+    // RDKit❗❌:     molFrags = MolOps::getMolFrags(mol, true, &fragMapping);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     molFrags.push_back(ROMOL_SPTR(new ROMol(mol)));
+    // RDKit❗❌:     fragMapping.resize(mol.getNumAtoms());
+    // RDKit❗❌:     std::fill(fragMapping.begin(), fragMapping.end(), 0);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   const std::map<int, RDGeom::Point3D> *coordMap = params.coordMap;
+    // RDKit❗❌:   if (molFrags.size() > 1 && coordMap) {
+    // RDKit❗❌:     BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:         << "Constrained conformer generation (via the coordMap argument) "
+    // RDKit❗❌:            "does not work with molecules that have multiple fragments."
+    // RDKit❗❌:         << std::endl;
+    // RDKit❗❌:     coordMap = nullptr;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   boost::dynamic_bitset<> constrainedAtoms(mol.getNumAtoms());
+    // RDKit❗❌:   if (coordMap) {
+    // RDKit❗❌:     for (const auto &entry : *coordMap) {
+    // RDKit❗❌:       if (entry.first < 0 ||
+    // RDKit❗❌:           static_cast<unsigned int>(entry.first) >= mol.getNumAtoms()) {
+    // RDKit❗❌:         throw ValueErrorException("coordMap atom index is out of range");
+    // RDKit❗❌:       }
+    // RDKit❗❌:       const auto &point = entry.second;
+    // RDKit❗❌:       if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+    // RDKit❗❌:           !std::isfinite(point.z)) {
+    // RDKit❗❌:         throw ValueErrorException("coordMap contains non-finite coordinates");
+    // RDKit❗❌:       }
+    // RDKit❗❌:       constrainedAtoms.set(entry.first);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (molFrags.size() > 1 && params.boundsMat != nullptr) {
+    // RDKit❗❌:     BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:         << "Conformer generation using a user-provided boundsMat "
+    // RDKit❗❌:            "does not work with molecules that have multiple fragments. The "
+    // RDKit❗❌:            "boundsMat will be ignored."
+    // RDKit❗❌:         << std::endl;
+    // RDKit❗❌:     coordMap = nullptr;  // FIXME not directly related to ETKDG, but here I
+    // RDKit❗❌:                          // think it should be params.boundsMat = nullptr
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // we will generate conformations for each fragment in the molecule
+    // RDKit❗❌:   // separately, so loop over them:
+    // RDKit❗❌:   for (unsigned int fragIdx = 0; fragIdx < molFrags.size(); ++fragIdx) {
+    // RDKit❗❌:     ROMOL_SPTR piece = molFrags[fragIdx];
+    // RDKit❗❌:     unsigned int nAtoms = piece->getNumAtoms();
+    // RDKit❗❌:
+    // RDKit❗❌:     ForceFields::CrystalFF::CrystalFFDetails etkdgDetails;
+    // RDKit❗❌:     etkdgDetails.constrainedAtoms = constrainedAtoms;
+    // RDKit❗❌:     etkdgDetails.distMat = MolOps::getDistanceMat(*piece.get());
+    // RDKit❗❌:     etkdgDetails.forceConsts =
+    // RDKit❗❌:         params.useLegacyImplementation
+    // RDKit❗❌:             ? ForceFields::CrystalFF::ETKDGForceConsts::SEQ::Cosine
+    // RDKit❗❌:             : ForceFields::CrystalFF::ETKDGForceConsts::AIO::Cosine;
+    // RDKit❗❌:
+    // RDKit❗❌:     EmbeddingOps::initETKDG(piece.get(), params, etkdgDetails);
+    // RDKit❗❌:
+    // RDKit❗❌:     DistGeom::BoundsMatPtr mmat;
+    // RDKit❗❌:     if (params.boundsMat == nullptr || molFrags.size() > 1) {
+    // RDKit❗❌:       // The user didn't provide one, so create and initialize the distance
+    // RDKit❗❌:       // bounds matrix
+    // RDKit❗❌:       mmat.reset(new DistGeom::BoundsMatrix(nAtoms));
+    // RDKit❗❌:       initBoundsMat(mmat);
+    // RDKit❗❌:       if (!EmbeddingOps::setupInitialBoundsMatrix(piece.get(), mmat, coordMap,
+    // RDKit❗❌:                                                   params, etkdgDetails)) {
+    // RDKit❗❌:         // return if we couldn't setup the bounds matrix
+    // RDKit❗❌:         // possible causes include a triangle smoothing failure
+    // RDKit❗❌:         return;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       // just use what they gave us
+    // RDKit❗❌:       // first make sure it's the right size though:
+    // RDKit❗❌:       if (params.boundsMat->numRows() != nAtoms) {
+    // RDKit❗❌:         throw ValueErrorException(
+    // RDKit❗❌:             "size of boundsMat provided does not match the number of atoms in "
+    // RDKit❗❌:             "the molecule.");
+    // RDKit❗❌:       }
+    // RDKit❗❌:       collectBondsAndAngles((*piece.get()), etkdgDetails.bonds,
+    // RDKit❗❌:                             etkdgDetails.angles);
+    // RDKit❗❌:       mmat.reset(new DistGeom::BoundsMatrix(*params.boundsMat));
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // find all the chiral centers in the molecule
+    // RDKit❗❌:     MolOps::assignStereochemistry(*piece);
+    // RDKit❗❌:     DistGeom::VECT_CHIRALSET chiralCenters;
+    // RDKit❗❌:     DistGeom::VECT_CHIRALSET tetrahedralCarbons;
+    // RDKit❗❌:     EmbeddingOps::findChiralSets(*piece, chiralCenters, tetrahedralCarbons,
+    // RDKit❗❌:                                  coordMap);
+    // RDKit❗❌:
+    // RDKit❗❌:     // find double bonds
+    // RDKit❗❌:     std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
+    // RDKit❗❌:         doubleBondEnds;
+    // RDKit❗❌:     std::vector<std::pair<std::vector<unsigned int>, int>> stereoDoubleBonds;
+    // RDKit❗❌:     EmbeddingOps::findDoubleBonds(*piece, doubleBondEnds, stereoDoubleBonds,
+    // RDKit❗❌:                                   coordMap);
+    // RDKit❗❌:
+    // RDKit❗❌:     // if we have any chiral centers or are using random coordinates, we
+    // RDKit❗❌:     // will first embed the molecule in four dimensions, otherwise we will
+    // RDKit❗❌:     // use 3D
+    // RDKit❗❌:     bool fourD = false;
+    // RDKit❗❌:     if (params.useRandomCoords || chiralCenters.size() > 0) {
+    // RDKit❗❌:       fourD = true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     int numThreads = getNumThreadsToUse(params.numThreads);
+    // RDKit❗❌:
+    // RDKit❗❌:     ControlCHandler::reset();
+    // RDKit❗❌:
+    // RDKit❗❌:     // do the embedding, using multiple threads if requested
+    // RDKit❗❌:     detail::EmbedArgs eargs = {&confsOk,        fourD,
+    // RDKit❗❌:                                &fragMapping,    &confs,
+    // RDKit❗❌:                                fragIdx,         mmat,
+    // RDKit❗❌:                                &chiralCenters,  &tetrahedralCarbons,
+    // RDKit❗❌:                                &doubleBondEnds, &stereoDoubleBonds,
+    // RDKit❗❌:                                &etkdgDetails,   piece->getNumHeavyAtoms()};
+    // RDKit❗❌:     if (numThreads == 1) {
+    // RDKit❗❌:       detail::embedHelper_(0, 1, &eargs, &params, end_time);
+    // RDKit❗❌:     }
+    // RDKit❗❌: #ifdef RDK_BUILD_THREADSAFE_SSS
+    // RDKit❗❌:     else {
+    // RDKit❗❌:       std::vector<std::future<void>> tg;
+    // RDKit❗❌:       for (int tid = 0; tid < numThreads; ++tid) {
+    // RDKit❗❌:         tg.emplace_back(std::async(std::launch::async, detail::embedHelper_,
+    // RDKit❗❌:                                    tid, numThreads, &eargs, &params, end_time));
+    // RDKit❗❌:       }
+    // RDKit❗❌:       for (auto &fut : tg) {
+    // RDKit❗❌:         fut.get();
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌: #endif
+    // RDKit❗❌:     if (end_time != nullptr && Clock::now() > *end_time) {
+    // RDKit❗❌:       if (params.trackFailures) {
+    // RDKit❗❌: #ifdef RDK_BUILD_THREADSAFE_SSS
+    // RDKit❗❌:         std::lock_guard<std::mutex> lock(GetFailMutex());
+    // RDKit❗❌: #endif
+    // RDKit❗❌:         params.failures[EmbedFailureCauses::EXCEEDED_TIMEOUT]++;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res.push_back(-1);
+    // RDKit❗❌:       return;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (ControlCHandler::getGotSignal()) {
+    // RDKit❗❌:       BOOST_LOG(rdWarningLog) << INTERRUPT_MESSAGE << std::endl;
+    // RDKit❗❌:       return;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::vector<std::vector<unsigned int>> selfMatches;
+    // RDKit❗❌:   if (params.pruneRmsThresh > 0.0) {
+    // RDKit❗❌:     selfMatches = detail::getMolSelfMatches(mol, params);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (unsigned int ci = 0; ci < confs.size(); ++ci) {
+    // RDKit❗❌:     auto &conf = confs[ci];
+    // RDKit❗❌:     if (confsOk[ci]) {
+    // RDKit❗❌:       // check if we are pruning away conformations and
+    // RDKit❗❌:       // a close-by conformation has already been chosen :
+    // RDKit❗❌:       if (params.pruneRmsThresh <= 0.0 ||
+    // RDKit❗❌:           _isConfFarFromRest(mol, *conf, params.pruneRmsThresh, selfMatches)) {
+    // RDKit❗❌:         int confId = (int)mol.addConformer(conf.release(), true);
+    // RDKit❗❌:         res.push_back(confId);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RECOVERY GEO-06 SOURCE generate_conformers
+
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbedMultipleConfs (Embedder.cpp:1501-1694)
     // RDKit❗❌: void EmbedMultipleConfs(ROMol &mol, INT_VECT &res, unsigned int numConfs,
     // RDKit❗❌:                         EmbedParameters &params) {
@@ -5502,12 +5660,17 @@ pub fn generate_conformers(
     }
     let mut constrained_atoms = vec![false; topology.atoms.len()];
     if let Some(map) = coord_map {
-        for &key in map.keys() {
-            *constrained_atoms
-                .get_mut(key as u32 as usize)
-                .ok_or(GenerationError::Input(
-                    "constrained atom index out of range",
-                ))? = true;
+        for (&key, point) in map {
+            if key < 0 || key as u32 as usize >= topology.atoms.len() {
+                return Err(GenerationError::CoordinateMapIndex {
+                    atom_index: key,
+                    atom_count: topology.atoms.len(),
+                });
+            }
+            if !point[0].is_finite() || !point[1].is_finite() || !point[2].is_finite() {
+                return Err(GenerationError::CoordinateMapNonFinite { atom_index: key });
+            }
+            constrained_atoms[key as usize] = true;
         }
     }
     if count > 1 && params.bounds_mat.is_some() {
@@ -5562,6 +5725,27 @@ pub fn generate_conformers(
             hybridizations: &hybridizations,
             conjugated: &conjugated,
         };
+        // BEGIN RECOVERY GEO-15 SOURCE generate_conformers
+        // RDKit❌❌:   for (unsigned int fragIdx = 0; fragIdx < molFrags.size(); ++fragIdx) {
+        // RDKit❌❌:     ROMOL_SPTR piece = molFrags[fragIdx];
+        // RDKit❌❌:     unsigned int nAtoms = piece->getNumAtoms();
+        // RDKit❌❌:
+        // RDKit❌❌:     ForceFields::CrystalFF::CrystalFFDetails etkdgDetails;
+        // RDKit❌❌:     etkdgDetails.constrainedAtoms = constrainedAtoms;
+        // RDKit❌❌:     etkdgDetails.distMat = MolOps::getDistanceMat(*piece.get());
+        // RDKit❌❌:     etkdgDetails.forceConsts =
+        // RDKit❌❌:         params.useLegacyImplementation
+        // RDKit❌❌:             ? ForceFields::CrystalFF::ETKDGForceConsts::SEQ::Cosine
+        // RDKit❌❌:             : ForceFields::CrystalFF::ETKDGForceConsts::AIO::Cosine;
+        // RDKit❌❌:
+        // RDKit❌❌:     EmbeddingOps::initETKDG(piece.get(), params, etkdgDetails);
+        // RDKit❌❌:
+        // END RECOVERY GEO-15 SOURCE generate_conformers
+        if !params.use_legacy_implementation {
+            return Err(GenerationError::UnsupportedImplementation {
+                implementation: "distgeom.aio",
+            });
+        }
         let mut details = CrystalFFDetails::default();
         details.constrained_atoms = constrained_atoms.clone();
         embedder_init_etkdg(&prepared, params, &mut details)?;
@@ -5740,6 +5924,261 @@ pub fn generate_conformers(
 
 #[cfg(test)]
 mod original_complete_generation_conditions {
+
+    #[test]
+    fn recovery_geo15_presets_legacy_default_and_failure_reset_use_fifteen_actual_slots() {
+        let mol = carbon();
+        for mut p in [
+            EmbedParams::default(),
+            EmbedParams::dg(),
+            EmbedParams::kdg(),
+            EmbedParams::etdg(),
+            EmbedParams::etdg_v2(),
+            EmbedParams::etkdg(),
+            EmbedParams::etkdg_v2(),
+            EmbedParams::etkdg_v3(),
+            EmbedParams::sr_etkdg_v3(),
+        ] {
+            assert!(p.use_legacy_implementation);
+            p.track_failures = true;
+            p.failures = vec![7; 19];
+            let out = generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection,
+            )
+            .unwrap();
+            assert!(out.conformers.is_empty());
+            assert_eq!(p.failures, vec![0; 15]);
+            p.failures[12..15].fill(9);
+            let _ = generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection,
+            )
+            .unwrap();
+            assert_eq!(p.failures, vec![0; 15]);
+            p.track_failures = false;
+            p.failures = vec![3, 4, 5];
+            let _ = generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection,
+            )
+            .unwrap();
+            assert_eq!(p.failures, vec![3, 4, 5]);
+        }
+    }
+    #[test]
+    fn recovery_geo15_false_is_typed_rejected_at_actual_fragmentloop_even_zero_conformers() {
+        let mol = smiles("CC");
+        let original = mol.clone();
+        for count in [0, 1] {
+            let mut p = EmbedParams {
+                use_legacy_implementation: false,
+                track_failures: true,
+                failures: vec![7; 19],
+                ..Default::default()
+            };
+            assert!(matches!(
+                generate_conformers(
+                    &mol,
+                    &Default::default(),
+                    &Default::default(),
+                    count,
+                    &mut p,
+                    unused_projection
+                ),
+                Err(GenerationError::UnsupportedImplementation {
+                    implementation: "distgeom.aio"
+                })
+            ));
+            assert_eq!(p.failures, vec![0; 15]);
+            assert_eq!(mol, original);
+        }
+    }
+    #[test]
+    fn recovery_geo15_false_preserves_prefix_error_and_ignored_multifragment_map_order() {
+        let mut p = EmbedParams {
+            use_legacy_implementation: false,
+            track_failures: true,
+            failures: vec![7],
+            et_version: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            generate_conformers(
+                &TopologyBlock::default(),
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection
+            ),
+            Err(GenerationError::Input("molecule has no atoms"))
+        ));
+        assert_eq!(p.failures, vec![0; 15]);
+        let mol = smiles("CC");
+        assert!(matches!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection
+            ),
+            Err(GenerationError::Input(_))
+        ));
+        p.et_version = 2;
+        p.coord_map = Some(BTreeMap::from([(-1, [0.; 3])]));
+        assert!(matches!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection
+            ),
+            Err(GenerationError::CoordinateMapIndex { atom_index: -1, .. })
+        ));
+        let mol = smiles("C.C");
+        assert!(matches!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut p,
+                unused_projection
+            ),
+            Err(GenerationError::UnsupportedImplementation { .. })
+        ));
+    }
+
+    #[test]
+    fn recovery_geo06_effective_map_checks_every_axis_including_singleton() {
+        let mol = carbon();
+        let before = mol.clone();
+        for axis in 0..3 {
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                let mut point = [0.; 3];
+                point[axis] = bad;
+                let mut params = random_embed_params(7, 1);
+                params.coord_map = Some(BTreeMap::from([(0, point)]));
+                let err = generate_conformers(
+                    &mol,
+                    &Default::default(),
+                    &Default::default(),
+                    0,
+                    &mut params,
+                    unused_projection,
+                )
+                .unwrap_err();
+                assert!(matches!(
+                    err,
+                    GenerationError::CoordinateMapNonFinite { atom_index: 0 }
+                ));
+                assert_eq!(err.to_string(), "coordMap contains non-finite coordinates");
+                assert_eq!(mol, before);
+            }
+        }
+        let mut params = random_embed_params(7, 1);
+        params.coord_map = Some(BTreeMap::from([(0, [-0., f64::MAX, -f64::MAX])]));
+        assert!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut params,
+                unused_projection
+            )
+            .is_ok()
+        );
+    }
+    #[test]
+    fn recovery_geo06_sorted_entry_error_precedence_index_before_point() {
+        let mol = carbon();
+        for map in [
+            BTreeMap::from([(-1, [f64::NAN; 3]), (0, [f64::NAN; 3])]),
+            BTreeMap::from([(1, [f64::NAN; 3])]),
+        ] {
+            let first = *map.keys().next().unwrap();
+            let mut params = random_embed_params(7, 1);
+            params.coord_map = Some(map);
+            let err = generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut params,
+                unused_projection,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(err,GenerationError::CoordinateMapIndex{atom_index,atom_count:1} if atom_index==first)
+            );
+            assert_eq!(err.to_string(), "coordMap atom index is out of range");
+        }
+        let mut params = random_embed_params(7, 1);
+        params.coord_map = Some(BTreeMap::from([(0, [f64::NAN; 3]), (1, [0.; 3])]));
+        assert!(matches!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut params,
+                unused_projection
+            ),
+            Err(GenerationError::CoordinateMapNonFinite { atom_index: 0 })
+        ));
+    }
+    #[test]
+    fn recovery_geo06_multiple_fragments_ignore_invalid_map_before_validation() {
+        let mol = smiles("C.C");
+        let mut params = random_embed_params(7, 1);
+        params.coord_map = Some(BTreeMap::from([(-1, [f64::NAN; 3])]));
+        let result = generate_conformers(
+            &mol,
+            &Default::default(),
+            &Default::default(),
+            0,
+            &mut params,
+            unused_projection,
+        )
+        .unwrap();
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| matches!(d, EmbeddingDiagnostic::MultipleFragmentsCoordinateMap))
+        );
+        params.embed_fragments_separately = false;
+        assert!(matches!(
+            generate_conformers(
+                &mol,
+                &Default::default(),
+                &Default::default(),
+                0,
+                &mut params,
+                unused_projection
+            ),
+            Err(GenerationError::CoordinateMapIndex { atom_index: -1, .. })
+        ));
+    }
+
     use super::*;
     use cosmolkit_model::{
         Atom, AtomSpec, Conformer2D, Conformer3D, CoordinateBlock, Element, MoleculeProperties,

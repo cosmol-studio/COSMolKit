@@ -986,7 +986,7 @@ fn collision_bond_flip_bounded_unresolved_disconnected_pair_keeps_coordinates() 
     for atom in frag.atoms.values_mut() {
         atom.fixed = false;
     }
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert_eq!(frag.atoms[&0].loc, [0.0, 0.0]);
     assert_eq!(frag.atoms[&1].loc, [0.1, 0.0]);
 }
@@ -1016,7 +1016,7 @@ fn collision_bond_flip_repairs_first_collision_with_source_path_order() {
     }
     let distance = frag.collision_distance_matrix().unwrap();
     assert_eq!(frag.find_collisions(&distance, true), [(4, 0)]);
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert!(frag.find_collisions(&distance, true).is_empty());
     assert!((frag.atoms[&4].loc[0] - 3.9).abs() < 1e-12);
     assert!((frag.atoms[&4].loc[1] - 0.1).abs() < 1e-12);
@@ -1077,7 +1077,7 @@ fn collision_bond_flip_near_tie_obeys_strict_computed_density() {
     let distance = frag.collision_distance_matrix().unwrap();
     assert_eq!(frag.find_collisions(&distance, true), [(3, 0)]);
     let before_density = frag.total_density();
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert!(frag.total_density() < before_density);
     assert_eq!(frag.find_collisions(&distance, true), [(3, 0)]);
 }
@@ -1316,7 +1316,7 @@ fn collision_repair_runs_flip_then_open_angle_then_shortening_in_source_order() 
     }
     let distance = frag.collision_distance_matrix().unwrap();
     assert_eq!(frag.find_collisions(&distance, true), [(4, 0)]);
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert!(frag.find_collisions(&distance, true).is_empty());
     let after_flip = frag
         .atoms
@@ -1355,7 +1355,7 @@ fn collision_repair_leaves_fixed_ring_overlap_unresolved_and_bounded() {
     );
     let distance = frag.collision_distance_matrix().unwrap();
     assert_eq!(frag.find_collisions(&distance, true), [(2, 0)]);
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     frag.remove_collisions_open_angles().unwrap();
     frag.remove_collisions_shorten_bonds().unwrap();
     assert_eq!(frag.atoms[&0].loc, [0.0, 0.0]);
@@ -1397,7 +1397,7 @@ fn collision_repair_shortest_path_tie_cannot_flip_ring_or_stereo_bonds() {
         .iter()
         .map(|(&id, row)| (id, row.loc))
         .collect::<Vec<_>>();
-    frag.remove_collisions_bond_flip().unwrap();
+    frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert_eq!(
         frag.atoms
             .iter()
@@ -1935,9 +1935,9 @@ fn ring_embed_first_matching_template_places_exact_xy_unless_two_atoms_constrain
 }
 
 #[test]
-fn template_match_prefilters_size_bonds_rings_and_degree_before_query() {
+fn template_match_prefilters_size_bonds_and_degree_without_ring_count() {
     // EmbeddedFrag.cpp::matchToTemplate checks size bucket, ring-only bond
-    // count, ring count and degree histogram in that order.
+    // count and degree histogram; cached ring-count equality was removed in .6.
     let triangle = topology(
         vec![AtomSpec::new(Element::C); 3],
         &[(0, 1), (1, 2), (2, 0)],
@@ -1948,7 +1948,7 @@ fn template_match_prefilters_size_bonds_rings_and_degree_before_query() {
         template_match_registry("[*]1-[*]-[*]-[*]-1 |(0,0,;1,0,;1,1,;0,1,)|\n");
     assert!(
         !fragment
-            .match_to_template(&[0, 1, 2], 1, &mut square_templates)
+            .match_to_template(&[0, 1, 2], &mut square_templates)
             .unwrap()
     );
     assert!(fragment.atoms.is_empty());
@@ -1956,7 +1956,7 @@ fn template_match_prefilters_size_bonds_rings_and_degree_before_query() {
     let mut triangle_templates = template_match_registry("[*]1-[*]-[*]-1 |(0,0,;1,0,;0,1,)|\n");
     assert!(
         !fragment
-            .match_to_template(&[0, 1], 1, &mut triangle_templates)
+            .match_to_template(&[0, 1], &mut triangle_templates)
             .unwrap()
     );
     let path = topology(vec![AtomSpec::new(Element::C); 3], &[(0, 1), (1, 2)]);
@@ -1964,16 +1964,16 @@ fn template_match_prefilters_size_bonds_rings_and_degree_before_query() {
     let mut path_fragment = template_match_fragment(&path, &path_rings);
     assert!(
         !path_fragment
-            .match_to_template(&[0, 1, 2], 1, &mut triangle_templates)
+            .match_to_template(&[0, 1, 2], &mut triangle_templates)
             .unwrap()
     );
     assert!(path_fragment.atoms.is_empty());
     assert!(
-        !fragment
-            .match_to_template(&[0, 1, 2], 2, &mut triangle_templates)
+        fragment
+            .match_to_template(&[0, 1, 2], &mut triangle_templates)
             .unwrap()
     );
-    assert!(fragment.atoms.is_empty());
+    assert_eq!(fragment.atoms.len(), 3);
 
     let pendant = topology(
         vec![AtomSpec::new(Element::C); 4],
@@ -1983,7 +1983,7 @@ fn template_match_prefilters_size_bonds_rings_and_degree_before_query() {
     let mut pendant_fragment = template_match_fragment(&pendant, &pendant_rings);
     assert!(
         !pendant_fragment
-            .match_to_template(&[0, 1, 2, 3], 1, &mut square_templates)
+            .match_to_template(&[0, 1, 2, 3], &mut square_templates)
             .unwrap()
     );
     assert!(pendant_fragment.atoms.is_empty());
@@ -2002,7 +2002,7 @@ fn template_match_sentinel_excludes_external_ring_and_maps_exact_xy() {
     let mut registry = template_match_registry("[!#200]1-[!#200]-[!#200]-1 |(0,0,;1,0,;0,1,)|\n");
     assert!(
         fragment
-            .match_to_template(&[3, 4, 5], 1, &mut registry)
+            .match_to_template(&[3, 4, 5], &mut registry)
             .unwrap()
     );
     assert_eq!(
@@ -2031,7 +2031,7 @@ fn template_match_preserves_source_order_and_query_bond_predicates() {
     ));
     assert!(
         fragment
-            .match_to_template(&[0, 1, 2], 1, &mut registry)
+            .match_to_template(&[0, 1, 2], &mut registry)
             .unwrap()
     );
     assert_eq!(fragment.atoms[&0].loc, [0.0, 0.0]);
@@ -2041,7 +2041,7 @@ fn template_match_preserves_source_order_and_query_bond_predicates() {
     let mut only_double = template_match_registry("[*]1=[*]-[*]-1 |(7,7,;8,7,;7,8,)|\n");
     assert!(
         !rejected
-            .match_to_template(&[0, 1, 2], 1, &mut only_double)
+            .match_to_template(&[0, 1, 2], &mut only_double)
             .unwrap()
     );
     assert!(rejected.atoms.is_empty());
@@ -2085,7 +2085,7 @@ fn template_match_rejects_first_stereo_geometry_then_accepts_next() {
     ));
     assert!(
         fragment
-            .match_to_template(&[0, 1, 2, 3], 1, &mut registry)
+            .match_to_template(&[0, 1, 2, 3], &mut registry)
             .unwrap()
     );
     assert_eq!(fragment.atoms[&0].loc, [0.0, 0.0]);
@@ -2106,7 +2106,7 @@ fn template_match_refreshes_neighbor_and_attachment_state() {
     let mut registry = template_match_registry("[!#200]1-[!#200]-[!#200]-1 |(0,0,;1,0,;0,1,)|\n");
     assert!(
         fragment
-            .match_to_template(&[0, 1, 2], 1, &mut registry)
+            .match_to_template(&[0, 1, 2], &mut registry)
             .unwrap()
     );
     assert_eq!(fragment.attachment_points, vec![0]);
@@ -2333,9 +2333,10 @@ fn fragment_seed_neighbors_two_and_three_done_neighbors_follow_source_angle_orde
         ]),
     )
     .unwrap();
-    // The pinned `nbi3++` loop includes self-pairs, and stable angle sorting
-    // chooses that zero-angle pair before the winning 180-degree pair.
-    assert_eq!(three.atoms[&0].nbr1, Some(1));
+    // RDKit .6 enumerates distinct pairs and orders angle ties by neighbor pair.
+    // The winner is (1, 3); the first sorted pair sharing it is (1, 2),
+    // so computeNbrsAndAng assigns nb1=2 and nb2=1.
+    assert_eq!(three.atoms[&0].nbr1, Some(2));
     assert_eq!(three.atoms[&0].nbr2, Some(1));
     assert!((three.atoms[&0].angle - PI).abs() < 1e-12);
     assert_eq!(three.atoms[&0].rot_dir, -1);

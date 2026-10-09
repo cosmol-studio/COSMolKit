@@ -115,6 +115,97 @@ pub fn query_graph_fragments(graph: &QueryGraph) -> Result<Vec<QueryGraph>, Smar
             atom.clear_computed_props()?;
             atoms.push(atom);
         }
+        // BEGIN COMPLETE RDKit .6 Subset::handleBondStereo fast_subset projection
+        // RDKit❗✔️: void handleBondStereo(Bond &extracted_bond, const Bond &ref_bond,
+        // RDKit❗✔️:                       const ROMol &ref_mol,
+        // RDKit❗✔️:                       const std::map<unsigned int, unsigned int> &atomMapping) {
+        // RDKit❗✔️:   auto &atoms = extracted_bond.getStereoAtoms();
+        // RDKit❗✔️:   if (atoms.size() != 2) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   bool needsSwap = false;
+        // RDKit❗✔️:   auto map1 = atomMapping.find(atoms[0]);
+        // RDKit❗✔️:   auto map2 = atomMapping.find(atoms[1]);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (map1 == atomMapping.end()) {
+        // RDKit❗✔️:     auto begin_atom = ref_bond.getBeginAtom();
+        // RDKit❗✔️:     if (begin_atom->getDegree() < 3) {
+        // RDKit❗✔️:       // No alternative atom on this side; clear stereo from the bond
+        // RDKit❗✔️:       atoms.clear();
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     auto otherNeighborIdx =
+        // RDKit❗✔️:         getOtherAtomIdx(ref_mol, ref_bond, begin_atom->getIdx(), atoms[0]);
+        // RDKit❗✔️:     map1 = atomMapping.find(otherNeighborIdx);
+        // RDKit❗✔️:     if (map1 == atomMapping.end()) {
+        // RDKit❗✔️:       // The alternative atom wasn't extracted either; clear stereo
+        // RDKit❗✔️:       atoms.clear();
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // Ok, we can swap the stereo atom to the other neighbor on this side
+        // RDKit❗✔️:     needsSwap = !needsSwap;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (map2 == atomMapping.end()) {
+        // RDKit❗✔️:     auto end_atom = ref_bond.getEndAtom();
+        // RDKit❗✔️:     if (end_atom->getDegree() < 3) {
+        // RDKit❗✔️:       // No alternative atom on this side; clear stereo from the bond
+        // RDKit❗✔️:       atoms.clear();
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     auto otherNeighborIdx =
+        // RDKit❗✔️:         getOtherAtomIdx(ref_mol, ref_bond, end_atom->getIdx(), atoms[1]);
+        // RDKit❗✔️:     map2 = atomMapping.find(otherNeighborIdx);
+        // RDKit❗✔️:     if (map2 == atomMapping.end()) {
+        // RDKit❗✔️:       // The alternative atom wasn't extracted either; clear stereo
+        // RDKit❗✔️:       atoms.clear();
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREONONE);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // Ok, we can swap the stereo atom to the other neighbor on this side
+        // RDKit❗✔️:     needsSwap = !needsSwap;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   atoms[0] = map1->second;
+        // RDKit❗✔️:   atoms[1] = map2->second;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // Finally, update the label. Since CIP ranges may have changed,
+        // RDKit❗✔️:   // convert E/Z to CIS/TRANS to keep the right stereo.
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!needsSwap) {
+        // RDKit❗✔️:     if (ref_bond.getStereo() == Bond::STEREOZ) {
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREOCIS);
+        // RDKit❗✔️:     } else if (ref_bond.getStereo() == Bond::STEREOE) {
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREOTRANS);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     if (ref_bond.getStereo() == Bond::STEREOZ ||
+        // RDKit❗✔️:         ref_bond.getStereo() == Bond::STEREOCIS) {
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREOTRANS);
+        // RDKit❗✔️:     } else if (ref_bond.getStereo() == Bond::STEREOE ||
+        // RDKit❗✔️:                ref_bond.getStereo() == Bond::STEREOTRANS) {
+        // RDKit❗✔️:       extracted_bond.setStereo(Bond::STEREOCIS);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END COMPLETE RDKit .6 Subset::handleBondStereo fast_subset projection
+        // This connected-component fast_subset route excludes defined stereo.
+        // Source-valid controller pairs are endpoint neighbors in this same
+        // component, so both original controllers are mapped and the label is
+        // NONE/ANY. The reached .6 branch maps the pair once and leaves that label.
+        // The .1 second original-ID lookup was deleted upstream; do not retain it.
+        // Replacement/E/Z handling belongs to the sole core Subset helper and is
+        // not duplicated here or applied to this function's batch-removal route.
+        // Complexity: reuse the completed O(V) direct map; each retained pair
+        // takes two O(1) lookups without allocating another adjacency/map owner.
         let mut bonds = Vec::with_capacity(source_bonds.len());
         for (row, old) in source_bonds.iter().enumerate() {
             let mut bond = graph.bonds()[old.index()].clone();
@@ -125,33 +216,12 @@ pub fn query_graph_fragments(graph: &QueryGraph) -> Result<Vec<QueryGraph>, Smar
             let end = mapping.atoms.old_to_new[carrier.end().index()].ok_or_else(|| {
                 SmartsParseError::Parse("retained fragment bond has absent end".into())
             })?;
-            let mut stereo = carrier.stereo_atoms().and_then(|[a, b]| {
+            let stereo = carrier.stereo_atoms().and_then(|[a, b]| {
                 Some([
                     mapping.atoms.old_to_new[a.index()]?,
                     mapping.atoms.old_to_new[b.index()]?,
                 ])
             });
-            if fast_subset && let Some(ref mut references) = stereo {
-                // RDKit❗✔️: for (auto &atomidx : atoms) {
-                // RDKit❗✔️:   auto map = atomMapping.find(atomidx);
-                // RDKit❗✔️:   if (map != atomMapping.end()) {
-                // RDKit❗✔️:     atomidx = map->second;
-                // RDKit❗✔️:   }
-                // RDKit❗✔️: }
-                // Subset.cpp executes this after already mapping the pair.
-                // Keep the second lookup against ORIGINAL IDs literally.
-                for reference in references {
-                    if let Some(mapped) = mapping
-                        .atoms
-                        .old_to_new
-                        .get(reference.index())
-                        .copied()
-                        .flatten()
-                    {
-                        *reference = mapped;
-                    }
-                }
-            }
             *bond.bond_mut() = carrier
                 .clone()
                 .remapped(BondId::new(row), begin, end, stereo);
@@ -241,7 +311,7 @@ fn subset_stereo_groups(
         .collect();
     Ok(cosmolkit_model::merge_absolute_stereo_groups(
         crate::smarts_parse::remap_query_stereo_groups_after_removal(&selected, mapping)?,
-    ))
+    )?)
 }
 
 fn subset_substance_groups(

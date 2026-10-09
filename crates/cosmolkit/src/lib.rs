@@ -111,6 +111,8 @@ mod batch;
 pub mod ops;
 #[cfg(feature = "cap-io")]
 pub use cosmolkit_io::SdfReadError;
+#[cfg(feature = "cap-tautomer")]
+pub(crate) use ops::{WithAssignedSymmSssrAccess, WithInstalledTautomerScoreCacheAccess};
 #[cfg(feature = "cap-io")]
 mod sdf;
 #[cfg(feature = "cap-batch")]
@@ -366,6 +368,9 @@ mod tautomer;
 #[cfg(feature = "cap-tautomer")]
 pub(crate) use ops::{CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess};
 #[cfg(feature = "cap-tautomer")]
+#[doc(hidden)]
+pub use tautomer::canonical_tautomer_from_molecule_hosts_with_params;
+#[cfg(feature = "cap-tautomer")]
 pub use tautomer::{
     TautomerCatalogError, TautomerEnumeration, TautomerEnumerationCallback,
     TautomerEnumerationStatus, TautomerMoleculeView, TautomerParams, TautomerProgress,
@@ -388,6 +393,8 @@ pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
 pub use ops::AtomPairAtomCodeResult;
 #[cfg(feature = "cap-fingerprints")]
 pub(crate) use ops::WithAtomPairAtomCodeAccess;
+#[cfg(feature = "cap-hashing")]
+pub(crate) use ops::{MurckoDecomposeAccess, MurckoScaffoldAccess, NetScaffoldAccess};
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{UffEnergyGradient, UffEvaluationParams};
 

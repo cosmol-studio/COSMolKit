@@ -499,7 +499,7 @@ fn stereo_and_isotopic_hydrogens_executes_every_option_combination_without_sourc
 }
 
 #[test]
-fn source_without_stereo_atom_pair_retains_candidate_pair() {
+fn source_without_stereo_atom_pair_clears_candidate_pair_and_marks_any() {
     let mut source = fixture_from_smiles("F/C=C/Cl").unwrap();
     let bond = source
         .topology
@@ -527,10 +527,10 @@ fn source_without_stereo_atom_pair_retains_candidate_pair() {
     )
     .unwrap();
     assert!(changed);
-    assert_eq!(candidate.topology.bonds[bond.index()].stereo_atoms(), pair);
+    assert_eq!(candidate.topology.bonds[bond.index()].stereo_atoms(), None);
     assert_eq!(
         candidate.topology.bonds[bond.index()].stereo(),
-        BondStereo::None
+        BondStereo::Any
     );
     assert_eq!(source, before);
 }
@@ -673,5 +673,223 @@ fn source_property_failure_cip_guard_retains_prefix_and_absent_branch() {
             );
         }
         assert_eq!(source, source_before);
+    }
+}
+
+#[test]
+fn search05_modified_source_double_validity_and_controller_width_matrix() {
+    // Mechanical mutable source/candidate state, not natural sanitized molecules.
+    let base = fixture_from_smiles("F/C=C/Cl").unwrap();
+    let id = base
+        .topology
+        .bonds
+        .iter()
+        .find(|b| b.order() == BondOrder::Double)
+        .unwrap()
+        .id();
+    let refs = base.topology.bonds[id.index()].stereo_atoms().unwrap();
+    let stereos = [
+        BondStereo::None,
+        BondStereo::Any,
+        BondStereo::Z,
+        BondStereo::E,
+        BondStereo::Cis,
+        BondStereo::Trans,
+        BondStereo::AtropCw,
+        BondStereo::AtropCcw,
+    ];
+    for source_order in [BondOrder::Single, BondOrder::Double] {
+        for stereo in stereos {
+            for source_width in 0..4 {
+                for candidate_order in [BondOrder::Single, BondOrder::Double] {
+                    for remove in [false, true] {
+                        for candidate_width in [0, 2, 3] {
+                            let mut source = base.clone();
+                            let bond = &mut source.topology.bonds[id.index()];
+                            bond.set_stereo_atoms(Some(refs));
+                            bond.set_stereo(stereo).unwrap();
+                            bond.set_order(source_order);
+                            bond.set_source_stereo_atom_references(
+                                (0..source_width).map(|i| refs[i % 2]).collect(),
+                            );
+                            let before = source.clone();
+                            let mut candidate = base.clone();
+                            let bond = &mut candidate.topology.bonds[id.index()];
+                            bond.set_stereo(BondStereo::Any).unwrap();
+                            bond.set_order(candidate_order);
+                            bond.set_source_stereo_atom_references(
+                                (0..candidate_width).map(|i| refs[i % 2]).collect(),
+                            );
+                            let valid = source_order == BondOrder::Double
+                                && matches!(
+                                    stereo,
+                                    BondStereo::Z
+                                        | BondStereo::E
+                                        | BondStereo::Cis
+                                        | BondStereo::Trans
+                                )
+                                && source_width == 2;
+                            let removed = candidate_order != BondOrder::Double || remove || !valid;
+                            let expected = if removed {
+                                if candidate_order == BondOrder::Double {
+                                    BondStereo::Any
+                                } else {
+                                    BondStereo::None
+                                }
+                            } else {
+                                stereo
+                            };
+                            let changed = set_tautomer_stereo_and_isotopic_hydrogens(
+                                &source,
+                                &mut candidate,
+                                &BTreeSet::new(),
+                                &marked_bonds([id.index()]),
+                                TautomerParams::default()
+                                    .with_remove_bond_stereo(remove)
+                                    .with_reassign_stereo(false),
+                            )
+                            .unwrap();
+                            let actual = &candidate.topology.bonds[id.index()];
+                            assert_eq!(actual.stereo(), expected);
+                            assert_eq!(
+                                actual.stereo_atoms(),
+                                if removed { None } else { Some(refs) }
+                            );
+                            assert_eq!(
+                                actual.stereo_atom_references().len(),
+                                if removed { 0 } else { 2 }
+                            );
+                            // Source removed branch counts stereo change only, not clearing refs.
+                            assert_eq!(
+                                changed,
+                                BondStereo::Any != expected || (!removed && candidate_width != 2)
+                            );
+                            assert_eq!(source, before);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+#[test]
+fn search05_invalid_source_clears_directions_and_preserves_modified_return_quirk() {
+    let mut source = fixture_from_smiles("F/C=C/Cl").unwrap();
+    let id = source
+        .topology
+        .bonds
+        .iter()
+        .find(|b| b.order() == BondOrder::Double)
+        .unwrap()
+        .id();
+    source.topology.bonds[id.index()]
+        .set_stereo(BondStereo::AtropCw)
+        .unwrap();
+    let mut candidate = source.clone();
+    candidate.topology.bonds[id.index()]
+        .set_stereo(BondStereo::Any)
+        .unwrap();
+    assert!(
+        candidate.topology.bonds[id.index()]
+            .stereo_atoms()
+            .is_some()
+    );
+    assert!(
+        !set_tautomer_stereo_and_isotopic_hydrogens(
+            &source,
+            &mut candidate,
+            &BTreeSet::new(),
+            &marked_bonds([id.index()]),
+            TautomerParams::default()
+                .with_remove_bond_stereo(false)
+                .with_reassign_stereo(false)
+        )
+        .unwrap()
+    );
+    assert_eq!(candidate.topology.bonds[id.index()].stereo_atoms(), None);
+    for b in source.topology.bonds.iter().filter(|b| {
+        matches!(
+            b.direction(),
+            BondDirection::EndDownRight | BondDirection::EndUpRight
+        )
+    }) {
+        assert_eq!(
+            candidate.topology.bonds[b.id().index()].direction(),
+            BondDirection::None
+        );
+    }
+}
+#[test]
+fn search05_invalid_source_ring_and_ring_connector_use_none_acyclic_uses_any() {
+    for (smiles, expected) in [
+        ("C1=CCCCC1", BondStereo::None),
+        ("C1CCCCC1=C2CCCCC2", BondStereo::None),
+        ("CC=CC", BondStereo::Any),
+    ] {
+        let mut source = fixture_from_smiles(smiles).unwrap();
+        let id = source
+            .topology
+            .bonds
+            .iter()
+            .find(|b| b.order() == BondOrder::Double)
+            .unwrap()
+            .id();
+        source.topology.bonds[id.index()].set_stereo_atoms(None);
+        source.topology.bonds[id.index()]
+            .set_stereo(BondStereo::None)
+            .unwrap();
+        let mut candidate = source.clone();
+        candidate.topology.bonds[id.index()]
+            .set_stereo(BondStereo::Any)
+            .unwrap();
+        set_tautomer_stereo_and_isotopic_hydrogens(
+            &source,
+            &mut candidate,
+            &BTreeSet::new(),
+            &marked_bonds([id.index()]),
+            TautomerParams::default()
+                .with_remove_bond_stereo(false)
+                .with_reassign_stereo(false),
+        )
+        .unwrap();
+        assert_eq!(
+            candidate.topology.bonds[id.index()].stereo(),
+            expected,
+            "{smiles}"
+        );
+        assert_eq!(candidate.topology.bonds[id.index()].stereo_atoms(), None);
+    }
+}
+#[test]
+fn search05_sparse_atom_set_preserves_unmodified_chiral_rows() {
+    let source = fixture_from_smiles("[C@H](F)(Cl)C[C@H](Br)I").unwrap();
+    let marked = source
+        .topology
+        .atoms
+        .iter()
+        .find(|a| a.chiral_tag() != ChiralTag::Unspecified)
+        .unwrap()
+        .id();
+    let mut candidate = source.clone();
+    let before = candidate.clone();
+    set_tautomer_stereo_and_isotopic_hydrogens(
+        &source,
+        &mut candidate,
+        &marked_atoms([marked.index()]),
+        &BTreeSet::new(),
+        TautomerParams::default()
+            .with_remove_sp3_stereo(true)
+            .with_reassign_stereo(false),
+    )
+    .unwrap();
+    assert_eq!(
+        candidate.topology.atoms[marked.index()].chiral_tag(),
+        ChiralTag::Unspecified
+    );
+    for a in source.topology.atoms.iter().filter(|a| a.id() != marked) {
+        assert_eq!(
+            candidate.topology.atoms[a.id().index()],
+            before.topology.atoms[a.id().index()]
+        );
     }
 }

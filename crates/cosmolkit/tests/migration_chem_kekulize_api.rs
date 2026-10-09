@@ -45,11 +45,14 @@ fn aromatic_carbon_cycle(size: usize) -> TopologyBlock {
             })
             .collect(),
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(0)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap()
 }

@@ -38,11 +38,14 @@ fn radical_molecule() -> Molecule {
         vec![carbon, oxygen],
         vec![bond],
         Vec::new(),
-        vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(0)],
-            vec![BondId::new(0)],
-        )],
+        vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0)],
+                vec![BondId::new(0)],
+            )
+            .expect("valid distinct stereo members"),
+        ],
     )
     .unwrap();
     let properties = MoleculeProperties::default()

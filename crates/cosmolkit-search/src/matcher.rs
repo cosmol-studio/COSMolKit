@@ -1986,6 +1986,8 @@ impl<'a> Vf2SubState<'a> {
     /// neighbor iterator that restricts mol-side candidates to neighbors of
     /// the already-mapped terminal predecessor.
     fn next_pair(&self, pair: &mut Vf2Pair) -> bool {
+        #[cfg(test)]
+        search08_test_state::event("next_pair");
         // RDKit✔️✔️: bool NextPair(Pair<Graph> &pair) {
         // RDKit✔️✔️:   if (pair.n1 == NULL_NODE) {
         // RDKit✔️✔️:     pair.n1 = 0;
@@ -2731,41 +2733,43 @@ impl<'a> Vf2SubState<'a> {
         mut match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
         c1: &mut [NodeId],
         c2: &mut [NodeId],
-        results: &mut Vec<Vec<(NodeId, NodeId)>>,
+        results: &mut impl Vf2MatchSink,
         max_matches: usize,
     ) -> bool {
-        // RDKit❗✔️: template <class DoubleBackInsertionSequence>
-        // RDKit❗✔️: bool MatchAll(node_id c1[], node_id c2[], DoubleBackInsertionSequence &res,
-        // RDKit❗✔️:               unsigned int lim = 0) {
-        // RDKit❗✔️:   if (IsGoal()) {
-        // RDKit❗✔️:     GetCoreSet(c1, c2);
-        // RDKit❗✔️:     if (MatchChecks(c1, c2)) {
-        // RDKit❗✔️:       typename DoubleBackInsertionSequence::value_type newSeq;
-        // RDKit❗✔️:       newSeq.reserve(core_len);
-        // RDKit❗✔️:       for (unsigned int i = 0; i < core_len; ++i) {
-        // RDKit❗✔️:         newSeq.emplace_back(c1[i], c2[i]);
+        // BEGIN RDKIT CPP FUNCTION boost::detail::VF2SubState::MatchAll
+        // RDKit❗✔️:   template <class DoubleBackInsertionSequence>
+        // RDKit❗✔️:   bool MatchAll(node_id c1[], node_id c2[], DoubleBackInsertionSequence &res,
+        // RDKit❗✔️:                 unsigned int lim = 0) {
+        // RDKit❗✔️:     if (IsGoal()) {
+        // RDKit❗✔️:       GetCoreSet(c1, c2);
+        // RDKit❗✔️:       if (MatchChecks(c1, c2)) {
+        // RDKit❗✔️:         typename DoubleBackInsertionSequence::value_type newSeq;
+        // RDKit❗✔️:         newSeq.reserve(core_len);
+        // RDKit❗✔️:         for (unsigned int i = 0; i < core_len; ++i) {
+        // RDKit❗✔️:           newSeq.emplace_back(c1[i], c2[i]);
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         res.push_back(newSeq);
+        // RDKit❗✔️:         return lim && res.size() >= lim;
         // RDKit❗✔️:       }
-        // RDKit❗✔️:       res.push_back(newSeq);
-        // RDKit❗✔️:       return lim && res.size() >= lim;
         // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
         // RDKit❗✔️:
-        // RDKit❗✔️:   if (IsDead()) {
+        // RDKit❗✔️:     if (IsDead()) {
+        // RDKit❗✔️:       return false;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     Pair<Graph> pair;
+        // RDKit❗✔️:     while (NextPair(pair) && !RDKit::ControlCHandler::getGotSignal()) {
+        // RDKit❗✔️:       if (IsFeasiblePair(pair.n1, pair.n2)) {
+        // RDKit❗✔️:         AddPair(pair.n1, pair.n2);
+        // RDKit❗✔️:         if (MatchAll(c1, c2, res, lim)) {  // recurse
+        // RDKit❗✔️:           return true;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         BackTrack(pair.n1, pair.n2);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
         // RDKit❗✔️:     return false;
         // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   Pair<Graph> pair;
-        // RDKit❗✔️:   while (NextPair(pair)) {
-        // RDKit❗✔️:     if (IsFeasiblePair(pair.n1, pair.n2)) {
-        // RDKit❗✔️:       AddPair(pair.n1, pair.n2);
-        // RDKit❗✔️:       if (MatchAll(c1, c2, res, lim)) {  // recurse
-        // RDKit❗✔️:         return true;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       BackTrack(pair.n1, pair.n2);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return false;
-        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION boost::detail::VF2SubState::MatchAll
         // Behavior: goals are checked before dead-state handling; each accepted
         // mapping is appended before the limit check and source-order recursion
         // backtracks only after an unaccepted/continuing child returns false.
@@ -2803,7 +2807,7 @@ impl<'a> Vf2SubState<'a> {
             return false;
         }
         let mut pair = Vf2Pair::new();
-        while self.next_pair(&mut pair) {
+        while self.next_pair(&mut pair) && !vf2_got_signal() {
             if self.is_feasible_pair(pair.n1, pair.n2, atom_fn, bond_fn) {
                 self.add_pair(pair.n1, pair.n2);
                 if self.match_all(
@@ -2906,6 +2910,73 @@ fn vf2_match(
 /// Collects each accepted mapping into `results` as one ordered paired sequence.
 /// Returns true when the limit has been reached, signaling the caller
 /// to stop.
+
+/// Private source DoubleBackInsertionSequence adaptation. Count uses the same
+/// accepted DFS goals and per-goal temporary sequence, never accumulated rows.
+trait Vf2MatchSink {
+    const COUNT_ONLY: bool;
+    fn clear(&mut self);
+    fn len(&self) -> usize;
+    fn push(&mut self, row: Vec<(NodeId, NodeId)>);
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+impl Vf2MatchSink for Vec<Vec<(NodeId, NodeId)>> {
+    const COUNT_ONLY: bool = false;
+    fn clear(&mut self) {
+        Vec::clear(self);
+    }
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+    fn push(&mut self, row: Vec<(NodeId, NodeId)>) {
+        Vec::push(self, row);
+    }
+}
+#[derive(Default)]
+struct MatchCounter {
+    count: usize,
+}
+impl Vf2MatchSink for MatchCounter {
+    const COUNT_ONLY: bool = true;
+    fn clear(&mut self) {
+        // BEGIN RDKIT CPP FUNCTION RDKit::detail::MatchCounter
+        // RDKit✔️✔️: struct MatchCounter {
+        // RDKit✔️✔️:   using value_type = ssPairType;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   void clear() { d_count = 0; }
+        // RDKit✔️✔️:   void resize(size_t) { d_count = 0; }
+        // RDKit✔️✔️:   void reserve(size_t) {}
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   bool empty() const { return d_count == 0; }
+        // RDKit✔️✔️:   size_t size() const { return d_count; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   void push_back(const value_type &) { ++d_count; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:  private:
+        // RDKit✔️✔️:   size_t d_count = 0;
+        // RDKit✔️✔️: };
+        // END RDKIT CPP FUNCTION RDKit::detail::MatchCounter
+        self.count = 0;
+    }
+    fn len(&self) -> usize {
+        self.count
+    }
+    fn push(&mut self, _row: Vec<(NodeId, NodeId)>) {
+        // RDKit✔️✔️:   void push_back(const value_type &) { ++d_count; }
+        self.count = self.count.wrapping_add(1);
+    }
+}
+impl MatchCounter {
+    #[allow(dead_code)]
+    fn resize(&mut self, _size: usize) {
+        self.count = 0;
+    }
+    #[allow(dead_code)]
+    fn reserve(&mut self, _size: usize) {}
+}
+
 fn vf2_match_all(
     state: &mut Vf2SubState,
     atom_fn: &impl Fn(usize, usize) -> bool,
@@ -2913,7 +2984,7 @@ fn vf2_match_all(
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
     c1: &mut [NodeId],
     c2: &mut [NodeId],
-    results: &mut Vec<Vec<(NodeId, NodeId)>>,
+    results: &mut impl Vf2MatchSink,
     max_matches: usize,
 ) -> bool {
     // RDKit❗✔️: template <class SubState, class DoubleBackInsertionSequence>
@@ -2937,39 +3008,49 @@ fn vf2_entry_one(
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
     result: &mut Vec<(NodeId, NodeId)>,
 ) -> bool {
-    // RDKit✔️✔️: template <
-    // RDKit✔️✔️:     class Graph, class VertexLabeling  // binary predicate
-    // RDKit✔️✔️:     ,
-    // RDKit✔️✔️:     class EdgeLabeling  // binary predicate
-    // RDKit✔️✔️:     ,
-    // RDKit✔️✔️:     class MatchChecking  // binary predicate
-    // RDKit✔️✔️:     ,
-    // RDKit✔️✔️:     class
-    // RDKit✔️✔️:     BackInsertionSequence  // contains
-    // RDKit✔️✔️:                            // std::pair<vertex_descriptor,vertex_descriptor>
-    // RDKit✔️✔️:     >
-    // RDKit✔️✔️: bool vf2(const Graph &g1, const Graph &g2, VertexLabeling &vertex_labeling,
-    // RDKit✔️✔️:          EdgeLabeling &edge_labeling, MatchChecking &match_checking,
-    // RDKit✔️✔️:          BackInsertionSequence &F) {
-    // RDKit✔️✔️:   detail::VF2SubState<const Graph, VertexLabeling, EdgeLabeling, MatchChecking>
-    // RDKit✔️✔️:       s0(&g1, &g2, vertex_labeling, edge_labeling, match_checking, false);
-    // RDKit✔️✔️:   detail::node_id *ni1 = new detail::node_id[num_vertices(g1)];
-    // RDKit✔️✔️:   detail::node_id *ni2 = new detail::node_id[num_vertices(g2)];
-    // RDKit✔️✔️:   int n = 0;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   F.clear();
-    // RDKit✔️✔️:   if (match(&n, ni1, ni2, s0)) {
-    // RDKit✔️✔️:     auto sz = num_vertices(g1);
-    // RDKit✔️✔️:     F.reserve(sz);
-    // RDKit✔️✔️:     for (unsigned int i = 0; i < sz; ++i) {
-    // RDKit✔️✔️:       F.emplace_back(ni1[i], ni2[i]);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   delete[] ni1;
-    // RDKit✔️✔️:   delete[] ni2;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   return !F.empty();
-    // RDKit✔️✔️: };
+    // BEGIN RDKIT CPP FUNCTION boost::vf2
+    // RDKit❗✔️: template <
+    // RDKit❗✔️:     class Graph, class VertexLabeling  // binary predicate
+    // RDKit❗✔️:     ,
+    // RDKit❗✔️:     class EdgeLabeling  // binary predicate
+    // RDKit❗✔️:     ,
+    // RDKit❗✔️:     class MatchChecking  // binary predicate
+    // RDKit❗✔️:     ,
+    // RDKit❗✔️:     class
+    // RDKit❗✔️:     BackInsertionSequence  // contains
+    // RDKit❗✔️:                            // std::pair<vertex_descriptor,vertex_descriptor>
+    // RDKit❗✔️:     >
+    // RDKit❗✔️: bool vf2(const Graph &g1, const Graph &g2, VertexLabeling &vertex_labeling,
+    // RDKit❗✔️:          EdgeLabeling &edge_labeling, MatchChecking &match_checking,
+    // RDKit❗✔️:          BackInsertionSequence &F) {
+    // RDKit❗✔️:   detail::VF2SubState<const Graph, VertexLabeling, EdgeLabeling, MatchChecking>
+    // RDKit❗✔️:       s0(&g1, &g2, vertex_labeling, edge_labeling, match_checking, false);
+    // RDKit❗✔️:   auto *ni1 = new detail::node_id[num_vertices(g1)];
+    // RDKit❗✔️:   auto *ni2 = new detail::node_id[num_vertices(g2)];
+    // RDKit❗✔️:   int n = 0;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   F.clear();
+    // RDKit❗✔️:   RDKit::ControlCHandler::reset();
+    // RDKit❗✔️:   if (match(&n, ni1, ni2, s0)) {
+    // RDKit❗✔️:     auto sz = num_vertices(g1);
+    // RDKit❗✔️:     F.reserve(sz);
+    // RDKit❗✔️:     for (unsigned int i = 0; i < sz; ++i) {
+    // RDKit❗✔️:       F.emplace_back(ni1[i], ni2[i]);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
+    // RDKit❗✔️:         << std::endl;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   delete[] ni1;
+    // RDKit❗✔️:   delete[] ni2;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return !F.empty();
+    // RDKit❗✔️: };
+    // END RDKIT CPP FUNCTION boost::vf2
     // Behavior: the invocation keeps RDKit's unsorted state and first-match
     // DFS, then projects exactly the accepted query-order prefix once.
     // Complexity: these two O(V) arrays are the sole mapping scratch buffers
@@ -2978,6 +3059,7 @@ fn vf2_entry_one(
     let mut c1 = vec![NULL_NODE; g1.num_atoms()];
     let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     result.clear();
+    vf2_reset_interrupt();
     if vf2_match(&mut state, atom_fn, bond_fn, match_check, &mut c1, &mut c2) {
         let matched = state.core_len;
         result.reserve(g1.num_atoms());
@@ -2988,6 +3070,7 @@ fn vf2_entry_one(
                 .zip(c2[..matched].iter().copied()),
         );
     }
+    vf2_warn_if_interrupted();
     !result.is_empty()
 }
 
@@ -2997,7 +3080,7 @@ fn vf2_entry_all(
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    results: &mut Vec<Vec<(NodeId, NodeId)>>,
+    results: &mut impl Vf2MatchSink,
     max_results: usize,
 ) -> bool {
     vf2_entry_all_ordered(
@@ -3019,11 +3102,12 @@ fn vf2_entry_all_ordered(
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    results: &mut Vec<Vec<(NodeId, NodeId)>>,
+    results: &mut impl Vf2MatchSink,
     max_results: usize,
     order: Option<&[usize]>,
     source_error: Option<&std::cell::Cell<bool>>,
 ) -> bool {
+    // BEGIN RDKIT CPP FUNCTION boost::vf2_all
     // RDKit❗✔️: template <class Graph, class VertexLabeling  // binary predicate
     // RDKit❗✔️:           ,
     // RDKit❗✔️:           class EdgeLabeling  // binary predicate
@@ -3042,12 +3126,20 @@ fn vf2_entry_all_ordered(
     // RDKit❗✔️:   std::unique_ptr<detail::node_id[]> ni2(new detail::node_id[num_vertices(g2)]);
     // RDKit❗✔️:
     // RDKit❗✔️:   F.clear();
-    // RDKit❗✔️:   F.resize(0);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   RDKit::ControlCHandler::reset();
     // RDKit❗✔️:
     // RDKit❗✔️:   match(ni1.get(), ni2.get(), s0, F, max_results);
     // RDKit❗✔️:
+    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
+    // RDKit❗✔️:         << std::endl;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
     // RDKit❗✔️:   return !F.empty();
     // RDKit❗✔️: };
+    // END RDKIT CPP FUNCTION boost::vf2_all
     // Behavior: the same unsorted state and recursive order are retained; the
     // limit stops only after an accepted mapping has entered the result list.
     // Complexity: the two query-sized scratch arrays are reused at all goals;
@@ -3060,7 +3152,8 @@ fn vf2_entry_all_ordered(
     let mut c1 = vec![NULL_NODE; g1.num_atoms()];
     let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     results.clear();
-    vf2_match_all(
+    vf2_reset_interrupt();
+    let matched = vf2_match_all(
         &mut state,
         atom_fn,
         bond_fn,
@@ -3069,7 +3162,11 @@ fn vf2_entry_all_ordered(
         &mut c2,
         results,
         max_results,
-    )
+    );
+    if !source_error.is_some_and(std::cell::Cell::get) {
+        vf2_warn_if_interrupted();
+    }
+    matched
 }
 
 // ---------------------------------------------------------------------------
@@ -4310,6 +4407,129 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     query_order: Option<&[usize]>,
     compiled_graph: Option<&CompiledQueryGraph>,
 ) -> Result<Vec<P::Output>, SubstructMatchError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::SubstructMatch
+    // RDKit❗❌: std::vector<MatchVectType> SubstructMatch(
+    // RDKit❗❌:     const ROMol &mol, const ROMol &query,
+    // RDKit❗❌:     const SubstructMatchParameters &params) {
+    // RDKit❗❌:   std::vector<MatchVectType> matches;
+    // RDKit❗❌:   const auto &mNumAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   const auto &qNumAtoms = query.getNumAtoms();
+    // RDKit❗❌:   if (!mNumAtoms || !qNumAtoms || qNumAtoms > mNumAtoms) {
+    // RDKit❗❌:     return matches;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   detail::RecursiveLocker locker(query, params.recursionPossible);
+    // RDKit❗❌:
+    // RDKit❗❌:   if (params.recursionPossible) {
+    // RDKit❗❌:     detail::SUBQUERY_MAP subqueryMap;
+    // RDKit❗❌:     ROMol::ConstAtomIterator atIt;
+    // RDKit❗❌:     for (const auto atom : query.atoms()) {
+    // RDKit❗❌:       if (atom->hasQuery()) {
+    // RDKit❗❌:         // std::cerr<<"recurse from atom "<<(*atIt)->getIdx()<<std::endl;
+    // RDKit❗❌:         detail::MatchSubqueries(mol, atom->getQuery(), params, subqueryMap,
+    // RDKit❗❌:                                 locker.locked);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   detail::AtomLabelFunctor atomLabeler(query, mol, params);
+    // RDKit❗❌:   detail::BondLabelFunctor bondLabeler(query, mol, params);
+    // RDKit❗❌:   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<detail::ssPairType> pms;
+    // RDKit❗❌:   bool found =
+    // RDKit❗❌:       boost::vf2_all(query.getTopology(), mol.getTopology(), atomLabeler,
+    // RDKit❗❌:                      bondLabeler, matchChecker, pms, params.maxMatches);
+    // RDKit❗❌:   if (found) {
+    // RDKit❗❌:     const unsigned int nQueryAtoms = query.getNumAtoms();
+    // RDKit❗❌:     matches.reserve(pms.size());
+    // RDKit❗❌:     MatchVectType matchVect(nQueryAtoms);
+    // RDKit❗❌:     for (const auto &pairs : pms) {
+    // RDKit❗❌:       for (const auto &pair : pairs) {
+    // RDKit❗❌:         matchVect[pair.first] = pair;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       matches.push_back(matchVect);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return matches;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RDKit::SubstructMatch
+    let mut raw_matches: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
+    substruct_match_into_sink(
+        mol,
+        query,
+        params,
+        recursive_cache,
+        query_ctx,
+        query_order,
+        compiled_graph,
+        &mut raw_matches,
+    )?;
+    Ok(project_match_results::<P>(
+        query,
+        Vf2GraphRef::target(mol.topology_block()),
+        &raw_matches,
+    ))
+}
+
+fn substruct_match_into_sink<S: Vf2MatchSink>(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+    query_ctx: &QueryMatchContext,
+    query_order: Option<&[usize]>,
+    compiled_graph: Option<&CompiledQueryGraph>,
+    sink: &mut S,
+) -> Result<(), SubstructMatchError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::SubstructMatch
+    // RDKit❗❌: std::vector<MatchVectType> SubstructMatch(
+    // RDKit❗❌:     const ROMol &mol, const ROMol &query,
+    // RDKit❗❌:     const SubstructMatchParameters &params) {
+    // RDKit❗❌:   std::vector<MatchVectType> matches;
+    // RDKit❗❌:   const auto &mNumAtoms = mol.getNumAtoms();
+    // RDKit❗❌:   const auto &qNumAtoms = query.getNumAtoms();
+    // RDKit❗❌:   if (!mNumAtoms || !qNumAtoms || qNumAtoms > mNumAtoms) {
+    // RDKit❗❌:     return matches;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   detail::RecursiveLocker locker(query, params.recursionPossible);
+    // RDKit❗❌:
+    // RDKit❗❌:   if (params.recursionPossible) {
+    // RDKit❗❌:     detail::SUBQUERY_MAP subqueryMap;
+    // RDKit❗❌:     ROMol::ConstAtomIterator atIt;
+    // RDKit❗❌:     for (const auto atom : query.atoms()) {
+    // RDKit❗❌:       if (atom->hasQuery()) {
+    // RDKit❗❌:         // std::cerr<<"recurse from atom "<<(*atIt)->getIdx()<<std::endl;
+    // RDKit❗❌:         detail::MatchSubqueries(mol, atom->getQuery(), params, subqueryMap,
+    // RDKit❗❌:                                 locker.locked);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   detail::AtomLabelFunctor atomLabeler(query, mol, params);
+    // RDKit❗❌:   detail::BondLabelFunctor bondLabeler(query, mol, params);
+    // RDKit❗❌:   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<detail::ssPairType> pms;
+    // RDKit❗❌:   bool found =
+    // RDKit❗❌:       boost::vf2_all(query.getTopology(), mol.getTopology(), atomLabeler,
+    // RDKit❗❌:                      bondLabeler, matchChecker, pms, params.maxMatches);
+    // RDKit❗❌:   if (found) {
+    // RDKit❗❌:     const unsigned int nQueryAtoms = query.getNumAtoms();
+    // RDKit❗❌:     matches.reserve(pms.size());
+    // RDKit❗❌:     MatchVectType matchVect(nQueryAtoms);
+    // RDKit❗❌:     for (const auto &pairs : pms) {
+    // RDKit❗❌:       for (const auto &pair : pairs) {
+    // RDKit❗❌:         matchVect[pair.first] = pair;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       matches.push_back(matchVect);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return matches;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RDKit::SubstructMatch
+
     let m_num_atoms = mol.num_atoms();
     let q_num_atoms = query.num_atoms();
 
@@ -4317,8 +4537,8 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     //   if (!mNumAtoms || !qNumAtoms || qNumAtoms > mNumAtoms) {
     //     return matches;
     //   }
-    if m_num_atoms == 0 || q_num_atoms == 0 || q_num_atoms > m_num_atoms {
-        return Ok(Vec::new());
+    if m_num_atoms == 0 || q_num_atoms == 0 || (!S::COUNT_ONLY && q_num_atoms > m_num_atoms) {
+        return Ok(());
     }
 
     // RDKit's vf2_all receives the existing topology objects. The ordinary
@@ -4369,7 +4589,6 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     //   bool found = boost::vf2_all(query.getTopology(), mol.getTopology(),
     //                               atomLabeler, bondLabeler, matchChecker,
     //                               pms, params.maxMatches);
-    let mut raw_matches: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
     let mut matches_seen: HashSet<Vec<u64>> = HashSet::new();
     let final_check_setup = MolMatchFinalCheckSetup::new(query, mol, params);
     let mut check_fn = |c1: &[NodeId], c2: &[NodeId]| -> bool {
@@ -4399,7 +4618,7 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
         &atom_fn,
         &bond_fn,
         Some(&mut check_fn),
-        &mut raw_matches,
+        sink,
         params.max_matches,
         query_order,
         Some(&source_error),
@@ -4408,7 +4627,7 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
         return Err(error);
     }
 
-    Ok(project_match_results::<P>(query, m_graph, &raw_matches))
+    Ok(())
 }
 fn project_match_results<P: MatchResultProjection>(
     query: &QueryGraph,
@@ -5096,85 +5315,85 @@ fn core_substitution_score(
     query: &SearchTarget<'_>,
     matched: &SubstructMatchResult,
 ) -> f64 {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: detail::ScoreMatchesByDegreeOfCoreSubstitution
-    // RDKit✔️✔️: class ScoreMatchesByDegreeOfCoreSubstitution {
-    // RDKit✔️✔️:  public:
-    // RDKit✔️✔️:   typedef std::pair<unsigned int, double> IdxScorePair;
-    // RDKit✔️✔️:   ScoreMatchesByDegreeOfCoreSubstitution(
-    // RDKit✔️✔️:       const RDKit::ROMol &mol, const RDKit::ROMol &query,
-    // RDKit✔️✔️:       const std::vector<RDKit::MatchVectType> &matches)
-    // RDKit✔️✔️:       : d_mol(mol),
-    // RDKit✔️✔️:         d_query(query),
-    // RDKit✔️✔️:         d_matches(matches),
-    // RDKit✔️✔️:         d_sumIndices(0.0),
-    // RDKit✔️✔️:         d_minIdx(-1),
-    // RDKit✔️✔️:         d_isSorted(false) {
-    // RDKit✔️✔️:     PRECONDITION(!matches.empty(), "matches must not be empty");
-    // RDKit✔️✔️:     auto na = d_mol.getNumAtoms();
-    // RDKit✔️✔️:     d_sumIndices = static_cast<double>(na * (na + 1) / 2);
-    // RDKit✔️✔️:     unsigned int i = 0;
-    // RDKit✔️✔️:     d_matchIdxVsScore.reserve(d_matches.size());
-    // RDKit✔️✔️:     for (const auto &match : d_matches) {
-    // RDKit✔️✔️:       d_matchIdxVsScore.emplace_back(i++, computeScore(match));
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const RDKit::MatchVectType &getMostSubstitutedCoreMatch() {
-    // RDKit✔️✔️:     if (d_minIdx == -1) {
-    // RDKit✔️✔️:       d_minIdx = std::min_element(d_matchIdxVsScore.begin(),
-    // RDKit✔️✔️:                                   d_matchIdxVsScore.end(), compare)
-    // RDKit✔️✔️:                      ->first;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     return d_matches.at(d_minIdx);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   std::vector<MatchVectType> sortMatchesByDegreeOfCoreSubstitution() {
-    // RDKit✔️✔️:     if (!d_isSorted) {
-    // RDKit✔️✔️:       std::sort(d_matchIdxVsScore.begin(), d_matchIdxVsScore.end(), compare);
-    // RDKit✔️✔️:       d_isSorted = true;
-    // RDKit✔️✔️:       d_minIdx = d_matchIdxVsScore.front().first;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     std::vector<MatchVectType> res(d_matches.size());
-    // RDKit✔️✔️:     std::transform(
-    // RDKit✔️✔️:         d_matchIdxVsScore.begin(), d_matchIdxVsScore.end(), res.begin(),
-    // RDKit✔️✔️:         [this](const IdxScorePair &pair) { return d_matches.at(pair.first); });
-    // RDKit✔️✔️:     return res;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:  private:
-    // RDKit✔️✔️:   static bool compare(const IdxScorePair &aPair, const IdxScorePair &bPair) {
-    // RDKit✔️✔️:     return (aPair.second < bPair.second);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   bool doesRGroupMatchHydrogen(const std::pair<int, int> &pair) const {
-    // RDKit✔️✔️:     const auto queryAtom = d_query.getAtomWithIdx(pair.first);
-    // RDKit✔️✔️:     const auto molAtom = d_mol.getAtomWithIdx(pair.second);
-    // RDKit✔️✔️:     return (molAtom->getAtomicNum() == 1 &&
-    // RDKit✔️✔️:             isAtomTerminalRGroupOrQueryHydrogen(queryAtom));
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   double computeScore(const RDKit::MatchVectType &match) const {
-    // RDKit✔️✔️:     double penalty = 0.0;
-    // RDKit✔️✔️:     double i = 0.0;
-    // RDKit✔️✔️:     for (const auto &pair : match) {
-    // RDKit✔️✔️:       i += static_cast<double>(pair.second);
-    // RDKit✔️✔️:       if (doesRGroupMatchHydrogen(pair)) {
-    // RDKit✔️✔️:         penalty += 1.0;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     penalty += i / d_sumIndices;
-    // RDKit✔️✔️:     return penalty;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const RDKit::ROMol &d_mol;
-    // RDKit✔️✔️:   const RDKit::ROMol &d_query;
-    // RDKit✔️✔️:   const std::vector<RDKit::MatchVectType> &d_matches;
-    // RDKit✔️✔️:   std::vector<IdxScorePair> d_matchIdxVsScore;
-    // RDKit✔️✔️:   double d_sumIndices;
-    // RDKit✔️✔️:   int d_minIdx;
-    // RDKit✔️✔️:   bool d_isSorted;
-    // RDKit✔️✔️: };
-    // END RDKIT CPP FUNCTION
+    // BEGIN RDKIT CPP FUNCTION RDKit::detail::ScoreMatchesByDegreeOfCoreSubstitution
+    // RDKit❗❌: class ScoreMatchesByDegreeOfCoreSubstitution {
+    // RDKit❗❌:  public:
+    // RDKit❗❌:   typedef std::pair<unsigned int, double> IdxScorePair;
+    // RDKit❗❌:   ScoreMatchesByDegreeOfCoreSubstitution(
+    // RDKit❗❌:       const RDKit::ROMol &mol, const RDKit::ROMol &query,
+    // RDKit❗❌:       const std::vector<RDKit::MatchVectType> &matches)
+    // RDKit❗❌:       : d_mol(mol),
+    // RDKit❗❌:         d_query(query),
+    // RDKit❗❌:         d_matches(matches),
+    // RDKit❗❌:         d_sumIndices(0.0),
+    // RDKit❗❌:         d_minIdx(-1),
+    // RDKit❗❌:         d_isSorted(false) {
+    // RDKit❗❌:     PRECONDITION(!matches.empty(), "matches must not be empty");
+    // RDKit❗❌:     auto dbl_na = static_cast<double>(d_mol.getNumAtoms());
+    // RDKit❗❌:     d_sumIndices = std::max(1.0, dbl_na * (dbl_na + 1) / 2.0);
+    // RDKit❗❌:     unsigned int i = 0;
+    // RDKit❗❌:     d_matchIdxVsScore.reserve(d_matches.size());
+    // RDKit❗❌:     for (const auto &match : d_matches) {
+    // RDKit❗❌:       d_matchIdxVsScore.emplace_back(i++, computeScore(match));
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   const RDKit::MatchVectType &getMostSubstitutedCoreMatch() {
+    // RDKit❗❌:     if (d_minIdx == -1) {
+    // RDKit❗❌:       d_minIdx = std::min_element(d_matchIdxVsScore.begin(),
+    // RDKit❗❌:                                   d_matchIdxVsScore.end(), compare)
+    // RDKit❗❌:                      ->first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     return d_matches.at(d_minIdx);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::vector<MatchVectType> sortMatchesByDegreeOfCoreSubstitution() {
+    // RDKit❗❌:     if (!d_isSorted) {
+    // RDKit❗❌:       std::sort(d_matchIdxVsScore.begin(), d_matchIdxVsScore.end(), compare);
+    // RDKit❗❌:       d_isSorted = true;
+    // RDKit❗❌:       d_minIdx = d_matchIdxVsScore.front().first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::vector<MatchVectType> res(d_matches.size());
+    // RDKit❗❌:     std::transform(
+    // RDKit❗❌:         d_matchIdxVsScore.begin(), d_matchIdxVsScore.end(), res.begin(),
+    // RDKit❗❌:         [this](const IdxScorePair &pair) { return d_matches.at(pair.first); });
+    // RDKit❗❌:     return res;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:  private:
+    // RDKit❗❌:   static bool compare(const IdxScorePair &aPair, const IdxScorePair &bPair) {
+    // RDKit❗❌:     return (aPair.second < bPair.second);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   bool doesRGroupMatchHydrogen(const std::pair<int, int> &pair) const {
+    // RDKit❗❌:     const auto queryAtom = d_query.getAtomWithIdx(pair.first);
+    // RDKit❗❌:     const auto molAtom = d_mol.getAtomWithIdx(pair.second);
+    // RDKit❗❌:     return (molAtom->getAtomicNum() == 1 &&
+    // RDKit❗❌:             isAtomTerminalRGroupOrQueryHydrogen(queryAtom));
+    // RDKit❗❌:   }
+    // RDKit❗❌:   double computeScore(const RDKit::MatchVectType &match) const {
+    // RDKit❗❌:     double penalty = 0.0;
+    // RDKit❗❌:     double i = 0.0;
+    // RDKit❗❌:     for (const auto &pair : match) {
+    // RDKit❗❌:       i += static_cast<double>(pair.second);
+    // RDKit❗❌:       if (doesRGroupMatchHydrogen(pair)) {
+    // RDKit❗❌:         penalty += 1.0;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     penalty += i / d_sumIndices;
+    // RDKit❗❌:     return penalty;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   const RDKit::ROMol &d_mol;
+    // RDKit❗❌:   const RDKit::ROMol &d_query;
+    // RDKit❗❌:   const std::vector<RDKit::MatchVectType> &d_matches;
+    // RDKit❗❌:   std::vector<IdxScorePair> d_matchIdxVsScore;
+    // RDKit❗❌:   double d_sumIndices;
+    // RDKit❗❌:   int d_minIdx;
+    // RDKit❗❌:   bool d_isSorted;
+    // RDKit❗❌: };
+    // RDKit❗❌: }  // namespace detail
+    // END RDKIT CPP FUNCTION RDKit::detail::ScoreMatchesByDegreeOfCoreSubstitution
     //
     // The Rust wrappers compute and retain the same per-match scores without
     // materializing a stateful scorer object.
-    let atom_count = molecule.num_atoms();
-    let sum_indices = (atom_count * (atom_count + 1) / 2) as f64;
+    let sum_indices = core_substitution_denominator(molecule.num_atoms());
     let mut penalty = 0.0;
     let mut index_sum = 0.0;
     for (query_index, &molecule_index) in matched.atom_mapping.iter().enumerate() {
@@ -9988,5 +10207,892 @@ mod source_chiral_atom_compat_complete_tests {
             compat(&query, atom(Element::C)).unwrap(),
             "virtual query set membership wins over its oxygen carrier"
         );
+    }
+}
+
+pub(crate) fn try_get_substruct_match_count_with_compiled_query_and_context(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    compiled_graph: &CompiledQueryGraph,
+    query_context: &QueryMatchContext,
+) -> Result<u32, SubstructMatchError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::SubstructMatchCount
+    // RDKit❗✔️: unsigned int SubstructMatchCount(const ROMol &mol, const ROMol &query,
+    // RDKit❗✔️:                                  const SubstructMatchParameters &params) {
+    // RDKit❗✔️:   if (!mol.getNumAtoms() || !query.getNumAtoms()) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   detail::RecursiveLocker locker(query, params.recursionPossible);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (params.recursionPossible) {
+    // RDKit❗✔️:     detail::SUBQUERY_MAP subqueryMap;
+    // RDKit❗✔️:     for (const auto atom : query.atoms()) {
+    // RDKit❗✔️:       if (atom->hasQuery()) {
+    // RDKit❗✔️:         detail::MatchSubqueries(mol, atom->getQuery(), params, subqueryMap,
+    // RDKit❗✔️:                                 locker.locked);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   detail::AtomLabelFunctor atomLabeler(query, mol, params);
+    // RDKit❗✔️:   detail::BondLabelFunctor bondLabeler(query, mol, params);
+    // RDKit❗✔️:   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   detail::MatchCounter counter;
+    // RDKit❗✔️:   boost::vf2_all(query.getTopology(), mol.getTopology(), atomLabeler,
+    // RDKit❗✔️:                  bondLabeler, matchChecker, counter, params.maxMatches);
+    // RDKit❗✔️:   return static_cast<unsigned int>(counter.size());
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RDKit::SubstructMatchCount
+    if mol.num_atoms() == 0 || query.num_atoms() == 0 {
+        return Ok(0);
+    }
+    preflight_query_molecule(query)?;
+    let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
+    if params.recursion_possible {
+        populate_recursive_query_match_cache(
+            mol,
+            query,
+            params,
+            &mut recursive_locker.cache,
+            Some(query_context),
+        )?;
+    }
+    let mut counter = MatchCounter::default();
+    substruct_match_into_sink(
+        mol,
+        query,
+        params,
+        Some(&recursive_locker.cache),
+        query_context,
+        None,
+        Some(compiled_graph),
+        &mut counter,
+    )?;
+    // Source converts size_t to unsigned int; this intentional narrowing wraps.
+    Ok(counter.len() as u32)
+}
+
+#[cfg(test)]
+mod search07_count_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, BondId, BondSpec, CoordinateBlock};
+    use cosmolkit_types::Element;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn topology(n: usize, edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn compiled(smarts: &str) -> crate::CompiledQuery {
+        crate::CompiledQuery::compile(crate::parse_smarts(smarts, &Default::default()).unwrap())
+            .unwrap()
+    }
+    fn parity(t: &TopologyBlock, q: &crate::CompiledQuery, p: &SubstructMatchParams) -> u32 {
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(t, &coordinates, &t.stereo_groups, None, None);
+        let context = build_query_match_context(&target);
+        let n = crate::try_get_substruct_match_count_with_compiled_query_and_context(
+            &target, q, p, &context,
+        )
+        .unwrap();
+        let list = crate::try_get_substruct_atom_matches_with_compiled_query_and_context(
+            &target, q, p, &context,
+        )
+        .unwrap();
+        assert_eq!(n, list.len() as u32);
+        n
+    }
+    fn empty_graph(n: usize) -> Vf2Graph {
+        Vf2Graph {
+            n_atoms: n,
+            n_bonds: 0,
+            edge_endpoints: vec![],
+            adjacency: vec![vec![]; n],
+        }
+    }
+    #[test]
+    fn search07_counter_clear_resize_reserve_and_unsigned_narrowing() {
+        let mut count = MatchCounter::default();
+        assert!(count.is_empty());
+        count.push(vec![(0, 1)]);
+        count.reserve(100);
+        assert_eq!(count.len(), 1);
+        count.resize(100);
+        assert_eq!(count.len(), 0);
+        count.push(vec![(0, 1)]);
+        count.clear();
+        assert!(count.is_empty());
+        count.count = usize::MAX;
+        count.push(vec![]);
+        assert_eq!(count.len(), 0);
+        if usize::BITS > 32 {
+            count.count = (u32::MAX as usize).wrapping_add(2);
+            assert_eq!(count.len() as u32, 1);
+        }
+    }
+    #[test]
+    fn search07_actual_dfs_count_rejects_goals_before_sink_and_matches_list_limits() {
+        let query = empty_graph(1);
+        let target = empty_graph(3);
+        for policy in 0..3 {
+            for limit in [0, 1, 2, 99] {
+                let accepted = |_: &[NodeId], target: &[NodeId]| match policy {
+                    0 => true,
+                    1 => false,
+                    _ => target[0] == 2,
+                };
+                let mut list = vec![];
+                let mut list_check = accepted;
+                vf2_entry_all(
+                    Vf2GraphRef::compiled(&query),
+                    Vf2GraphRef::compiled(&target),
+                    &|_, _| true,
+                    &|_, _| true,
+                    Some(&mut list_check),
+                    &mut list,
+                    limit,
+                );
+                let mut count = MatchCounter::default();
+                let mut count_check = accepted;
+                vf2_entry_all(
+                    Vf2GraphRef::compiled(&query),
+                    Vf2GraphRef::compiled(&target),
+                    &|_, _| true,
+                    &|_, _| true,
+                    Some(&mut count_check),
+                    &mut count,
+                    limit,
+                );
+                let raw = [3, 0, 1][policy];
+                let expected = if limit == 0 { raw } else { raw.min(limit) };
+                assert_eq!(count.len(), expected);
+                assert_eq!(list.len(), expected);
+            }
+        }
+    }
+    #[test]
+    fn search07_accepted_sink_push_precedes_cap_size_read() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Sink {
+            n: usize,
+            trace: Rc<RefCell<Vec<&'static str>>>,
+        }
+        impl Vf2MatchSink for Sink {
+            const COUNT_ONLY: bool = true;
+            fn clear(&mut self) {
+                self.n = 0;
+            }
+            fn len(&self) -> usize {
+                self.trace.borrow_mut().push("size");
+                self.n
+            }
+            fn push(&mut self, _: Vec<(NodeId, NodeId)>) {
+                self.trace.borrow_mut().push("push");
+                self.n += 1;
+            }
+        }
+        let q = empty_graph(1);
+        let m = empty_graph(2);
+        let trace = Rc::new(RefCell::new(vec![]));
+        let check_trace = Rc::clone(&trace);
+        let mut check = move |_: &[NodeId], _: &[NodeId]| {
+            check_trace.borrow_mut().push("goal");
+            true
+        };
+        let mut sink = Sink {
+            n: 0,
+            trace: Rc::clone(&trace),
+        };
+        vf2_entry_all(
+            Vf2GraphRef::compiled(&q),
+            Vf2GraphRef::compiled(&m),
+            &|_, _| true,
+            &|_, _| true,
+            Some(&mut check),
+            &mut sink,
+            1,
+        );
+        assert_eq!(&trace.borrow()[..3], &["goal", "push", "size"]);
+        assert_eq!(sink.n, 1);
+    }
+    #[test]
+    fn search07_compiled_count_uniquify_and_finite_caps_preserve_acceptance() {
+        let t = topology(3, &[(0, 1), (1, 2)]);
+        let q = compiled("CC");
+        for uniquify in [false, true] {
+            for cap in [0, 1, 2, 99] {
+                let p = SubstructMatchParams {
+                    uniquify,
+                    max_matches: cap,
+                    ..Default::default()
+                };
+                let expected = if uniquify { 2 } else { 4 };
+                assert_eq!(
+                    parity(&t, &q, &p),
+                    if cap == 0 {
+                        expected
+                    } else {
+                        (expected as usize).min(cap) as u32
+                    }
+                );
+            }
+        }
+    }
+    #[test]
+    fn search07_compiled_count_has_real_empty_and_larger_query_boundaries() {
+        assert_eq!(
+            parity(&topology(0, &[]), &compiled("C"), &Default::default()),
+            0
+        );
+        let empty = crate::CompiledQuery::compile(
+            QueryGraph::from_parts(vec![], vec![], BTreeMap::new(), vec![], vec![], vec![])
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parity(&topology(1, &[]), &empty, &Default::default()), 0);
+        assert_eq!(
+            parity(&topology(1, &[]), &compiled("CC"), &Default::default()),
+            0
+        );
+    }
+    #[test]
+    fn search07_compiled_recursive_count_borrows_existing_graph_plan() {
+        let t = topology(3, &[]);
+        let q = compiled("[$(C)]");
+        let after_compile = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+        assert_eq!(parity(&t, &q, &Default::default()), 3);
+        // Recursive subqueries compile their own genuine query once; ordinary
+        // no-recursion routes below must not build the retained outer graph.
+        let q = compiled("C");
+        let before = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+        assert_eq!(parity(&t, &q, &Default::default()), 3);
+        assert_eq!(VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get), before);
+        assert!(before >= after_compile);
+    }
+    #[test]
+    fn search07_native_typed_getter_error_propagates_instead_of_partial_count() {
+        let atom = |i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C));
+        let q = QueryGraph::from_parts(
+            vec![
+                QueryAtom::from_carrier_parts(
+                    atom(0),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                ),
+                QueryAtom::from_parts(
+                    atom(1),
+                    QueryNode::predicate(AtomQueryPredicate::ExplicitValence(0)),
+                ),
+            ],
+            vec![],
+            BTreeMap::new(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let q = crate::CompiledQuery::compile(q).unwrap();
+        let t = topology(3, &[]);
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&t, &coordinates, &[], None, None);
+        let context = build_query_match_context(&target);
+        let count = crate::try_get_substruct_match_count_with_compiled_query_and_context(
+            &target,
+            &q,
+            &Default::default(),
+            &context,
+        )
+        .unwrap_err();
+        let list = crate::try_get_substruct_atom_matches_with_compiled_query_and_context(
+            &target,
+            &q,
+            &Default::default(),
+            &context,
+        )
+        .unwrap_err();
+        assert_eq!(count, list);
+        assert!(matches!(
+            count,
+            SubstructMatchError::QueryContext(
+                crate::query_behavior::QueryMatchContextError::ValencePrecondition {
+                    atom: 1,
+                    field: "explicit_valence",
+                    getter: "getValence(EXPLICIT)"
+                }
+            )
+        ));
+    }
+    #[test]
+    fn search07_rejected_final_goals_do_not_consume_accepted_cap() {
+        let t = topology(3, &[]);
+        let q = compiled("C");
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&t, &coordinates, &[], None, None);
+        let context = build_query_match_context(&target);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let captured = Arc::clone(&calls);
+        let p = SubstructMatchParams {
+            max_matches: 1,
+            extra_final_check: Some(Arc::new(move |_, mapped| {
+                captured.fetch_add(1, Ordering::SeqCst);
+                mapped[0] == 2
+            })),
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::try_get_substruct_match_count_with_compiled_query_and_context(
+                &target, &q, &p, &context
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+}
+
+fn vf2_got_signal() -> bool {
+    // BEGIN RDKIT CPP FUNCTION RDKit::ControlCHandler::getGotSignal
+    // RDKit❗✔️:   static bool getGotSignal() { return d_gotSignal; }
+    // END RDKIT CPP FUNCTION RDKit::ControlCHandler::getGotSignal
+    #[cfg(test)]
+    if let Some(value) = search08_test_state::read() {
+        return value;
+    }
+    cosmolkit_core::source_control_c::got_signal()
+}
+fn vf2_reset_interrupt() {
+    // BEGIN RDKIT CPP FUNCTION RDKit::ControlCHandler::reset_search
+    // RDKit❗✔️:   static void reset() {
+    // RDKit❗✔️:     d_gotSignal = false;
+    // RDKit❗✔️:     std::signal(SIGINT, signalHandler);
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION RDKit::ControlCHandler::reset_search
+    // Source reset() intentionally ignores signal()'s return; the existing
+    // conformer wrapper retains its stricter installation error separately.
+    let _ = cosmolkit_core::source_control_c::reset();
+    #[cfg(test)]
+    search08_test_state::reset();
+}
+fn vf2_warn_if_interrupted() {
+    // BEGIN RDKIT CPP FUNCTION boost::vf2_all::interrupted_warning
+    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
+    // RDKit❗✔️:         << std::endl;
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION boost::vf2_all::interrupted_warning
+    if vf2_got_signal() {
+        #[cfg(test)]
+        search08_test_state::event("warn");
+        // Native diagnostic sink adaptation, not a logger/policy change.
+        eprintln!("Substructure search was interrupted, result may not include all matches");
+    }
+}
+
+// Private, passive test-only trace/fake state. Default None uses the sole core
+// flag/handler. Every test enabling this seam runs in a separate child process.
+#[cfg(test)]
+mod search08_test_state {
+    use std::cell::RefCell;
+    #[derive(Default)]
+    struct State {
+        enabled: bool,
+        fake: Option<bool>,
+        events: Vec<&'static str>,
+    }
+    thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
+    pub(super) struct Scope(Option<State>);
+    impl Scope {
+        pub(super) fn new(fake: Option<bool>) -> Self {
+            Self(Some(STATE.with(|s| {
+                std::mem::replace(
+                    &mut *s.borrow_mut(),
+                    State {
+                        enabled: true,
+                        fake,
+                        events: vec![],
+                    },
+                )
+            })))
+        }
+    }
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            if let Some(old) = self.0.take() {
+                STATE.with(|s| *s.borrow_mut() = old);
+            }
+        }
+    }
+    pub(super) fn read() -> Option<bool> {
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.enabled {
+                s.events.push("read");
+            }
+            s.fake
+        })
+    }
+    pub(super) fn reset() {
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.enabled {
+                s.events.push("reset");
+            }
+            if s.fake.is_some() {
+                s.fake = Some(false);
+            }
+        });
+    }
+    pub(super) fn set(value: bool) {
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            assert!(s.fake.is_some());
+            s.fake = Some(value);
+        });
+    }
+    pub(super) fn event(e: &'static str) {
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.enabled {
+                s.events.push(e);
+            }
+        });
+    }
+    pub(super) fn events() -> Vec<&'static str> {
+        STATE.with(|s| s.borrow().events.clone())
+    }
+    pub(super) fn clear_events() {
+        STATE.with(|s| s.borrow_mut().events.clear());
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod search08_interrupt_tests {
+    use super::*;
+    use std::io::Write;
+    fn isolated(name: &str, run: impl FnOnce()) {
+        const KEY: &str = "COSMOLKIT_SEARCH08_ISOLATED_CHILD";
+        if std::env::var(KEY).ok().as_deref() == Some(name) {
+            run();
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("matcher::search08_interrupt_tests::{name}"),
+                "--nocapture",
+            ])
+            .env(KEY, name)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child {name}: {:?}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    fn graph(n: usize) -> Vf2Graph {
+        Vf2Graph {
+            n_atoms: n,
+            n_bonds: 0,
+            edge_endpoints: vec![],
+            adjacency: vec![vec![]; n],
+        }
+    }
+    #[test]
+    fn search08_fake_next_pair_precedes_flag_and_blocks_feasibility() {
+        isolated(
+            "search08_fake_next_pair_precedes_flag_and_blocks_feasibility",
+            || {
+                let _scope = search08_test_state::Scope::new(Some(true));
+                let q = graph(1);
+                let m = graph(2);
+                let mut state =
+                    Vf2SubState::new(Vf2GraphRef::compiled(&q), Vf2GraphRef::compiled(&m), false);
+                let calls = std::cell::Cell::new(0);
+                let mut rows = vec![];
+                let mut c1 = vec![NULL_NODE];
+                let mut c2 = vec![NULL_NODE];
+                let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                assert!(!state.match_all(
+                    &|_, _| {
+                        calls.set(calls.get() + 1);
+                        true
+                    },
+                    &|_, _| true,
+                    no_check,
+                    &mut c1,
+                    &mut c2,
+                    &mut rows,
+                    0
+                ));
+                assert_eq!(calls.get(), 0);
+                assert!(rows.is_empty());
+                assert_eq!(search08_test_state::events(), vec!["next_pair", "read"]);
+            },
+        );
+    }
+    #[test]
+    fn search08_fake_accepted_goal_push_precedes_interrupt_and_cap() {
+        isolated(
+            "search08_fake_accepted_goal_push_precedes_interrupt_and_cap",
+            || {
+                let _scope = search08_test_state::Scope::new(Some(true));
+                let q = graph(1);
+                let m = graph(1);
+                for cap in [0, 1] {
+                    let mut state = Vf2SubState::new(
+                        Vf2GraphRef::compiled(&q),
+                        Vf2GraphRef::compiled(&m),
+                        false,
+                    );
+                    state.add_pair(0, 0);
+                    let mut count = MatchCounter::default();
+                    let mut c1 = vec![NULL_NODE];
+                    let mut c2 = vec![NULL_NODE];
+                    let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                    assert_eq!(
+                        state.match_all(
+                            &|_, _| true,
+                            &|_, _| true,
+                            no_check,
+                            &mut c1,
+                            &mut c2,
+                            &mut count,
+                            cap
+                        ),
+                        cap == 1
+                    );
+                    assert_eq!(count.len(), 1);
+                }
+                assert!(search08_test_state::events().is_empty());
+            },
+        );
+    }
+    #[test]
+    fn search08_fake_prefix_list_counter_and_once_warning() {
+        isolated("search08_fake_prefix_list_counter_and_once_warning", || {
+            let _scope = search08_test_state::Scope::new(Some(false));
+            let q = graph(1);
+            let m = graph(3);
+            let mut check = |_: &[NodeId], _: &[NodeId]| {
+                search08_test_state::set(true);
+                true
+            };
+            let mut rows = vec![];
+            assert!(vf2_entry_all(
+                Vf2GraphRef::compiled(&q),
+                Vf2GraphRef::compiled(&m),
+                &|_, _| true,
+                &|_, _| true,
+                Some(&mut check),
+                &mut rows,
+                0
+            ));
+            assert_eq!(rows, vec![vec![(0, 0)]]);
+            assert_eq!(
+                search08_test_state::events()
+                    .iter()
+                    .filter(|&&e| e == "warn")
+                    .count(),
+                1
+            );
+            search08_test_state::clear_events();
+            let mut count = MatchCounter::default();
+            assert!(vf2_entry_all(
+                Vf2GraphRef::compiled(&q),
+                Vf2GraphRef::compiled(&m),
+                &|_, _| true,
+                &|_, _| true,
+                Some(&mut check),
+                &mut count,
+                0
+            ));
+            assert_eq!(count.len(), 1);
+            assert_eq!(
+                search08_test_state::events()
+                    .iter()
+                    .filter(|&&e| e == "warn")
+                    .count(),
+                1
+            );
+        });
+    }
+    #[test]
+    fn search08_fake_nested_inner_entry_resets_outer_and_single_is_unchanged() {
+        isolated(
+            "search08_fake_nested_inner_entry_resets_outer_and_single_is_unchanged",
+            || {
+                let _scope = search08_test_state::Scope::new(Some(false));
+                let q = graph(1);
+                let m = graph(3);
+                let inner_m = graph(1);
+                let mut first = true;
+                let mut nested_count = 0;
+                let mut outer_check = |_: &[NodeId], _: &[NodeId]| {
+                    if first {
+                        first = false;
+                        search08_test_state::set(true);
+                        let mut inner = vec![];
+                        let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                        assert!(vf2_entry_all(
+                            Vf2GraphRef::compiled(&q),
+                            Vf2GraphRef::compiled(&inner_m),
+                            &|_, _| true,
+                            &|_, _| true,
+                            no_check,
+                            &mut inner,
+                            0
+                        ));
+                        nested_count = inner.len();
+                        assert!(!vf2_got_signal());
+                    }
+                    true
+                };
+                let mut outer = vec![];
+                assert!(vf2_entry_all(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| true,
+                    &|_, _| true,
+                    Some(&mut outer_check),
+                    &mut outer,
+                    0
+                ));
+                assert_eq!(nested_count, 1);
+                assert_eq!(outer.len(), 3);
+                assert_eq!(
+                    search08_test_state::events()
+                        .iter()
+                        .filter(|&&e| e == "reset")
+                        .count(),
+                    2
+                );
+                let mut one = vec![];
+                let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                assert!(vf2_entry_one(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| {
+                        search08_test_state::set(true);
+                        true
+                    },
+                    &|_, _| true,
+                    no_check,
+                    &mut one
+                ));
+                assert_eq!(one, vec![(0, 0)]);
+                assert!(vf2_got_signal());
+            },
+        );
+    }
+    #[test]
+    fn search08_fake_typed_exception_transport_skips_post_return_warning() {
+        isolated(
+            "search08_fake_typed_exception_transport_skips_post_return_warning",
+            || {
+                let _scope = search08_test_state::Scope::new(Some(false));
+                let q = graph(1);
+                let m = graph(1);
+                let error = std::cell::Cell::new(false);
+                let mut rows = vec![];
+                let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                vf2_entry_all_ordered(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| {
+                        error.set(true);
+                        search08_test_state::set(true);
+                        false
+                    },
+                    &|_, _| true,
+                    no_check,
+                    &mut rows,
+                    0,
+                    None,
+                    Some(&error),
+                );
+                assert!(error.get());
+                assert!(rows.is_empty());
+                assert!(vf2_got_signal());
+                assert!(!search08_test_state::events().contains(&"warn"));
+            },
+        );
+    }
+    #[test]
+    fn search08_native_first_signal_keeps_prefix_and_next_entry_resets_shared_flag() {
+        isolated(
+            "search08_native_first_signal_keeps_prefix_and_next_entry_resets_shared_flag",
+            || {
+                let _scope = search08_test_state::Scope::new(None);
+                let q = graph(1);
+                let m = graph(3);
+                let mut check = |_: &[NodeId], _: &[NodeId]| {
+                    assert_eq!(unsafe { libc::raise(libc::SIGINT) }, 0);
+                    true
+                };
+                let mut rows = vec![];
+                assert!(vf2_entry_all(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| true,
+                    &|_, _| true,
+                    Some(&mut check),
+                    &mut rows,
+                    0
+                ));
+                assert_eq!(rows, vec![vec![(0, 0)]]);
+                assert!(cosmolkit_core::source_control_c::got_signal());
+                let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                assert!(vf2_entry_all(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| true,
+                    &|_, _| true,
+                    no_check,
+                    &mut rows,
+                    0
+                ));
+                assert_eq!(rows.len(), 3);
+                assert!(!cosmolkit_core::source_control_c::got_signal());
+            },
+        );
+    }
+    #[test]
+    fn search08_native_second_signal_uses_default_after_first_checkpoint() {
+        const KEY: &str = "COSMOLKIT_SEARCH08_SECOND_SIGNAL_CHILD";
+        const CHECKPOINT: &str = "SEARCH08_FIRST_SIGNAL_FLAG_ASSERTED_AND_FLUSHED";
+        if std::env::var_os(KEY).is_some() {
+            vf2_reset_interrupt();
+            assert!(!vf2_got_signal());
+            assert_eq!(unsafe { libc::raise(libc::SIGINT) }, 0);
+            assert!(vf2_got_signal());
+            println!("{CHECKPOINT}");
+            std::io::stdout().flush().unwrap();
+            assert_eq!(unsafe { libc::raise(libc::SIGINT) }, 0);
+            panic!("second native SIGINT must terminate child under SIG_DFL");
+        }
+        let output=std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact","matcher::search08_interrupt_tests::search08_native_second_signal_uses_default_after_first_checkpoint","--nocapture"])
+            .env(KEY,"1").output().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(output.status.signal(), Some(libc::SIGINT));
+            assert!(String::from_utf8_lossy(&output.stdout).contains(CHECKPOINT));
+        }
+        #[cfg(not(unix))]
+        {
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stdout).contains(CHECKPOINT));
+        }
+    }
+}
+
+fn core_substitution_denominator(atom_count: usize) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION RDKit::detail::ScoreMatchesByDegreeOfCoreSubstitution::normalizer
+    // RDKit✔️✔️:     auto dbl_na = static_cast<double>(d_mol.getNumAtoms());
+    // RDKit✔️✔️:     d_sumIndices = std::max(1.0, dbl_na * (dbl_na + 1) / 2.0);
+    // END RDKIT CPP FUNCTION RDKit::detail::ScoreMatchesByDegreeOfCoreSubstitution::normalizer
+    let dbl_na = atom_count as f64;
+    1.0_f64.max(dbl_na * (dbl_na + 1.0) / 2.0)
+}
+
+#[cfg(test)]
+mod search09_normalizer_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, CoordinateBlock};
+    use cosmolkit_types::Element;
+    fn topology(n: usize) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..n)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn search09_zero_one_and_unsigned_max_count_normalizer_is_positive() {
+        assert_eq!(core_substitution_denominator(0), 1.0);
+        assert_eq!(core_substitution_denominator(1), 1.0);
+        assert_eq!(core_substitution_denominator(2), 3.0);
+        assert!(core_substitution_denominator(u32::MAX as usize).is_finite());
+        assert!(core_substitution_denominator(u32::MAX as usize) > 0.0);
+    }
+    #[test]
+    fn search09_cast_before_triangular_product_avoids_source_unsigned32_wrap() {
+        let n: usize = 65536;
+        assert_eq!(
+            core_substitution_denominator(n).to_bits(),
+            0x41e0001000000000_u64
+        );
+        // .1 auto na is unsigned32; reproduce its wrapped product explicitly.
+        // On this 64-bit host, old native usize multiplication did not wrap here.
+        let old = ((n as u32).wrapping_mul((n as u32).wrapping_add(1)) / 2) as f64;
+        assert_ne!(core_substitution_denominator(n).to_bits(), old.to_bits());
+    }
+    #[test]
+    fn search09_empty_score_is_zero_instead_of_zero_div_zero() {
+        let empty = topology(0);
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&empty, &coordinates, &[], None, None);
+        let row = SubstructMatchResult {
+            atom_mapping: vec![],
+            bond_mapping: vec![],
+        };
+        assert_eq!(core_substitution_score(&target, &target, &row), 0.0);
+        assert_eq!(
+            get_most_substituted_core_match(&target, &target, &[row.clone()]),
+            &row
+        );
+    }
+    #[test]
+    fn search09_finite_distinct_scores_retain_selection_and_sorted_order() {
+        let m = topology(3);
+        let q = topology(1);
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&m, &coordinates, &[], None, None);
+        let query = SearchTarget::new(&q, &coordinates, &[], None, None);
+        let rows: Vec<_> = [2, 0, 1]
+            .into_iter()
+            .map(|i| SubstructMatchResult {
+                atom_mapping: vec![i],
+                bond_mapping: vec![],
+            })
+            .collect();
+        assert_eq!(
+            core_substitution_score(&target, &query, &rows[0]),
+            2.0 / 6.0
+        );
+        assert_eq!(
+            get_most_substituted_core_match(&target, &query, &rows),
+            &rows[1]
+        );
+        let sorted = sort_matches_by_degree_of_core_substitution(&target, &query, &rows);
+        assert_eq!(
+            sorted.iter().map(|r| r.atom_mapping[0]).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        // These are distinct scores, deliberately not a claim of source tie ordering.
     }
 }

@@ -7,6 +7,7 @@ pyo3::create_exception!(cosmolkit, PickleError, pyo3::exceptions::PyValueError);
 pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::PickleError) -> PyErr {
     use ck::PickleError as E;
     let kind = match source {
+        E::StereoGroup(_) => "StereoGroup",
         E::UnexpectedEof => "UnexpectedEof",
         E::UnsupportedVersion(_) => "UnsupportedVersion",
         E::UnsupportedArchiveVersion { .. } => "UnsupportedArchiveVersion",
@@ -61,7 +62,7 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::PickleError) -> PyErr {
             E::InvalidArchive(message) | E::InvalidMolecule(message) => {
                 value.setattr("message", message)?
             }
-            E::UnexpectedEof => {}
+            E::StereoGroup(_) | E::UnexpectedEof => {}
         }
         Ok(())
     };

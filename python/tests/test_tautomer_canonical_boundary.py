@@ -14,6 +14,55 @@ def acetone():
     return ck.Molecule.from_smiles("CC(C)=O")
 
 
+def cold_benzene():
+    return ck.Molecule.from_smiles_with_params(
+        "c1ccccc1", ck.SmilesParseParams(sanitize=False, remove_hs=False)
+    )
+
+
+def test_scoring_cold_input_does_not_publish_ring_cache():
+    source = cold_benzene()
+    before = source.to_binary()
+    with pytest.raises(ValueError):
+        source.num_rings()
+    assert source.tautomer_score().ring() == 250
+    assert source.to_binary() == before
+    with pytest.raises(ValueError):
+        source.num_rings()
+
+
+def test_repeated_iterable_inputs_do_not_publish_ring_cache():
+    source = cold_benzene()
+    before = source.to_binary()
+    selected = ck.canonical_tautomer_from_molecules([source, source])
+    assert selected.num_atoms() == 6
+    assert source.to_binary() == before
+    with pytest.raises(ValueError):
+        source.num_rings()
+
+
+@pytest.mark.parametrize("entry", ["enumerate_tautomers_with_params", "canonical_tautomer_with_params"])
+def test_callback_error_retains_local_score_but_never_writes_input(entry):
+    # Benzene's one-candidate fast path does not invoke the callback. This
+    # molecule has a real keto/enol transition and an initially cold ring cache.
+    source = ck.Molecule.from_smiles_with_params(
+        "CC(=O)c1ccccc1", ck.SmilesParseParams(sanitize=False, remove_hs=False)
+    )
+    before = source.to_binary()
+    failure = ValueError("after local ring scoring")
+
+    def callback(view, progress):
+        assert view.tautomer_score().ring() == 250
+        raise failure
+
+    with pytest.raises(ValueError) as caught:
+        getattr(source, entry)(ck.TautomerParams(callback=callback))
+    assert caught.value is failure
+    assert source.to_binary() == before
+    with pytest.raises(ValueError):
+        source.num_rings()
+
+
 def test_default_and_v1_parameter_factories():
     current, v1 = ck.TautomerParams(), ck.TautomerParams.v1()
     assert current.transform_count() == 37

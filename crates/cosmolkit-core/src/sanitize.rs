@@ -19,7 +19,7 @@ use crate::{
     RingFindingError, RingInfo, RingSearchParams, StereoError, ValenceAssignment, ValenceError,
     ValenceModel, ValenceParams, assign_conjugation, assign_hybridization, assign_radicals,
     assign_valence, assign_valence_state_for_atom_from_parts, cleanup, find_sssr, kekulize,
-    kekulize_with_query_state_and_ring_info, symmetrized_sssr,
+    symmetrized_sssr,
 };
 
 use crate::hcount::{AdjustHsError, adjust_hs};
@@ -781,47 +781,19 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::KEKULIZE) {
-        // BEGIN RDKIT CPP FUNCTION: MolOps.cpp::sanitizeMol :: SANITIZE_KEKULIZE ring-state borrow
-        // RDKit✔️✔️:   operationThatFailed = SANITIZE_KEKULIZE;
-        // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
-        // RDKit✔️✔️:     Kekulize(mol, true, false);
-        // RDKit✔️✔️:   }
-        // END RDKIT CPP FUNCTION: MolOps.cpp::sanitizeMol :: SANITIZE_KEKULIZE ring-state borrow
-        // Behavior review: the source Kekulize runs on the mol whose live
-        // RingInfo already holds the SYMM_RINGS rows; the ring-aware Kekulize
-        // owner borrows the local carrier the same way, and ONLY a
-        // Some(ring_update) replaces it (by move) — None preserves the
-        // local state exactly. With no SYMM_RINGS the carrier is absent and
-        // the owner follows the source uninitialized-state SSSR branch.
-        // Complexity review: no clone of the carrier is made here; the owner
-        // itself performs at most one permanent acquisition, moved back.
-        let assignment = kekulize_with_query_state_and_ring_info(
-            &working,
-            &KekulizeParams {
-                mark_atoms_bonds: true,
-                canonical: false,
-                max_backtracks: KekulizeParams::default().max_backtracks,
-            },
+        // Source retry controller shares the one mutable detached attempt;
+        // only true MolSanitizeException equivalents trigger canonical retry.
+        // Borrow current intermediate valence/rings, without topology/ring clone.
+        crate::kekulize::source_kekulize_for_sanitize(
+            &mut working,
+            &mut valence,
+            &mut rings,
             query_state,
-            rings.as_ref(),
-            Some(&valence),
         )
         .map_err(|source| SanitizeError::Kekulize {
             stage: SanitizeStage::Kekulize,
             source,
         })?;
-        if let Some(update) = assignment.ring_update {
-            rings = Some(update);
-        }
-        // RDKit✔️✔️:   atom->calcImplicitValence(false);
-        // RDKit✔️✔️:           atom->updatePropertyCache(false);
-        // The owner updates this actual intermediate state, retaining E except
-        // source-selected N/P normalization and calculating selected I in order.
-        // Move complete returned rows; no unsolicited fresh cache or row replay.
-        if let Some(updated) = assignment.final_valence {
-            valence = updated;
-        }
-        working = assignment.topology;
     }
 
     if operations.contains(SanitizeOperations::FIND_RADICALS) {
@@ -1083,11 +1055,50 @@ pub(crate) mod final_rings_probe {
     }
 }
 
+fn detection_property_cache(
+    topology: &mut TopologyBlock,
+    strict: bool,
+    report: &mut ChemistryProblemReport,
+) -> Result<ValenceAssignment, SanitizeError> {
+    // The changed detectChemistryProblems owner needs the actual cache input
+    // for both attempts. Reuse the existing Atom updatePropertyCache kernel;
+    // each completed explicit store survives an implicit failure before next atom.
+    for index in 0..topology.atoms.len() {
+        match crate::valence::update_source_atom_cache(topology, AtomId::new(index), strict) {
+            Ok(()) => {}
+            Err(source @ ValenceError::InvalidValence { .. }) if strict => {
+                report.problems.push(ChemistryProblem {
+                    operation: SanitizeStage::Properties,
+                    error: ChemistryProblemError::Valence(source),
+                });
+            }
+            Err(source) => {
+                return Err(SanitizeError::Properties {
+                    stage: SanitizeStage::Properties,
+                    source: PropertyCacheError::Valence(source),
+                });
+            }
+        }
+    }
+    Ok(ValenceAssignment {
+        explicit_valence: topology
+            .atoms
+            .iter()
+            .map(|a| i32::from(a.source_valence_facts().explicit_valence))
+            .collect(),
+        implicit_hydrogens: topology
+            .atoms
+            .iter()
+            .map(|a| i32::from(a.source_valence_facts().implicit_valence))
+            .collect(),
+    })
+}
+
 fn is_source_kekulize_problem(error: &KekulizeError) -> bool {
     match error {
-        KekulizeError::AromaticAtomOutsideRing { .. } | KekulizeError::NotKekulizable { .. } => {
-            true
-        }
+        KekulizeError::AromaticAtomOutsideRing { .. }
+        | KekulizeError::NotKekulizable { .. }
+        | KekulizeError::PostconditionValenceMismatch { .. } => true,
         KekulizeError::Valence(source) => {
             matches!(source, ValenceError::InvalidValence { .. })
         }
@@ -1111,53 +1122,49 @@ pub fn detect_chemistry_problems(
             source,
         })?;
 
-    // Complete pinned source: MolOps.cpp::detectChemistryProblems.
-    // RDKit✔️❌: std::vector<std::unique_ptr<MolSanitizeException>> detectChemistryProblems(
-    // RDKit✔️❌:     const ROMol &imol, unsigned int sanitizeOps) {
-    // RDKit✔️❌:   RWMol mol(imol);
-    // RDKit✔️❌:   std::vector<std::unique_ptr<MolSanitizeException>> res;
-    // RDKit✔️❌:
-    // RDKit✔️❌:   // clear out any cached properties
-    // RDKit✔️❌:   mol.clearComputedProps();
-    // RDKit✔️❌:
-    // RDKit✔️❌:   int operation;
-    // RDKit✔️❌:   operation = SANITIZE_CLEANUP;
-    // RDKit✔️❌:   if (sanitizeOps & operation) {
-    // RDKit✔️❌:     // clean up things like nitro groups
-    // RDKit✔️❌:     cleanUp(mol);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:
-    // RDKit✔️❌:   // update computed properties on atoms and bonds:
-    // RDKit✔️❌:   operation = SANITIZE_PROPERTIES;
-    // RDKit✔️❌:   if (sanitizeOps & operation) {
-    // RDKit✔️❌:     for (auto &atom : mol.atoms()) {
-    // RDKit✔️❌:       try {
-    // RDKit✔️❌:         bool strict = true;
-    // RDKit✔️❌:         atom->updatePropertyCache(strict);
-    // RDKit✔️❌:       } catch (const MolSanitizeException &e) {
-    // RDKit✔️❌:         res.emplace_back(e.copy());
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   } else {
-    // RDKit✔️❌:     mol.updatePropertyCache(false);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:
-    // RDKit✔️❌:   // kekulizations
-    // RDKit✔️❌:   operation = SANITIZE_KEKULIZE;
-    // RDKit✔️❌:   if (sanitizeOps & operation) {
-    // RDKit✔️❌:     try {
-    // RDKit✔️❌:       Kekulize(mol, true, false);
-    // RDKit✔️❌:     } catch (const MolSanitizeException &e) {
-    // RDKit✔️❌:       res.emplace_back(e.copy());
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return res;
-    // RDKit✔️❌: }
-    // The detached owner APIs for cleanup and kekulization return owned
-    // topologies, so selected stages add full-topology clones beyond the one
-    // source-mandated `RWMol` copy. Atom traversal and problem collection
-    // retain the source linear complexity and stable stored-row ordering.
-
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: detectChemistryProblems (2026.03.6 complete)
+    // RDKit❗❌: std::vector<std::unique_ptr<MolSanitizeException>> detectChemistryProblems(
+    // RDKit❗❌:     const ROMol &imol, unsigned int sanitizeOps) {
+    // RDKit❗❌:   RWMol mol(imol);
+    // RDKit❗❌:   std::vector<std::unique_ptr<MolSanitizeException>> res;
+    // RDKit❗❌:
+    // RDKit❗❌:   // clear out any cached properties
+    // RDKit❗❌:   mol.clearComputedProps();
+    // RDKit❗❌:
+    // RDKit❗❌:   int operation;
+    // RDKit❗❌:   operation = SANITIZE_CLEANUP;
+    // RDKit❗❌:   if (sanitizeOps & operation) {
+    // RDKit❗❌:     // clean up things like nitro groups
+    // RDKit❗❌:     cleanUp(mol);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // update computed properties on atoms and bonds:
+    // RDKit❗❌:   operation = SANITIZE_PROPERTIES;
+    // RDKit❗❌:   if (sanitizeOps & operation) {
+    // RDKit❗❌:     for (auto &atom : mol.atoms()) {
+    // RDKit❗❌:       try {
+    // RDKit❗❌:         bool strict = true;
+    // RDKit❗❌:         atom->updatePropertyCache(strict);
+    // RDKit❗❌:       } catch (const MolSanitizeException &e) {
+    // RDKit❗❌:         res.emplace_back(e.copy());
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     mol.updatePropertyCache(false);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // kekulizations
+    // RDKit❗❌:   operation = SANITIZE_KEKULIZE;
+    // RDKit❗❌:   if (sanitizeOps & operation) {
+    // RDKit❗❌:     try {
+    // RDKit❗❌:       kekulizeForSanitize(mol);
+    // RDKit❗❌:     } catch (const MolSanitizeException &e) {
+    // RDKit❗❌:       res.emplace_back(e.copy());
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: detectChemistryProblems (2026.03.6 complete)
     let operations = params.operations;
     let mut working = topology.clone();
     clear_topology_computed_properties(&mut working)?;
@@ -1177,47 +1184,18 @@ pub fn detect_chemistry_problems(
         })?;
     }
 
-    if operations.contains(SanitizeOperations::PROPERTIES) {
-        for atom_index in 0..working.atoms.len() {
-            match assign_valence_state_for_atom_from_parts(
-                &working.atoms,
-                &working.bonds,
-                &working.adjacency,
-                AtomId::new(atom_index),
-                true,
-            ) {
-                Ok(_) => {}
-                Err(source @ ValenceError::InvalidValence { .. }) => {
-                    report.problems.push(ChemistryProblem {
-                        operation: SanitizeStage::Properties,
-                        error: ChemistryProblemError::Valence(source),
-                    });
-                }
-                Err(source) => {
-                    return Err(SanitizeError::Properties {
-                        stage: SanitizeStage::Properties,
-                        source: PropertyCacheError::Valence(source),
-                    });
-                }
-            }
-        }
-    } else {
-        assign_property_cache(&working, &PropertyCacheParams { strict: false }).map_err(
-            |source| SanitizeError::Properties {
-                stage: SanitizeStage::Properties,
-                source,
-            },
-        )?;
-    }
-
+    let mut valence = detection_property_cache(
+        &mut working,
+        operations.contains(SanitizeOperations::PROPERTIES),
+        &mut report,
+    )?;
     if operations.contains(SanitizeOperations::KEKULIZE) {
-        if let Err(source) = kekulize(
-            &working,
-            &KekulizeParams {
-                mark_atoms_bonds: true,
-                canonical: false,
-                max_backtracks: KekulizeParams::default().max_backtracks,
-            },
+        let mut rings = None;
+        if let Err(source) = crate::kekulize::source_kekulize_for_sanitize(
+            &mut working,
+            &mut valence,
+            &mut rings,
+            None,
         ) {
             if is_source_kekulize_problem(&source) {
                 report.problems.push(ChemistryProblem {
@@ -1669,6 +1647,7 @@ mod cleanup_composed_tests {
             (0..n).map(AtomId::new).collect(),
             Vec::new(),
         )
+        .expect("valid distinct stereo members")
         .with_id(7);
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![sentinel]).unwrap()
     }
@@ -1688,6 +1667,7 @@ mod cleanup_composed_tests {
             vec![AtomId::new(0), AtomId::new(1)],
             Vec::new(),
         )
+        .expect("valid distinct stereo members")
         .with_id(7);
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![sentinel]).unwrap()
     }
@@ -2079,3 +2059,332 @@ mod final_rings_transport_tests {
 #[cfg(test)]
 #[path = "tests/property_cache.rs"]
 mod property_cache_tests;
+#[cfg(test)]
+mod recovery_chem17_detection {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec, SourceAtomValenceFacts};
+    use cosmolkit_types::{BondOrder, Element};
+    #[test]
+    fn properties_prefix_caches_explicit_even_when_implicit_fails_then_continues() {
+        let mut t = TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(
+                    AtomId::new(0),
+                    AtomSpec::new(Element::C)
+                        .with_explicit_hydrogens(4)
+                        .with_radical_electrons(1),
+                ),
+                Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        for a in &mut t.atoms {
+            a.set_source_valence_facts(SourceAtomValenceFacts::UNINITIALIZED);
+        }
+        let mut report = ChemistryProblemReport::default();
+        let v = detection_property_cache(&mut t, true, &mut report).unwrap();
+        assert_eq!(report.problems.len(), 1);
+        assert!(matches!(
+            report.problems[0].error,
+            ChemistryProblemError::Valence(ValenceError::InvalidValence {
+                phase: crate::ValencePhase::Implicit,
+                ..
+            })
+        ));
+        assert_eq!(v.explicit_valence, vec![4, 0]);
+        assert_eq!(v.implicit_hydrogens, vec![-1, 4]);
+        assert_eq!(t.atoms[0].source_valence_facts().explicit_valence, 4);
+        assert_eq!(t.atoms[0].source_valence_facts().implicit_valence, -1);
+    }
+    #[test]
+    fn detection_prepares_actual_cache_before_both_failed_kekulize_attempts() {
+        let mut t = TopologyBlock::try_from_parts(
+            (0..5)
+                .map(|i| {
+                    Atom::from_spec(
+                        AtomId::new(i),
+                        AtomSpec::new(Element::C).with_aromatic(true),
+                    )
+                })
+                .collect(),
+            (0..5)
+                .map(|i| {
+                    Bond::from_spec(
+                        cosmolkit_model::BondId::new(i),
+                        BondSpec::new(
+                            AtomId::new(i),
+                            AtomId::new((i + 1) % 5),
+                            BondOrder::Aromatic,
+                        )
+                        .with_aromatic(true),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let before = t.clone();
+        let mut report = ChemistryProblemReport::default();
+        let mut v = detection_property_cache(&mut t, true, &mut report).unwrap();
+        assert!(report.problems.is_empty());
+        assert_eq!(v.explicit_valence, vec![3; 5]);
+        assert_eq!(v.implicit_hydrogens, vec![1; 5]);
+        let mut rings = None;
+        assert!(matches!(
+            crate::kekulize::source_kekulize_for_sanitize(&mut t, &mut v, &mut rings, None),
+            Err(KekulizeError::NotKekulizable { .. })
+        ));
+        assert_eq!(v.explicit_valence, vec![3; 5]);
+        assert_eq!(v.implicit_hydrogens, vec![1; 5]);
+        assert!(t.bonds.iter().all(|b| b.order() == BondOrder::Single));
+        let report = detect_chemistry_problems(&before, &SanitizeParams::default()).unwrap();
+        assert_eq!(report.problems.len(), 1);
+        assert_eq!(report.problems[0].operation, SanitizeStage::Kekulize);
+    }
+}
+
+/// The source tautomer-product sequence over borrowed detached state.
+/// Ring topology is unchanged; this is neither a live-cache capability nor
+/// sanitizeMol's retry controller. Completed stores remain observable on Err.
+#[doc(hidden)]
+pub fn source_sanitize_tautomer_product(
+    topology: &mut TopologyBlock,
+    properties: &mut cosmolkit_model::MoleculeProperties,
+    valence: &mut ValenceAssignment,
+    rings: &mut RingInfo,
+) -> Result<(), SanitizeError> {
+    // BEGIN RECOVERY SEARCH04 SOURCE TautomerProductStages
+    // RDKit❗❌:             // We only change bond orders/H counts/charges; the molecular graph
+    // RDKit❗❌:             // (and therefore ring topology) is unchanged.
+    // RDKit❗❌:             // `sanitizeMol()` always calls `clearComputedProps()` which resets
+    // RDKit❗❌:             // ring info and forces ring-finding for each generated tautomer.
+    // RDKit❗❌:             // Avoid that by clearing computed props without touching rings,
+    // RDKit❗❌:             // then running the specific sanitize steps we need.
+    // RDKit❗❌:             product->clearComputedProps(false);
+    // RDKit❗❌:             product->updatePropertyCache(false);
+    // RDKit❗❌:             MolOps::Kekulize(*product);
+    // RDKit❗❌:             MolOps::setAromaticity(*product);
+    // RDKit❗❌:             MolOps::setConjugation(*product);
+    // RDKit❗❌:             MolOps::setHybridization(*product);
+    // RDKit❗❌:             MolOps::adjustHs(*product);
+    // END RECOVERY SEARCH04 SOURCE TautomerProductStages
+    // BEGIN RECOVERY SEARCH04 SOURCE ROMolClearComputedProps
+    // RDKit❗❌: void ROMol::clearComputedProps(bool includeRings) const {
+    // RDKit❗❌:   // the SSSR information:
+    // RDKit❗❌:   if (includeRings) {
+    // RDKit❗❌:     this->dp_ringInfo->reset();
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   RDProps::clearComputedProps();
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto atom : atoms()) {
+    // RDKit❗❌:     atom->clearComputedProps();
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto bond : bonds()) {
+    // RDKit❗❌:     bond->clearComputedProps();
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RECOVERY SEARCH04 SOURCE ROMolClearComputedProps
+    // Source includeRings=false deliberately preserves the same carrier.
+    // Existing detached aromaticity/conjugation/adjustHs owners allocate owned
+    // topology results; their additional cloning/validation costs remain ❌.
+    // This narrow orchestrator adds no second chemistry algorithm or retry.
+    properties.clear_computed_props()?;
+    clear_topology_computed_properties(topology)?;
+    *valence = assign_property_cache(topology, &PropertyCacheParams { strict: false })
+        .map_err(|source| SanitizeError::Properties {
+            stage: SanitizeStage::Properties,
+            source,
+        })?
+        .into_valence();
+    crate::source_kekulize_attempt(
+        topology,
+        valence,
+        rings,
+        &KekulizeParams {
+            mark_atoms_bonds: true,
+            canonical: true,
+            max_backtracks: 100,
+        },
+    )
+    .map_err(|source| SanitizeError::Kekulize {
+        stage: SanitizeStage::Kekulize,
+        source,
+    })?;
+    if !rings.is_initialized() {
+        *rings = symmetrized_sssr(topology, &RingSearchParams::default()).map_err(|source| {
+            SanitizeError::Rings {
+                stage: SanitizeStage::SetAromaticity,
+                source,
+            }
+        })?;
+    }
+    let aromaticity = assign_default_aromaticity_with_cached_valence(
+        topology, rings, valence, None,
+    )
+    .map_err(|source| SanitizeError::Aromaticity {
+        stage: SanitizeStage::SetAromaticity,
+        source,
+    })?;
+    *topology = aromaticity.topology;
+    properties.set_computed_prop(
+        "numArom",
+        i32::try_from(aromaticity.aromatic_ring_count).map_err(|_| SanitizeError::Aromaticity {
+            stage: SanitizeStage::SetAromaticity,
+            source: AromaticityError::IntegerOverflow {
+                field: "source numArom int",
+            },
+        })?,
+    )?;
+    *topology =
+        assign_conjugation(topology, valence).map_err(|source| SanitizeError::Conjugation {
+            stage: SanitizeStage::SetConjugation,
+            source,
+        })?;
+    let hybridization =
+        assign_hybridization(topology, valence).map_err(|source| SanitizeError::Hybridization {
+            stage: SanitizeStage::SetHybridization,
+            source,
+        })?;
+    materialize_hybridization(topology, &hybridization);
+    let adjusted = adjust_hs(topology, valence).map_err(|source| SanitizeError::AdjustHs {
+        stage: SanitizeStage::AdjustHs,
+        source,
+    })?;
+    *topology = adjusted.topology;
+    *valence = adjusted.valence;
+    Ok(())
+}
+
+#[cfg(test)]
+mod search04_product_stage_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec, MoleculeProperties};
+    use cosmolkit_types::{BondOrder, Element};
+    fn cycle(n: usize) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..n)
+                .map(|i| {
+                    Atom::from_spec(
+                        AtomId::new(i),
+                        AtomSpec::new(Element::C).with_aromatic(true),
+                    )
+                })
+                .collect(),
+            (0..n)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(
+                            AtomId::new(i),
+                            AtomId::new((i + 1) % n),
+                            BondOrder::Aromatic,
+                        )
+                        .with_aromatic(true),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn search04_product_stages_preserve_initialized_ring_carrier_and_clear_only_computed_props() {
+        let mut topology = cycle(6);
+        topology.atoms[0]
+            .set_computed_prop("drop-atom", 1_i32)
+            .unwrap();
+        topology.atoms[0].set_prop("keep-atom", 2_i32).unwrap();
+        topology.bonds[0]
+            .set_computed_prop("drop-bond", 3_i32)
+            .unwrap();
+        topology.bonds[0].set_prop("keep-bond", 4_i32).unwrap();
+        let mut properties = MoleculeProperties::default();
+        properties
+            .set_computed_prop("drop-molecule", 5_i32)
+            .unwrap();
+        properties.set_prop("keep-molecule", 6_i32).unwrap();
+        let mut rings = crate::fast_find_rings(&topology).unwrap();
+        let rings_before = rings.clone();
+        let pointer = rings.atom_rings().as_ptr();
+        let mut valence = ValenceAssignment {
+            explicit_valence: vec![],
+            implicit_hydrogens: vec![],
+        };
+        source_sanitize_tautomer_product(&mut topology, &mut properties, &mut valence, &mut rings)
+            .unwrap();
+        assert_eq!(rings, rings_before);
+        assert_eq!(rings.atom_rings().as_ptr(), pointer);
+        assert!(rings.is_find_fast_or_better());
+        assert!(!rings.is_symm_sssr());
+        assert!(topology.atoms.iter().all(|a| a.is_aromatic()));
+        assert!(
+            topology
+                .bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Aromatic && b.is_conjugated())
+        );
+        assert!(
+            topology
+                .atoms
+                .iter()
+                .all(|a| a.hybridization() == Hybridization::Sp2)
+        );
+        assert_eq!(valence.explicit_valence, vec![3; 6]);
+        assert_eq!(valence.implicit_hydrogens, vec![1; 6]);
+        assert_eq!(topology.atoms[0].prop("drop-atom"), None);
+        assert!(topology.atoms[0].prop("keep-atom").is_some());
+        assert_eq!(topology.bonds[0].prop("drop-bond"), None);
+        assert!(topology.bonds[0].prop("keep-bond").is_some());
+        assert_eq!(properties.prop("drop-molecule"), None);
+        assert!(properties.prop("keep-molecule").is_some());
+        assert_eq!(
+            properties.prop("numArom"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
+    }
+    #[test]
+    fn search04_product_stages_use_one_attempt_and_retain_completed_failure_state() {
+        let mut topology = cycle(5);
+        let mut rings = crate::symmetrized_sssr(&topology, &Default::default()).unwrap();
+        let before = rings.clone();
+        let mut valence = ValenceAssignment {
+            explicit_valence: vec![],
+            implicit_hydrogens: vec![],
+        };
+        let mut properties = MoleculeProperties::default();
+        properties.set_computed_prop("drop", 1_i32).unwrap();
+        let error = source_sanitize_tautomer_product(
+            &mut topology,
+            &mut properties,
+            &mut valence,
+            &mut rings,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SanitizeError::Kekulize {
+                stage: SanitizeStage::Kekulize,
+                source: KekulizeError::NotKekulizable { .. }
+            }
+        ));
+        assert_eq!(rings, before);
+        assert_eq!(properties.prop("drop"), None);
+        assert_eq!(properties.prop("numArom"), None);
+        assert_eq!(valence.explicit_valence.len(), 5);
+        assert_eq!(valence.implicit_hydrogens.len(), 5);
+        assert!(topology.atoms.iter().all(|a| a.is_aromatic()));
+        assert!(
+            topology
+                .bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Single && b.is_aromatic())
+        );
+    }
+}

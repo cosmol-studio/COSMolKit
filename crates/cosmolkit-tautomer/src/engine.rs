@@ -28,13 +28,14 @@ pub struct TautomerRecord {
     pub properties: MoleculeProperties,
     pub valence: ValenceAssignment,
     pub rings: RingInfo,
+    pub coordinates: Option<CoordinateBlock>,
 }
 impl TautomerRecord {
     pub fn view<'a>(&'a self, coordinates: &'a CoordinateBlock) -> TautomerRecordView<'a> {
         TautomerRecordView {
             topology: &self.topology,
             properties: &self.properties,
-            coordinates,
+            coordinates: self.coordinates.as_ref().unwrap_or(coordinates),
             valence: Some(&self.valence),
             rings: Some(&self.rings),
         }
@@ -61,6 +62,8 @@ pub enum TautomerRunError {
     Match(#[from] cosmolkit_search::SubstructMatchError),
     #[error(transparent)]
     MatchContext(#[from] cosmolkit_search::QueryMatchContextError),
+    #[error(transparent)]
+    Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
     #[error(transparent)]
     Topology(#[from] cosmolkit_model::TopologyValidationError),
     #[error(transparent)]
@@ -101,13 +104,18 @@ pub enum TautomerRunError {
     MissingValence { atom: AtomId },
     #[error("no tautomer candidate can be selected canonically")]
     NoCanonicalTautomer,
+    #[error("source ring-cache commit failed; owning host retains the typed cause")]
+    SourceCacheCommit,
+    #[error("tautomer score snapshot does not match its cache-loan target")]
+    ScoreCacheTargetMismatch,
     #[error("tautomer control invariant: {0}")]
     Control(String),
     #[error("tautomer callback/scorer failed: {0}")]
     Callback(String),
 }
 
-pub(crate) fn canonical_smiles(
+#[doc(hidden)]
+pub fn canonical_smiles(
     view: TautomerRecordView<'_>,
 ) -> Result<cosmolkit_model::PropertyText, TautomerRunError> {
     Ok(cosmolkit_smiles::write_smiles(
@@ -156,36 +164,36 @@ pub(crate) fn prepared(view: TautomerRecordView<'_>) -> Result<TautomerRecord, T
     Ok(TautomerRecord {
         topology: view.topology.clone(),
         properties: view.properties.clone(),
+        coordinates: None,
         valence,
         rings,
     })
 }
 pub(crate) fn kekulized(candidate: &TautomerRecord) -> Result<TautomerRecord, TautomerRunError> {
-    let assignment = kekulize_with_query_state_and_ring_info(
-        &candidate.topology,
+    let mut result = candidate.clone();
+    cosmolkit_core::source_kekulize_attempt(
+        &mut result.topology,
+        &mut result.valence,
+        &mut result.rings,
         &KekulizeParams {
             mark_atoms_bonds: false,
             canonical: true,
             max_backtracks: 100,
         },
-        None,
-        Some(&candidate.rings),
-        Some(&candidate.valence),
     )?;
-    let mut result = candidate.clone();
-    result.topology = assignment.topology;
-    if let Some(rings) = assignment.ring_update {
-        result.rings = rings;
-    }
-    if let Some(valence) = assignment.final_valence {
-        result.valence = valence;
-    }
-
     Ok(result)
 }
 pub(crate) fn query_matches(
     view: TautomerRecordView<'_>,
     query: &CompiledQuery,
+) -> Result<Vec<Vec<usize>>, TautomerRunError> {
+    query_matches_with_params(view, query, &Default::default())
+}
+
+pub(crate) fn query_matches_with_params(
+    view: TautomerRecordView<'_>,
+    query: &CompiledQuery,
+    params: &SubstructMatchParams,
 ) -> Result<Vec<Vec<usize>>, TautomerRunError> {
     let owned_valence;
     let valence = match view.valence {
@@ -219,10 +227,49 @@ pub(crate) fn query_matches(
     let context = build_prepared_query_match_context(view.topology, rings, valence)?;
     Ok(
         try_get_substruct_atom_matches_with_compiled_query_and_context(
-            &target,
-            query,
-            &SubstructMatchParams::default(),
-            &context,
+            &target, query, params, &context,
+        )?,
+    )
+}
+
+pub(crate) fn query_match_count(
+    view: TautomerRecordView<'_>,
+    query: &CompiledQuery,
+    params: &SubstructMatchParams,
+) -> Result<u32, TautomerRunError> {
+    let owned_valence;
+    let valence = match view.valence {
+        Some(value) => value,
+        None => {
+            owned_valence = assign_valence(
+                view.topology,
+                &ValenceParams {
+                    model: ValenceModel::RdkitLike,
+                    strict: false,
+                },
+            )?;
+            &owned_valence
+        }
+    };
+    let owned_rings;
+    let rings = match view.rings {
+        Some(value) if value.is_initialized() => value,
+        None | Some(_) => {
+            owned_rings = symmetrized_sssr(view.topology, &Default::default())?;
+            &owned_rings
+        }
+    };
+    let target = SearchTarget::new(
+        view.topology,
+        view.coordinates,
+        &view.topology.stereo_groups,
+        Some(rings),
+        Some(valence),
+    );
+    let context = build_prepared_query_match_context(view.topology, rings, valence)?;
+    Ok(
+        cosmolkit_search::try_get_substruct_match_count_with_compiled_query_and_context(
+            &target, query, params, &context,
         )?,
     )
 }
@@ -316,13 +363,141 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
     options: TautomerParams,
     coordinates: &CoordinateBlock,
 ) -> Result<bool, TautomerRunError> {
-    // RDKit✔️❌: bool TautomerEnumerator::setTautomerStereoAndIsoHs(
-    // RDKit✔️❌:     const ROMol &mol, ROMol &taut, const TautomerEnumeratorResult &res) const {
-    // RDKit✔️❌:   bool modified = false;
-    // The source transition is reproduced below and validated through the
-    // complete tautomer stereo matrix. BTreeSet membership is O(log n), versus
-    // the source dynamic_bitset's O(1), so the complexity axis is intentionally
-    // not claimed equivalent.
+    // BEGIN RDKIT CPP FUNCTION RDKit::MolStandardize::TautomerEnumerator::setTautomerStereoAndIsoHs
+    // RDKit❗❌: bool TautomerEnumerator::setTautomerStereoAndIsoHs(
+    // RDKit❗❌:     const ROMol &mol, ROMol &taut, const TautomerEnumeratorResult &res) const {
+    // RDKit❗❌:   bool modified = false;
+    // RDKit❗❌:   // Iterate only the atoms/bonds actually modified by transforms.
+    // RDKit❗❌:   for (auto atomIdx = res.d_modifiedAtoms.find_first();
+    // RDKit❗❌:        atomIdx != boost::dynamic_bitset<>::npos;
+    // RDKit❗❌:        atomIdx = res.d_modifiedAtoms.find_next(atomIdx)) {
+    // RDKit❗❌:     const auto atom = mol.getAtomWithIdx(static_cast<unsigned int>(atomIdx));
+    // RDKit❗❌:     auto tautAtom = taut.getAtomWithIdx(atomIdx);
+    // RDKit❗❌:     // clear chiral tag on sp2 atoms (also sp3 if d_removeSp3Stereo is true)
+    // RDKit❗❌:     if (tautAtom->getHybridization() == Atom::SP2 || d_removeSp3Stereo) {
+    // RDKit❗❌:       modified |= (tautAtom->getChiralTag() != Atom::CHI_UNSPECIFIED);
+    // RDKit❗❌:       tautAtom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit❗❌:       if (tautAtom->hasProp(common_properties::_CIPCode)) {
+    // RDKit❗❌:         tautAtom->clearProp(common_properties::_CIPCode);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       modified |= (tautAtom->getChiralTag() != atom->getChiralTag());
+    // RDKit❗❌:       tautAtom->setChiralTag(atom->getChiralTag());
+    // RDKit❗❌:       if (atom->hasProp(common_properties::_CIPCode)) {
+    // RDKit❗❌:         tautAtom->setProp(
+    // RDKit❗❌:             common_properties::_CIPCode,
+    // RDKit❗❌:             atom->getProp<std::string>(common_properties::_CIPCode));
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // remove isotopic Hs if present (and if d_removeIsotopicHs is true)
+    // RDKit❗❌:     if (tautAtom->hasProp(common_properties::_isotopicHs) &&
+    // RDKit❗❌:         (d_removeIsotopicHs || !tautAtom->getTotalNumHs())) {
+    // RDKit❗❌:       tautAtom->clearProp(common_properties::_isotopicHs);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // remove stereochemistry on bonds that are part of a tautomeric path
+    // RDKit❗❌:   // Build bond lookup caches to avoid O(n) getBondWithIdx calls.
+    // RDKit❗❌:   // getBondWithIdx iterates through all bonds to find the one with the given
+    // RDKit❗❌:   // index, which is expensive when called multiple times in a loop.
+    // RDKit❗❌:   std::vector<const Bond *> molBonds;
+    // RDKit❗❌:   std::vector<Bond *> tautBonds;
+    // RDKit❗❌:   if (res.d_modifiedBonds.any()) {
+    // RDKit❗❌:     const auto numBonds = mol.getNumBonds();
+    // RDKit❗❌:     molBonds.resize(numBonds);
+    // RDKit❗❌:     tautBonds.resize(numBonds);
+    // RDKit❗❌:     for (auto bond : mol.bonds()) {
+    // RDKit❗❌:       molBonds[bond->getIdx()] = bond;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto bond : taut.bonds()) {
+    // RDKit❗❌:       tautBonds[bond->getIdx()] = bond;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   for (auto bondIdx = res.d_modifiedBonds.find_first();
+    // RDKit❗❌:        bondIdx != boost::dynamic_bitset<>::npos;
+    // RDKit❗❌:        bondIdx = res.d_modifiedBonds.find_next(bondIdx)) {
+    // RDKit❗❌:     const auto bond = molBonds[bondIdx];
+    // RDKit❗❌:     std::vector<unsigned int> bondsToClearDirs;
+    // RDKit❗❌:     if (bond->getBondType() == Bond::DOUBLE &&
+    // RDKit❗❌:         bond->getStereo() > Bond::STEREOANY) {
+    // RDKit❗❌:       // look around the beginning and end atoms and check for bonds with
+    // RDKit❗❌:       // direction set
+    // RDKit❗❌:       for (auto atom : {bond->getBeginAtom(), bond->getEndAtom()}) {
+    // RDKit❗❌:         for (const auto &nbri :
+    // RDKit❗❌:              boost::make_iterator_range(mol.getAtomBonds(atom))) {
+    // RDKit❗❌:           const auto &obnd = mol[nbri];
+    // RDKit❗❌:           if (obnd->getBondDir() == Bond::ENDDOWNRIGHT ||
+    // RDKit❗❌:               obnd->getBondDir() == Bond::ENDUPRIGHT) {
+    // RDKit❗❌:             bondsToClearDirs.push_back(obnd->getIdx());
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     auto tautBond = tautBonds[bondIdx];
+    // RDKit❗❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo ||
+    // RDKit❗❌:         !hasValidSpecifiedDoubleBondStereo(*bond)) {
+    // RDKit❗❌:       // When bond stereo is being removed for bonds involved in tautomerism,
+    // RDKit❗❌:       // use STEREOANY (for double bonds not in rings or connecting two ring atoms)
+    // RDKit❗❌:       // instead of STEREONONE.
+    // RDKit❗❌:       // This prevents downstream tools (notably InChI) from inferring a specific E/Z
+    // RDKit❗❌:       // assignment from 2D coordinates after bond orders have been changed.
+    // RDKit❗❌:       const RingInfo *ringInfo =
+    // RDKit❗❌:           tautBond->getBondType() == Bond::DOUBLE ? getFastRingInfo(taut)
+    // RDKit❗❌:                                                   : nullptr;
+    // RDKit❗❌:       const auto targetStereo = getClearedTautomerBondStereo(ringInfo, *tautBond);
+    // RDKit❗❌:       modified |= (tautBond->getStereo() != targetStereo);
+    // RDKit❗❌:       tautBond->setStereo(targetStereo);
+    // RDKit❗❌:       tautBond->getStereoAtoms().clear();
+    // RDKit❗❌:       for (auto bi : bondsToClearDirs) {
+    // RDKit❗❌:         tautBonds[bi]->setBondDir(Bond::NONE);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       const INT_VECT &sa = bond->getStereoAtoms();
+    // RDKit❗❌:       modified |= (tautBond->getStereo() != bond->getStereo() ||
+    // RDKit❗❌:                    sa.size() != tautBond->getStereoAtoms().size());
+    // RDKit❗❌:       if (sa.size() == 2) {
+    // RDKit❗❌:         tautBond->setStereoAtoms(sa.front(), sa.back());
+    // RDKit❗❌:       }
+    // RDKit❗❌:       tautBond->setStereo(bond->getStereo());
+    // RDKit❗❌:       for (auto bi : bondsToClearDirs) {
+    // RDKit❗❌:         tautBonds[bi]->setBondDir(molBonds[bi]->getBondDir());
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (d_reassignStereo) {
+    // RDKit❗❌:     static const bool cleanIt = true;
+    // RDKit❗❌:     static const bool force = true;
+    // RDKit❗❌:     MolOps::assignStereochemistry(taut, cleanIt, force);
+    // RDKit❗❌:
+    // RDKit❗❌:     // assignStereochemistry() can overwrite the explicit "undefined" bond
+    // RDKit❗❌:     // stereo (STEREOANY) that we set above in order to prevent downstream
+    // RDKit❗❌:     // coordinate-based E/Z inference. If bond stereo removal is enabled,
+    // RDKit❗❌:     // re-apply our contract to the bonds involved in tautomerism.
+    // RDKit❗❌:     if (d_removeBondStereo) {
+    // RDKit❗❌:       const auto ringInfo = getFastRingInfo(taut);
+    // RDKit❗❌:       for (auto bond : taut.bonds()) {
+    // RDKit❗❌:         const auto bondIdx = bond->getIdx();
+    // RDKit❗❌:         if (!res.d_modifiedBonds.test(bondIdx)) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (bond->getBondType() != Bond::DOUBLE) {
+    // RDKit❗❌:           bond->setStereo(Bond::STEREONONE);
+    // RDKit❗❌:           bond->getStereoAtoms().clear();
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         bond->setStereo(getClearedTautomerBondStereo(ringInfo, *bond));
+    // RDKit❗❌:         bond->getStereoAtoms().clear();
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     taut.setProp(common_properties::_StereochemDone, 1);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return modified;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RDKit::MolStandardize::TautomerEnumerator::setTautomerStereoAndIsoHs
+    // Sparse BTreeSet iteration preserves ascending source IDs. Native bond
+    // arrays already give O(1) indexed lookup: no redundant O(E) pointer caches.
+    // Existing assignment clone/error/state adaptations remain baseline costs;
+    // the complete source owner is not a blanket behavior/performance upgrade.
     if tautomer.topology.atoms.len() != source.topology.atoms.len() {
         return Err(TautomerRunError::AtomCountMismatch {
             expected: source.topology.atoms.len(),
@@ -337,15 +512,7 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
     }
     let mut modified = false;
 
-    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
-    // RDKit✔️❌:     auto atomIdx = atom->getIdx();
-    // RDKit✔️❌:     if (!res.d_modifiedAtoms.test(atomIdx)) {
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    for atom_id in source.topology.atoms.iter().map(cosmolkit_model::Atom::id) {
-        if !modified_atoms.contains(&atom_id) {
-            continue;
-        }
+    for atom_id in modified_atoms.iter().copied() {
         let source_atom = &source.topology.atoms[atom_id.index()];
         let clear_isotopic_hydrogens = {
             let tautomer_atom = &tautomer.topology.atoms[atom_id.index()];
@@ -355,91 +522,48 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
         };
         let tautomer_atom = &mut tautomer.topology.atoms[atom_id.index()];
 
-        // RDKit✔️❌:     auto tautAtom = taut.getAtomWithIdx(atomIdx);
-        // RDKit✔️❌:     // clear chiral tag on sp2 atoms (also sp3 if d_removeSp3Stereo is true)
-        // RDKit✔️❌:     if (tautAtom->getHybridization() == Atom::SP2 || d_removeSp3Stereo) {
         if tautomer_atom.hybridization() == Hybridization::Sp2 || options.remove_sp3_stereo() {
-            // RDKit✔️❌:       modified |= (tautAtom->getChiralTag() != Atom::CHI_UNSPECIFIED);
-            // RDKit✔️❌:       tautAtom->setChiralTag(Atom::CHI_UNSPECIFIED);
             modified |= tautomer_atom.chiral_tag() != ChiralTag::Unspecified;
             tautomer_atom.set_chiral_tag(ChiralTag::Unspecified);
-            // RDKit✔️❌:       if (tautAtom->hasProp(common_properties::_CIPCode)) {
-            // RDKit✔️❌:         tautAtom->clearProp(common_properties::_CIPCode);
-            // RDKit✔️❌:       }
             if tautomer_atom.prop("_CIPCode").is_some() {
                 tautomer_atom.clear_prop("_CIPCode")?;
             }
         } else {
-            // RDKit✔️❌:     } else {
-            // RDKit✔️❌:       modified |= (tautAtom->getChiralTag() != atom->getChiralTag());
-            // RDKit✔️❌:       tautAtom->setChiralTag(atom->getChiralTag());
             modified |= tautomer_atom.chiral_tag() != source_atom.chiral_tag();
             tautomer_atom.set_chiral_tag(source_atom.chiral_tag());
-            // RDKit✔️❌:       if (atom->hasProp(common_properties::_CIPCode)) {
-            // RDKit✔️❌:         tautAtom->setProp(
-            // RDKit✔️❌:             common_properties::_CIPCode,
-            // RDKit✔️❌:             atom->getProp<std::string>(common_properties::_CIPCode));
-            // RDKit✔️❌:       }
             if let Some(cip_code) = source_atom.prop("_CIPCode") {
                 tautomer_atom.set_prop("_CIPCode", property_value_to_string(cip_code)?)?;
             }
         }
-        // RDKit✔️❌:     // remove isotopic Hs if present (and if d_removeIsotopicHs is true)
-        // RDKit✔️❌:     if (tautAtom->hasProp(common_properties::_isotopicHs) &&
-        // RDKit✔️❌:         (d_removeIsotopicHs || !tautAtom->getTotalNumHs())) {
-        // RDKit✔️❌:       tautAtom->clearProp(common_properties::_isotopicHs);
-        // RDKit✔️❌:     }
         if clear_isotopic_hydrogens {
             tautomer_atom.set_tracked_isotopic_hydrogens(Vec::new());
         }
-        // RDKit✔️❌:   }
     }
 
-    // RDKit✔️❌:   // remove stereochemistry on bonds that are part of a tautomeric path
-    // RDKit✔️❌:   for (auto bond : mol.bonds()) {
-    // RDKit✔️❌:     auto bondIdx = bond->getIdx();
-    // RDKit✔️❌:     if (!res.d_modifiedBonds.test(bondIdx)) {
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    for bond_id in source.topology.bonds.iter().map(cosmolkit_model::Bond::id) {
-        if !modified_bonds.contains(&bond_id) {
-            continue;
-        }
+    for bond_id in modified_bonds.iter().copied() {
         let source_bond = &source.topology.bonds[bond_id.index()];
-        // RDKit✔️❌:     std::vector<unsigned int> bondsToClearDirs;
         let mut bonds_to_clear_directions = Vec::new();
-        // RDKit✔️❌:     if (bond->getBondType() == Bond::DOUBLE &&
-        // RDKit✔️❌:         bond->getStereo() > Bond::STEREOANY) {
         if source_bond.order() == BondOrder::Double && is_stereo_beyond_any(source_bond.stereo()) {
-            // RDKit✔️❌:       for (auto atom : {bond->getBeginAtom(), bond->getEndAtom()}) {
-            // RDKit✔️❌:         for (const auto &nbri :
-            // RDKit✔️❌:              boost::make_iterator_range(mol.getAtomBonds(atom))) {
             for atom_id in [source_bond.begin(), source_bond.end()] {
                 for neighbor in source.topology.adjacency.neighbors_of(atom_id.index()) {
                     let adjacent_bond = &source.topology.bonds[neighbor.bond.index()];
-                    // RDKit✔️❌:           const auto &obnd = mol[nbri];
-                    // RDKit✔️❌:           if (obnd->getBondDir() == Bond::ENDDOWNRIGHT ||
-                    // RDKit✔️❌:               obnd->getBondDir() == Bond::ENDUPRIGHT) {
-                    // RDKit✔️❌:             bondsToClearDirs.push_back(obnd->getIdx());
-                    // RDKit✔️❌:           }
                     if matches!(
                         adjacent_bond.direction(),
                         BondDirection::EndDownRight | BondDirection::EndUpRight
                     ) {
                         bonds_to_clear_directions.push(adjacent_bond.id());
                     }
-                    // RDKit✔️❌:         }
                 }
-                // RDKit✔️❌:       }
             }
         }
 
         let tautomer_bond = &tautomer.topology.bonds[bond_id.index()];
         let candidate_order = tautomer_bond.order();
         let candidate_stereo = tautomer_bond.stereo();
-        let candidate_stereo_atoms = tautomer_bond.stereo_atoms();
-        let remove_stereo =
-            tautomer_bond.order() != BondOrder::Double || options.remove_bond_stereo();
+        let candidate_stereo_reference_count = tautomer_bond.stereo_atom_references().len();
+        let remove_stereo = tautomer_bond.order() != BondOrder::Double
+            || options.remove_bond_stereo()
+            || !has_valid_specified_double_bond_stereo(source_bond);
         let target_stereo = if remove_stereo {
             let is_ring_bond = tautomer_bond_is_ring(tautomer, bond_id)?;
             if candidate_order == BondOrder::Double && !is_ring_bond {
@@ -453,31 +577,16 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
         let target_stereo_atoms = if remove_stereo {
             None
         } else {
-            source_bond.stereo_atoms().or(candidate_stereo_atoms)
+            source_bond.stereo_atoms()
         };
         modified |= candidate_stereo != target_stereo
             || (!remove_stereo
-                && candidate_stereo_atoms.is_some() != source_bond.stereo_atoms().is_some());
+                && candidate_stereo_reference_count != source_bond.stereo_atom_references().len());
 
-        // RDKit✔️❌:     auto tautBond = taut.getBondWithIdx(bondIdx);
-        // RDKit✔️❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo) {
-        // RDKit✔️❌:       tautBond->setStereo(targetStereo);
-        // RDKit✔️❌:       tautBond->getStereoAtoms().clear();
-        // RDKit✔️❌:     } else {
-        // RDKit✔️❌:       const INT_VECT &sa = bond->getStereoAtoms();
-        // RDKit✔️❌:       if (sa.size() == 2) {
-        // RDKit✔️❌:         tautBond->setStereoAtoms(sa.front(), sa.back());
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:       tautBond->setStereo(bond->getStereo());
-        // RDKit✔️❌:     }
         let tautomer_bond = &mut tautomer.topology.bonds[bond_id.index()];
         tautomer_bond.set_stereo_atoms(target_stereo_atoms);
         tautomer_bond.set_stereo(target_stereo)?;
         for adjacent_bond_id in bonds_to_clear_directions {
-            // RDKit✔️❌:       for (auto bi : bondsToClearDirs) {
-            // RDKit✔️❌:         taut.getBondWithIdx(bi)->setBondDir(
-            // RDKit✔️❌:             mol.getBondWithIdx(bi)->getBondDir());
-            // RDKit✔️❌:       }
             let direction = if remove_stereo {
                 BondDirection::None
             } else {
@@ -485,23 +594,12 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
             };
             tautomer.topology.bonds[adjacent_bond_id.index()].set_direction(direction);
         }
-        // RDKit✔️❌:   }
     }
 
-    // RDKit✔️❌:   if (d_reassignStereo) {
     if options.reassign_stereo() {
-        // RDKit✔️❌:     static const bool cleanIt = true;
-        // RDKit✔️❌:     static const bool force = true;
-        // RDKit✔️❌:     MolOps::assignStereochemistry(taut, cleanIt, force);
         assign_stereo(tautomer)?;
 
-        // RDKit✔️❌:     if (d_removeBondStereo) {
         if options.remove_bond_stereo() {
-            // RDKit✔️✔️:       auto ringInfo = taut.getRingInfo();
-            // RDKit✔️✔️:       if (!ringInfo || !ringInfo->isFindFastOrBetter()) {
-            // RDKit✔️✔️:         MolOps::fastFindRings(taut);
-            // RDKit✔️✔️:         ringInfo = taut.getRingInfo();
-            // RDKit✔️✔️:       }
             if !tautomer.rings.is_find_fast_or_better() {
                 tautomer.rings = fast_find_rings(&tautomer.topology)?;
             }
@@ -514,33 +612,14 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
                 } else {
                     BondStereo::Any
                 };
-                // RDKit✔️❌:       for (auto bond : taut.bonds()) {
-                // RDKit✔️❌:         const auto bondIdx = bond->getIdx();
-                // RDKit✔️❌:         if (!res.d_modifiedBonds.test(bondIdx)) {
-                // RDKit✔️❌:           continue;
-                // RDKit✔️❌:         }
-                // RDKit✔️❌:         if (bond->getBondType() != Bond::DOUBLE) {
-                // RDKit✔️❌:           bond->setStereo(Bond::STEREONONE);
-                // RDKit✔️❌:           bond->getStereoAtoms().clear();
-                // RDKit✔️❌:           continue;
-                // RDKit✔️❌:         }
-                // RDKit✔️❌:         bond->setStereo(isRingBond ? Bond::STEREONONE : Bond::STEREOANY);
-                // RDKit✔️❌:         bond->getStereoAtoms().clear();
                 let bond = &mut tautomer.topology.bonds[bond_id.index()];
                 bond.set_stereo_atoms(None);
                 bond.set_stereo(target_stereo)?;
-                // RDKit✔️❌:       }
             }
-            // RDKit✔️❌:     }
         }
     } else {
-        // RDKit✔️❌:   } else {
-        // RDKit✔️❌:     taut.setProp(common_properties::_StereochemDone, 1);
         tautomer.properties.set_prop("_StereochemDone", 1_i32)?;
-        // RDKit✔️❌:   }
     }
-    // RDKit✔️❌:   return modified;
-    // RDKit✔️❌: }
     Ok(modified)
 }
 pub(crate) fn apply_tautomer_transform_match(
@@ -557,7 +636,102 @@ pub(crate) fn apply_tautomer_transform_match(
     // RDKit✔️❌:           RWMOL_SPTR product(new RWMol(*kmol));
     // Only topology is copied for editing. Unchanged coordinates stay borrowed;
     // prepared ring/H assignments remain detached source values.
+    // BEGIN RDKIT CPP FUNCTION RDKit::ROMol::initFromOther quickCopy source dependency
+    // RDKit❗❌: void ROMol::initFromOther(const ROMol &other, bool quickCopy, int confId) {
+    // RDKit❗❌:   if (this == &other) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   numBonds = 0;
+    // RDKit❗❌:   // std::cerr<<"    init from other: "<<this<<" "<<&other<<std::endl;
+    // RDKit❗❌:   // copy over the atoms
+    // RDKit❗❌:   // Avoid repeated reallocations when copying: for MolGraph's vecS vertex
+    // RDKit❗❌:   // container, reserving upfront can reduce allocation churn.
+    // RDKit❗❌:   d_graph.m_vertices.reserve(other.getNumAtoms());
+    // RDKit❗❌:   for (const auto oatom : other.atoms()) {
+    // RDKit❗❌:     constexpr bool updateLabel = false;
+    // RDKit❗❌:     constexpr bool takeOwnership = true;
+    // RDKit❗❌:     addAtom(oatom->copy(), updateLabel, takeOwnership);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // and the bonds:
+    // RDKit❗❌:   for (const auto obond : other.bonds()) {
+    // RDKit❗❌:     addBond(obond->copy(), true);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // ring information
+    // RDKit❗❌:   delete dp_ringInfo;
+    // RDKit❗❌:   if (other.dp_ringInfo) {
+    // RDKit❗❌:     dp_ringInfo = new RingInfo(*(other.dp_ringInfo));
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     dp_ringInfo = new RingInfo();
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // enhanced stereochemical information
+    // RDKit❗❌:   d_stereo_groups.clear();
+    // RDKit❗❌:   d_stereo_groups.reserve(other.d_stereo_groups.size());
+    // RDKit❗❌:   for (auto &otherGroup : other.d_stereo_groups) {
+    // RDKit❗❌:     std::vector<Atom *> atoms;
+    // RDKit❗❌:     for (auto &otherAtom : otherGroup.getAtoms()) {
+    // RDKit❗❌:       atoms.push_back(getAtomWithIdx(otherAtom->getIdx()));
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::vector<Bond *> bonds;
+    // RDKit❗❌:     for (auto &otherBond : otherGroup.getBonds()) {
+    // RDKit❗❌:       bonds.push_back(getBondWithIdx(otherBond->getIdx()));
+    // RDKit❗❌:     }
+    // RDKit❗❌:     d_stereo_groups.emplace_back(otherGroup.getGroupType(), std::move(atoms),
+    // RDKit❗❌:                                  std::move(bonds), otherGroup.getReadId());
+    // RDKit❗❌:     d_stereo_groups.back().setWriteId(otherGroup.getWriteId());
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (other.dp_delAtoms) {
+    // RDKit❗❌:     dp_delAtoms.reset(new boost::dynamic_bitset<>(*other.dp_delAtoms));
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     dp_delAtoms.reset(nullptr);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (other.dp_delBonds) {
+    // RDKit❗❌:     dp_delBonds.reset(new boost::dynamic_bitset<>(*other.dp_delBonds));
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     dp_delBonds.reset(nullptr);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (!quickCopy) {
+    // RDKit❗❌:     // copy conformations
+    // RDKit❗❌:     for (const auto &conf : other.d_confs) {
+    // RDKit❗❌:       if (confId < 0 || rdcast<int>(conf->getId()) == confId) {
+    // RDKit❗❌:         this->addConformer(new Conformer(*conf));
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // Copy sgroups
+    // RDKit❗❌:     for (const auto &sg : getSubstanceGroups(other)) {
+    // RDKit❗❌:       addSubstanceGroup(*this, sg);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     d_props = other.d_props;
+    // RDKit❗❌:
+    // RDKit❗❌:     // Bookmarks should be copied as well:
+    // RDKit❗❌:     for (auto abmI : other.d_atomBookmarks) {
+    // RDKit❗❌:       for (const auto *aptr : abmI.second) {
+    // RDKit❗❌:         setAtomBookmark(getAtomWithIdx(aptr->getIdx()), abmI.first);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto bbmI : other.d_bondBookmarks) {
+    // RDKit❗❌:       for (const auto *bptr : bbmI.second) {
+    // RDKit❗❌:         setBondBookmark(getBondWithIdx(bptr->getIdx()), bbmI.first);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     d_props.reset();
+    // RDKit❗❌:     STR_VECT computed;
+    // RDKit❗❌:     d_props.setVal(RDKit::detail::computedPropName, computed);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // std::cerr<<"---------    done init from other: "<<this<<"
+    // RDKit❗❌:   // "<<&other<<std::endl;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RDKit::ROMol::initFromOther quickCopy source dependency
     let mut topology = candidate.topology.clone();
+    topology.substance_groups.clear();
     if match_result.atom_mapping.len() != transform.query().num_atoms() {
         return Err(TautomerRunError::AtomMappingCount {
             expected: transform.query().num_atoms(),
@@ -722,39 +896,42 @@ pub(crate) fn apply_tautomer_transform_match(
         topology.atoms[target_atom].set_formal_charge(charge);
     }
 
-    let sanitize_ops = SanitizeOperations::KEKULIZE
-        | SanitizeOperations::SET_AROMATICITY
-        | SanitizeOperations::SET_CONJUGATION
-        | SanitizeOperations::SET_HYBRIDIZATION
-        | SanitizeOperations::ADJUST_HS;
-    // RDKit✔️❌:           unsigned int failedOp;
-    // RDKit✔️❌:           try {
-    // RDKit✔️❌:             MolOps::sanitizeMol(*product, failedOp,
-    // RDKit✔️❌:                                 MolOps::SANITIZE_KEKULIZE |
-    // RDKit✔️❌:                                     MolOps::SANITIZE_SETAROMATICITY |
-    // RDKit✔️❌:                                     MolOps::SANITIZE_SETCONJUGATION |
-    // RDKit✔️❌:                                     MolOps::SANITIZE_SETHYBRIDIZATION |
-    // RDKit✔️❌:                                     MolOps::SANITIZE_ADJUSTHS);
-    // RDKit✔️❌:           } catch (const KekulizeException &) {
-    // RDKit✔️❌:             continue;
-    // RDKit✔️❌:           }
-    // BEGIN RDKIT CPP FUNCTION MolOps::sanitizeMol entry property clearing
-    // RDKit✔️❌:   // clear out any cached properties
-    // RDKit✔️❌:   mol.clearComputedProps();
-    // END RDKIT CPP FUNCTION MolOps::sanitizeMol entry property clearing
-    // The topology-only sanitizer owns atom/bond clearing. Its detached
-    // molecule-property companion must run first, as ROMol clears RDProps
-    // before the atom and bond loops. Keep one existing property-block clone;
-    // moving it here adds no scan/allocation or chemistry fallback.
-    let mut properties = candidate.properties.clone();
-    properties.clear_computed_props()?;
-    let assignment = match sanitize_topology(
-        &topology,
-        &SanitizeParams {
-            operations: sanitize_ops,
-        },
+    // BEGIN RECOVERY SEARCH04 SOURCE TautomerProductTryCatch
+    // RDKit❗❌:           try {
+    // RDKit❗❌:             // We only change bond orders/H counts/charges; the molecular graph
+    // RDKit❗❌:             // (and therefore ring topology) is unchanged.
+    // RDKit❗❌:             // `sanitizeMol()` always calls `clearComputedProps()` which resets
+    // RDKit❗❌:             // ring info and forces ring-finding for each generated tautomer.
+    // RDKit❗❌:             // Avoid that by clearing computed props without touching rings,
+    // RDKit❗❌:             // then running the specific sanitize steps we need.
+    // RDKit❗❌:             product->clearComputedProps(false);
+    // RDKit❗❌:             product->updatePropertyCache(false);
+    // RDKit❗❌:             MolOps::Kekulize(*product);
+    // RDKit❗❌:             MolOps::setAromaticity(*product);
+    // RDKit❗❌:             MolOps::setConjugation(*product);
+    // RDKit❗❌:             MolOps::setHybridization(*product);
+    // RDKit❗❌:             MolOps::adjustHs(*product);
+    // RDKit❗❌:           } catch (const KekulizeException &) {
+    // RDKit❗❌:             continue;
+    // RDKit❗❌:           }
+    // END RECOVERY SEARCH04 SOURCE TautomerProductTryCatch
+    let mut properties = MoleculeProperties::default();
+    properties.set_prop(
+        "__computedProps",
+        cosmolkit_model::PropertyValue::StringVector(Vec::new()),
+    )?;
+    let mut valence = candidate.valence.clone();
+    let mut rings = candidate.rings.clone();
+    // quickCopy retained the actual source ring and atom cache rows. The
+    // source product sequence keeps rings and performs exactly one canonical
+    // attempt; sanitizeMol would reset them and add a different retry policy.
+    match cosmolkit_core::source_sanitize_tautomer_product(
+        &mut topology,
+        &mut properties,
+        &mut valence,
+        &mut rings,
     ) {
-        Ok(value) => value,
+        Ok(()) => {}
         Err(SanitizeError::Kekulize {
             source: KekulizeError::NotKekulizable { .. },
             ..
@@ -765,29 +942,10 @@ pub(crate) fn apply_tautomer_transform_match(
             });
         }
         Err(error) => return Err(error.into()),
-    };
-    let valence = assignment
-        .final_valence
-        .or(assignment.non_strict_valence)
-        .expect("sanitize always produces source property-cache rows");
-    let rings = assignment
-        .final_rings
-        .expect("SET_AROMATICITY initializes the source ring state");
-    // RDKit❗✔️: int narom = 0;
-    // RDKit❗✔️: mol.setProp(common_properties::numArom, narom, true);
-    if let Some(count) = assignment.aromatic_ring_count {
-        properties.set_computed_prop(
-            "numArom",
-            i32::try_from(count).map_err(|_| cosmolkit_core::SanitizeError::Aromaticity {
-                stage: cosmolkit_core::SanitizeStage::SetAromaticity,
-                source: cosmolkit_core::AromaticityError::IntegerOverflow {
-                    field: "source numArom int",
-                },
-            })?,
-        )?;
     }
     let mut product = TautomerRecord {
-        topology: assignment.topology,
+        topology,
+        coordinates: Some(CoordinateBlock::default()),
         properties,
         valence,
         rings,
@@ -836,16 +994,14 @@ pub(crate) fn apply_tautomer_transform_match(
         }
     }
 
-    // RDKit✔️❌:           RWMOL_SPTR kekulized_product(new RWMol(*product));
-    // RDKit✔️❌:           // canonical=true for order-independent tautomer deduplication
-    // RDKit✔️❌:           MolOps::Kekulize(*kekulized_product, false, true);
-    let kekulized_product = kekulized(&product)?;
-    // RDKit✔️❌:           res.d_tautomers[tsmiles] = Tautomer(
-    // RDKit✔️❌:               std::move(product), std::move(kekulized_product),
-    // RDKit✔️❌:               res.d_modifiedAtoms.count(), res.d_modifiedBonds.count());
+    // BEGIN RDKIT CPP FUNCTION RDKit::TautomerEnumerator::enumerate lazy product publication
+    // RDKit❗❌:           res.d_tautomers[tsmiles] = Tautomer(
+    // RDKit❗❌:               std::move(product),
+    // RDKit❗❌:               numModifiedAtoms, numModifiedBonds);
+    // END RDKIT CPP FUNCTION RDKit::TautomerEnumerator::enumerate lazy product publication
     Ok(TautomerExpansionAttempt::Product(TautomerExpandedProduct {
         tautomer: Arc::new(product),
-        kekulized: Arc::new(kekulized_product),
+        kekulized: None,
         canonical_smiles,
         modified_atoms,
         modified_bonds,
@@ -891,6 +1047,7 @@ pub(crate) fn copy_for_canonical_assignment(
     Ok(TautomerRecord {
         topology: view.topology.clone(),
         properties: view.properties.clone(),
+        coordinates: Some(view.coordinates.clone()),
         valence: prepared_valence(view)?,
         rings: match view.rings {
             Some(rings) => rings.clone(),
@@ -906,3 +1063,389 @@ pub(crate) fn copy_for_canonical_assignment(
 #[cfg(test)]
 #[path = "application_tests.rs"]
 mod application_tests;
+
+pub(crate) fn get_cached_kekulized(
+    candidate: &mut crate::ordered::TautomerCandidate<Arc<TautomerRecord>>,
+) -> Result<Arc<TautomerRecord>, TautomerRunError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MolStandardize::Tautomer::getKekulized
+    // RDKit❗❌:   const ROMOL_SPTR &getKekulized() const {
+    // RDKit❗❌:     if (!kekulized && tautomer) {
+    // RDKit❗❌:       kekulized.reset(new RWMol(*tautomer));
+    // RDKit❗❌:       MolOps::Kekulize(static_cast<RWMol &>(*kekulized), false, true);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     return kekulized;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // END RDKIT CPP FUNCTION RDKit::MolStandardize::Tautomer::getKekulized
+    if candidate.kekulized.is_none() {
+        if let Some(tautomer) = candidate.tautomer.as_ref() {
+            candidate.kekulized = Some(Arc::new(tautomer.as_ref().clone()));
+            let copied = Arc::make_mut(candidate.kekulized.as_mut().expect("copy published above"));
+            // Shared CHEM17 one-attempt algorithm mutates borrowed state and
+            // retains completed partial changes on Err. No catch or fallback.
+            #[cfg(test)]
+            search04_failed_trace::record("published-copy", copied);
+            let outcome = cosmolkit_core::source_kekulize_attempt(
+                &mut copied.topology,
+                &mut copied.valence,
+                &mut copied.rings,
+                &KekulizeParams {
+                    mark_atoms_bonds: false,
+                    canonical: true,
+                    max_backtracks: 100,
+                },
+            );
+            #[cfg(test)]
+            if outcome.is_err() {
+                search04_failed_trace::record("failed-copy-still-installed", copied);
+            }
+            outcome?;
+        }
+    }
+    candidate.kekulized.clone().ok_or_else(|| {
+        TautomerRunError::Control("tautomer has neither source nor cached Kekule branch".to_owned())
+    })
+}
+
+#[cfg(test)]
+mod search04_lazy_tests {
+    use super::*;
+    use crate::ordered::TautomerCandidate;
+    fn candidate(record: TautomerRecord) -> TautomerCandidate<Arc<TautomerRecord>> {
+        TautomerCandidate {
+            tautomer: Some(Arc::new(record)),
+            kekulized: None,
+            num_modified_atoms: 0,
+            num_modified_bonds: 0,
+            done: false,
+        }
+    }
+    #[test]
+    fn search04_lazy_success_is_materialized_once_and_reused() {
+        let source = stereo_tests::fixture_from_smiles("c1ccccc1").unwrap();
+        let before = source.clone();
+        let mut entry = candidate(source);
+        assert!(entry.kekulized.is_none());
+        let first = get_cached_kekulized(&mut entry).unwrap();
+        let second = get_cached_kekulized(&mut entry).unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(entry.tautomer.as_deref(), Some(&before));
+        assert!(first.topology.bonds.iter().all(|b| b.is_aromatic()));
+        assert_eq!(
+            first
+                .topology
+                .bonds
+                .iter()
+                .filter(|b| b.order() == BondOrder::Double)
+                .count(),
+            3
+        );
+    }
+    #[test]
+    fn search04_lazy_failed_copy_is_published_then_reused_without_retry() {
+        let parsed = cosmolkit_smiles::parse_smiles(
+            "c1cccc1",
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let source = prepared(TautomerRecordView {
+            topology: &parsed.topology,
+            coordinates: &parsed.coordinates,
+            properties: &parsed.properties,
+            valence: None,
+            rings: None,
+        })
+        .unwrap();
+        let before = source.clone();
+        let mut entry = candidate(source);
+        let error = get_cached_kekulized(&mut entry).unwrap_err();
+        assert!(matches!(
+            error,
+            TautomerRunError::Kekulize(KekulizeError::NotKekulizable { .. })
+        ));
+        let failed = entry.kekulized.as_ref().unwrap().clone();
+        let failed_state = failed.as_ref().clone();
+        let second = get_cached_kekulized(&mut entry).unwrap();
+        assert!(Arc::ptr_eq(&failed, &second));
+        assert_eq!(*second, failed_state);
+        assert_eq!(entry.tautomer.as_deref(), Some(&before));
+    }
+    #[test]
+    fn search04_empty_transform_catalog_never_requests_kekule_branch() {
+        let parsed = cosmolkit_smiles::parse_smiles(
+            "c1cccc1",
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let source = TautomerRecordView {
+            topology: &parsed.topology,
+            coordinates: &parsed.coordinates,
+            properties: &parsed.properties,
+            valence: None,
+            rings: None,
+        };
+        let catalog = crate::TautomerCatalog::from_data(&[]).unwrap();
+        // No transform means no getKekulized call, even with a source that would
+        // fail a later first attempt; normal stereo-pruning still executes.
+        let mut source_rings = RingInfo::new(
+            RingFindType::OtherOrUnknown,
+            source.topology.atoms.len(),
+            source.topology.bonds.len(),
+        );
+        let result = crate::enumerate_with_catalog(
+            crate::TautomerScoreView::new(source, &mut source_rings),
+            &catalog,
+            TautomerParams::default().with_reassign_stereo(false),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.entries.len(), 1);
+    }
+    #[test]
+    fn search04_product_is_lazy_and_quickcopy_drops_only_molecule_metadata() {
+        let mut source = stereo_tests::fixture_from_smiles("CC=O").unwrap();
+        source.properties.set_prop("retained-input", 7_i32).unwrap();
+        source.topology.atoms[0]
+            .set_prop("atom-local", 9_i32)
+            .unwrap();
+        source.topology.substance_groups.push(
+            cosmolkit_model::SubstanceGroup::new(
+                cosmolkit_model::SubstanceGroupId::new(0),
+                cosmolkit_model::SubstanceGroupKind::Data,
+            )
+            .with_atoms(vec![AtomId::new(0)]),
+        );
+        let input = source.clone();
+        let kmol = kekulized(&source).unwrap();
+        let transform = crate::TautomerCatalog::current()
+            .unwrap()
+            .transforms()
+            .iter()
+            .find(|t| t.name().as_bytes() == b"1,3 (thio)keto/enol f")
+            .unwrap()
+            .clone();
+        let coordinates = CoordinateBlock::default();
+        let matched = transform_matches(&kmol, &coordinates, &transform)
+            .unwrap()
+            .remove(0);
+        let attempt = apply_tautomer_transform_match(
+            &source,
+            &kmol,
+            &coordinates,
+            &transform,
+            &matched,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &|_| false,
+            TautomerParams::default().with_reassign_stereo(false),
+        )
+        .unwrap();
+        let TautomerExpansionAttempt::Product(product) = attempt else {
+            panic!("new product expected")
+        };
+        assert!(product.kekulized.is_none());
+        assert!(product.tautomer.topology.substance_groups.is_empty());
+        assert_eq!(source.topology.substance_groups.len(), 1);
+        assert!(product.tautomer.properties.prop("retained-input").is_none());
+        assert_eq!(
+            product.tautomer.topology.atoms[0].prop("atom-local"),
+            input.topology.atoms[0].prop("atom-local")
+        );
+        assert_eq!(
+            product.tautomer.coordinates.as_ref(),
+            Some(&CoordinateBlock::default())
+        );
+        assert_eq!(source, input);
+    }
+}
+
+#[cfg(test)]
+mod search04_failed_trace {
+    use super::TautomerRecord;
+    use std::cell::RefCell;
+    std::thread_local! {
+        static EVENTS: RefCell<Option<Vec<(&'static str, TautomerRecord)>>> = const { RefCell::new(None) };
+    }
+    pub(super) fn record(event: &'static str, record: &TautomerRecord) {
+        EVENTS.with(|events| {
+            if let Some(rows) = events.borrow_mut().as_mut() {
+                rows.push((event, record.clone()));
+            }
+        });
+    }
+    pub(super) struct Capture;
+    impl Capture {
+        pub(super) fn new() -> Self {
+            EVENTS.with(|v| {
+                assert!(v.borrow().is_none());
+                *v.borrow_mut() = Some(Vec::new());
+            });
+            Self
+        }
+        pub(super) fn rows(&self) -> Vec<(&'static str, TautomerRecord)> {
+            EVENTS.with(|v| v.borrow().as_ref().unwrap().clone())
+        }
+    }
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            EVENTS.with(|v| {
+                v.borrow_mut().take();
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod search04_registered_detached_tests {
+    use super::*;
+    #[test]
+    fn search04_public_detached_enumeration_keeps_failed_cache_before_propagation() {
+        let parsed = cosmolkit_smiles::parse_smiles(
+            "c1cccc1",
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let before = parsed.clone();
+        let capture = search04_failed_trace::Capture::new();
+        let view = TautomerRecordView {
+            topology: &parsed.topology,
+            coordinates: &parsed.coordinates,
+            properties: &parsed.properties,
+            valence: None,
+            rings: None,
+        };
+        let mut source_rings = RingInfo::new(
+            RingFindType::OtherOrUnknown,
+            view.topology.atoms.len(),
+            view.topology.bonds.len(),
+        );
+        let error = crate::enumerate_with_catalog(
+            crate::TautomerScoreView::new(view, &mut source_rings),
+            &crate::TautomerCatalog::current().unwrap(),
+            TautomerParams::default(),
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            TautomerRunError::Kekulize(KekulizeError::NotKekulizable { .. })
+        ));
+        let rows = capture.rows();
+        assert_eq!(
+            rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+            ["published-copy", "failed-copy-still-installed"]
+        );
+        assert_eq!(rows[0].1.topology, parsed.topology);
+        assert!(rows[1].1.topology.atoms.iter().all(|a| a.is_aromatic()));
+        assert!(
+            rows[1]
+                .1
+                .topology
+                .bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Single && b.is_aromatic())
+        );
+        assert_eq!(rows[0].1.rings, rows[1].1.rings);
+        assert_eq!(parsed, before);
+    }
+}
+
+fn has_valid_specified_double_bond_stereo(bond: &cosmolkit_model::Bond) -> bool {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MolStandardize::hasValidSpecifiedDoubleBondStereo
+    // RDKit✔️✔️: bool hasValidSpecifiedDoubleBondStereo(const Bond &bond) {
+    // RDKit✔️✔️:   const auto stereo = bond.getStereo();
+    // RDKit✔️✔️:   return bond.getBondType() == Bond::DOUBLE && stereo >= Bond::STEREOZ &&
+    // RDKit✔️✔️:          stereo <= Bond::STEREOTRANS && bond.getStereoAtoms().size() == 2;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::MolStandardize::hasValidSpecifiedDoubleBondStereo
+    bond.order() == BondOrder::Double
+        && matches!(
+            bond.stereo(),
+            BondStereo::Z | BondStereo::E | BondStereo::Cis | BondStereo::Trans
+        )
+        && bond.stereo_atom_references().len() == 2
+}
+
+/// Exclusive authority for the scoreRings source cache write. Graph and all
+/// other molecular blocks remain readonly. It is neither Clone nor Copy.
+pub struct TautomerScoreView<'a> {
+    pub topology: &'a TopologyBlock,
+    pub coordinates: &'a CoordinateBlock,
+    pub properties: &'a MoleculeProperties,
+    pub valence: Option<&'a ValenceAssignment>,
+    pub(crate) rings: &'a mut RingInfo,
+}
+impl<'a> TautomerScoreView<'a> {
+    #[doc(hidden)]
+    pub fn new(view: TautomerRecordView<'a>, rings: &'a mut RingInfo) -> Self {
+        Self {
+            topology: view.topology,
+            coordinates: view.coordinates,
+            properties: view.properties,
+            valence: view.valence,
+            rings,
+        }
+    }
+    pub fn as_record_view(&self) -> TautomerRecordView<'_> {
+        TautomerRecordView {
+            topology: self.topology,
+            coordinates: self.coordinates,
+            properties: self.properties,
+            valence: self.valence,
+            rings: Some(self.rings),
+        }
+    }
+    pub fn reborrow(&mut self) -> TautomerScoreView<'_> {
+        TautomerScoreView {
+            topology: self.topology,
+            coordinates: self.coordinates,
+            properties: self.properties,
+            valence: self.valence,
+            rings: self.rings,
+        }
+    }
+    #[doc(hidden)]
+    pub fn ring_cache(&self) -> &RingInfo {
+        self.rings
+    }
+    /// Transport only a completed cache from an invocation-owned score snapshot.
+    /// Project ownership seam: the graph stays readonly and is checked exactly.
+    #[doc(hidden)]
+    pub fn retain_scored_cache_from(
+        &mut self,
+        snapshot: TautomerRecordView<'_>,
+    ) -> Result<(), TautomerRunError> {
+        if self.topology.atoms != snapshot.topology.atoms
+            || self.topology.bonds != snapshot.topology.bonds
+            || self.topology.adjacency != snapshot.topology.adjacency
+        {
+            return Err(TautomerRunError::ScoreCacheTargetMismatch);
+        }
+        if !self.rings.is_symm_sssr() {
+            if let Some(rings) = snapshot.rings.filter(|rings| rings.is_symm_sssr()) {
+                *self.rings = rings.clone();
+            }
+        }
+        Ok(())
+    }
+}
+impl TautomerRecord {
+    pub fn score_view<'a>(&'a mut self, coordinates: &'a CoordinateBlock) -> TautomerScoreView<'a> {
+        TautomerScoreView {
+            topology: &self.topology,
+            coordinates: self.coordinates.as_ref().unwrap_or(coordinates),
+            properties: &self.properties,
+            valence: Some(&self.valence),
+            rings: &mut self.rings,
+        }
+    }
+}

@@ -296,11 +296,14 @@ fn old_properties_sgroup_and_stereo_group_rows_are_preserved() {
             .with_atoms(vec![AtomId::new(0)])
             .with_bonds(vec![BondId::new(0)]),
     ];
-    source.stereo_groups = vec![StereoGroup::new(
-        StereoGroupKind::Absolute,
-        vec![AtomId::new(0)],
-        vec![BondId::new(0)],
-    )];
+    source.stereo_groups = vec![
+        StereoGroup::new(
+            StereoGroupKind::Absolute,
+            vec![AtomId::new(0)],
+            vec![BondId::new(0)],
+        )
+        .expect("valid distinct stereo members"),
+    ];
     source.validate().unwrap();
     let expected_sgroups = source.substance_groups.clone();
     let expected_stereo = source.stereo_groups.clone();

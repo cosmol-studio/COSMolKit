@@ -1575,6 +1575,28 @@ pub fn assign_valence_with_options_from_parts(
     })
 }
 
+pub(crate) fn source_calc_implicit_cache_row(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+    explicit: &mut i32,
+    implicit: &mut i32,
+    strict: bool,
+) -> Result<(), ValenceError> {
+    // RDKit✔️✔️: Atom::calcImplicitValence full source is anchored in the
+    // calculate_cached_implicit_valence kernel directly called here.
+    // Detached ValenceAssignment is this owner's source cache projection.
+    // Normalize signed8 E before the same existing scalar kernel; I commits
+    // only on success, while E's completed write survives an implicit error.
+    *explicit = i32::from(*explicit as i8);
+    let next = calculate_cached_implicit_valence(
+        atoms, bonds, adjacency, atom_id, explicit, strict, None,
+    )?;
+    *implicit = next;
+    Ok(())
+}
+
 /// Assign both valence fields for one atom from borrowed detached parts.
 pub fn assign_valence_state_for_atom_from_parts(
     atoms: &[Atom],

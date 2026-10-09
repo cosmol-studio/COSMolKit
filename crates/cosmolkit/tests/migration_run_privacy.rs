@@ -262,3 +262,142 @@ fn compile_probe(cases: &[&str], strict: bool) -> Output {
     }
     command.output().expect("run real-module privacy probes")
 }
+
+// This integration target is an external crate. Unlike the sibling runtime
+// probes above, it cannot use pub(crate) generated Molecule methods.
+#[cfg(cosmolkit_external_tautomer_privacy = "allowed")]
+fn public_tautomer_wrappers_compile() {
+    let _: fn(
+        &cosmolkit::Molecule,
+    ) -> Result<cosmolkit::TautomerEnumeration, cosmolkit::OperationError> =
+        cosmolkit::Molecule::enumerate_tautomers;
+    let _ = cosmolkit::Molecule::enumerate_tautomers_with_params;
+    let _: fn(&cosmolkit::Molecule) -> Result<cosmolkit::Molecule, cosmolkit::OperationError> =
+        cosmolkit::Molecule::canonical_tautomer;
+    let _ = cosmolkit::Molecule::canonical_tautomer_with_params;
+    let _: fn(&cosmolkit::Molecule) -> Result<cosmolkit::TautomerScore, cosmolkit::OperationError> =
+        cosmolkit::Molecule::tautomer_score;
+    let _ = cosmolkit::Molecule::tautomer_score_with_params;
+    let _ = cosmolkit::TautomerEnumeration::canonical_tautomer;
+    let _ = cosmolkit::TautomerEnumeration::canonical_tautomer_with_params;
+}
+
+#[cfg(cosmolkit_external_tautomer_privacy = "forbidden")]
+fn private_tautomer_generated_methods_do_not_compile() {
+    let _ = cosmolkit::Molecule::assign_symm_sssr_;
+    let _ = cosmolkit::Molecule::install_tautomer_score_cache_;
+    let _ = cosmolkit::Molecule::with_assigned_symm_sssr;
+    let _ = cosmolkit::Molecule::with_installed_tautomer_score_cache;
+}
+
+#[cfg(feature = "cap-tautomer")]
+#[test]
+fn private_tautomer_generated_methods_remain_private_default_and_strict() {
+    const METHODS: [&str; 4] = [
+        "assign_symm_sssr_",
+        "install_tautomer_score_cache_",
+        "with_assigned_symm_sssr",
+        "with_installed_tautomer_score_cache",
+    ];
+    for strict in [false, true] {
+        let allowed = compile_external_tautomer_probe(strict, "allowed");
+        assert!(allowed.status.success(), "{}", output_text(&allowed));
+        let forbidden = compile_external_tautomer_probe(strict, "forbidden");
+        assert!(
+            !forbidden.status.success(),
+            "private methods unexpectedly compiled"
+        );
+        let messages: Vec<serde_json::Value> = String::from_utf8_lossy(&forbidden.stdout)
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("Cargo JSON diagnostic"))
+            .filter(|event: &serde_json::Value| {
+                event["reason"] == "compiler-message" && event["message"]["level"] == "error"
+            })
+            .map(|event| event["message"].clone())
+            .collect();
+        for method in METHODS {
+            let expected_line = format!("let _ = cosmolkit::Molecule::{method};");
+            let errors = messages
+                .iter()
+                .filter(|message| {
+                    message["spans"]
+                        .as_array()
+                        .expect("diagnostic spans")
+                        .iter()
+                        .any(|span| {
+                            span["is_primary"] == true
+                                && span["file_name"]
+                                    .as_str()
+                                    .is_some_and(|path| path.ends_with("/migration_run_privacy.rs"))
+                                && span["line_start"].as_u64().is_some_and(|line| {
+                                    include_str!("migration_run_privacy.rs")
+                                        .lines()
+                                        .nth(line as usize - 1)
+                                        .is_some_and(|source| source.trim() == expected_line)
+                                })
+                        })
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                !errors.is_empty(),
+                "strict={strict} method={method}: no attributed error\n{}",
+                output_text(&forbidden)
+            );
+            assert!(
+                errors.iter().any(|message| {
+                    message["code"]["code"] == "E0624"
+                        && message["rendered"]
+                            .as_str()
+                            .is_some_and(|text| text.contains(method) && text.contains("private"))
+                }),
+                "strict={strict} method={method}: expected private-method E0624\n{}",
+                output_text(&forbidden)
+            );
+        }
+    }
+    println!(
+        "4 external compiler invocations; all 4 private tautomer methods rejected in default and strict modes; all 8 public wrappers compile"
+    );
+}
+
+#[cfg(feature = "cap-tautomer")]
+fn compile_external_tautomer_probe(strict: bool, case: &str) -> Output {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .unwrap();
+    let features = if strict {
+        "cap-tautomer,cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize,op-contracts-strict"
+    } else {
+        "cap-tautomer,cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize"
+    };
+    Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        .current_dir(workspace)
+        .env(
+            "CARGO_TARGET_DIR",
+            workspace.join("target/runtime-privacy-compile"),
+        )
+        .env("CARGO_INCREMENTAL", "0")
+        .args([
+            "rustc",
+            "--quiet",
+            "--locked",
+            "--message-format=json",
+            "-p",
+            "cosmolkit",
+            "--test",
+            "migration_run_privacy",
+            "--no-default-features",
+            "--features",
+            features,
+            "--",
+            "--emit=metadata",
+            "--check-cfg",
+            "cfg(cosmolkit_external_tautomer_privacy, values(\"allowed\", \"forbidden\"))",
+            "--cfg",
+            &format!("cosmolkit_external_tautomer_privacy=\"{case}\""),
+        ])
+        .output()
+        .expect("run external tautomer privacy probes")
+}

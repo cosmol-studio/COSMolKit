@@ -694,6 +694,13 @@ pub fn get_experimental_torsions_without_bonds(
 }
 
 fn torsion_preferences_v1() -> Result<&'static str, CrystalffTorsionPreferencesError> {
+    // BEGIN RECOVERY GEO-13 SOURCE torsion_preferences_v1
+    // RDKit✔️✔️: const std::string torsionPreferencesV1 =
+    // RDKit✔️✔️:     "[O:1]=[C:2]!@;-[O:3]~[CH0:4] -1 78.2 1 0.0 1 0.0 1 0.0 1 0.0 1 0.0\n"
+    // RDKit✔️✔️:     "[O:1]=[C:2]([N])!@;-[O:3]~[C:4] -1 79.1 1 0.0 1 0.0 1 0.0 1 0.0 1 0.0\n"
+    // RDKit✔️✔️:     "[O:1]=[C:2]!@;-[O:3]~[C:4] -1 100.0 1 0.0 1 0.0 1 0.0 1 0.0 1 0.0\n"
+    // END RECOVERY GEO-13 SOURCE torsion_preferences_v1
+
     Ok(TORSION_PREFERENCES_V1)
 }
 
@@ -881,6 +888,167 @@ fn map_pattern_atom_indices(query_molecule: &QueryGraph) -> [usize; 4] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recovery_geo13_v1_duplicate_removal_preserves_every_remaining_ordered_parameter() {
+        let data = torsion_preferences_v1().unwrap();
+        let first = data.lines().next().unwrap();
+        assert_eq!(
+            first,
+            "[O:1]=[C:2]!@;-[O:3]~[CH0:4] -1 78.2 1 0.0 1 0.0 1 0.0 1 0.0 1 0.0"
+        );
+        assert_eq!(data.lines().filter(|line| *line == first).count(), 1);
+        // Reinsert exactly the removed .1 entry, rather than reordering or
+        // deduplicating arbitrary SMARTS. The complete vendored file is also
+        // checked byte-for-byte against the official .6 file in GEO-13.json.
+        let previous_data = format!("{first}\n{data}");
+        let previous = ExpTorsionAngleCollection::new(&previous_data).unwrap();
+        let current = ExpTorsionAngleCollection::get_params(1, false, false, "").unwrap();
+        // C++ excludes 15 commented-out rules: the active table shrinks
+        // from 376 to 375, despite 391/390 newline literals in raw text.
+        assert_eq!(previous.params().len(), 376);
+        assert_eq!(current.params().len(), 375);
+        for (index, angle) in current.params().iter().enumerate() {
+            let old_index = if index == 0 { 0 } else { index + 1 };
+            let old = &previous.params()[old_index];
+            assert_eq!(angle.torsion_idx(), index);
+            assert_eq!(old.torsion_idx(), old_index);
+            assert_eq!(angle.smarts(), old.smarts());
+            assert_eq!(angle.idx(), old.idx());
+            assert_eq!(angle.signs(), old.signs());
+            assert_eq!(angle.force_constants(), old.force_constants());
+            for cos_phi in [-1.0, -0.25, 0.0, 0.5, 1.0] {
+                let energy = |parameter: &super::ExpTorsionAngle| {
+                    crate::crystalff::torsion::calc_torsion_energy_m6(
+                        parameter.force_constants(),
+                        parameter.signs(),
+                        cos_phi,
+                    )
+                };
+                assert_eq!(energy(angle), energy(old));
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_geo13_v1_duplicate_removal_keeps_first_match_and_shifts_later_indices() {
+        // Cases derived from the first three source SMARTS; both official
+        // endpoints confirm atom tuples, first-match selection and parameters.
+        for (smiles, expected_indices, expected_atoms, expected_barriers) in [
+            (
+                "CC(=O)OC(C)(C)C",
+                vec![0, 41],
+                vec![vec![2, 1, 3, 4], vec![5, 4, 3, 1]],
+                vec![78.2, 0.0],
+            ),
+            ("NC(=O)OC", vec![1], vec![vec![2, 1, 3, 4]], vec![79.1]),
+            ("CC(=O)OC", vec![2], vec![vec![2, 1, 3, 4]], vec![100.0]),
+        ] {
+            let mol = fixture_smiles(smiles).unwrap();
+            let mut quiet_records = None;
+            for verbose in [false, true] {
+                let mut details = CrystalFFDetails::default();
+                let mut bonds = Vec::new();
+                get_experimental_torsions(
+                    &mol,
+                    &mut details,
+                    &mut bonds,
+                    true,
+                    false,
+                    false,
+                    false,
+                    1,
+                    verbose,
+                )
+                .unwrap();
+                let indices: Vec<_> = bonds.iter().map(|entry| entry.2.torsion_idx()).collect();
+                let atoms: Vec<_> = bonds.iter().map(|entry| entry.1.clone()).collect();
+                assert_eq!(indices, expected_indices, "{smiles}, verbose={verbose}");
+                assert_eq!(atoms, expected_atoms);
+                assert_eq!(
+                    details.exp_torsion_atoms,
+                    expected_atoms
+                        .iter()
+                        .map(|atoms| atoms.iter().map(|&atom| atom as i32).collect::<Vec<_>>())
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    bonds.iter().map(|entry| entry.0).collect::<Vec<_>>(),
+                    if expected_indices.len() == 2 {
+                        vec![2, 3]
+                    } else {
+                        vec![2]
+                    }
+                );
+                for (index, (_, _, angle)) in bonds.iter().enumerate() {
+                    assert_eq!(angle.force_constants()[0], expected_barriers[index]);
+                    assert_eq!(
+                        details.exp_torsion_angles[index],
+                        (angle.signs().to_vec(), angle.force_constants().to_vec())
+                    );
+                    if index == 0 {
+                        assert_eq!(angle.signs(), &[-1, 1, 1, 1, 1, 1]);
+                        assert_eq!(&angle.force_constants()[1..], &[0.0; 5]);
+                        for cos_phi in [-1.0, 0.0, 1.0] {
+                            let energy = crate::crystalff::torsion::calc_torsion_energy_m6(
+                                angle.force_constants(),
+                                angle.signs(),
+                                cos_phi,
+                            );
+                            assert_eq!(energy, expected_barriers[index] * (1.0 - cos_phi));
+                        }
+                    }
+                }
+                let records = (indices, atoms, details.exp_torsion_angles);
+                if let Some(quiet) = &quiet_records {
+                    assert_eq!(&records, quiet);
+                } else {
+                    quiet_records = Some(records);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_geo13_v1_duplicate_removal_preserves_optional_table_order_and_offsets() {
+        let base = torsion_preferences_v1().unwrap();
+        for (small, macrocycles) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut expected = base.to_owned();
+            if small {
+                expected.push_str(torsion_preferences_small_rings().unwrap());
+            }
+            if macrocycles {
+                expected.push_str(torsion_preferences_macrocycles().unwrap());
+            }
+            let params = ExpTorsionAngleCollection::get_params(1, small, macrocycles, "").unwrap();
+            assert_eq!(params.param_data(), expected);
+            assert_eq!(params.params().len(), expected.lines().count());
+            for (index, angle) in params.params().iter().enumerate() {
+                assert_eq!(angle.torsion_idx(), index);
+                assert_eq!(
+                    angle.smarts(),
+                    expected
+                        .lines()
+                        .nth(index)
+                        .unwrap()
+                        .split_whitespace()
+                        .next()
+                        .unwrap()
+                );
+            }
+            if small || macrocycles {
+                let first_appended = if small {
+                    torsion_preferences_small_rings().unwrap()
+                } else {
+                    torsion_preferences_macrocycles().unwrap()
+                };
+                assert_eq!(
+                    params.params()[375].smarts(),
+                    first_appended.split_whitespace().next().unwrap()
+                );
+            }
+        }
+    }
+
     use super::*;
     use cosmolkit_search::{atom_matches_query, bond_matches_query, compile_query_fixture};
     fn fixture_smiles(text: &str) -> Result<TopologyBlock, String> {

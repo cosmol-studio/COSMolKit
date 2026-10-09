@@ -449,3 +449,59 @@ fn all_twelve_persisted_descriptor_spellings_remain_typed_at_the_assignment_boun
         assert_eq!(expected.as_str(), spelling);
     }
 }
+
+#[cfg(feature = "enumeration")]
+#[test]
+fn recovery_chem02_official_auxiliary_and_skip_side_cases() {
+    for (s, expected, bond) in [
+        (
+            "CC[C@H](C)CCCCC[C@H]1CC[C@@H](C)CC1",
+            vec![(2, "S"), (9, "s"), (12, "S")],
+            None,
+        ),
+        (
+            r"C1CC[C@H]2C/C(=C3\C[C@H]4CCCC[C@H]4C3)C[C@H]2C1",
+            vec![(3, "S"), (8, "R"), (13, "S"), (16, "R")],
+            Some((5, 6, "E")),
+        ),
+        (
+            r"C1/C(=C2\C[C@H]3CCCC[C@H]3C2)C[C@H]2CCCC[C@@H]12",
+            vec![(4, "R"), (9, "S"), (12, "R"), (17, "S")],
+            Some((1, 2, "E")),
+        ),
+    ] {
+        let m = cosmolkit_smiles::parse_smiles_complete_source(
+            s,
+            &cosmolkit_smiles::SmilesParseParams::default(),
+        )
+        .unwrap();
+        let a = assign_cip_labels(m.topology, m.properties, &CipLabelOptions::default()).unwrap();
+        let (t, _) = a.into_parts();
+        for (i, code) in expected {
+            assert_eq!(
+                t.atoms[i]
+                    .prop("_CIPCode")
+                    .unwrap()
+                    .as_string()
+                    .unwrap()
+                    .as_bytes(),
+                code.as_bytes(),
+                "{s} atom{i}"
+            );
+        }
+        if let Some((x, y, code)) = bond {
+            let b = t
+                .bonds
+                .iter()
+                .find(|b| {
+                    (b.begin().index() == x && b.end().index() == y)
+                        || (b.begin().index() == y && b.end().index() == x)
+                })
+                .unwrap();
+            assert_eq!(
+                b.prop("_CIPCode").unwrap().as_string().unwrap().as_bytes(),
+                code.as_bytes()
+            );
+        }
+    }
+}

@@ -443,7 +443,8 @@ fn insert_query_mol<'a>(
         query.stereo_groups(),
         atom_offset,
         bond_offset,
-    );
+    )
+    .map_err(SmartsWriteError::StereoGroup)?;
     for group in query_substance_groups(query) {
         let copy = group.clone().with_inserted_offsets(
             SubstanceGroupId::new(assembly.substance_groups.len()),
@@ -651,6 +652,7 @@ mod source_insert_mol_complete_tests {
                     vec![AtomId::new(1)],
                     vec![BondId::new(0)],
                 )
+                .expect("valid distinct stereo members")
                 .with_id(7)
                 .with_write_id(9),
             ],

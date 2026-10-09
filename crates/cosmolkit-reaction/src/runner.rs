@@ -1168,8 +1168,11 @@ mod complete_add_reactant_source_tests {
         let q = graph(&[Some(11)]);
         let mut t = topology(1, &[]);
         t.atoms[0].set_chiral_tag(ChiralTag::Other);
-        t.stereo_groups =
-            vec![StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![]).with_id(3)];
+        t.stereo_groups = vec![
+            StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+                .expect("valid distinct stereo members")
+                .with_id(3),
+        ];
         let mut p = product(&[11]);
         p.topology.atoms[0].set_chiral_tag(ChiralTag::Other);
         let c = CoordinateBlock {
@@ -1442,6 +1445,7 @@ mod complete_one_product_set_source_tests {
                 vec![AtomId::new(1), AtomId::new(0)],
                 vec![],
             )
+            .expect("valid distinct stereo members")
             .with_id(7),
         );
         let r = reaction(vec![graph(&[Some(11)]), graph(&[Some(12)])], vec![q]);

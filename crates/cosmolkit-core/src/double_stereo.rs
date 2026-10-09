@@ -1028,111 +1028,114 @@ pub fn set_double_bond_neighbor_directions(
     let mut single_bond_neighbors = vec![Vec::<BondId>::new(); bond_count];
     let mut needs_direction = vec![false; bond_count];
     let mut bonds_in_play = Vec::new();
-    // BEGIN RDKIT CPP FUNCTION setDoubleBondNeighborDirections complete source
-    // RDKit❗✔️: void setDoubleBondNeighborDirections(ROMol &mol, const Conformer *conf) {
-    // RDKit❗✔️:   // used to store the number of single bonds a given
-    // RDKit❗✔️:   // single bond is adjacent to
-    // RDKit❗✔️:   std::vector<unsigned int> singleBondCounts(mol.getNumBonds(), 0);
-    // RDKit❗✔️:   std::vector<Bond *> bondsInPlay;
-    // RDKit❗✔️:   // keeps track of which single bonds are adjacent to each double bond:
+    // BEGIN RECOVERY CHEM-14 SOURCE setDoubleBondNeighborDirections
+    // RDKit❗❌: void setDoubleBondNeighborDirections(ROMol &mol, const Conformer *conf) {
+    // RDKit❗❌:   // used to store the number of single bonds a given
+    // RDKit❗❌:   // single bond is adjacent to
+    // RDKit❗❌:   std::vector<unsigned int> singleBondCounts(mol.getNumBonds(), 0);
+    // RDKit❗❌:   std::vector<Bond *> bondsInPlay;
+    // RDKit❗❌:   // keeps track of which single bonds are adjacent to each double bond:
     // RDKit❗❌:   VECT_INT_VECT dblBondNbrs(mol.getNumBonds());
-    // RDKit❗✔️:   // keeps track of which double bonds are adjacent to each single bond:
+    // RDKit❗❌:   // keeps track of which double bonds are adjacent to each single bond:
     // RDKit❗❌:   VECT_INT_VECT singleBondNbrs(mol.getNumBonds());
-    // RDKit❗✔️:   // keeps track of which single bonds need a dir set and which double bonds
-    // RDKit❗✔️:   // need to have their neighbors' dirs set
+    // RDKit❗❌:   // keeps track of which single bonds need a dir set and which double bonds
+    // RDKit❗❌:   // need to have their neighbors' dirs set
     // RDKit❗❌:   boost::dynamic_bitset<> needsDir(mol.getNumBonds());
-    // RDKit❗✔️:
-    // RDKit❗✔️:   // find double bonds that should be considered for
-    // RDKit❗✔️:   // stereochemistry
-    // RDKit❗✔️:   // NOTE that we are explicitly excluding double bonds in rings
-    // RDKit❗✔️:   // with this test.
-    // RDKit❗✔️:   if (!mol.getRingInfo()->isSymmSssr()) {
-    // RDKit❗✔️:     RDKit::MolOps::symmetrizeSSSR(mol);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   for (auto bond : mol.bonds()) {
-    // RDKit❗✔️:     if (isBondCandidateForStereo(bond)) {
-    // RDKit❗✔️:       bool isCandidate = true;
-    // RDKit❗✔️:       for (const auto bondAtom : {bond->getBeginAtom(), bond->getEndAtom()}) {
-    // RDKit❗✔️:         for (const auto nbrBond : mol.atomBonds(bondAtom)) {
-    // RDKit❗✔️:           if (nbrBond->getBondType() == Bond::SINGLE ||
-    // RDKit❗✔️:               nbrBond->getBondType() == Bond::AROMATIC) {
-    // RDKit❗✔️:             singleBondCounts[nbrBond->getIdx()] += 1;
-    // RDKit❗✔️:             auto nbrDir = nbrBond->getBondDir();
-    // RDKit❗✔️:             int hasUnknownStereo = 0;
-    // RDKit❗✔️:             if (nbrBond->getBeginAtom() == bondAtom &&
-    // RDKit❗✔️:                 nbrDir == Bond::BondDir::UNKNOWN &&
-    // RDKit❗✔️:                 nbrBond->getPropIfPresent(common_properties::_UnknownStereo,
-    // RDKit❗✔️:                                           hasUnknownStereo) &&
-    // RDKit❗✔️:                 hasUnknownStereo) {
-    // RDKit❗✔️:               // if there's a wiggly bond starting here, then we're not a
-    // RDKit❗✔️:               // candidate for stereo
-    // RDKit❗✔️:               isCandidate = false;
-    // RDKit❗✔️:             } else {
-    // RDKit❗✔️:               needsDir[bond->getIdx()] = 1;
-    // RDKit❗✔️:               if (nbrDir == Bond::BondDir::NONE ||
-    // RDKit❗✔️:                   nbrDir == Bond::BondDir::ENDDOWNRIGHT ||
-    // RDKit❗✔️:                   nbrDir == Bond::BondDir::ENDUPRIGHT) {
-    // RDKit❗✔️:                 needsDir[nbrBond->getIdx()] = 1;
-    // RDKit❗✔️:                 dblBondNbrs[bond->getIdx()].push_back(nbrBond->getIdx());
-    // RDKit❗✔️:                 // the search may seem inefficient, but these vectors are
-    // RDKit❗✔️:                 // going to be at most 2 long (with very few exceptions). It's
-    // RDKit❗✔️:                 // just not worth using a different data structure
-    // RDKit❗✔️:                 if (std::find(singleBondNbrs[nbrBond->getIdx()].begin(),
-    // RDKit❗✔️:                               singleBondNbrs[nbrBond->getIdx()].end(),
-    // RDKit❗✔️:                               bond->getIdx()) ==
-    // RDKit❗✔️:                     singleBondNbrs[nbrBond->getIdx()].end()) {
-    // RDKit❗✔️:                   singleBondNbrs[nbrBond->getIdx()].push_back(bond->getIdx());
-    // RDKit❗✔️:                 }
-    // RDKit❗✔️:               }
-    // RDKit❗✔️:             }
-    // RDKit❗✔️:           }
-    // RDKit❗✔️:           if (!isCandidate) {
-    // RDKit❗✔️:             break;
-    // RDKit❗✔️:           }
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         if (!isCandidate) {
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (isCandidate) {
-    // RDKit❗✔️:         bondsInPlay.push_back(bond);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   if (!bondsInPlay.size()) {
-    // RDKit❗✔️:     return;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   // order the double bonds based on the singleBondCounts of their neighbors:
-    // RDKit❗✔️:   std::vector<std::pair<unsigned int, Bond *>> orderedBondsInPlay;
-    // RDKit❗✔️:   for (auto dblBond : bondsInPlay) {
-    // RDKit❗✔️:     unsigned int countHere =
-    // RDKit❗✔️:         std::accumulate(dblBondNbrs[dblBond->getIdx()].begin(),
-    // RDKit❗✔️:                         dblBondNbrs[dblBond->getIdx()].end(), 0);
-    // RDKit❗✔️:     // and favor double bonds that are *not* in rings. The combination of
-    // RDKit❗✔️:     // using the sum above (instead of the max) and this ring-membershipt test
-    // RDKit❗✔️:     // seem to fix sf.net issue 3009836
-    // RDKit❗✔️:     if (!(mol.getRingInfo()->numBondRings(dblBond->getIdx()))) {
-    // RDKit❗✔️:       countHere *= 10;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     orderedBondsInPlay.push_back(std::make_pair(countHere, dblBond));
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   std::sort(orderedBondsInPlay.begin(), orderedBondsInPlay.end());
-    // RDKit❗✔️:
-    // RDKit❗✔️:   // oof, now loop over the double bonds in that order and
-    // RDKit❗✔️:   // update their neighbor directionalities:
-    // RDKit❗✔️:   std::vector<std::pair<unsigned int, Bond *>>::reverse_iterator pairIter;
-    // RDKit❗✔️:   for (pairIter = orderedBondsInPlay.rbegin();
-    // RDKit❗✔️:        pairIter != orderedBondsInPlay.rend(); ++pairIter) {
-    // RDKit❗✔️:     // std::cerr << "RESET?: " << pairIter->second->getIdx() << " "
-    // RDKit❗✔️:     //           << pairIter->second->getStereo() << std::endl;
-    // RDKit❗✔️:     updateDoubleBondNeighbors(mol, pairIter->second, conf, needsDir,
-    // RDKit❗✔️:                               singleBondCounts, singleBondNbrs);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION setDoubleBondNeighborDirections complete source
+    // RDKit❗❌:
+    // RDKit❗❌:   // find double bonds that should be considered for
+    // RDKit❗❌:   // stereochemistry
+    // RDKit❗❌:   // NOTE that we are explicitly excluding double bonds in rings
+    // RDKit❗❌:   // with this test.
+    // RDKit❗❌:   if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit❗❌:     RDKit::MolOps::symmetrizeSSSR(mol);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto bond : mol.bonds()) {
+    // RDKit❗❌:     if (isBondCandidateForStereo(bond)) {
+    // RDKit❗❌:       bool isCandidate = true;
+    // RDKit❗❌:       for (const auto bondAtom : {bond->getBeginAtom(), bond->getEndAtom()}) {
+    // RDKit❗❌:         for (const auto nbrBond : mol.atomBonds(bondAtom)) {
+    // RDKit❗❌:           if (nbrBond->getBondType() == Bond::SINGLE ||
+    // RDKit❗❌:               nbrBond->getBondType() == Bond::AROMATIC) {
+    // RDKit❗❌:             singleBondCounts[nbrBond->getIdx()] += 1;
+    // RDKit❗❌:             auto nbrDir = nbrBond->getBondDir();
+    // RDKit❗❌:             int hasUnknownStereo = 0;
+    // RDKit❗❌:             if (nbrBond->getBeginAtom() == bondAtom &&
+    // RDKit❗❌:                 nbrDir == Bond::BondDir::UNKNOWN &&
+    // RDKit❗❌:                 nbrBond->getPropIfPresent(common_properties::_UnknownStereo,
+    // RDKit❗❌:                                           hasUnknownStereo) &&
+    // RDKit❗❌:                 hasUnknownStereo) {
+    // RDKit❗❌:               // if there's a wiggly bond starting here, then we're not a
+    // RDKit❗❌:               // candidate for stereo
+    // RDKit❗❌:               isCandidate = false;
+    // RDKit❗❌:             } else {
+    // RDKit❗❌:               needsDir[bond->getIdx()] = 1;
+    // RDKit❗❌:               if (nbrDir == Bond::BondDir::NONE ||
+    // RDKit❗❌:                   nbrDir == Bond::BondDir::ENDDOWNRIGHT ||
+    // RDKit❗❌:                   nbrDir == Bond::BondDir::ENDUPRIGHT) {
+    // RDKit❗❌:                 needsDir[nbrBond->getIdx()] = 1;
+    // RDKit❗❌:                 dblBondNbrs[bond->getIdx()].push_back(nbrBond->getIdx());
+    // RDKit❗❌:                 // the search may seem inefficient, but these vectors are
+    // RDKit❗❌:                 // going to be at most 2 long (with very few exceptions). It's
+    // RDKit❗❌:                 // just not worth using a different data structure
+    // RDKit❗❌:                 if (std::find(singleBondNbrs[nbrBond->getIdx()].begin(),
+    // RDKit❗❌:                               singleBondNbrs[nbrBond->getIdx()].end(),
+    // RDKit❗❌:                               bond->getIdx()) ==
+    // RDKit❗❌:                     singleBondNbrs[nbrBond->getIdx()].end()) {
+    // RDKit❗❌:                   singleBondNbrs[nbrBond->getIdx()].push_back(bond->getIdx());
+    // RDKit❗❌:                 }
+    // RDKit❗❌:               }
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:           if (!isCandidate) {
+    // RDKit❗❌:             break;
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (!isCandidate) {
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (isCandidate) {
+    // RDKit❗❌:         bondsInPlay.push_back(bond);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (!bondsInPlay.size()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // order the double bonds based on the singleBondCounts of their neighbors:
+    // RDKit❗❌:   std::vector<std::pair<unsigned int, Bond *>> orderedBondsInPlay;
+    // RDKit❗❌:   for (auto dblBond : bondsInPlay) {
+    // RDKit❗❌:     unsigned int countHere =
+    // RDKit❗❌:         std::accumulate(dblBondNbrs[dblBond->getIdx()].begin(),
+    // RDKit❗❌:                         dblBondNbrs[dblBond->getIdx()].end(), 0);
+    // RDKit❗❌:     // and favor double bonds that are *not* in rings. The combination of
+    // RDKit❗❌:     // using the sum above (instead of the max) and this ring-membershipt test
+    // RDKit❗❌:     // seem to fix sf.net issue 3009836
+    // RDKit❗❌:     if (!(mol.getRingInfo()->numBondRings(dblBond->getIdx()))) {
+    // RDKit❗❌:       countHere *= 10;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     orderedBondsInPlay.push_back(std::make_pair(countHere, dblBond));
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::ranges::sort(orderedBondsInPlay, [](const auto &a, const auto &b) {
+    // RDKit❗❌:     // sort in decreasing order of priority
+    // RDKit❗❌:     if (a.first != b.first) {
+    // RDKit❗❌:       return a.first > b.first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // in case of ties, use the bond index to decide the order
+    // RDKit❗❌:     return a.second->getIdx() < b.second->getIdx();
+    // RDKit❗❌:   });
+    // RDKit❗❌:
+    // RDKit❗❌:   // oof, now loop over the double bonds in that order and
+    // RDKit❗❌:   // update their neighbor directionalities:
+    // RDKit❗❌:   for (const auto &pairIter : orderedBondsInPlay) {
+    // RDKit❗❌:     updateDoubleBondNeighbors(mol, pairIter.second, conf, needsDir,
+    // RDKit❗❌:                               singleBondCounts, singleBondNbrs);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RECOVERY CHEM-14 SOURCE setDoubleBondNeighborDirections
     // BEGIN RDKIT CPP FUNCTION detectBondStereochemistry
     // RDKit✔️✔️: void detectBondStereochemistry(ROMol &mol, int confId) {
     // RDKit✔️✔️:   if (!mol.getNumConformers()) {
@@ -1219,20 +1222,13 @@ pub fn set_double_bond_neighbor_directions(
             (score, bond)
         })
         .collect::<Vec<_>>();
-    // Source pair comparison uses Bond* for equal unsigned scores. Compare
-    // the actual mapped bond objects' addresses, never an invented atom/CIP
-    // rank, guessed upstream allocation, or numerical bond-ID tie rule.
-    // This Vec is not resized or moved until all comparisons finish. Its
-    // concrete storage orders pointers monotonically, but the comparator
-    // itself reads physical object identity as the source does. Native heap
-    // allocation parity is not inferred from this source-body comparison.
+    // Exact changed ordering: unsigned priority descending, bond index ascending,
+    // then forward traversal. Existing candidate/cache/coordinate/error behavior
+    // and adjacency allocation remain qualified by the full-function markers.
     ordered.sort_unstable_by(|(left_score, left), (right_score, right)| {
-        left_score.cmp(right_score).then_with(|| {
-            std::ptr::from_ref(&topology.bonds[left.index()])
-                .cmp(&std::ptr::from_ref(&topology.bonds[right.index()]))
-        })
+        right_score.cmp(left_score).then_with(|| left.cmp(right))
     });
-    for (_, bond) in ordered.into_iter().rev() {
+    for (_, bond) in ordered {
         update_double_bond_neighbors(
             &mut topology,
             bond,
@@ -3213,5 +3209,131 @@ mod complete_incident_directed_bond_source_tests {
             neighboring_directed_bond_from_incident([Err("reached"), Ok(&first)]).unwrap_err(),
             "reached"
         );
+    }
+}
+
+#[cfg(test)]
+mod recovery_chem14 {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+    fn fixture(first: BondStereo, weighted: bool, reversed: bool) -> TopologyBlock {
+        let elements = [
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::CL,
+            Element::F,
+            Element::C,
+        ];
+        let ids: [usize; 8] = std::array::from_fn(|i| if reversed { 7 - i } else { i });
+        let mut ordered = [Element::C; 8];
+        for i in 0..8 {
+            ordered[ids[i]] = elements[i];
+        }
+        let atoms = ordered
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+            .collect();
+        let mut edges = [
+            (0, 1, BondOrder::Single),
+            (1, 2, BondOrder::Double),
+            (4, 7, BondOrder::Single),
+            (4, 6, BondOrder::Single),
+            (2, 3, BondOrder::Single),
+            (1, 5, BondOrder::Single),
+            (3, 4, BondOrder::Double),
+        ];
+        if weighted {
+            edges.swap(2, 5);
+        }
+        let bonds = edges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(ids[a]), AtomId::new(ids[b]), o),
+                )
+            })
+            .collect();
+        let mut g = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        for (b, stereo, pair) in [(1, first, [0, 3]), (6, BondStereo::Trans, [2, 7])] {
+            g.bonds[b].set_stereo_atoms(Some(pair.map(|a| AtomId::new(ids[a]))));
+            g.bonds[b].set_stereo(stereo).unwrap();
+        }
+        g
+    }
+    fn run(g: TopologyBlock) -> TopologyBlock {
+        let rings = crate::symmetrized_sssr(&g, &crate::RingSearchParams::default()).unwrap();
+        let update = set_double_bond_neighbor_directions(g, &rings, None).unwrap();
+        assert!(!update.needs_detect_bond_stereo);
+        assert!(update.ring_update.is_none());
+        update.topology
+    }
+    #[test]
+    fn equal_priorities_use_lower_actual_bond_id_first() {
+        // Actual adjacent SINGLE IDs [0,5,4] and [4,2,3] each sum9, score90.
+        // Two real connected double bonds; changing first assignment is visible
+        // in final physical single directions, not merely in a mock sort trace.
+        for reversed in [false, true] {
+            let g = run(fixture(BondStereo::Cis, false, reversed));
+            assert_eq!(
+                [0, 2, 3, 4, 5].map(|i| g.bonds[i].direction()),
+                [
+                    BondDirection::EndUpRight,
+                    BondDirection::EndDownRight,
+                    BondDirection::EndUpRight,
+                    BondDirection::EndDownRight,
+                    BondDirection::EndUpRight
+                ]
+            );
+            assert_eq!(g.bonds[1].stereo(), BondStereo::Cis);
+            assert_eq!(g.bonds[6].stereo(), BondStereo::Trans);
+        }
+    }
+    #[test]
+    fn priority_is_sum_of_actual_ids_and_descending_before_tie() {
+        // Still three single neighbors each: now sums6 and12, scores60/120.
+        // Bond6 runs first. Neighbor counts or ascending priority both fail.
+        for reversed in [false, true] {
+            let g = run(fixture(BondStereo::Cis, true, reversed));
+            assert_eq!(
+                [0, 2, 3, 4, 5].map(|i| g.bonds[i].direction()),
+                [
+                    BondDirection::EndDownRight,
+                    BondDirection::EndDownRight,
+                    BondDirection::EndDownRight,
+                    BondDirection::EndUpRight,
+                    BondDirection::EndUpRight
+                ]
+            );
+            assert_eq!(g.bonds[1].stereo(), BondStereo::Cis);
+            assert_eq!(g.bonds[6].stereo(), BondStereo::Trans);
+        }
+    }
+    #[test]
+    fn compatible_trans_control_retains_directions() {
+        for weighted in [false, true] {
+            let g = run(fixture(BondStereo::Trans, weighted, false));
+            let order = if weighted {
+                [0, 5, 3, 4, 2]
+            } else {
+                [0, 2, 3, 4, 5]
+            };
+            assert_eq!(
+                order.map(|i| g.bonds[i].direction()),
+                [
+                    BondDirection::EndUpRight,
+                    BondDirection::EndUpRight,
+                    BondDirection::EndDownRight,
+                    BondDirection::EndUpRight,
+                    BondDirection::EndUpRight
+                ]
+            );
+        }
     }
 }

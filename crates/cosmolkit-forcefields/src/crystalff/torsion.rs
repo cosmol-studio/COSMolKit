@@ -348,70 +348,71 @@ fn gradient_terms(
     context: &mut EvaluationContext<'_>,
     grad: &mut [f64],
 ) -> Result<(), ForceFieldKernelError> {
-    // BEGIN COMPLETE PINNED CPP TorsionAngleContribs::getGrad (TorsionAngleContribs.cpp:90-151)
-    // RDKit❗✔️: void TorsionAngleContribs::getGrad(double *pos, double *grad) const {
-    // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
-    // RDKit❗✔️:   PRECONDITION(pos, "bad vector");
-    // RDKit❗✔️:   PRECONDITION(grad, "bad vector");
-    // RDKit❗✔️:
-    // RDKit❗✔️:   for (const auto &contrib : d_contribs) {
-    // RDKit❗✔️:     const RDGeom::Point3D iPoint(pos[3 * contrib.idx1],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx1 + 1],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx1 + 2]);
-    // RDKit❗✔️:     const RDGeom::Point3D jPoint(pos[3 * contrib.idx2],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx2 + 1],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx2 + 2]);
-    // RDKit❗✔️:     const RDGeom::Point3D kPoint(pos[3 * contrib.idx3],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx3 + 1],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx3 + 2]);
-    // RDKit❗✔️:     const RDGeom::Point3D lPoint(pos[3 * contrib.idx4],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx4 + 1],
-    // RDKit❗✔️:                                  pos[3 * contrib.idx4 + 2]);
-    // RDKit❗✔️:     double *g[4] = {&(grad[3 * contrib.idx1]), &(grad[3 * contrib.idx2]),
-    // RDKit❗✔️:                     &(grad[3 * contrib.idx3]), &(grad[3 * contrib.idx4])};
-    // RDKit❗✔️:
-    // RDKit❗✔️:     RDGeom::Point3D r[4] = {iPoint - jPoint, kPoint - jPoint, jPoint - kPoint,
-    // RDKit❗✔️:                             lPoint - kPoint};
-    // RDKit❗✔️:     RDGeom::Point3D t[2] = {r[0].crossProduct(r[1]), r[2].crossProduct(r[3])};
-    // RDKit❗✔️:     double d[2] = {t[0].length(), t[1].length()};
-    // RDKit❗✔️:     if (MMFF::isDoubleZero(d[0]) || MMFF::isDoubleZero(d[1])) {
-    // RDKit❗✔️:       return;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     t[0] /= d[0];
-    // RDKit❗✔️:     t[1] /= d[1];
-    // RDKit❗✔️:     double cosPhi = t[0].dotProduct(t[1]);
-    // RDKit❗✔️:     cosPhi = std::clamp(cosPhi, -1.0, 1.0);
-    // RDKit❗✔️:     const double sinPhiSq = 1.0 - cosPhi * cosPhi;
-    // RDKit❗✔️:     const double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
-    // RDKit❗✔️:     const double cosPhi2 = cosPhi * cosPhi;
-    // RDKit❗✔️:     const double cosPhi3 = cosPhi * cosPhi2;
-    // RDKit❗✔️:     const double cosPhi4 = cosPhi * cosPhi3;
-    // RDKit❗✔️:     const double cosPhi5 = cosPhi * cosPhi4;
-    // RDKit❗✔️:     // dE/dPhi is independent of cartesians:
-    // RDKit❗✔️:     const double dE_dPhi =
-    // RDKit❗✔️:         (-contrib.forceConstants[0] * contrib.signs[0] * sinPhi -
-    // RDKit❗✔️:          2.0 * contrib.forceConstants[1] * contrib.signs[1] *
-    // RDKit❗✔️:              (2.0 * cosPhi * sinPhi) -
-    // RDKit❗✔️:          3.0 * contrib.forceConstants[2] * contrib.signs[2] *
-    // RDKit❗✔️:              (4.0 * cosPhi2 * sinPhi - sinPhi) -
-    // RDKit❗✔️:          4.0 * contrib.forceConstants[3] * contrib.signs[3] *
-    // RDKit❗✔️:              (8.0 * cosPhi3 * sinPhi - 4.0 * cosPhi * sinPhi) -
-    // RDKit❗✔️:          5.0 * contrib.forceConstants[4] * contrib.signs[4] *
-    // RDKit❗✔️:              (16.0 * cosPhi4 * sinPhi - 12.0 * cosPhi2 * sinPhi + sinPhi) -
-    // RDKit❗✔️:          6.0 * contrib.forceConstants[4] * contrib.signs[4] *
-    // RDKit❗✔️:              (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi +
-    // RDKit❗✔️:               6.0 * sinPhi));
-    // RDKit❗✔️:
-    // RDKit❗✔️:     // FIX: use a tolerance here
-    // RDKit❗✔️:     // this is hacky, but it's per the
-    // RDKit❗✔️:     // recommendation from Niketic and Rasmussen:
-    // RDKit❗✔️:     double sinTerm = -dE_dPhi * (MMFF::isDoubleZero(sinPhi) ? (1.0 / cosPhi)
-    // RDKit❗✔️:                                                             : (1.0 / sinPhi));
-    // RDKit❗✔️:
-    // RDKit❗✔️:     MMFF::Utils::calcTorsionGrad(r, t, d, g, sinTerm, cosPhi);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END COMPLETE PINNED CPP TorsionAngleContribs::getGrad
+    // BEGIN RECOVERY GEO-03 SOURCE gradient_terms
+    // RDKit❗❌: void TorsionAngleContribs::getGrad(double *pos, double *grad) const {
+    // RDKit❗❌:   PRECONDITION(dp_forceField, "no owner");
+    // RDKit❗❌:   PRECONDITION(pos, "bad vector");
+    // RDKit❗❌:   PRECONDITION(grad, "bad vector");
+    // RDKit❗❌:
+    // RDKit❗❌:   const unsigned int dim = dp_forceField->dimension();
+    // RDKit❗❌:   for (const auto &contrib : d_contribs) {
+    // RDKit❗❌:     const RDGeom::Point3D iPoint(pos[dim * contrib.idx1],
+    // RDKit❗❌:                                  pos[dim * contrib.idx1 + 1],
+    // RDKit❗❌:                                  pos[dim * contrib.idx1 + 2]);
+    // RDKit❗❌:     const RDGeom::Point3D jPoint(pos[dim * contrib.idx2],
+    // RDKit❗❌:                                  pos[dim * contrib.idx2 + 1],
+    // RDKit❗❌:                                  pos[dim * contrib.idx2 + 2]);
+    // RDKit❗❌:     const RDGeom::Point3D kPoint(pos[dim * contrib.idx3],
+    // RDKit❗❌:                                  pos[dim * contrib.idx3 + 1],
+    // RDKit❗❌:                                  pos[dim * contrib.idx3 + 2]);
+    // RDKit❗❌:     const RDGeom::Point3D lPoint(pos[dim * contrib.idx4],
+    // RDKit❗❌:                                  pos[dim * contrib.idx4 + 1],
+    // RDKit❗❌:                                  pos[dim * contrib.idx4 + 2]);
+    // RDKit❗❌:     double *g[4] = {&(grad[dim * contrib.idx1]), &(grad[dim * contrib.idx2]),
+    // RDKit❗❌:                     &(grad[dim * contrib.idx3]), &(grad[dim * contrib.idx4])};
+    // RDKit❗❌:
+    // RDKit❗❌:     RDGeom::Point3D r[4] = {iPoint - jPoint, kPoint - jPoint, jPoint - kPoint,
+    // RDKit❗❌:                             lPoint - kPoint};
+    // RDKit❗❌:     RDGeom::Point3D t[2] = {r[0].crossProduct(r[1]), r[2].crossProduct(r[3])};
+    // RDKit❗❌:     double d[2] = {t[0].length(), t[1].length()};
+    // RDKit❗❌:     if (MMFF::isDoubleZero(d[0]) || MMFF::isDoubleZero(d[1])) {
+    // RDKit❗❌:       continue;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     t[0] /= d[0];
+    // RDKit❗❌:     t[1] /= d[1];
+    // RDKit❗❌:     double cosPhi = t[0].dotProduct(t[1]);
+    // RDKit❗❌:     cosPhi = std::clamp(cosPhi, -1.0, 1.0);
+    // RDKit❗❌:     const double sinPhiSq = 1.0 - cosPhi * cosPhi;
+    // RDKit❗❌:     const double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
+    // RDKit❗❌:     const double cosPhi2 = cosPhi * cosPhi;
+    // RDKit❗❌:     const double cosPhi3 = cosPhi * cosPhi2;
+    // RDKit❗❌:     const double cosPhi4 = cosPhi * cosPhi3;
+    // RDKit❗❌:     const double cosPhi5 = cosPhi * cosPhi4;
+    // RDKit❗❌:     // dE/dPhi is independent of cartesians:
+    // RDKit❗❌:     const double dE_dPhi =
+    // RDKit❗❌:         (-contrib.forceConstants[0] * contrib.signs[0] * sinPhi -
+    // RDKit❗❌:          2.0 * contrib.forceConstants[1] * contrib.signs[1] *
+    // RDKit❗❌:              (2.0 * cosPhi * sinPhi) -
+    // RDKit❗❌:          3.0 * contrib.forceConstants[2] * contrib.signs[2] *
+    // RDKit❗❌:              (4.0 * cosPhi2 * sinPhi - sinPhi) -
+    // RDKit❗❌:          4.0 * contrib.forceConstants[3] * contrib.signs[3] *
+    // RDKit❗❌:              (8.0 * cosPhi3 * sinPhi - 4.0 * cosPhi * sinPhi) -
+    // RDKit❗❌:          5.0 * contrib.forceConstants[4] * contrib.signs[4] *
+    // RDKit❗❌:              (16.0 * cosPhi4 * sinPhi - 12.0 * cosPhi2 * sinPhi + sinPhi) -
+    // RDKit❗❌:          6.0 * contrib.forceConstants[4] * contrib.signs[4] *
+    // RDKit❗❌:              (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi +
+    // RDKit❗❌:               6.0 * sinPhi));
+    // RDKit❗❌:
+    // RDKit❗❌:     // FIX: use a tolerance here
+    // RDKit❗❌:     // this is hacky, but it's per the
+    // RDKit❗❌:     // recommendation from Niketic and Rasmussen:
+    // RDKit❗❌:     double sinTerm = -dE_dPhi * (MMFF::isDoubleZero(sinPhi) ? (1.0 / cosPhi)
+    // RDKit❗❌:                                                             : (1.0 / sinPhi));
+    // RDKit❗❌:
+    // RDKit❗❌:     MMFF::Utils::calcTorsionGrad(r, t, d, g, sinTerm, cosPhi);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RECOVERY GEO-03 SOURCE gradient_terms
 
     let pos = context.coordinates();
     // BEGIN RDKIT CPP METHOD ForceFields::CrystalFF::TorsionAngleContribs::getGrad (TorsionAngleContribs.cpp:90-150)
@@ -470,10 +471,10 @@ fn gradient_terms(
         // RDKit✔️✔️:   double d[2] = {t[0].length(), t[1].length()};
         let d = [t[0].length(), t[1].length()];
         // RDKit✔️✔️:   if (MMFF::isDoubleZero(d[0]) || MMFF::isDoubleZero(d[1])) {
-        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:     continue;
         // RDKit✔️✔️:   }
         if is_double_zero(d[0]) || is_double_zero(d[1]) {
-            return Ok(());
+            continue;
         }
         // RDKit✔️✔️:   t[0].divide_assign(d[0]);
         // RDKit✔️✔️:   t[1].divide_assign(d[1]);
@@ -742,6 +743,72 @@ impl ForceFieldContribution for TorsionAngleContribM6 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recovery_geo03_each_degenerate_plane_preserves_following_valid_terms() {
+        let cases = [
+            [[0., 0., 0.], [1., 0., 0.], [2., 0., 0.], [2., 1., 0.]],
+            [[0., 1., 0.], [1., 0., 0.], [2., 0., 0.], [3., 0., 0.]],
+            [[0., 0., 0.], [1., 0., 0.], [2., 0., 0.], [3., 0., 0.]],
+        ];
+        for bad in cases {
+            let mut rows: Vec<Vec<f64>> = bad.into_iter().map(Vec::from).collect();
+            rows.extend([
+                vec![0.2, 1.1, 0.3],
+                vec![0., 0., 0.],
+                vec![1.3, 0.1, -0.2],
+                vec![1.4, 0.8, 1.2],
+            ]);
+            let field = fixture_field(&mut rows);
+            let pos = flattened_positions(&field);
+            for order in [
+                vec![false, true],
+                vec![true, false],
+                vec![false, true, false, true],
+            ] {
+                let mut all = TorsionAngleContribs::new(&field);
+                let mut valid = TorsionAngleContribs::new(&field);
+                for good in order {
+                    let j = if good { 4 } else { 0 };
+                    let mut force = vec![0.; 6];
+                    force[0] = 1.7;
+                    all.add_contrib(j, j + 1, j + 2, j + 3, force.clone(), vec![1; 6]);
+                    if good {
+                        valid.add_contrib(j, j + 1, j + 2, j + 3, force, vec![1; 6]);
+                    }
+                }
+                let mut cache = [-1.; 36];
+                let mut context = EvaluationContext::for_test(&pos, &mut cache, 8);
+                let mut actual = vec![0.375; 24];
+                ForceFieldContribution::get_grad(&all, &mut context, &mut actual).unwrap();
+                let mut expected = vec![0.375; 24];
+                ForceFieldContribution::get_grad(&valid, &mut context, &mut expected).unwrap();
+                assert_eq!(actual, expected);
+                assert_eq!(&actual[..12], &[0.375; 12]);
+                assert!(actual[12..].iter().any(|v| (*v - 0.375).abs() > 1e-8));
+                for k in 12..24 {
+                    let mut hi = pos.clone();
+                    hi[k] += 1e-6;
+                    let mut lo = pos.clone();
+                    lo[k] -= 1e-6;
+                    let mut c1 = [-1.; 36];
+                    let mut c2 = [-1.; 36];
+                    let e1 = ForceFieldContribution::get_energy(
+                        &valid,
+                        &mut EvaluationContext::for_test(&hi, &mut c1, 8),
+                    )
+                    .unwrap();
+                    let e2 = ForceFieldContribution::get_energy(
+                        &valid,
+                        &mut EvaluationContext::for_test(&lo, &mut c2, 8),
+                    )
+                    .unwrap();
+                    assert!((actual[k] - 0.375 - (e1 - e2) / 2e-6).abs() < 3e-8, "k={k}");
+                }
+            }
+        }
+    }
+
     use super::super::torsion_preferences::CrystalFFDetails;
     use super::*;
 

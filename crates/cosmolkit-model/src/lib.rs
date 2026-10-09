@@ -51,8 +51,9 @@ pub use query::{
 };
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
-    SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind, set_stereo_group_write_id, stereo_group_write_id,
+    SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupError, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, set_stereo_group_write_id,
+    stereo_group_write_id,
 };
 pub use topology::{
     BondEndPointsParseErrorKind, TopologyBatchEdit, TopologyBlock, TopologyEditError,
@@ -82,7 +83,7 @@ pub use topology::{SourceBondBatchMasks, SourceBondNeighbors, add_source_bond_or
 
 // Narrow source state/value boundary for detached owning algorithms only.
 #[doc(hidden)]
-pub use topology::{SourceBatchCommitState, commit_batch_edit_source};
+pub use topology::{SourceBatchCommitState, batch_remove_bonds_source, commit_batch_edit_source};
 
 #[doc(hidden)]
 pub use topology::{replace_source_bond, source_bond_between_atoms};

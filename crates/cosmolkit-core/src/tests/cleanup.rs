@@ -151,6 +151,7 @@ fn nitrogen_cleanup_uses_first_neighbor_and_preserves_all_unrelated_state() {
             vec![AtomId::new(1)],
             vec![BondId::new(1)],
         )
+        .expect("valid distinct stereo members")
         .with_id(17),
     ];
     input.validate().unwrap();

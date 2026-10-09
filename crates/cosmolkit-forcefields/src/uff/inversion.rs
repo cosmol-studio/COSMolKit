@@ -428,6 +428,73 @@ impl InversionContrib {
         context: &mut EvaluationContext<'_>,
         gradient: &mut [f64],
     ) -> bool {
+        // BEGIN RECOVERY GEO-01 SOURCE get_grad
+        // RDKit❗✔️: void InversionContrib::getGrad(double *pos, double *grad) const {
+        // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit❗✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit❗✔️:   PRECONDITION(grad, "bad vector");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
+        // RDKit❗✔️:                      pos[3 * d_at1Idx + 2]);
+        // RDKit❗✔️:   RDGeom::Point3D p2(pos[3 * d_at2Idx], pos[3 * d_at2Idx + 1],
+        // RDKit❗✔️:                      pos[3 * d_at2Idx + 2]);
+        // RDKit❗✔️:   RDGeom::Point3D p3(pos[3 * d_at3Idx], pos[3 * d_at3Idx + 1],
+        // RDKit❗✔️:                      pos[3 * d_at3Idx + 2]);
+        // RDKit❗✔️:   RDGeom::Point3D p4(pos[3 * d_at4Idx], pos[3 * d_at4Idx + 1],
+        // RDKit❗✔️:                      pos[3 * d_at4Idx + 2]);
+        // RDKit❗✔️:   double *g1 = &(grad[3 * d_at1Idx]);
+        // RDKit❗✔️:   double *g2 = &(grad[3 * d_at2Idx]);
+        // RDKit❗✔️:   double *g3 = &(grad[3 * d_at3Idx]);
+        // RDKit❗✔️:   double *g4 = &(grad[3 * d_at4Idx]);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point3D rJI = p1 - p2;
+        // RDKit❗✔️:   RDGeom::Point3D rJK = p3 - p2;
+        // RDKit❗✔️:   RDGeom::Point3D rJL = p4 - p2;
+        // RDKit❗✔️:   double dJI = rJI.length();
+        // RDKit❗✔️:   double dJK = rJK.length();
+        // RDKit❗✔️:   double dJL = rJL.length();
+        // RDKit❗✔️:   if (isDoubleZero(dJI) || isDoubleZero(dJK) || isDoubleZero(dJL)) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   rJI /= dJI;
+        // RDKit❗✔️:   rJK /= dJK;
+        // RDKit❗✔️:   rJL /= dJL;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point3D n = (-rJI).crossProduct(rJK);
+        // RDKit❗✔️:   n /= n.length();
+        // RDKit❗✔️:   double cosY = n.dotProduct(rJL);
+        // RDKit❗✔️:   clipToOne(cosY);
+        // RDKit❗✔️:   double sinYSq = 1.0 - cosY * cosY;
+        // RDKit❗✔️:   double sinY = std::max(sqrt(sinYSq), 1.0e-8);
+        // RDKit❗✔️:   double cosTheta = rJI.dotProduct(rJK);
+        // RDKit❗✔️:   clipToOne(cosTheta);
+        // RDKit❗✔️:   double sinThetaSq = 1.0 - cosTheta * cosTheta;
+        // RDKit❗✔️:   double sinTheta = std::max(sqrt(sinThetaSq), 1.0e-8);
+        // RDKit❗✔️:   // sin(2 * W) = 2 * sin(W) * cos(W) = 2 * cos(Y) * sin(Y)
+        // RDKit❗✔️:   double dE_dW = -d_forceConstant * (d_C1 * cosY + 4.0 * d_C2 * cosY * sinY);
+        // RDKit❗✔️:   RDGeom::Point3D t1 = rJL.crossProduct(rJK);
+        // RDKit❗✔️:   RDGeom::Point3D t2 = rJI.crossProduct(rJL);
+        // RDKit❗✔️:   RDGeom::Point3D t3 = rJK.crossProduct(rJI);
+        // RDKit❗✔️:   double term1 = sinY * sinTheta;
+        // RDKit❗✔️:   double term2 = cosY / (sinY * sinThetaSq);
+        // RDKit❗✔️:   double tg1[3] = {(t1.x / term1 - (rJI.x - rJK.x * cosTheta) * term2) / dJI,
+        // RDKit❗✔️:                    (t1.y / term1 - (rJI.y - rJK.y * cosTheta) * term2) / dJI,
+        // RDKit❗✔️:                    (t1.z / term1 - (rJI.z - rJK.z * cosTheta) * term2) / dJI};
+        // RDKit❗✔️:   double tg3[3] = {(t2.x / term1 - (rJK.x - rJI.x * cosTheta) * term2) / dJK,
+        // RDKit❗✔️:                    (t2.y / term1 - (rJK.y - rJI.y * cosTheta) * term2) / dJK,
+        // RDKit❗✔️:                    (t2.z / term1 - (rJK.z - rJI.z * cosTheta) * term2) / dJK};
+        // RDKit❗✔️:   double tg4[3] = {(t3.x / term1 - rJL.x * cosY / sinY) / dJL,
+        // RDKit❗✔️:                    (t3.y / term1 - rJL.y * cosY / sinY) / dJL,
+        // RDKit❗✔️:                    (t3.z / term1 - rJL.z * cosY / sinY) / dJL};
+        // RDKit❗✔️:   for (unsigned int i = 0; i < 3; ++i) {
+        // RDKit❗✔️:     g1[i] += dE_dW * tg1[i];
+        // RDKit❗✔️:     g2[i] += -dE_dW * (tg1[i] + tg3[i] + tg4[i]);
+        // RDKit❗✔️:     g3[i] += dE_dW * tg3[i];
+        // RDKit❗✔️:     g4[i] += dE_dW * tg4[i];
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RECOVERY GEO-01 SOURCE get_grad
+
         // BEGIN RDKIT CPP FUNCTION ForceFields::UFF::InversionContrib::getGrad (ForceField/UFF/Inversion.cpp:71-134)
         // RDKit❗✔️: void InversionContrib::getGrad(double *pos, double *grad) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -616,8 +683,8 @@ impl InversionContrib {
         };
 
         // RDKit❗✔️:   // sin(2 * W) = 2 * sin(W) * cos(W) = 2 * cos(Y) * sin(Y)
-        // RDKit❗✔️:   double dE_dW = -d_forceConstant * (d_C1 * cosY - 4.0 * d_C2 * cosY * sinY);
-        let de_dw = -self.force_constant * (self.c1 * cos_y - 4.0 * self.c2 * cos_y * sin_y);
+        // RDKit❗✔️:   double dE_dW = -d_forceConstant * (d_C1 * cosY + 4.0 * d_C2 * cosY * sinY);
+        let de_dw = -self.force_constant * (self.c1 * cos_y + 4.0 * self.c2 * cos_y * sin_y);
         // RDKit❗✔️:   RDGeom::Point3D t1 = rJL.crossProduct(rJK);
         // RDKit❗✔️:   RDGeom::Point3D t2 = rJI.crossProduct(rJL);
         // RDKit❗✔️:   RDGeom::Point3D t3 = rJK.crossProduct(rJI);
@@ -737,6 +804,39 @@ impl ForceFieldContribution for InversionContrib {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recovery_geo01_group5_single_and_delegated_batch_match_energy_derivative() {
+        let coordinates: [f64; 12] = [
+            0.4, 1.2, -0.3, -0.2, 0.1, 0.5, 1.7, -0.4, 0.2, 0.6, 1.1, 1.4,
+        ];
+        for z in [15, 33, 51, 83] {
+            let single = contribution(z, false).unwrap();
+            let initial = [0.375; 12];
+            let analytic = gradient_for(&single, &coordinates, initial);
+            let mut rows = rows_from_coordinates(&coordinates);
+            let field = field_with_inversions(&mut rows, &[]);
+            let mut batch = crate::uff::inversions::InversionContribs::default();
+            batch
+                .add_contrib(field.positions(), 0, 1, 2, 3, z, false, 1.)
+                .unwrap();
+            let mut cache = [-1.; 10];
+            let mut context = EvaluationContext::for_test(&coordinates, &mut cache, 4);
+            let mut actual = initial;
+            crate::kernel::ForceFieldContribution::get_grad(&batch, &mut context, &mut actual)
+                .unwrap();
+            for k in 0..12 {
+                let mut hi = coordinates;
+                hi[k] += 1e-6;
+                let mut lo = coordinates;
+                lo[k] -= 1e-6;
+                let fd = (energy_for(&single, &hi) - energy_for(&single, &lo)) / (2e-6);
+                assert!((analytic[k] - initial[k] - fd).abs() < 2e-8, "z={z}, k={k}");
+                assert_close(actual[k], analytic[k]);
+            }
+        }
+    }
+
     use std::error::Error as _;
 
     use super::{InversionContrib, InversionContributionError, InversionIndexArgument};
@@ -1128,7 +1228,8 @@ mod tests {
 
     #[test]
     fn cf3d_u15_gradient_matches_fixed_source_values_for_all_parameter_options() {
-        // Fixed values evaluated from pinned RDKit 2026.03.1
+        // Fixed values follow RDKit 2026.03.6; nonzero-C2 rows are updated
+        // by the exact new/old dE_dW ratio at this identical geometry.
         // ForceField/UFF/Inversion.cpp::InversionContrib::getGrad for this
         // nonplanar geometry and each U14 coefficient branch. The constructor
         // multiplies only the source force constant by `scale`, so each
@@ -1144,11 +1245,11 @@ mod tests {
             (6, -0.262_966_359_151_671_3),
             (7, -0.262_966_359_151_671_3),
             (8, -0.262_966_359_151_671_3),
-            (15, -1.166_607_041_307_889_3),
-            (33, -0.965_284_608_498_554_7),
-            (51, -0.913_139_584_094_318_1),
-            (83, -0.764_229_195_103_490_4),
-            (16, -116_065_986.286_788_43),
+            (15, 0.707_836_598_250_805_8),
+            (33, 0.738_317_820_839_811_3),
+            (51, 0.745_516_090_060_605),
+            (83, 0.764_229_195_103_490_2),
+            (16, -50_174_972.431_154_32),
         ];
 
         for (atomic_num, unbound_expected) in source_first_component {

@@ -79,6 +79,7 @@ pub struct TopologicalFingerprintParams {
     pub use_bond_order: bool,
     pub atom_invariants: Option<Vec<u32>>,
     pub from_atoms: Option<Vec<u32>>,
+    pub ignore_atoms: Option<Vec<u32>>,
 }
 
 impl Default for TopologicalFingerprintParams {
@@ -105,6 +106,7 @@ impl Default for TopologicalFingerprintParams {
             use_bond_order: true,
             atom_invariants: None,
             from_atoms: None,
+            ignore_atoms: None,
         }
     }
 }
@@ -588,13 +590,14 @@ fn generate_rdkit_fp_environments(
     params: &TopologicalFingerprintParams,
     atoms: &[u32],
 ) -> Result<Vec<RdkitFpEnvironment>, TopologicalFingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::RDKitFP::RDKitFPEnvGenerator<OutputType>::getEnvironments (Release_2026_03_6)
     // RDKit❗❌: std::vector<AtomEnvironment<OutputType> *>
     // RDKit❗❌: RDKitFPEnvGenerator<OutputType>::getEnvironments(
     // RDKit❗❌:     const ROMol &mol, FingerprintArguments *arguments,
     // RDKit❗❌:     const std::vector<std::uint32_t> *fromAtoms,
-    // RDKit❗❌:     const std::vector<std::uint32_t> *,  // ignoreAtoms
-    // RDKit❗❌:     const int,                           // confId
-    // RDKit❗❌:     const AdditionalOutput *,            // additionalOutput
+    // RDKit❗❌:     const std::vector<std::uint32_t> *ignoreAtoms,
+    // RDKit❗❌:     const int,                 // confId
+    // RDKit❗❌:     const AdditionalOutput *,  // additionalOutput
     // RDKit❗❌:     const std::vector<std::uint32_t> *atomInvariants,
     // RDKit❗❌:     const std::vector<std::uint32_t> *,  // bondInvariants
     // RDKit❗❌:     const bool                           // hashResults
@@ -608,9 +611,18 @@ fn generate_rdkit_fp_environments(
     // RDKit❗❌:
     // RDKit❗❌:   // get all paths
     // RDKit❗❌:   INT_PATH_LIST_MAP allPaths;
+    // RDKit❗❌:
+    // RDKit❗❌:   boost::dynamic_bitset<> ignoreAtomsBitset;
+    // RDKit❗❌:   if (ignoreAtoms) {
+    // RDKit❗❌:     ignoreAtomsBitset.resize(mol.getNumAtoms());
+    // RDKit❗❌:     std::ranges::for_each(*ignoreAtoms, [&](const auto atomIdx) {
+    // RDKit❗❌:       ignoreAtomsBitset.set(atomIdx);
+    // RDKit❗❌:     });
+    // RDKit❗❌:   }
     // RDKit❗❌:   RDKitFPUtils::enumerateAllPaths(
     // RDKit❗❌:       mol, allPaths, fromAtoms, fpArguments->df_branchedPaths,
-    // RDKit❗❌:       fpArguments->df_useHs, fpArguments->d_minPath, fpArguments->d_maxPath);
+    // RDKit❗❌:       fpArguments->df_useHs, fpArguments->d_minPath, fpArguments->d_maxPath,
+    // RDKit❗❌:       ignoreAtoms ? &ignoreAtomsBitset : nullptr);
     // RDKit❗❌:
     // RDKit❗❌:   // identify query bonds
     // RDKit❗❌:   std::vector<short> isQueryBond(mol.getNumBonds(), 0);
@@ -650,6 +662,7 @@ fn generate_rdkit_fp_environments(
     // RDKit❗❌:
     // RDKit❗❌:   return result;
     // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RDKit::RDKitFP::RDKitFPEnvGenerator<OutputType>::getEnvironments
 
     // Complexity: CORE shared path enumeration, owned path map then environment
     // vector retains source traversal/order. Byte masks add memory vs packed bits.
@@ -658,6 +671,20 @@ fn generate_rdkit_fp_environments(
             reason: "bad atomInvariants size",
         });
     }
+    let mut ignore_mask = params
+        .ignore_atoms
+        .as_ref()
+        .map(|_| vec![false; atom_count(graph)]);
+    if let (Some(indices), Some(mask)) = (params.ignore_atoms.as_ref(), ignore_mask.as_mut()) {
+        for &index in indices {
+            let slot = mask.get_mut(index as usize).ok_or(
+                TopologicalFingerprintError::InvalidArguments {
+                    reason: "ignoreAtoms atom out of range",
+                },
+            )?;
+            *slot = true;
+        }
+    }
     let paths = enumerate_fingerprint_paths(
         graph,
         params.min_path,
@@ -665,6 +692,7 @@ fn generate_rdkit_fp_environments(
         params.use_hs,
         params.branched_paths,
         params.from_atoms.as_deref(),
+        ignore_mask.as_deref(),
     )?;
     let query_bonds = identify_query_bonds(graph);
     let mut result = Vec::new();
@@ -931,7 +959,7 @@ mod tests {
         b: bool,
         roots: Option<&[u32]>,
     ) -> BTreeMap<usize, Vec<Vec<usize>>> {
-        enumerate_fingerprint_paths(m.graph(), a, z, h, b, roots)
+        enumerate_fingerprint_paths(m.graph(), a, z, h, b, roots, None)
             .expect("valid source path arguments")
     }
     #[test]
@@ -1288,6 +1316,108 @@ mod tests {
                 (4_274_652_475, vec![vec![1, 2]]),
                 (4_275_705_116, vec![vec![0, 1], vec![0, 1]]),
             ]))
+        );
+    }
+    #[test]
+    fn search01_fingerprint_ignored_ids_cover_concrete_query_empty_and_duplicates() {
+        for m in [
+            Molecule::from_smiles("CC(C)C").unwrap(),
+            query_fixture("CC(C)C").unwrap(),
+        ] {
+            for branched in [false, true] {
+                let mut p = TopologicalFingerprintParams {
+                    branched_paths: branched,
+                    ..Default::default()
+                };
+                let baseline = topological_fingerprint(&m, &p).unwrap();
+                assert!(!baseline.on_bits().is_empty());
+                p.ignore_atoms = Some(vec![]);
+                assert_eq!(topological_fingerprint(&m, &p).unwrap(), baseline);
+                p.ignore_atoms = Some(vec![1, 1]);
+                assert!(
+                    topological_fingerprint(&m, &p)
+                        .unwrap()
+                        .on_bits()
+                        .is_empty()
+                );
+                p.from_atoms = Some(vec![1, 1]);
+                assert!(
+                    topological_fingerprint(&m, &p)
+                        .unwrap()
+                        .on_bits()
+                        .is_empty()
+                );
+            }
+        }
+    }
+    #[test]
+    fn search01_fingerprint_root_prepend_order_and_ignored_endpoint_mask() {
+        for m in [
+            Molecule::from_smiles("CC(C)C").unwrap(),
+            query_fixture("CC(C)C").unwrap(),
+        ] {
+            let mask = [true, false, false, false];
+            for branched in [false, true] {
+                let paths = enumerate_fingerprint_paths(
+                    m.graph(),
+                    1,
+                    1,
+                    true,
+                    branched,
+                    Some(&[2, 3, 2]),
+                    Some(&mask),
+                )
+                .unwrap();
+                assert_eq!(paths[&1], vec![vec![1], vec![2], vec![1]]);
+                let no_roots =
+                    enumerate_fingerprint_paths(m.graph(), 1, 1, true, branched, None, Some(&mask))
+                        .unwrap();
+                assert_eq!(no_roots[&1], vec![vec![1], vec![2]]);
+                assert!(
+                    enumerate_fingerprint_paths(
+                        m.graph(),
+                        1,
+                        1,
+                        true,
+                        branched,
+                        Some(&[0]),
+                        Some(&mask)
+                    )
+                    .unwrap()
+                    .values()
+                    .all(Vec::is_empty)
+                );
+            }
+        }
+    }
+    #[test]
+    fn search01_generator_checks_atom_invariants_before_ignored_index_and_empty_roots() {
+        let m = Molecule::from_smiles("CC").unwrap();
+        let p = TopologicalFingerprintParams {
+            ignore_atoms: Some(vec![2]),
+            ..Default::default()
+        };
+        assert!(matches!(
+            generate_rdkit_fp_environments(m.graph(), &p, &[]),
+            Err(TopologicalFingerprintError::InvalidArguments {
+                reason: "bad atomInvariants size"
+            })
+        ));
+        assert!(matches!(
+            generate_rdkit_fp_environments(m.graph(), &p, &[12, 12]),
+            Err(TopologicalFingerprintError::InvalidArguments {
+                reason: "ignoreAtoms atom out of range"
+            })
+        ));
+        let p = TopologicalFingerprintParams {
+            from_atoms: Some(vec![]),
+            ignore_atoms: Some(vec![0]),
+            ..Default::default()
+        };
+        assert!(
+            generate_rdkit_fp_environments(m.graph(), &p, &[12, 12])
+                .unwrap()
+                .is_empty()
         );
     }
 }

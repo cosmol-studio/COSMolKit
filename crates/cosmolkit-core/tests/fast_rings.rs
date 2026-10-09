@@ -461,11 +461,10 @@ fn invalid_stereo_and_sgroup_references_fail_before_traversal() {
     );
 
     let invalid_stereo_group = TopologyBlock {
-        stereo_groups: vec![StereoGroup::new(
-            StereoGroupKind::Absolute,
-            vec![AtomId::new(4)],
-            vec![],
-        )],
+        stereo_groups: vec![
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(4)], vec![])
+                .expect("valid distinct stereo members"),
+        ],
         ..topology(1, &[])
     };
     assert_eq!(
