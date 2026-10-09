@@ -7,7 +7,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::collections::BTreeMap;
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MorganParams {
     pub(crate) inner: ck::MorganParams,
 }
@@ -131,7 +131,7 @@ impl MorganInvariants {
 
 /// Owned call options; optional empty vectors retain their source meaning.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MorganFingerprintParams {
     pub(crate) inner: ck::MorganFingerprintParams,
 }
@@ -277,7 +277,7 @@ impl FingerprintAdditionalOutput {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AtomPairParams {
     pub(crate) inner: ck::AtomPairParams,
 }
@@ -357,7 +357,7 @@ impl AtomPairParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AtomPairAtomInvariantsGenerator {
     pub(crate) inner: ck::AtomPairAtomInvariantsGenerator,
 }
@@ -397,7 +397,7 @@ impl AtomPairAtomInvariantsGenerator {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AtomPairFingerprintParams {
     pub(crate) inner: ck::AtomPairFingerprintParams,
 }
@@ -470,7 +470,7 @@ impl AtomPairFingerprintParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct TopologicalTorsionParams {
     pub(crate) inner: ck::TopologicalTorsionParams,
 }
@@ -544,7 +544,7 @@ impl TopologicalTorsionParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct TopologicalTorsionFingerprintParams {
     pub(crate) inner: ck::TopologicalTorsionFingerprintParams,
 }
@@ -646,7 +646,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct TopologicalTorsionCallParams {
     pub(crate) inner: ck::TopologicalTorsionCallParams,
 }
@@ -1011,7 +1011,7 @@ impl TopologicalTorsionSettings {
 
 /// Owned, immutable legacy torsion settings and call selections.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct LegacyTopologicalTorsionParams {
     pub(crate) inner: ck::LegacyTopologicalTorsionParams,
 }
@@ -1211,7 +1211,7 @@ impl MorganAtomInvariantsGenerator {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MorganBondInvariantsGenerator {
     pub(crate) inner: ck::MorganBondInvariantsGenerator,
 }
@@ -1241,7 +1241,7 @@ impl MorganBondInvariantsGenerator {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MorganCallParams {
     pub(crate) inner: ck::MorganCallParams,
 }

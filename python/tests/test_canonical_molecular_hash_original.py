@@ -1,6 +1,7 @@
 import pickle
 
 import cosmolkit
+import numpy as np
 import pytest
 
 
@@ -40,7 +41,7 @@ def test_full_original_chembl_hash_morgan_2d_and_binary_pickle_condition():
     expected_morgan = molecule.fingerprint_morgan()
     restored = pickle.loads(pickle.dumps(molecule))
     assert restored.to_binary() == before
-    assert restored.coordinates_2d() == molecule.coordinates_2d()
+    np.testing.assert_array_equal(restored.coordinates_2d(), molecule.coordinates_2d())
     assert restored.molecular_hash() == expected_hash
     actual_morgan = restored.fingerprint_morgan()
     assert actual_morgan.n_bits() == expected_morgan.n_bits()

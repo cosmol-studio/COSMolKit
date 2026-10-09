@@ -1,0 +1,2127 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "name": "rdkit",
+    "python_distribution_version": "2026.3.6",
+    "runtime": {
+      "implementation": "cpython",
+      "version": "3.13.12"
+    },
+    "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985",
+    "version": "2026.03.6"
+  },
+  "source": {
+    "project": "RDKit",
+    "revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985",
+    "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+    "sha256": "d8160c11135b49b3cb7ce4df4b0b9deeec1479eb111fb59fe1e3f346d121efb5",
+    "license": "BSD-3-Clause; RDKit license.txt",
+    "selection": {
+      "functions": [
+        "test1",
+        "test2",
+        "test3IsotopeMatch",
+        "test4RingMatches",
+        "test5AnyMatch",
+        "testAtomCompareAnyHeavyAtom",
+        "testAtomCompareAnyHeavyAtom1",
+        "test6MatchValences",
+        "test7Seed",
+        "test8MatchParams",
+        "test9MatchCharge",
+        "test10MatchChargeAndParams",
+        "test11Github2034",
+        "test19MCS3d"
+      ],
+      "calls": 44,
+      "exclusions": "Custom Python callback/type-validation protocols are outside the native MCS parameter contract; this is not the entire upstream test suite.",
+      "additional_cpp_calls": [
+        "Github9034",
+        "testJnk1LigandsDistance"
+      ]
+    },
+    "additional_sources": [
+      {
+        "path": "Code/GraphMol/FMCS/testFMCS_catch_tests.cpp",
+        "sha256": "6ed3deaf1b0894675f6e0bb71b46f4486e9779867405079cbf4ab7f8bf74a9e3"
+      },
+      {
+        "path": "Code/GraphMol/FMCS/testFMCS_Unit.cpp",
+        "sha256": "60f128138e21141c3f8f48648f1861c09cdd839c9678c87df06d5ca6d357e6f9"
+      },
+      {
+        "path": "Code/GraphMol/FMCS/testData/Jnk1_ligands.sdf",
+        "sha256": "cf29925fcab6c720c5e7e624e511ec6c0f6e7cd7d9b5daefea914ce8e0523ef4"
+      }
+    ]
+  },
+  "timeout_policy": "30 seconds per native/CK call; incomplete results fail, never pass or disappear",
+  "molecules": [
+    {
+      "format": "smiles",
+      "text": "Cc1ccc(CN(C(C)c2ccccn2)CCCCN)nc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Cc1cccnc1CN(C(C)c1ccccn1)CCCCN",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC(N(CCCCN)Cc1c(N)cccn1)c1ccccn1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Cc1cc(C)c(CN(C(C)c2ccccn2)CCCCN)nc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Cc1cc(C(C)N(CCCCN)Cc2c(C)cccn2)ncc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Cc1nc(C(C)N(CCCCN)Cc2nc3c([nH]2)cccc3)ccc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC(c1ncccc1)N(CCCCN)Cc1nc2c([nH]1)cccc2",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC(N(CCCCN)Cc1c(C(C)(C)C)cccn1)c1ccccn1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC(N(CCCCN)Cc1c(C(F)(F)F)cccn1)c1ccccn1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CN(CCCc1ccccc1)CCCN(C)CCOC(c1ccccc1)c1ccccc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Fc1ccc(C(OCCNCCCNCCc2ccccc2)c2ccc(F)cc2)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C(Cc1ccccc1)NCCCCNCCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C(Cc1ccccc1)NCCNCCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C(Cc1ccc(Br)cc1)NC=CNCCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C(Cc1ccc(F)cc1)NCCNCCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C(Cc1ccccc1)NCCCNCCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CN(CCOC(c1ccc(F)cc1)c1ccc(F)cc1)CCN(C)CCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "COC(=O)C1C2CCC(CC1C(=O)Oc1ccccc1)N2C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "O=C1CN(CCc2ccccc2)CCN1CCOC(c1ccc(F)cc1)c1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CN(CCOC(c1ccccc1)c1ccccc1)CCN(C)CCc1ccc(F)cc1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC[14NH2]",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC[14CH3]",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCCCC",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCC1CCCCC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC1CCC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1ccccc1C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1ccccc1O",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1ccccc1Cl",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1cccnc1C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1cnncc1O",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "c1cccnc1Cl",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "[H]c1ccccc1C",
+      "sanitize": false,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "[H]c1ccccc1O",
+      "sanitize": false,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "Oc1ccccc1O",
+      "sanitize": false,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "NC1OC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1OC1[N+](=O)[O-]",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCC1CC1CC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCC1OC1CC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCC1NC1CC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCC1SC1CC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCC1NC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCC1N(C)C1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCC1OC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCNC",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CCN(C)C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC[N+](C)C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "CC[C+](C)C",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CC1N2CC2",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CC1N",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "mol",
+      "text": "\n     RDKit          3D\n\n 17 17  0  0  0  0  0  0  0  0999 V2000\n    0.1592    0.8577    0.8639 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9090    0.9385   -0.2218 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.1866   -0.4482   -0.7339 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.0705   -1.1345   -1.1348 O   0  0  0  0  0  0  0  0  0  0  0  0\n    0.8460   -1.2511   -0.0884 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.3508    0.1733    0.1788 C   0  0  1  0  0  0  0  0  0  0  0  0\n    1.6294    0.7269   -1.0491 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.2088    0.1739    1.6399 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.4334    1.8588    1.2198 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8657    1.3295    0.1967 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.5185    1.5822   -1.0340 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.7155   -1.0290    0.0396 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8809   -0.3833   -1.6049 H   0  0  0  0  0  0  0  0  0  0  0  0\n    1.6828   -1.9159   -0.3875 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.3276   -1.6370    0.8016 H   0  0  0  0  0  0  0  0  0  0  0  0\n    2.2158    0.0912    0.8546 H   0  0  0  0  0  0  0  0  0  0  0  0\n    1.6002    1.6926   -1.1014 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  1  0\n  4  5  1  0\n  5  6  1  0\n  6  7  1  0\n  6  1  1  0\n  1  8  1  0\n  1  9  1  0\n  2 10  1  0\n  2 11  1  0\n  3 12  1  0\n  3 13  1  0\n  5 14  1  0\n  5 15  1  0\n  6 16  1  1\n  7 17  1  0\nM  END\n\n\n",
+      "sanitize": true,
+      "remove_hs": false
+    },
+    {
+      "format": "mol",
+      "text": "\n     RDKit          3D\n\n 17 17  0  0  0  0  0  0  0  0999 V2000\n    0.1592    0.8577    0.8639 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.9090    0.9385   -0.2218 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.1866   -0.4482   -0.7339 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.0705   -1.1345   -1.1348 O   0  0  0  0  0  0  0  0  0  0  0  0\n    0.8460   -1.2511   -0.0884 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.3508    0.1733    0.1788 C   0  0  2  0  0  0  0  0  0  0  0  0\n    2.4771    0.1924    0.9509 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.1638    0.2755    1.7318 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.4849    1.8825    1.0902 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.4598    1.5686   -1.0290 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8337    1.3595    0.1902 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.8991   -0.3820   -1.5700 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.6394   -1.0265    0.1178 H   0  0  0  0  0  0  0  0  0  0  0  0\n    1.6816   -1.9167   -0.3664 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.3727   -1.5979    0.8445 H   0  0  0  0  0  0  0  0  0  0  0  0\n    1.4834    0.6899   -0.7827 H   0  0  0  0  0  0  0  0  0  0  0  0\n    2.2370    0.0336    1.8861 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\n  3  4  1  0\n  4  5  1  0\n  5  6  1  0\n  6  7  1  0\n  6  1  1  0\n  1  8  1  0\n  1  9  1  0\n  2 10  1  0\n  2 11  1  0\n  3 12  1  0\n  3 13  1  0\n  5 14  1  0\n  5 15  1  0\n  6 16  1  6\n  7 17  1  0\nM  END\n\n\n",
+      "sanitize": true,
+      "remove_hs": false
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCCCC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "smiles",
+      "text": "C1CCCC1",
+      "sanitize": true,
+      "remove_hs": true
+    },
+    {
+      "format": "mol",
+      "text": "17124-1\n                    3D\n Structure written by MMmdl.\n 46 47  0  0  1  0            999 V2000\n   24.0816   12.3916   30.2423 C   0  0  0  0  0  0\n   23.3500   11.0657   30.4628 C   0  0  0  0  0  0\n   22.2121   11.3274   31.2794 O   0  0  0  0  0  0\n   21.4127   10.2773   31.6976 C   0  0  0  0  0  0\n   21.7567    9.0266   31.2850 N   0  0  0  0  0  0\n   20.9811    7.9971   31.6572 C   0  0  0  0  0  0\n   19.8706    8.1421   32.4769 C   0  0  0  0  0  0\n   19.5217    9.4143   32.8937 C   0  0  0  0  0  0\n   18.3827    9.4958   33.6863 N   0  0  0  0  0  0\n   20.2923   10.5202   32.5003 C   0  0  0  0  0  0\n   19.9657   11.8905   32.8774 C   0  0  0  0  0  0\n   19.7135   12.9814   33.1712 N   0  0  0  0  0  0\n   21.4435    6.8153   31.1146 N   0  0  0  0  0  0\n   20.8639    5.6146   31.0308 C   0  0  0  0  0  0\n   19.7396    5.3500   31.4512 O   0  0  0  0  0  0\n   21.6499    4.5466   30.2798 C   0  0  0  0  0  0\n   23.0247    4.2587   30.8770 C   0  0  0  0  0  0\n   24.1218    5.0797   30.5737 C   0  0  0  0  0  0\n   23.8940    6.1755   29.7600 O   0  0  0  0  0  0\n   24.9260    7.1419   29.5741 C   0  0  0  0  0  0\n   25.3756    4.7488   31.1028 C   0  0  0  0  0  0\n   25.5283    3.6468   31.9432 C   0  0  0  0  0  0\n   27.2648    3.2511   32.6230 Br  0  0  0  0  0  0\n   24.4329    2.8399   32.2701 C   0  0  0  0  0  0\n   23.1819    3.1565   31.7231 C   0  0  0  0  0  0\n   24.6457    1.7801   33.1306 O   0  0  0  0  0  0\n   23.7084    0.7066   33.1601 C   0  0  0  0  0  0\n   24.9658   12.2529   29.6210 H   0  0  0  0  0  0\n   23.4330   13.1123   29.7438 H   0  0  0  0  0  0\n   24.3974   12.8270   31.1900 H   0  0  0  0  0  0\n   23.0415   10.6380   29.5063 H   0  0  0  0  0  0\n   24.0190   10.3518   30.9488 H   0  0  0  0  0  0\n   19.2757    7.2952   32.7747 H   0  0  0  0  0  0\n   17.9031    8.6482   33.9732 H   0  0  0  0  0  0\n   17.9977   10.4016   33.9433 H   0  0  0  0  0  0\n   22.3516    6.9230   30.6906 H   0  0  0  0  0  0\n   21.0717    3.6287   30.2152 H   0  0  0  0  0  0\n   21.7630    4.9135   29.2646 H   0  0  0  0  0  0\n   24.5476    7.9548   28.9541 H   0  0  0  0  0  0\n   25.2471    7.5788   30.5210 H   0  0  0  0  0  0\n   25.7903    6.7169   29.0616 H   0  0  0  0  0  0\n   26.2494    5.3384   30.8749 H   0  0  0  0  0  0\n   22.3237    2.5419   31.9463 H   0  0  0  0  0  0\n   24.0776   -0.0691   33.8306 H   0  0  0  0  0  0\n   22.7306    1.0102   33.5310 H   0  0  0  0  0  0\n   23.5885    0.2529   32.1771 H   0  0  0  0  0  0\n  1  2  1  0  0  0\n  1 28  1  0  0  0\n  1 29  1  0  0  0\n  1 30  1  0  0  0\n  2  3  1  0  0  0\n  2 31  1  0  0  0\n  2 32  1  0  0  0\n  3  4  1  0  0  0\n  4 10  1  0  0  0\n  4  5  2  0  0  0\n  5  6  1  0  0  0\n  6  7  2  0  0  0\n  6 13  1  0  0  0\n  7  8  1  0  0  0\n  7 33  1  0  0  0\n  8  9  1  0  0  0\n  8 10  2  0  0  0\n  9 34  1  0  0  0\n  9 35  1  0  0  0\n 10 11  1  0  0  0\n 11 12  3  0  0  0\n 13 14  1  0  0  0\n 13 36  1  0  0  0\n 14 15  2  0  0  0\n 14 16  1  0  0  0\n 16 17  1  0  0  0\n 16 37  1  0  0  0\n 16 38  1  0  0  0\n 17 25  1  0  0  0\n 17 18  2  0  0  0\n 18 19  1  0  0  0\n 18 21  1  0  0  0\n 19 20  1  0  0  0\n 20 39  1  0  0  0\n 20 40  1  0  0  0\n 20 41  1  0  0  0\n 21 22  2  0  0  0\n 21 42  1  0  0  0\n 22 23  1  0  0  0\n 22 24  1  0  0  0\n 24 25  2  0  0  0\n 24 26  1  0  0  0\n 25 43  1  0  0  0\n 26 27  1  0  0  0\n 27 44  1  0  0  0\n 27 45  1  0  0  0\n 27 46  1  0  0  0\nM  END\n> <i_m_stars>\n0\n\n> <r_user_dG.exp>\n-9.675922\n\n$$$$\n",
+      "sanitize": true,
+      "remove_hs": true,
+      "name": "17124-1"
+    },
+    {
+      "format": "mol",
+      "text": "18629-1\n                    3D\n Structure written by MMmdl.\n 41 42  0  0  1  0            999 V2000\n   24.0510   12.2016   30.2637 C   0  0  0  0  0  0\n   23.3159   10.8864   30.5326 C   0  0  0  0  0  0\n   22.1655   11.1828   31.3207 O   0  0  0  0  0  0\n   21.3477   10.1523   31.7514 C   0  0  0  0  0  0\n   21.6919    8.8874   31.3853 N   0  0  0  0  0  0\n   20.8972    7.8767   31.7648 C   0  0  0  0  0  0\n   19.7610    8.0525   32.5388 C   0  0  0  0  0  0\n   19.4157    9.3373   32.9151 C   0  0  0  0  0  0\n   18.2588    9.4438   33.6763 N   0  0  0  0  0  0\n   20.2113   10.4260   32.5218 C   0  0  0  0  0  0\n   19.8989   11.8070   32.8723 C   0  0  0  0  0  0\n   19.6587   12.9061   33.1464 N   0  0  0  0  0  0\n   21.3873    6.6638   31.3301 N   0  0  0  0  0  0\n   20.7487    5.5080   31.1215 C   0  0  0  0  0  0\n   19.5319    5.3796   31.2433 O   0  0  0  0  0  0\n   21.5762    4.2864   30.6944 C   0  0  0  0  0  0\n   23.0915    4.4911   30.6827 C   0  0  0  0  0  0\n   23.6888    5.3698   29.7694 C   0  0  0  0  0  0\n   25.0671    5.5919   29.8016 C   0  0  0  0  0  0\n   25.7101    6.5802   28.8490 C   0  0  0  0  0  0\n   25.8566    4.9019   30.7231 C   0  0  0  0  0  0\n   25.2705    4.0092   31.6200 C   0  0  0  0  0  0\n   23.8912    3.8073   31.6026 C   0  0  0  0  0  0\n   24.9431   12.0347   29.6609 H   0  0  0  0  0  0\n   23.4095   12.8989   29.7244 H   0  0  0  0  0  0\n   24.3546   12.6790   31.1949 H   0  0  0  0  0  0\n   23.0222   10.4181   29.5906 H   0  0  0  0  0  0\n   23.9768   10.1935   31.0585 H   0  0  0  0  0  0\n   19.1563    7.2141   32.8416 H   0  0  0  0  0  0\n   17.7834    8.6037   33.9927 H   0  0  0  0  0  0\n   17.8900   10.3575   33.9302 H   0  0  0  0  0  0\n   22.3762    6.6961   31.1563 H   0  0  0  0  0  0\n   21.3185    3.4656   31.3622 H   0  0  0  0  0  0\n   21.2476    3.9881   29.7032 H   0  0  0  0  0  0\n   23.0789    5.8960   29.0477 H   0  0  0  0  0  0\n   24.9881    7.3051   28.4726 H   0  0  0  0  0  0\n   26.5045    7.1383   29.3471 H   0  0  0  0  0  0\n   26.1450    6.0542   27.9989 H   0  0  0  0  0  0\n   26.9251    5.0640   30.7500 H   0  0  0  0  0  0\n   25.8856    3.4782   32.3328 H   0  0  0  0  0  0\n   23.4493    3.1153   32.3060 H   0  0  0  0  0  0\n  1  2  1  0  0  0\n  1 24  1  0  0  0\n  1 25  1  0  0  0\n  1 26  1  0  0  0\n  2  3  1  0  0  0\n  2 27  1  0  0  0\n  2 28  1  0  0  0\n  3  4  1  0  0  0\n  4 10  1  0  0  0\n  4  5  2  0  0  0\n  5  6  1  0  0  0\n  6  7  2  0  0  0\n  6 13  1  0  0  0\n  7  8  1  0  0  0\n  7 29  1  0  0  0\n  8  9  1  0  0  0\n  8 10  2  0  0  0\n  9 30  1  0  0  0\n  9 31  1  0  0  0\n 10 11  1  0  0  0\n 11 12  3  0  0  0\n 13 14  1  0  0  0\n 13 32  1  0  0  0\n 14 15  2  0  0  0\n 14 16  1  0  0  0\n 16 17  1  0  0  0\n 16 33  1  0  0  0\n 16 34  1  0  0  0\n 17 23  1  0  0  0\n 17 18  2  0  0  0\n 18 19  1  0  0  0\n 18 35  1  0  0  0\n 19 20  1  0  0  0\n 19 21  2  0  0  0\n 20 36  1  0  0  0\n 20 37  1  0  0  0\n 20 38  1  0  0  0\n 21 22  1  0  0  0\n 21 39  1  0  0  0\n 22 23  2  0  0  0\n 22 40  1  0  0  0\n 23 41  1  0  0  0\nM  END\n> <i_m_stars>\n0\n\n> <r_user_dG.exp>\n-8.67377\n\n$$$$\n",
+      "sanitize": true,
+      "remove_hs": true,
+      "name": "18629-1"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "test1_00",
+      "inputs": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test1",
+        "line": 348,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test1_01",
+      "inputs": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 0.8,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test1",
+        "line": 365,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test2_00",
+      "inputs": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test2",
+        "line": 400,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test2_01",
+      "inputs": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 0.8,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test2",
+        "line": 415,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test3IsotopeMatch_00",
+      "inputs": [
+        20,
+        21
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test3IsotopeMatch",
+        "line": 439,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test3IsotopeMatch_01",
+      "inputs": [
+        20,
+        21
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "isotopes",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test3IsotopeMatch",
+        "line": 450,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_00",
+      "inputs": [
+        22,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 467,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_01",
+      "inputs": [
+        22,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 477,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_02",
+      "inputs": [
+        22,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": true,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 489,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_03",
+      "inputs": [
+        22,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": true,
+          "match_fused_rings_strict": true,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 502,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_04",
+      "inputs": [
+        22,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 514,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_05",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 525,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_06",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 535,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_07",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 547,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_08",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": true,
+          "match_fused_rings": true,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 561,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_09",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": true,
+          "match_fused_rings": true,
+          "match_fused_rings_strict": true,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 576,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test4RingMatches_10",
+      "inputs": [
+        24,
+        23
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test4RingMatches",
+        "line": 588,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test5AnyMatch_00",
+      "inputs": [
+        25,
+        26,
+        27
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test5AnyMatch",
+        "line": 601,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test5AnyMatch_01",
+      "inputs": [
+        28,
+        29,
+        30
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test5AnyMatch",
+        "line": 616,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "testAtomCompareAnyHeavyAtom_00",
+      "inputs": [
+        31,
+        32
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any_heavy_atom",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "testAtomCompareAnyHeavyAtom",
+        "line": 633,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "testAtomCompareAnyHeavyAtom1_00",
+      "inputs": [
+        31,
+        33
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any_heavy_atom",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "testAtomCompareAnyHeavyAtom1",
+        "line": 650,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test6MatchValences_00",
+      "inputs": [
+        34,
+        35
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test6MatchValences",
+        "line": 664,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test6MatchValences_01",
+      "inputs": [
+        34,
+        35
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": true,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test6MatchValences",
+        "line": 672,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test7Seed_00",
+      "inputs": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test7Seed",
+        "line": 683,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test7Seed_01",
+      "inputs": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "C1CC1",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test7Seed",
+        "line": 690,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test7Seed_02",
+      "inputs": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "C1OC1",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test7Seed",
+        "line": 697,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test7Seed_03",
+      "inputs": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "C1OC1",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test7Seed",
+        "line": 708,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test7Seed_04",
+      "inputs": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "C1OC1",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test7Seed",
+        "line": 718,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test8MatchParams_00",
+      "inputs": [
+        40,
+        41,
+        42
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test8MatchParams",
+        "line": 731,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test8MatchParams_01",
+      "inputs": [
+        40,
+        41,
+        42
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test8MatchParams",
+        "line": 736,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test8MatchParams_02",
+      "inputs": [
+        40,
+        41,
+        42
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": true,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test8MatchParams",
+        "line": 742,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test8MatchParams_03",
+      "inputs": [
+        40,
+        41,
+        42
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": true,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": true,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test8MatchParams",
+        "line": 748,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test8MatchParams_04",
+      "inputs": [
+        40,
+        41,
+        42
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test8MatchParams",
+        "line": 756,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test9MatchCharge_00",
+      "inputs": [
+        43,
+        44,
+        45
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test9MatchCharge",
+        "line": 767,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test9MatchCharge_01",
+      "inputs": [
+        43,
+        44,
+        45
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": true,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test9MatchCharge",
+        "line": 773,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test10MatchChargeAndParams_00",
+      "inputs": [
+        43,
+        44,
+        45,
+        46
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test10MatchChargeAndParams",
+        "line": 784,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test10MatchChargeAndParams_01",
+      "inputs": [
+        43,
+        44,
+        45,
+        46
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "any",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test10MatchChargeAndParams",
+        "line": 792,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test10MatchChargeAndParams_02",
+      "inputs": [
+        43,
+        44,
+        45,
+        46
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": true,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test10MatchChargeAndParams",
+        "line": 797,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test11Github2034_00",
+      "inputs": [
+        47,
+        48
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test11Github2034",
+        "line": 808,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test11Github2034_01",
+      "inputs": [
+        47,
+        48
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test11Github2034",
+        "line": 818,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test11Github2034_02",
+      "inputs": [
+        47,
+        48
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": true,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": -1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test11Github2034",
+        "line": 824,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "test19MCS3d_00",
+      "inputs": [
+        49,
+        50
+      ],
+      "parameters": {
+        "store_all": false,
+        "maximize_bonds": true,
+        "threshold": 1,
+        "timeout": 30,
+        "verbose": false,
+        "atom_comparator": "elements",
+        "bond_comparator": "order",
+        "initial_seed": "",
+        "atom_compare_parameters": {
+          "match_valences": false,
+          "match_chiral_tag": false,
+          "match_formal_charge": false,
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_isotope": false,
+          "max_distance": 1
+        },
+        "bond_compare_parameters": {
+          "ring_matches_ring_only": false,
+          "complete_rings_only": false,
+          "match_fused_rings": false,
+          "match_fused_rings_strict": false,
+          "match_stereo": false
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/Wrap/testFMCS.py",
+        "function": "test19MCS3d",
+        "line": 917,
+        "source_timeout": 0
+      }
+    },
+    {
+      "case_id": "cpp_github9034",
+      "inputs": [
+        51,
+        52
+      ],
+      "parameters": {
+        "timeout": 30,
+        "store_all": true,
+        "verbose": true
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/testFMCS_catch_tests.cpp",
+        "function": "Github9034",
+        "line": 18
+      }
+    },
+    {
+      "case_id": "cpp_jnk1_distance",
+      "inputs": [
+        53,
+        54
+      ],
+      "parameters": {
+        "timeout": 30,
+        "atom_comparator": "any_heavy_atom",
+        "bond_comparator": "order_exact",
+        "atom_compare_parameters": {
+          "max_distance": 3
+        }
+      },
+      "source": {
+        "path": "Code/GraphMol/FMCS/testFMCS_Unit.cpp",
+        "function": "testJnk1LigandsDistance",
+        "line": 476
+      }
+    }
+  ]
+}

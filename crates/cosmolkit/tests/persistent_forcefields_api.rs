@@ -123,6 +123,37 @@ fn snapshots_cache_and_joint_evaluation() {
     assert_ne!(result.energy(), handle.energy().unwrap());
 }
 #[test]
+fn unconstrained_gradient_is_registered_and_preserves_fixed_state() {
+    let mol = fixture();
+    for mut handle in [
+        mol.mmff_force_field().unwrap(),
+        mol.uff_force_field().unwrap(),
+    ] {
+        let expected = handle.gradient().unwrap();
+        handle.set_fixed_atoms_(&[AtomId::new(0)]).unwrap();
+        let before = handle.positions();
+        let mut snapshot = handle.gradient_unconstrained().unwrap();
+        assert_eq!(
+            snapshot
+                .iter()
+                .flatten()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .flatten()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>()
+        );
+        assert_ne!(snapshot[0], [0.; 3]);
+        assert_eq!(handle.gradient().unwrap()[0], [0.; 3]);
+        snapshot[0] = [123.; 3];
+        assert_ne!(handle.gradient_unconstrained().unwrap()[0], snapshot[0]);
+        assert_eq!(handle.fixed_atoms(), [AtomId::new(0)]);
+        assert_eq!(handle.positions(), before);
+    }
+}
+#[test]
 fn invalid_updates_are_atomic_and_errors_retain_context() {
     let mut handle = fixture().mmff_force_field().unwrap();
     handle.set_fixed_atoms_(&[AtomId::new(1)]).unwrap();

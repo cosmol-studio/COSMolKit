@@ -38,7 +38,7 @@ def test_all_forms_fill_the_original_additional_output_and_preserve_input(method
     assert output.atom_counts()[0] > 0
 
 
-def test_optional_empty_roots_are_distinct_and_call_parameters_are_immutable():
+def test_optional_empty_roots_are_distinct_and_configuration_lists_are_live():
     molecule = ck.Molecule.from_smiles("CCO")
     params = ck.MorganFingerprintParams(from_atoms=[])
     assert params.from_atoms == []
@@ -49,7 +49,7 @@ def test_optional_empty_roots_are_distinct_and_call_parameters_are_immutable():
     assert params.conformer_id == 7
     roots = params.from_atoms
     roots.append(0)
-    assert params.from_atoms == []
+    assert params.from_atoms == [0]
 
 
 def test_generator_errors_keep_the_source_cause_and_input():

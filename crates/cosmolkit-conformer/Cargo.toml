@@ -12,21 +12,21 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.20", path = "../cosmolkit-model" }
+cosmolkit-model = { version = "0.5.0-rc.21", path = "../cosmolkit-model" }
 thiserror = "2.0"
 serde = "1"
 serde_json = { version = "1.0", features = ["raw_value"] }
-cosmolkit-core = { version = "0.5.0-rc.20", path = "../cosmolkit-core", default-features = false }
+cosmolkit-core = { version = "0.5.0-rc.21", path = "../cosmolkit-core", default-features = false }
 libc = "0.2"
 web-time = "1.1"
 
-cosmolkit-forcefields = { version = "0.5.0-rc.20", path = "../cosmolkit-forcefields" }
+cosmolkit-forcefields = { version = "0.5.0-rc.21", path = "../cosmolkit-forcefields" }
 
-cosmolkit-alignment = { version = "0.5.0-rc.20", path = "../cosmolkit-alignment" }
+cosmolkit-alignment = { version = "0.5.0-rc.21", path = "../cosmolkit-alignment" }
 
-cosmolkit-search = { version = "0.5.0-rc.20", path = "../cosmolkit-search" }
+cosmolkit-search = { version = "0.5.0-rc.21", path = "../cosmolkit-search" }
 
 [dev-dependencies]
-cosmolkit-smiles = { version = "0.5.0-rc.20", path = "../cosmolkit-smiles" }
+cosmolkit-smiles = { version = "0.5.0-rc.21", path = "../cosmolkit-smiles" }
 
-cosmolkit-io = { version = "0.5.0-rc.20", path = "../cosmolkit-io", default-features = false, features = ["molecule"] }
+cosmolkit-io = { version = "0.5.0-rc.21", path = "../cosmolkit-io", default-features = false, features = ["molecule"] }

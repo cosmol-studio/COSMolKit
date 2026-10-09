@@ -1068,8 +1068,18 @@ const EL_DATA_TYPES: [i32; 122] = {
 };
 
 // Configured `ElData[].bSkipAddingH` projection from util.c:103-273.
-// The true runs are exactly Sc-Zn, Y-Cd, and La-Zz in the active table.
+// The true runs are Sc-Zn, Y-Cd, La-Hg and Ac-Zz in the active table.
 const EL_DATA_SKIP_ADDING_H: [bool; 122] = {
+    // BEGIN INCHI C TABLE: util.c:189-196 (InChI 1.07.5)
+    // INCHI✔️✔️: { "Tl", 204, 205, 204.974400000, METAL2, 18,  0, {{3,5,},     {2,4,},     {1,3,},     {0,},       {0,}       }},
+    // INCHI✔️✔️: { "Pb", 207, 208, 207.976627000, METAL2, 18,  0, {{2,4,6,},   {3,5},      {2,4,},     {3,},       {0,}       }},
+    // INCHI✔️✔️: { "Bi", 209, 209, 208.980390000, METAL , 19,  0, {{1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,},     {3,}       }},
+    // INCHI✔️✔️: { "Po", 209, 209, 208.982400000, METAL2, 20,  0, {{0,},       {1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,}     }},
+    // INCHI✔️✔️: { "At", 210, 210, 209.987100000,     0 , 22,  0, {{0,},       {0,},       {1,3,5,7,}, {2,4,6},    {3,5,}     }},
+    // INCHI✔️✔️: { "Rn", 222, 222, 222.017500000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},
+    // INCHI✔️✔️: { "Fr", 223, 223, 223.019700000, METAL ,  0,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},
+    // INCHI✔️✔️: { "Ra", 226, 226, 226.025410000, METAL ,  0,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},
+    // END INCHI C TABLE
     let mut values = [false; 122];
     let mut index = 22;
     while index <= 31 {
@@ -1082,6 +1092,11 @@ const EL_DATA_SKIP_ADDING_H: [bool; 122] = {
         index += 1;
     }
     index = 58;
+    while index <= 81 {
+        values[index] = true;
+        index += 1;
+    }
+    index = 90;
     while index <= 121 {
         values[index] = true;
         index += 1;
@@ -5260,7 +5275,8 @@ mod tests {
             let expected = i32::from(
                 (21..=30).contains(&periodic_number)
                     || (39..=48).contains(&periodic_number)
-                    || (57..=120).contains(&periodic_number),
+                    || (57..=80).contains(&periodic_number)
+                    || (89..=120).contains(&periodic_number),
             );
             assert_eq!(
                 if_skip_add_H(periodic_number),
@@ -5274,6 +5290,40 @@ mod tests {
             Err(SourceHeapError::SourceIntegerOverflow)
         );
         assert_eq!(if_skip_add_H(i32::MIN), Ok(0));
+    }
+
+    #[test]
+    fn inchi_post_transition_elements_admit_source_defined_hydrogens() {
+        // InChI 1.07.5 util.c:189-196, neutral cValence entries and
+        // bSkipAddingH=0. Hg and Ac bound the repaired interval.
+        for (symbol, expected) in [
+            ("Hg", 0),
+            ("Tl", 1),
+            ("Pb", 2),
+            ("Bi", 3),
+            ("Po", 2),
+            ("At", 1),
+            ("Rn", 0),
+            ("Fr", 1),
+            ("Ra", 2),
+            ("Ac", 0),
+        ] {
+            let element = symbol
+                .bytes()
+                .chain([0])
+                .map(|x| x as i8)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                get_num_H(Some(&element), 0, None, 0, 0, 0, 0, 0, 0, 0),
+                Ok(expected),
+                "{symbol}"
+            );
+            assert_eq!(
+                get_num_H(Some(&element), 0, None, 0, 0, 0, 0, 0, 1, 0),
+                Ok(0),
+                "explicit do-not-add-H: {symbol}"
+            );
+        }
     }
 
     #[test]

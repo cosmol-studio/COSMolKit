@@ -221,7 +221,7 @@ fn q134_entry_fused_ring_and_tetrahedral_options_reach_final_mapping() {
 }
 
 #[test]
-fn q134_entry_double_bond_stereo_and_timeout_preserve_partial_result() {
+fn q134_entry_double_bond_stereo_and_unlimited_search_preserve_complete_result() {
     let coordinates = CoordinateBlock::default();
     let mut cis = topology(
         &[Element::F, Element::C, Element::C, Element::CL],
@@ -264,17 +264,22 @@ fn q134_entry_double_bond_stereo_and_timeout_preserve_partial_result() {
     let long = path(1000);
     let long_view = target(&long, &coordinates, None);
     params.atom_compare_parameters.match_chiral_tag = false;
-    params.timeout = 1;
+    // Timeout uses source microseconds, not the former accidental nanoseconds.
+    // A 1000-atom path finishes well below one second on ordinary machines;
+    // wall-clock-dependent cancellation is tested with the private injected
+    // clock boundary instead of relying on that unit-conversion defect.
+    params.timeout = 0;
     let timed = find_mcs(&[long_view, long_view], &params).unwrap();
-    assert!(!timed.completed);
-    assert!(timed.atom_count >= 2);
-    assert!(timed.bond_count >= 1);
+    assert!(timed.completed);
+    assert_eq!(timed.atom_count, 1000);
+    assert_eq!(timed.bond_count, 999);
     assert!(timed.query.is_some());
 
     params.store_all = true;
     let timed_all = find_mcs(&[long_view, long_view], &params).unwrap();
-    assert!(!timed_all.completed);
-    assert!(timed_all.bond_count >= 1);
+    assert!(timed_all.completed);
+    assert_eq!(timed_all.atom_count, 1000);
+    assert_eq!(timed_all.bond_count, 999);
     assert!(timed_all.query.is_none());
     assert!(!timed_all.degenerate.is_empty());
     assert!(

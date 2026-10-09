@@ -898,7 +898,7 @@ mod tests {
     #[test]
     fn special_regressions_have_separate_fixed_inputs() {
         let special = plan(&Selection::Special("all".into())).unwrap();
-        assert_eq!(special.specs.len(), 7);
+        assert_eq!(special.specs.len(), 9);
         assert_eq!(
             special
                 .specs
@@ -906,6 +906,8 @@ mod tests {
                 .map(|s| s.key())
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([
+                "mcs_upstream",
+                "mcs_jnk1",
                 "forcefield_optimizers",
                 "mmff_builtin",
                 "bio_mmcif_switches",

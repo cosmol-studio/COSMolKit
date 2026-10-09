@@ -468,10 +468,28 @@ impl PreparedForceField {
         // RDKit✔️✔️:       grad[idx + di] = 0.0;
         // Delegate accumulation/fixed zeroing to the unique calc_grad_current.
         // O(N) independent result, no mutable view of owned live coordinates.
+        self.gradient_with_fixed_mask(true)
+    }
+
+    /// Full energy derivative, including fixed-atom rows. Physical force is
+    /// its negative. Only the fixed-point mask is omitted; energy terms and
+    /// the pinned set are unchanged.
+    pub fn gradient_unconstrained(&mut self) -> Result<Vec<[f64; 3]>, ForceFieldError> {
+        self.gradient_with_fixed_mask(false)
+    }
+
+    fn gradient_with_fixed_mask(
+        &mut self,
+        apply_fixed_mask: bool,
+    ) -> Result<Vec<[f64; 3]>, ForceFieldError> {
         let count = self.positions.coordinates().len();
         self.with_field(|field| {
             let mut gradient = vec![0.0; 3 * count];
-            field.calc_grad_current(&mut gradient)?;
+            if apply_fixed_mask {
+                field.calc_grad_current(&mut gradient)?;
+            } else {
+                field.calc_grad_current_unconstrained(&mut gradient)?;
+            }
             Ok(gradient
                 .chunks_exact(3)
                 .map(|row| [row[0], row[1], row[2]])
@@ -723,6 +741,57 @@ mod tests {
         assert_eq!(field.fixed_atoms(), [1]);
         field.set_fixed_atoms(&[]).unwrap();
         assert!(field.fixed_atoms().is_empty());
+    }
+    #[test]
+    fn persistent_unconstrained_gradient_preserves_pins_and_exact_accumulation() {
+        let (topology, coordinates) = pair(true, 2.5);
+        for is_mmff in [false, true] {
+            let make = || {
+                if is_mmff {
+                    mmff(&topology, &coordinates)
+                } else {
+                    uff(&topology, &coordinates, 10., true)
+                }
+            };
+            let mut pinned = make();
+            let mut free = make();
+            pinned.set_fixed_atoms(&[0]).unwrap();
+            for x in [2.5, 1.9] {
+                pinned.set_position(1, [x, 0.2, 0.]).unwrap();
+                free.set_position(1, [x, 0.2, 0.]).unwrap();
+                let before = pinned.positions();
+                let expected = free.gradient().unwrap();
+                let actual = pinned.gradient_unconstrained().unwrap();
+                assert_eq!(
+                    actual
+                        .iter()
+                        .flatten()
+                        .map(|x| x.to_bits())
+                        .collect::<Vec<_>>(),
+                    expected
+                        .iter()
+                        .flatten()
+                        .map(|x| x.to_bits())
+                        .collect::<Vec<_>>()
+                );
+                assert_ne!(actual[0], [0.; 3]);
+                let constrained = pinned.gradient().unwrap();
+                assert_eq!(constrained[0], [0.; 3]);
+                assert_eq!(
+                    constrained[1].map(f64::to_bits),
+                    actual[1].map(f64::to_bits)
+                );
+                assert_eq!(
+                    pinned.energy().unwrap().to_bits(),
+                    free.energy().unwrap().to_bits()
+                );
+                assert_eq!(pinned.positions(), before);
+                assert_eq!(pinned.fixed_atoms(), [0]);
+            }
+            let anchor = pinned.position(0).unwrap();
+            pinned.minimize(2, 1e-4, 1e-6).unwrap();
+            assert_eq!(pinned.position(0).unwrap(), anchor);
+        }
     }
     #[test]
     fn persistent_repeated_minimize_restarts_history_at_current_coordinates() {

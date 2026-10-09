@@ -707,6 +707,25 @@ mod scalar_api_tests {
     }
 
     #[test]
+    fn inchi_long_invalid_input_returns_native_error_not_buffer_bounds_error() {
+        // RDKit 2026.03.6 rdinchi.InchiToMol: these inputs return code 2 and
+        // no molecule. They must not fail in the Rust diagnostic string writer
+        // or be silently trimmed into a successful methane import.
+        for padding in [32_768, 32_769] {
+            let input = format!("InChI=1S/CH4/h1H4{}", " ".repeat(padding));
+            let output = mol_from_inchi(
+                &mut ScalarToolkit::default(),
+                input.as_bytes(),
+                false,
+                false,
+            )
+            .unwrap();
+            assert_eq!(output.return_values.return_code, 2);
+            assert!(output.molecule.is_none());
+        }
+    }
+
+    #[test]
     fn inchi_core_scalar_api__mol_from_inchi_parses_phosphoserine_graph() {
         const PHOSPHOSERINE: &[u8] =
             b"InChI=1S/C3H8NO6P/c4-2(3(5)6)1-10-11(7,8)9/h2H,1,4H2,(H,5,6)(H2,7,8,9)/t2-/m0/s1";

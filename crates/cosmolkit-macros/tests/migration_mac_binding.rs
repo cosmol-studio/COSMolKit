@@ -60,6 +60,14 @@ struct BindingParameterContract {
     type_name: &'static str,
     default: BindingDefault,
 }
+struct BindingConfigurationField {
+    name: &'static str,
+    rust_field: &'static str,
+    type_name: &'static str,
+    default: BindingDefault,
+    aliases: &'static [&'static str],
+    callback: Option<&'static str>,
+}
 enum BindingReceiver {
     Shared,
     Mutable,
@@ -108,7 +116,7 @@ struct BindingContractEntry {
     rust_path: &'static str,
     python_name: &'static str,
     python_native: Option<&'static str>,
-    python_configuration: Option<&'static [BindingParameterContract]>,
+    python_configuration: Option<&'static [BindingConfigurationField]>,
     python_property: Option<BindingPropertyAccess>,
     javascript_name: &'static str,
     feature: &'static str,
@@ -1050,6 +1058,60 @@ fn configuration_schema_is_owned_by_a_parameter_type_without_requiring_rust_new(
             .unwrap_err()
             .to_string()
             .contains("duplicate configuration field")
+    );
+}
+
+#[test]
+fn exhaustive_configuration_generates_compiler_checked_fields_without_rest_pattern() {
+    let output = expand_binding_contract(quote! {
+        static CONFIG = [{
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter, exhaustive_configuration: true,
+            python_configuration: [
+                {name: limit, rust_field: count, python_type: "builtins.int", default: "1000"},
+                {name: final_match, rust_field: extra_final_check, aliases: [extra_check], callback: "final_match", python_type: "typing.Optional[typing.Callable[..., bool]]", default: "None"},
+            ],
+        }];
+    }).unwrap().to_string();
+    assert!(output.contains("let crate :: Params { count : _ , extra_final_check : _ } = value"));
+    assert!(!output.contains("extra_final_check : _ , .."));
+    assert!(output.contains("aliases : & [\"extra_check\"]"));
+    assert!(output.contains("callback : Some (\"final_match\")"));
+}
+
+#[test]
+fn callback_schema_rejects_missing_probe_and_duplicate_rust_fields() {
+    let declaration = quote! {
+        static CONFIG = [{
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter,
+            python_configuration: [{name: check, python_type: "typing.Callable[..., bool]", default: "None"}],
+        }];
+    };
+    assert!(
+        expand_binding_contract(declaration)
+            .unwrap_err()
+            .to_string()
+            .contains("executable callback contract")
+    );
+    let declaration = quote! {
+        static CONFIG = [{
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter,
+            python_configuration: [
+                {name: first, rust_field: count, python_type: "builtins.int", default: "1"},
+                {name: second, rust_field: count, python_type: "builtins.int", default: "1"},
+            ],
+        }];
+    };
+    assert!(
+        expand_binding_contract(declaration)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate Rust configuration field")
     );
 }
 

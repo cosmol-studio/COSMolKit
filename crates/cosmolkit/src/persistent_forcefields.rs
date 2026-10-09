@@ -345,11 +345,23 @@ impl MolecularForceField {
     pub fn energy(&self) -> Result<f64, ForceFieldError> {
         self.inner.lock().expect("force-field state lock").energy()
     }
+    /// Energy gradient with fixed-atom rows zeroed, matching RDKit CalcGrad.
     pub fn gradient(&self) -> Result<Vec<[f64; 3]>, ForceFieldError> {
         self.inner
             .lock()
             .expect("force-field state lock")
             .gradient()
+    }
+    /// Return the full energy derivative as independent atom-ordered xyz rows.
+    ///
+    /// Unlike `gradient`, fixed-atom rows are not zeroed. All energy terms
+    /// remain active, and the fixed set, coordinates and minimization behavior
+    /// are unchanged. Physical forces are the negative of this gradient.
+    pub fn gradient_unconstrained(&self) -> Result<Vec<[f64; 3]>, ForceFieldError> {
+        self.inner
+            .lock()
+            .expect("force-field state lock")
+            .gradient_unconstrained()
     }
     pub fn energy_gradient(&self) -> Result<ForceFieldEnergyGradient, ForceFieldError> {
         let (energy, gradient) = self

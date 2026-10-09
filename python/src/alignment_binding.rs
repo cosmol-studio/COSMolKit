@@ -136,7 +136,9 @@ impl PyAlignmentAtomMap {
     name = "AlignmentParameters",
     get_all,
     set_all,
-    from_py_object
+    from_py_object,
+    dict,
+    weakref
 )]
 #[derive(Clone)]
 #[doc = "Parameters for an explicit or first-match molecular alignment."]
@@ -228,6 +230,7 @@ impl PyAlignmentParameters {
     }
 }
 
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
@@ -277,7 +280,9 @@ impl PyAlignmentParameters {
     module = "cosmolkit",
     name = "BestAlignmentParameters",
     get_all,
-    from_py_object
+    from_py_object,
+    dict,
+    weakref
 )]
 #[derive(Clone)]
 #[doc = "Parameters for source-compatible best molecular alignment and RMSD."]
@@ -415,7 +420,9 @@ impl PyBestAlignmentParameters {
     module = "cosmolkit",
     name = "AllConformerRmsdParameters",
     get_all,
-    from_py_object
+    from_py_object,
+    dict,
+    weakref
 )]
 #[derive(Clone)]
 #[doc = "Parameters accepted by source-compatible all-conformer best RMSD."]
@@ -527,7 +534,9 @@ impl PyAllConformerRmsdParameters {
     module = "cosmolkit",
     name = "CoordinateRmsdParameters",
     get_all,
-    from_py_object
+    from_py_object,
+    dict,
+    weakref
 )]
 #[derive(Clone)]
 #[doc = "Parameters for RMSD measurement in the existing coordinate frame."]
@@ -608,7 +617,9 @@ impl PyCoordinateRmsdParameters {
     name = "ConformerAlignmentParameters",
     get_all,
     set_all,
-    from_py_object
+    from_py_object,
+    dict,
+    weakref
 )]
 #[derive(Clone)]
 #[doc = "Parameters for aligning selected or all conformers of one molecule."]
@@ -632,6 +643,7 @@ impl PyConformerAlignmentParameters {
     }
 }
 
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]

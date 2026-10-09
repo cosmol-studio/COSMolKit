@@ -67,7 +67,7 @@ pub(crate) fn source_conformer_id(id: i32) -> Option<usize> {
     if id < 0 { None } else { Some(id as usize) }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct MmffOptimizationParams {
     pub(crate) inner: ck::MmffOptimizationParams,
@@ -119,7 +119,7 @@ impl MmffOptimizationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct MmffConformerOptimizationParams {
     pub(crate) inner: ck::MmffConformerOptimizationParams,
@@ -170,7 +170,7 @@ impl MmffConformerOptimizationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct MmffPropertiesParams {
     pub(crate) inner: ck::MmffPropertiesParams,
@@ -405,7 +405,7 @@ impl MmffAtomProperties {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct MmffEvaluationParams {
     pub(crate) inner: ck::MmffEvaluationParams,

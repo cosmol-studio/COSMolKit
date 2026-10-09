@@ -1,5 +1,5 @@
 """Pinned original manual input conditions projected onto canonical parameter APIs.
-Historical originals are unchanged; dimension-specific XY replaces their zero-padded view.
+Python returns owned NumPy XYZ rows; the runtime still stores dimension-specific XY.
 """
 import cosmolkit
 import numpy as np
@@ -17,7 +17,13 @@ def test_setting_2d_coordinates_is_value_style_and_validates_input():
     assert with_coords is not mol
     assert not mol.has_2d_coordinates()
     assert with_coords.has_2d_coordinates()
-    assert np.allclose(with_coords.coordinates_2d(), coords)
+    output = with_coords.coordinates_2d()
+    assert isinstance(output, np.ndarray)
+    assert output.shape == (3, 3) and output.dtype == np.float64
+    np.testing.assert_array_equal(output[:, :2], coords)
+    np.testing.assert_array_equal(output[:, 2], np.zeros(3))
+    output[:] = 123
+    np.testing.assert_array_equal(with_coords.coordinates_2d()[:, :2], coords)
 
     with pytest.raises(ValueError, match="row count mismatch"):
         mol.with_2d_coordinate_block([[0.0, 0.0]])
@@ -43,8 +49,8 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
 
     assert mol.set_2d_coordinates_(coords3) is None
     assert mol.has_2d_coordinates()
-    assert np.asarray(mol.coordinates_2d()).shape == (3, 2)
-    assert np.allclose(np.column_stack([mol.coordinates_2d(), np.zeros(3)])[:, 2], 0.0)
+    assert mol.coordinates_2d().shape == (3, 3)
+    np.testing.assert_array_equal(mol.coordinates_2d()[:, 2], np.zeros(3))
 
 def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     mol = cosmolkit.Molecule.from_smiles("CCO")
@@ -57,6 +63,12 @@ def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     assert one_conf is not mol
     assert len(mol.conformers_3d()) == 0
     assert len(one_conf.conformers_3d()) == 1
+    output = one_conf.coordinates_3d()
+    assert isinstance(output, np.ndarray)
+    assert output.shape == (3, 3) and output.dtype == np.float64
+    np.testing.assert_array_equal(output.view(np.uint64), first.view(np.uint64))
+    output[:] = 123
+    np.testing.assert_array_equal(one_conf.coordinates_3d(), first)
     assert np.allclose(xyz(one_conf), first)
 
     two_confs = one_conf.with_added_3d_conformer(second.astype(np.float32))

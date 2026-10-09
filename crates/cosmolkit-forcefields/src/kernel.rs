@@ -1397,6 +1397,23 @@ impl<'a> ForceField<'a> {
         &mut self,
         gradient: &mut [f64],
     ) -> Result<(), ForceFieldKernelError> {
+        self.calc_grad_current_with_fixed_mask(gradient, true)
+    }
+
+    pub(super) fn calc_grad_current_unconstrained(
+        &mut self,
+        gradient: &mut [f64],
+    ) -> Result<(), ForceFieldKernelError> {
+        // CK extension: preserve the source accumulation exactly, omitting
+        // only the final fixed-point mask. Never mutate the fixed-point list.
+        self.calc_grad_current_with_fixed_mask(gradient, false)
+    }
+
+    fn calc_grad_current_with_fixed_mask(
+        &mut self,
+        gradient: &mut [f64],
+        apply_fixed_mask: bool,
+    ) -> Result<(), ForceFieldKernelError> {
         // BEGIN RDKIT CPP FUNCTION ForceFields::ForceField::calcGrad(current) (ForceField.cpp:329-352)
         // RDKit✔️✔️: void ForceField::calcGrad(double *grad) const {
         // RDKit✔️✔️:   PRECONDITION(df_init, "not initialized");
@@ -1445,7 +1462,10 @@ impl<'a> ForceField<'a> {
                 contribution.get_grad(&mut context, gradient)?;
             }
         }
-        self.zero_fixed_point_gradients(gradient)
+        if apply_fixed_mask {
+            self.zero_fixed_point_gradients(gradient)?;
+        }
+        Ok(())
     }
 
     fn calc_grad(

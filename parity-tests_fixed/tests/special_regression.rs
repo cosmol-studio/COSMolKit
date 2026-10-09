@@ -1,3 +1,7 @@
+#[cfg(any(parity_special_mcs_upstream, parity_special_mcs_jnk1))]
+#[path = "support/mcs.rs"]
+mod mcs;
+
 #[cfg(parity_special_structure_tags)]
 #[path = "support/structure_tags.rs"]
 mod structure_tags;

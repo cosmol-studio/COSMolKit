@@ -225,7 +225,7 @@ pub(crate) fn drawing_write_pyerr(
 
 /// Immutable detached parameters projected from the public facade.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate2DParams {
     pub(crate) inner: ck::Coordinate2DParams,
 }
@@ -2956,15 +2956,17 @@ impl Molecule {
         query: &crate::canonical_search::QueryGraph,
         params: &crate::canonical_search::SubstructMatchParams,
     ) -> PyResult<Vec<crate::canonical_search::MatchResult>> {
-        self.inner
-            .substruct_matches_with_params(&query.inner, &params.inner)
+        params
+            .with_callbacks(py, &self.inner, |params| {
+                self.inner
+                    .substruct_matches_with_params(&query.inner, params)
+            })
             .map(|results| {
                 results
                     .into_iter()
                     .map(|inner| crate::canonical_search::MatchResult { inner })
                     .collect()
             })
-            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
     }
     fn substruct_match_with_params(
         &self,
@@ -2972,10 +2974,11 @@ impl Molecule {
         query: &crate::canonical_search::QueryGraph,
         params: &crate::canonical_search::SubstructMatchParams,
     ) -> PyResult<Option<crate::canonical_search::MatchResult>> {
-        self.inner
-            .substruct_match_with_params(&query.inner, &params.inner)
+        params
+            .with_callbacks(py, &self.inner, |params| {
+                self.inner.substruct_match_with_params(&query.inner, params)
+            })
             .map(|result| result.map(|inner| crate::canonical_search::MatchResult { inner }))
-            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
     }
     fn has_substruct_match_with_params(
         &self,
@@ -2983,9 +2986,10 @@ impl Molecule {
         query: &crate::canonical_search::QueryGraph,
         params: &crate::canonical_search::SubstructMatchParams,
     ) -> PyResult<bool> {
-        self.inner
-            .has_substruct_match_with_params(&query.inner, &params.inner)
-            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
+        params.with_callbacks(py, &self.inner, |params| {
+            self.inner
+                .has_substruct_match_with_params(&query.inner, params)
+        })
     }
     fn has_substruct_match(
         &self,
@@ -3431,18 +3435,26 @@ impl Molecule {
             .map_err(|error| morgan_pyerr(py, error))
     }
 
-    /// Return an owned copy of existing XYZ rows for the exact conformer ID.
+    /// Return a detached float64 NumPy array (N, 3) for the exact conformer ID.
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]", imports = ("numpy", "typing")))]
     #[pyo3(signature = (conformer_id=0))]
-    fn coordinates_3d(&self, py: Python<'_>, conformer_id: usize) -> PyResult<Vec<[f64; 3]>> {
+    fn coordinates_3d<'py>(
+        &self,
+        py: Python<'py>,
+        conformer_id: usize,
+    ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
         self.inner
             .coordinates_3d(conformer_id)
-            .map(<[_]>::to_vec)
+            .map(|rows| crate::canonical_coordinate_input::coordinate_array(py, rows))
             .map_err(|error| crate::canonical_coordinate_input::read_pyerr(py, &error))
     }
 
-    fn coordinates_2d(&self) -> Option<Vec<[f64; 2]>> {
-        // Python receives an owned copy and cannot mutate the runtime block.
-        self.inner.coordinates_2d().map(<[_]>::to_vec)
+    /// Return a detached float64 NumPy array (N, 3), with zero z, or None.
+    #[gen_stub(override_return_type(type_repr = "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]", imports = ("numpy", "typing")))]
+    fn coordinates_2d<'py>(&self, py: Python<'py>) -> Option<Bound<'py, numpy::PyArray2<f64>>> {
+        self.inner
+            .coordinates_2d()
+            .map(|rows| crate::canonical_coordinate_input::coordinate_array(py, rows))
     }
 
     fn has_2d_coordinates(&self) -> bool {
@@ -4403,6 +4415,7 @@ pub(crate) fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::persistent_forcefields::register(module)?;
     crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
+    crate::canonical_mcs::register(module)?;
     crate::canonical_reaction::register(module)?;
     crate::canonical_sdf::register(module)?;
     crate::canonical_batch::register(module)?;

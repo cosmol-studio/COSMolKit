@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import cosmolkit
+import numpy as np
 import pytest
 
 
@@ -51,7 +52,7 @@ def test_layout_value_transform_preserves_original():
     assert before is not None and len(before) == 3
     assert len(positioned.to_svg(120, 80)) > 0
     assert positioned.to_png(120, 80).startswith(b"\x89PNG\r\n\x1a\n")
-    assert positioned.coordinates_2d() == before
+    np.testing.assert_array_equal(positioned.coordinates_2d(), before)
     assert original.coordinates_2d() is None
 
 

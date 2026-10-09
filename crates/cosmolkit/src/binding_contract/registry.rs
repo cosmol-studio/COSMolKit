@@ -738,6 +738,7 @@ binding_contract! {
             semantic_id: "types.SubstructMatchParams", item: type, owner: type_,
             rust: crate::SubstructMatchParams, python: "SubstructMatchParams", javascript: "SubstructMatchParams",
             feature: "cap-search", status: experimental,
+            exhaustive_configuration: true,
             python_configuration: [
                 { name: max_matches, python_type: "builtins.int", default: "1000" },
                 { name: uniquify, python_type: "builtins.bool", default: "True" },
@@ -755,6 +756,9 @@ binding_contract! {
                 { name: extra_atom_check_overrides_default_check, python_type: "builtins.bool", default: "False" },
                 { name: extra_bond_check_overrides_default_check, python_type: "builtins.bool", default: "False" },
                 { name: use_generic_matchers, python_type: "builtins.bool", default: "False" },
+                { name: final_match, rust_field: extra_final_check, aliases: [extra_final_check], callback: "final_match", python_type: "typing.Optional[typing.Callable[[Molecule, typing.Sequence[builtins.int]], builtins.bool]]", default: "None" },
+                { name: atom_match, rust_field: extra_atom_check, aliases: [extra_atom_check], callback: "atom_match", python_type: "typing.Optional[typing.Callable[[QueryAtom, Atom], builtins.bool]]", default: "None" },
+                { name: bond_match, rust_field: extra_bond_check, aliases: [extra_bond_check], callback: "bond_match", python_type: "typing.Optional[typing.Callable[[Bond, Bond], builtins.bool]]", default: "None" },
             ], role: parameter,
         },
         #[cfg(feature = "cap-search")]
@@ -768,6 +772,84 @@ binding_contract! {
             semantic_id: "types.MatchResult", item: type, owner: type_,
             rust: crate::MatchResult, python: "MatchResult", javascript: "MatchResult",
             feature: "cap-search", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.QueryAtom", item: type, owner: type_,
+            rust: crate::QueryAtom, python: "QueryAtom", javascript: "QueryAtom",
+            feature: "cap-search", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.id", item: callable, owner: type_,
+            rust: crate::QueryAtom::id, python: "id", javascript: "id",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: crate::AtomId, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> crate::AtomId,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.atomic_number", item: callable, owner: type_,
+            rust: crate::QueryAtom::atomic_number, python: "atomic_number", javascript: "atomicNumber",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: u8, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.formal_charge", item: callable, owner: type_,
+            rust: crate::QueryAtom::formal_charge, python: "formal_charge", javascript: "formalCharge",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: i8, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> i8,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.explicit_hydrogens", item: callable, owner: type_,
+            rust: crate::QueryAtom::explicit_hydrogens, python: "explicit_hydrogens", javascript: "explicitHydrogens",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: u8, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.isotope", item: callable, owner: type_,
+            rust: crate::QueryAtom::isotope, python: "isotope", javascript: "isotope",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: Option<u16>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> Option<u16>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.atom_map", item: callable, owner: type_,
+            rust: crate::QueryAtom::atom_map, python: "atom_map", javascript: "atomMap",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: Option<u32>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> Option<u32>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.is_aromatic", item: callable, owner: type_,
+            rust: crate::QueryAtom::is_aromatic, python: "is_aromatic", javascript: "isAromatic",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: bool, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> bool,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.no_implicit", item: callable, owner: type_,
+            rust: crate::QueryAtom::no_implicit, python: "no_implicit", javascript: "noImplicit",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: bool, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> bool,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "QueryAtom.radical_electrons", item: callable, owner: type_,
+            rust: crate::QueryAtom::radical_electrons, python: "radical_electrons", javascript: "radicalElectrons",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: u8, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
         },
         #[cfg(feature = "cap-search")]
         {
@@ -804,6 +886,82 @@ binding_contract! {
             semantic_id: "types.SmartsWriteError", item: type, owner: type_,
             rust: crate::SmartsWriteError, python: "SmartsWriteError", javascript: "SmartsWriteError",
             feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.McsParameters", item: type, owner: type_,
+            rust: crate::McsParameters, python: "McsParameters", javascript: "McsParameters",
+            feature: "cap-search", status: experimental, exhaustive_configuration: true,
+            python_configuration: [
+                { name: store_all, python_type: "builtins.bool", default: "False" },
+                { name: maximize_bonds, python_type: "builtins.bool", default: "True" },
+                { name: threshold, python_type: "builtins.float", default: "1.0" },
+                { name: timeout, python_type: "builtins.int", default: "0" },
+                { name: verbose, python_type: "builtins.bool", default: "False" },
+                { name: atom_compare_parameters, python_type: "typing.Optional[McsAtomCompareParameters]", default: "None" },
+                { name: bond_compare_parameters, python_type: "typing.Optional[McsBondCompareParameters]", default: "None" },
+                { name: atom_comparator, python_type: "McsAtomComparator | builtins.str", default: "McsAtomComparator.Elements" },
+                { name: bond_comparator, python_type: "McsBondComparator | builtins.str", default: "McsBondComparator.Order" },
+                { name: initial_seed, python_type: "builtins.str", default: "\"\"" },
+            ], role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.McsAtomCompareParameters", item: type, owner: type_,
+            rust: crate::McsAtomCompareParameters, python: "McsAtomCompareParameters", javascript: "McsAtomCompareParameters",
+            feature: "cap-search", status: experimental, exhaustive_configuration: true,
+            python_configuration: [
+                { name: match_valences, python_type: "builtins.bool", default: "False" },
+                { name: match_chiral_tag, python_type: "builtins.bool", default: "False" },
+                { name: match_formal_charge, python_type: "builtins.bool", default: "False" },
+                { name: ring_matches_ring_only, python_type: "builtins.bool", default: "False" },
+                { name: complete_rings_only, python_type: "builtins.bool", default: "False" },
+                { name: match_isotope, python_type: "builtins.bool", default: "False" },
+                { name: max_distance, python_type: "builtins.float", default: "-1.0" },
+            ], role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.McsBondCompareParameters", item: type, owner: type_,
+            rust: crate::McsBondCompareParameters, python: "McsBondCompareParameters", javascript: "McsBondCompareParameters",
+            feature: "cap-search", status: experimental, exhaustive_configuration: true,
+            python_configuration: [
+                { name: ring_matches_ring_only, python_type: "builtins.bool", default: "False" },
+                { name: complete_rings_only, python_type: "builtins.bool", default: "False" },
+                { name: match_fused_rings, python_type: "builtins.bool", default: "False" },
+                { name: match_fused_rings_strict, python_type: "builtins.bool", default: "False" },
+                { name: match_stereo, python_type: "builtins.bool", default: "False" },
+            ], role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        { semantic_id: "types.McsAtomComparator", item: type, owner: type_, rust: crate::McsAtomComparator,
+          python: "McsAtomComparator", javascript: "McsAtomComparator", feature: "cap-search", status: experimental, role: parameter_selector, },
+        #[cfg(feature = "cap-search")]
+        { semantic_id: "types.McsBondComparator", item: type, owner: type_, rust: crate::McsBondComparator,
+          python: "McsBondComparator", javascript: "McsBondComparator", feature: "cap-search", status: experimental, role: parameter_selector, },
+        #[cfg(feature = "cap-search")]
+        { semantic_id: "types.McsResult", item: type, owner: type_, rust: crate::McsResult,
+          python: "McsResult", javascript: "McsResult", feature: "cap-search", status: experimental, role: result, },
+        #[cfg(feature = "cap-search")]
+        { semantic_id: "types.McsError", item: type, owner: type_, rust: crate::McsError,
+          python: "McsError", javascript: "McsError", feature: "cap-search", status: experimental, role: error, },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.maximum_common_substructure", item: callable, owner: module,
+            rust: crate::maximum_common_substructure, python: "maximum_common_substructure", javascript: "maximumCommonSubstructure",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: inputs, type: &[&crate::Molecule], default: required }], output: crate::McsResult, error: crate::McsError,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a [&'a crate::Molecule]) -> Result<crate::McsResult, crate::McsError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.maximum_common_substructure_with_params", item: callable, owner: module,
+            rust: crate::maximum_common_substructure_with_params, python: "maximum_common_substructure_with_params", javascript: "maximumCommonSubstructureWithParams",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: inputs, type: &[&crate::Molecule], default: required }, { name: params, type: &crate::McsParameters, default: required }], output: crate::McsResult, error: crate::McsError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a [&'a crate::Molecule], &'b crate::McsParameters) -> Result<crate::McsResult, crate::McsError>,
         },
         #[cfg(feature = "cap-search")]
         {
@@ -11062,6 +11220,7 @@ binding_contract! {
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_fixed_atoms_",item:callable,owner:type_,rust:crate::MolecularForceField::set_fixed_atoms_,python:"set_fixed_atoms_",javascript:"setFixedAtoms",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_ids,type:&[crate::AtomId],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[crate::AtomId])->Result<(),crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.energy",item:callable,owner:type_,rust:crate::MolecularForceField::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:f64,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<f64,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.gradient",item:callable,owner:type_,rust:crate::MolecularForceField::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<Vec<[f64;3]>,crate::ForceFieldError>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.gradient_unconstrained",item:callable,owner:type_,rust:crate::MolecularForceField::gradient_unconstrained,python:"gradient_unconstrained",javascript:"gradientUnconstrained",feature:"cap-forcefields",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<Vec<[f64;3]>,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.energy_gradient",item:callable,owner:type_,rust:crate::MolecularForceField::energy_gradient,python:"energy_gradient",javascript:"energyGradient",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::ForceFieldEnergyGradient,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<crate::ForceFieldEnergyGradient,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_,python:"minimize_",javascript:"minimize",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>,python_keywords:{parameters:"ForceFieldMinimizeParams.new",target:"MolecularForceField.minimize_with_params_"}},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_with_params_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_with_params_,python:"minimize_with_params_",javascript:"minimizeWithParams",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ForceFieldMinimizeParams,default:required}],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &crate::ForceFieldMinimizeParams)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>},

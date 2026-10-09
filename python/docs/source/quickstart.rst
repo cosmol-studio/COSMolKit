@@ -275,6 +275,20 @@ Pass the query to ``mol.substruct_matches(query)`` or
 ``ck.parse_smarts_with_params(text, params)`` or
 ``ck.QueryGraph.from_smarts_with_params(text, params)``.
 
+Matching accepts a parameter object or keyword options, including Python
+callbacks::
+
+   params = ck.SubstructMatchParams()
+   params.extra_final_check = lambda target, atom_ids: atom_ids[0] == 0
+   matches = mol.substruct_matches(query, params)
+   # Equivalent callback spelling:
+   matches = mol.substruct_matches(query, final_match=params.extra_final_check)
+
+``atom_match(query_atom, target_atom)`` receives a read-only ``QueryAtom`` and
+``Atom``; ``bond_match(query_bond, target_bond)`` receives two read-only
+``Bond`` values. Callback exceptions propagate unchanged. Unknown configuration
+attributes raise ``AttributeError`` instead of being silently ignored.
+
 Batch Processing
 ----------------
 

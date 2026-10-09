@@ -758,11 +758,26 @@ fn prepare_mol_for_writing<'a>(
         }
     }
     let selected = select_coordinates(&mol, selection)?;
-    let conformer = writer_conformer(&mol, &selected);
-    let (wedge_bonds, ring_info) = cosmolkit_core::pick_bonds_to_wedge_with_existing_ring_info(
-        &mol.topology,
+    let conformer = writer_conformer(&mol.coordinates, &selected);
+    let mut ring_info = mol.rings.cloned().unwrap_or_else(|| {
+        RingInfo::new(
+            cosmolkit_core::RingFindType::Fast,
+            mol.num_atoms(),
+            mol.num_bonds(),
+        )
+    });
+    // RDKit✔️✔️:   RWMol trwmol(mol);
+    // RDKit✔️✔️:   auto wedgeBonds = Chirality::pickBondsToWedge(tmol, nullptr, conf);
+    // The writer's temporary topology is the native mutable carrier. In
+    // particular AddHs preserves native sparse ring memberships: use the
+    // source entry, not the separate checked-input API's full-extent guard.
+    // COW materializes only this writer-local topology; existing owned
+    // kekulization output is reused and the caller is never modified.
+    let wedge_bonds = cosmolkit_core::pick_bonds_to_wedge_source(
+        mol.topology.to_mut(),
         conformer,
-        mol.rings.cloned(),
+        &mut ring_info,
+        None,
     )?;
     let valence = molblock_valence_assignment(&mol)?.into_owned();
     mol.valence = Some(Cow::Owned(valence));
@@ -776,7 +791,7 @@ fn prepare_mol_for_writing<'a>(
 }
 
 fn writer_conformer<'a>(
-    molecule: &'a MolWriteContext<'_>,
+    coordinates: &'a CoordinateBlock,
     selected: &SelectedCoordinates,
 ) -> Option<cosmolkit_core::AtropisomerConformer<'a>> {
     // The canonical CORE wedge APIs borrow the selected storage carrier itself,
@@ -785,14 +800,12 @@ fn writer_conformer<'a>(
     // branches on the stored bit while tetrahedral wedging uses source XY.
     // Existing dimension-local ID lookup is O(C), with no row allocation.
     match selected.selection {
-        Some(MolCoordinateSelection::TwoD { id }) => molecule
-            .coordinates
+        Some(MolCoordinateSelection::TwoD { id }) => coordinates
             .conformers_2d
             .iter()
             .find(|c| c.id() == id)
             .map(cosmolkit_core::AtropisomerConformer::TwoD),
-        Some(MolCoordinateSelection::ThreeD { id }) => molecule
-            .coordinates
+        Some(MolCoordinateSelection::ThreeD { id }) => coordinates
             .conformers_3d
             .iter()
             .find(|c| c.id() == id)
@@ -942,7 +955,7 @@ fn render_v3000(
             &prepared.ring_info,
             true,
         )?,
-        conformer: writer_conformer(molecule, selected),
+        conformer: writer_conformer(&molecule.coordinates, selected),
     };
     validate_v3000_writer_subset(molecule, params.include_stereo, stereo_context)?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
@@ -1283,7 +1296,7 @@ fn render_v2000(
             &prepared.ring_info,
             true,
         )?,
-        conformer: writer_conformer(molecule, selected),
+        conformer: writer_conformer(&molecule.coordinates, selected),
     };
     validate_v2000_writer_subset(molecule, params.include_stereo, stereo_context)?;
     validate_v2000_coordinate_range(selected.coords.as_deref())?;
@@ -4363,6 +4376,66 @@ pub fn write_sdf_2d_with_params(
 mod original_private_writer_conditions {
     use super::*;
     use cosmolkit_model::{AtomSpec, Element};
+    #[test]
+    fn native_sparse_ring_cache_after_leaf_hydrogens_writes_without_mutating_input() {
+        use cosmolkit_model::{BondSpec, Conformer2D};
+        let topology = TopologyBlock::try_from_parts(
+            [Element::C, Element::H, Element::H, Element::H]
+                .into_iter()
+                .enumerate()
+                .map(|(i, element)| Atom::from_spec(AtomId::new(i), AtomSpec::new(element)))
+                .collect(),
+            (1..4)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i - 1),
+                        BondSpec::new(AtomId::new(0), AtomId::new(i), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let original = topology.clone();
+        let mut coordinates = CoordinateBlock::default();
+        coordinates
+            .record_source_conformer_append(CoordinateDimension::TwoD)
+            .unwrap();
+        coordinates.conformers_2d.push(Conformer2D::new(
+            0,
+            vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]],
+        ));
+        let properties = MoleculeProperties::default();
+        // Native AddHs retains memberships of the original heavy-atom graph.
+        let sparse = RingInfo::new(cosmolkit_core::RingFindType::SymmSssr, 1, 0);
+        let input = MolWriteInput {
+            topology: &topology,
+            coordinates: &coordinates,
+            properties: &properties,
+            rings: Some(&sparse),
+            allow_coordinate_generation: false,
+        };
+        for format in [SdfFormat::V2000, SdfFormat::V3000] {
+            let params = MolBlockWriteParams {
+                format,
+                ..Default::default()
+            };
+            let sparse_output = write_mol_block_with_params(input, &params).unwrap();
+            let full_output = write_mol_block_with_params(
+                MolWriteInput {
+                    rings: None,
+                    ..input
+                },
+                &params,
+            )
+            .unwrap();
+            assert_eq!(sparse_output, full_output);
+            assert_eq!(topology, original);
+            assert_eq!(sparse.atom_row_count(), 1);
+            assert_eq!(sparse.bond_row_count(), 0);
+        }
+    }
     #[test]
     fn non_default_valence_skips_periodic_table_lookup_when_implicit_hs_are_allowed() {
         let atom_id = AtomId::new(0);

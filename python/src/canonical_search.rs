@@ -1,10 +1,60 @@
 //! Canonical detached query and search projections; chemistry lives behind cosmolkit.
 use ::cosmolkit as ck;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+/// A query atom is not an Element-only Atom: wildcard/OR queries can have Z=0.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct QueryAtom {
+    inner: ck::QueryAtom,
+    degree: usize,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl QueryAtom {
+    fn id(&self) -> usize {
+        self.inner.id().index()
+    }
+    fn atomic_number(&self) -> u8 {
+        self.inner.atomic_number()
+    }
+    fn formal_charge(&self) -> i8 {
+        self.inner.formal_charge()
+    }
+    fn explicit_hydrogens(&self) -> u8 {
+        self.inner.explicit_hydrogens()
+    }
+    fn isotope(&self) -> Option<u16> {
+        self.inner.isotope()
+    }
+    fn atom_map(&self) -> Option<u32> {
+        self.inner.atom_map()
+    }
+    fn is_aromatic(&self) -> bool {
+        self.inner.is_aromatic()
+    }
+    fn no_implicit(&self) -> bool {
+        self.inner.no_implicit()
+    }
+    fn radical_electrons(&self) -> u8 {
+        self.inner.radical_electrons()
+    }
+    fn degree(&self) -> usize {
+        self.degree
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "QueryAtom(id={}, atomic_number={})",
+            self.id(),
+            self.atomic_number()
+        )
+    }
+}
 
 pyo3::create_exception!(cosmolkit, SmartsParseError, PyValueError);
 pyo3::create_exception!(cosmolkit, SmartsWriteError, PyValueError);
@@ -342,7 +392,7 @@ impl MatchResult {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmartsParseParams {
     pub(crate) inner: ck::SmartsParseParams,
 }
@@ -421,7 +471,7 @@ impl SmartsParseParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmartsWriteParams {
     pub(crate) inner: ck::SmartsWriteParams,
 }
@@ -468,17 +518,188 @@ impl SmartsWriteParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SubstructMatchParams {
     pub(crate) inner: ck::SubstructMatchParams,
+    final_match: Option<Py<PyAny>>,
+    atom_match: Option<Py<PyAny>>,
+    bond_match: Option<Py<PyAny>>,
+}
+
+// Errors are per invocation, not attached to reusable params or thread-local
+// state. Never hold this mutex while executing arbitrary/reentrant Python.
+struct CallbackErrors(Mutex<Option<PyErr>>);
+impl CallbackErrors {
+    fn call(&self, run: impl FnOnce(Python<'_>) -> PyResult<bool>) -> bool {
+        let mut slot = match self.0.lock() {
+            Ok(slot) => slot,
+            Err(poisoned) => {
+                let mut slot = poisoned.into_inner();
+                if slot.is_none() {
+                    *slot = Some(PyRuntimeError::new_err(
+                        "match callback error state poisoned",
+                    ));
+                }
+                return false;
+            }
+        };
+        if slot.is_some() {
+            return false;
+        }
+        drop(slot);
+        match Python::attach(run) {
+            Ok(value) => value,
+            Err(error) => {
+                slot = self
+                    .0
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if slot.is_none() {
+                    *slot = Some(error);
+                }
+                false
+            }
+        }
+    }
+}
+
+impl SubstructMatchParams {
+    pub(crate) fn from_inner(inner: ck::SubstructMatchParams) -> Self {
+        Self {
+            inner,
+            final_match: None,
+            atom_match: None,
+            bond_match: None,
+        }
+    }
+
+    pub(crate) fn has_python_callbacks(&self) -> bool {
+        self.final_match.is_some() || self.atom_match.is_some() || self.bond_match.is_some()
+    }
+
+    pub(crate) fn with_callbacks<T>(
+        &self,
+        py: Python<'_>,
+        molecule: &ck::Molecule,
+        run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, ck::SubstructMatchError>,
+    ) -> PyResult<T> {
+        let mut params = self.inner.clone();
+        let errors = Arc::new(CallbackErrors(Mutex::new(None)));
+        if let Some(callback) = &self.final_match {
+            // RDKit✔️❌: bool operator()(const ROMol &m, std::span<const unsigned int> match) {
+            // RDKit✔️❌:   // grab the GIL
+            // RDKit✔️❌:   PyGILStateHolder h;
+            // RDKit✔️❌:   // boost::python doesn't handle std::span, so we need to convert the span to
+            // RDKit✔️❌:   // a vector before calling into python:
+            // RDKit✔️❌:   std::vector<unsigned int> matchVec(match.begin(), match.end());
+            // RDKit✔️❌:   return python::extract<bool>(dp_obj(boost::ref(m), boost::ref(matchVec)));
+            // RDKit✔️❌: }
+            // Same O(query atoms) mapping copy; unlike Boost's borrowed wrapper,
+            // each callback owns a cheap COW molecule snapshot and error slot.
+            let callback = callback.clone_ref(py);
+            let molecule = molecule.clone();
+            let errors = Arc::clone(&errors);
+            params.extra_final_check = Some(Arc::new(move |_, ids| {
+                errors.call(|py| {
+                    let target = Py::new(
+                        py,
+                        crate::drawing_binding::Molecule::from_inner(molecule.clone()),
+                    )?;
+                    callback
+                        .call1(py, (target, ids.to_vec()))?
+                        .extract::<bool>(py)
+                })
+            }));
+        }
+        if let Some(callback) = &self.atom_match {
+            // RDKit✔️❌: bool operator()(const T &a1, const T &a2) {
+            // RDKit✔️❌:   // grab the GIL
+            // RDKit✔️❌:   PyGILStateHolder h;
+            // RDKit✔️❌:   return python::extract<bool>(dp_obj(boost::ref(a1), boost::ref(a2)));
+            // RDKit✔️❌: }
+            // Binding snapshots preserve wildcard query identities, but owning
+            // their property values costs more than borrowed Boost wrappers.
+            let callback = callback.clone_ref(py);
+            let errors = Arc::clone(&errors);
+            let molecule = molecule.clone();
+            let metadata = molecule.atom_metadata(false);
+            params.extra_atom_check = Some(Arc::new(move |graph, query, _target, atom| {
+                errors.call(|py| {
+                    let query = Py::new(
+                        py,
+                        QueryAtom {
+                            inner: query.clone(),
+                            degree: graph
+                                .adjacency()
+                                .get(query.id().index())
+                                .map_or(0, Vec::len),
+                        },
+                    )?;
+                    let target = Py::new(
+                        py,
+                        crate::canonical_atom_bond::Atom {
+                            inner: atom.clone(),
+                            degree: molecule
+                                .topology()
+                                .adjacency
+                                .neighbors_of(atom.id().index())
+                                .len(),
+                            metadata: metadata
+                                .as_ref()
+                                .map(|rows| rows[atom.id().index()].clone())
+                                .map_err(Clone::clone),
+                        },
+                    )?;
+                    callback.call1(py, (query, target))?.extract::<bool>(py)
+                })
+            }));
+        }
+        if let Some(callback) = &self.bond_match {
+            // RDKit✔️❌: bool operator()(const T &a1, const T &a2) {
+            // RDKit✔️❌:   // grab the GIL
+            // RDKit✔️❌:   PyGILStateHolder h;
+            // RDKit✔️❌:   return python::extract<bool>(dp_obj(boost::ref(a1), boost::ref(a2)));
+            // RDKit✔️❌: }
+            // Bond specialization: detached owning values, not live storage.
+            let callback = callback.clone_ref(py);
+            let errors = Arc::clone(&errors);
+            params.extra_bond_check = Some(Arc::new(move |query, target| {
+                errors.call(|py| {
+                    let query = Py::new(
+                        py,
+                        crate::canonical_atom_bond::Bond {
+                            inner: query.clone(),
+                        },
+                    )?;
+                    let target = Py::new(
+                        py,
+                        crate::canonical_atom_bond::Bond {
+                            inner: target.clone(),
+                        },
+                    )?;
+                    callback.call1(py, (query, target))?.extract::<bool>(py)
+                })
+            }));
+        }
+        let result = run(&params);
+        let mut stored = errors
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(error) = stored.take() {
+            return Err(error);
+        }
+        result.map_err(|error| substruct_pyerr(py, error))
+    }
 }
 #[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstructMatchParams {
     #[new]
-    #[pyo3(signature = (*, max_matches=1000, uniquify=true, use_chirality=false, use_enhanced_stereo=false, specified_stereo_query_matches_unspecified=false, use_query_query_matches=false, recursion_possible=true, max_recursive_matches=1000, num_threads=1, aromatic_matches_conjugated=false, aromatic_matches_single_or_double=false, atom_properties=None, bond_properties=None, extra_atom_check_overrides_default_check=false, extra_bond_check_overrides_default_check=false, use_generic_matchers=false))]
+    #[pyo3(signature = (*, max_matches=1000, uniquify=true, use_chirality=false, use_enhanced_stereo=false, specified_stereo_query_matches_unspecified=false, use_query_query_matches=false, recursion_possible=true, max_recursive_matches=1000, num_threads=1, aromatic_matches_conjugated=false, aromatic_matches_single_or_double=false, atom_properties=None, bond_properties=None, extra_atom_check_overrides_default_check=false, extra_bond_check_overrides_default_check=false, use_generic_matchers=false, final_match=None, atom_match=None, bond_match=None))]
     fn new(
+        py: Python<'_>,
         max_matches: usize,
         uniquify: bool,
         use_chirality: bool,
@@ -495,8 +716,28 @@ impl SubstructMatchParams {
         extra_atom_check_overrides_default_check: bool,
         extra_bond_check_overrides_default_check: bool,
         use_generic_matchers: bool,
-    ) -> Self {
-        Self {
+        #[gen_stub(override_type(type_repr="typing.Optional[typing.Callable[[Molecule, typing.Sequence[builtins.int]], builtins.bool]]", imports=("typing", "builtins")))]
+        final_match: Option<Py<PyAny>>,
+        #[gen_stub(override_type(type_repr="typing.Optional[typing.Callable[[QueryAtom, Atom], builtins.bool]]", imports=("typing", "builtins")))]
+        atom_match: Option<Py<PyAny>>,
+        #[gen_stub(override_type(type_repr="typing.Optional[typing.Callable[[Bond, Bond], builtins.bool]]", imports=("typing", "builtins")))]
+        bond_match: Option<Py<PyAny>>,
+    ) -> PyResult<Self> {
+        for (name, callback) in [
+            ("final_match", &final_match),
+            ("atom_match", &atom_match),
+            ("bond_match", &bond_match),
+        ] {
+            if callback
+                .as_ref()
+                .is_some_and(|value| !value.bind(py).is_callable())
+            {
+                return Err(PyTypeError::new_err(format!(
+                    "{name} must be callable or None"
+                )));
+            }
+        }
+        Ok(Self {
             inner: ck::SubstructMatchParams {
                 max_matches,
                 uniquify,
@@ -516,7 +757,37 @@ impl SubstructMatchParams {
                 use_generic_matchers,
                 ..Default::default()
             },
-        }
+            final_match,
+            atom_match,
+            bond_match,
+        })
+    }
+    #[getter]
+    #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[Molecule, typing.Sequence[builtins.int]], builtins.bool]]", imports=("typing", "builtins")))]
+    fn final_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.final_match.as_ref().map(|value| value.clone_ref(py))
+    }
+    #[getter]
+    #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[QueryAtom, Atom], builtins.bool]]", imports=("typing", "builtins")))]
+    fn atom_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.atom_match.as_ref().map(|value| value.clone_ref(py))
+    }
+    #[getter]
+    #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[Bond, Bond], builtins.bool]]", imports=("typing", "builtins")))]
+    fn bond_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.bond_match.as_ref().map(|value| value.clone_ref(py))
+    }
+    #[gen_stub(skip)]
+    fn __traverse__(&self, visit: pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        visit.call(&self.final_match)?;
+        visit.call(&self.atom_match)?;
+        visit.call(&self.bond_match)
+    }
+    #[gen_stub(skip)]
+    fn __clear__(&mut self) {
+        self.final_match = None;
+        self.atom_match = None;
+        self.bond_match = None;
     }
     #[getter]
     fn max_matches(&self) -> usize {
@@ -644,6 +915,7 @@ fn write_cx_smarts(
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<QueryAtom>()?;
     module.add_class::<QueryGraph>()?;
     module.add_class::<CompiledQuery>()?;
     module.add_class::<MatchResult>()?;

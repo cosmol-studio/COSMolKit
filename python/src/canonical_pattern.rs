@@ -55,7 +55,7 @@ pub(crate) fn pattern_pyerr(
     err
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct PatternFingerprintParams {
     pub(crate) inner: ck::PatternFingerprintParams,
 }

@@ -40,6 +40,8 @@ fn main() {
             assert!(
                 [
                     "all",
+                    "mcs_upstream",
+                    "mcs_jnk1",
                     "forcefield_optimizers",
                     "mmff_builtin",
                     "bio_mmcif_switches",
@@ -52,6 +54,8 @@ fn main() {
                 "unknown special regression: {name}"
             );
             for key in [
+                "mcs_upstream",
+                "mcs_jnk1",
                 "forcefield_optimizers",
                 "mmff_builtin",
                 "bio_mmcif_switches",
@@ -90,6 +94,26 @@ fn main() {
     }
     fs::write(
         PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("structure_cases.rs"),
+        output,
+    )
+    .unwrap();
+    let mut output = String::new();
+    for key in ["mcs_upstream", "mcs_jnk1"] {
+        let path = format!("testdata/special/{key}.json");
+        println!("cargo:rerun-if-changed={path}");
+        let fixture: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        let mut names = std::collections::BTreeSet::new();
+        for case in fixture["cases"].as_array().unwrap() {
+            let id = case["case_id"].as_str().unwrap();
+            assert!(id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+            assert!(names.insert(id), "duplicate MCS case: {id}");
+            output.push_str(&format!(
+                "#[cfg(parity_special_{key})]\n#[test]\nfn {key}_{id}() {{ compare_case({key:?}, {id:?}); }}\n"
+            ));
+        }
+    }
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("mcs_cases.rs"),
         output,
     )
     .unwrap();

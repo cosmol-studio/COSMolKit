@@ -238,7 +238,7 @@ impl StereoisomerRandomSource {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(name = "StereoisomerOptions", skip_from_py_object)]
+#[pyclass(name = "StereoisomerOptions", skip_from_py_object, dict, weakref)]
 pub(crate) struct StereoisomerOptions {
     inner: ck::StereoisomerOptions,
     original_random_source: Option<Py<PyAny>>,
@@ -289,6 +289,7 @@ impl StereoisomerOptions {
         Ok((options, Some(errors)))
     }
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl StereoisomerOptions {

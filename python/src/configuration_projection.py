@@ -12,6 +12,185 @@ import functools
 import inspect
 import re
 import reprlib
+import weakref
+
+
+def _detach(value):
+    """A replaced field's old view becomes an ordinary independent value."""
+    if isinstance(value, (_ConfigurationList, _ConfigurationDict)):
+        value._read = value._write = None
+        for child in value.values() if isinstance(value, dict) else value:
+            _detach(child)
+    elif hasattr(type(value), "_configuration_descriptors"):
+        value.__dict__.pop("_configuration_link", None)
+
+
+def _refresh(value, fresh):
+    if type(value) is type(fresh) and hasattr(type(value), "_configuration_descriptors"):
+        value._configuration_replace(fresh)
+        _refresh_fields(value)
+        return value
+    if isinstance(value, _ConfigurationList) and isinstance(fresh, list):
+        value._refresh(fresh)
+        return value
+    if isinstance(value, _ConfigurationDict) and isinstance(fresh, dict):
+        value._refresh(fresh)
+        return value
+    _detach(value)
+    return fresh
+
+
+def _refresh_fields(owner):
+    cached = owner.__dict__.get("_configuration_views", {})
+    for name, view in list(cached.items()):
+        descriptor = type(owner)._configuration_descriptors[name]
+        fresh = descriptor.__get__(owner, type(owner))
+        updated = _refresh(view, fresh)
+        if updated is not view:
+            del cached[name]
+
+
+def _linked(value, read, write):
+    if hasattr(type(value), "_configuration_descriptors"):
+        value.__dict__["_configuration_link"] = (read, write)
+    elif isinstance(value, list):
+        value = _ConfigurationList(value, read, write)
+    elif isinstance(value, dict):
+        value = _ConfigurationDict(value, read, write)
+    return value
+
+
+class _ConfigurationList(list):
+    """A Python list whose edits commit through the native field setter."""
+    def __init__(self, values, read, write):
+        self._read, self._write = read, write
+        list.__init__(self)
+        self._refresh(values)
+
+    def _refresh(self, values):
+        old = list(self)
+        children = []
+        parent = weakref.ref(self)
+        for index, value in enumerate(values):
+            def read(index=index):
+                view = parent()
+                return view._read()[index] if view._read else list.__getitem__(view, index)
+
+            def write(value, index=index):
+                view = parent()
+                view[index] = value
+
+            if index < len(old):
+                value = _refresh(old[index], value)
+            children.append(_linked(value, read, write))
+        for value in old[len(values):]:
+            _detach(value)
+        list.__setitem__(self, slice(None), children)
+
+    def _mutate(self, method, *args, **kwargs):
+        # Work on a snapshot first: conversion/validation failures change neither
+        # the parent Rust record nor this list (including extend/slice updates).
+        candidate = self._read() if self._read else list(self)
+        result = getattr(list, method)(candidate, *args, **kwargs)
+        if self._write:
+            self._write(candidate)
+        else:
+            self._refresh(candidate)
+        return self if method in ("__iadd__", "__imul__") else result
+
+
+class _ConfigurationDict(dict):
+    def __init__(self, values, read, write):
+        self._read, self._write = read, write
+        dict.__init__(self)
+        self._refresh(values)
+
+    def _refresh(self, values):
+        parent = weakref.ref(self)
+        children = {}
+        for key, value in values.items():
+            def read(key=key):
+                view = parent()
+                return view._read()[key] if view._read else dict.__getitem__(view, key)
+
+            def write(value, key=key):
+                view = parent()
+                view[key] = value
+
+            if key in self:
+                value = _refresh(dict.__getitem__(self, key), value)
+            children[key] = _linked(value, read, write)
+        for key in self.keys() - values.keys():
+            _detach(dict.__getitem__(self, key))
+        dict.clear(self)
+        dict.update(self, children)
+
+    def _mutate(self, method, *args, **kwargs):
+        candidate = self._read() if self._read else dict(self)
+        result = getattr(dict, method)(candidate, *args, **kwargs)
+        if self._write:
+            self._write(candidate)
+        else:
+            self._refresh(candidate)
+        return self if method == "__ior__" else result
+
+
+def _container_mutator(method):
+    def mutate(self, *args, **kwargs):
+        return self._mutate(method, *args, **kwargs)
+    return mutate
+
+
+for _method in ("append", "extend", "insert", "pop", "remove", "clear", "reverse", "sort", "__setitem__", "__delitem__", "__iadd__", "__imul__"):
+    setattr(_ConfigurationList, _method, _container_mutator(_method))
+for _method in ("update", "setdefault", "pop", "popitem", "clear", "__setitem__", "__delitem__", "__ior__"):
+    setattr(_ConfigurationDict, _method, _container_mutator(_method))
+
+
+def _live_property(name, descriptor):
+    def get(owner):
+        value = descriptor.__get__(owner, type(owner))
+        if not isinstance(value, (list, dict)) and not hasattr(type(value), "_configuration_descriptors"):
+            return value
+        cached = owner.__dict__.setdefault("_configuration_views", {})
+        if name not in cached:
+            child = None
+
+            def released(_):
+                view = child() if child is not None else None
+                if view is not None:
+                    _detach(view)
+
+            parent = weakref.ref(owner, released)
+
+            def read():
+                current = parent()
+                if current is None:
+                    raise ReferenceError("configuration owner no longer exists")
+                return descriptor.__get__(current, type(current))
+
+            def write(value):
+                current = parent()
+                if current is None:
+                    raise ReferenceError("configuration owner no longer exists")
+                setattr(current, name, value)
+
+            cached[name] = _linked(value, read, write)
+            child = weakref.ref(cached[name])
+        return cached[name]
+
+    def set_value(owner, value):
+        link = owner.__dict__.get("_configuration_link")
+        if link:
+            read, write = link
+            candidate = read()
+            descriptor.__set__(candidate, value)
+            write(candidate)
+        else:
+            descriptor.__set__(owner, value)
+            _refresh_fields(owner)
+
+    return property(get, set_value, doc=descriptor.__doc__)
 
 
 def _compact(value):
@@ -45,10 +224,60 @@ def _owner(module, entry, names):
     return getattr(module, names.get(key, key))
 
 
-def _wrapper(original, configured, target, configurations, module):
+def _parameter_type(field, records):
+    annotation = field["type"].replace(" ", "")
+    if annotation.startswith("typing.Optional["):
+        annotation = annotation[len("typing.Optional["):-1]
+    return records.get(annotation)
+
+
+def _keyword_options(configurations, entries):
+    """Expose only unambiguous registered fields, including nested records."""
+    records = {row["python_name"]: row for row in entries if row.get("role") == "parameter"}
+
+    def walk(row, path=(), seen=()):
+        for field in row["python_fields"]:
+            yield path + (field["name"],), field
+            for alias in field.get("aliases", []):
+                yield path + (field["name"],), dict(field, name=alias)
+            nested = _parameter_type(field, records)
+            if nested is not None and nested["python_name"] not in seen:
+                yield from walk(nested, path + (field["name"],), seen + (row["python_name"],))
+
+    choices = [(owner["name"], path, field) for owner, row in configurations for path, field in walk(row)]
+    direct = {field["name"] for _, path, field in choices if len(path) == 1}
+    counts = {}
+    for _, path, field in choices:
+        counts[field["name"]] = counts.get(field["name"], 0) + 1
+    return {owner["name"]: {
+        field["name"]: (path, field) for name, path, field in choices if name == owner["name"]
+        and (len(path) == 1 or field["name"] not in direct and counts[field["name"]] == 1)
+    } for owner, _ in configurations}, records
+
+
+def _configuration_value(row, supplied, module, records):
+    paths = [path for path, _ in supplied]
+    if len(paths) != len(set(paths)):
+        raise TypeError("configuration field and its alias are mutually exclusive")
+    direct = {path[0]: value for path, value in supplied if len(path) == 1}
+    nested = {}
+    for path, value in supplied:
+        if len(path) > 1:
+            nested.setdefault(path[0], []).append((path[1:], value))
+    fields = {field["name"]: field for field in row["python_fields"]}
+    for name, values in nested.items():
+        if direct.get(name) is not None:
+            raise TypeError(f"{name} and its configuration keywords are mutually exclusive")
+        direct[name] = _configuration_value(_parameter_type(fields[name], records), values, module, records)
+    return getattr(module, row["python_name"])(**direct)
+
+
+def _wrapper(original, configured, target, configurations, module, entries):
     signature = inspect.signature(configured)
     classes = {field["name"]: getattr(module, row["python_name"]) for field, row in configurations}
-    fields = {field["name"]: {value["name"] for value in row["python_fields"]} for field, row in configurations}
+    options, records = _keyword_options(configurations, entries)
+    fields = {name: set(values) for name, values in options.items()}
+    rows = {field["name"]: row for field, row in configurations}
     all_fields = set().union(*fields.values())
     if sum(map(len, fields.values())) != len(all_fields):
         raise TypeError(f"{target['semantic_id']}: ambiguous configuration fields")
@@ -88,7 +317,7 @@ def _wrapper(original, configured, target, configurations, module):
                 if keywords:
                     raise TypeError(f"{name} and its configuration keywords are mutually exclusive")
             else:
-                value = cls(**keywords)
+                value = _configuration_value(rows[name], [(options[name][key][0], value) for key, value in keywords.items()], module, records)
             bound.arguments[name] = value
         for name in optional:
             bound.arguments.setdefault(name, None)
@@ -106,6 +335,34 @@ def _wrapper(original, configured, target, configurations, module):
 def install(module, document):
     entries = document["entries"]
     names = {row["semantic_id"].removeprefix("types."): row["python_name"] for row in entries if row["item"] == "type"}
+    # Preserve native classes and their extraction/validation. Only configuration
+    # getters become live views; molecule/result snapshots remain independent.
+    for row in entries:
+        if row.get("role") != "parameter":
+            continue
+        cls = getattr(module, row["python_name"])
+        if not hasattr(cls, "_configuration_replace"):
+            raise TypeError(f"{row['python_name']}: native configuration view support missing")
+        descriptors = {field["name"]: inspect.getattr_static(cls, field["name"]) for field in row["python_fields"]}
+        cls._configuration_descriptors = descriptors
+        allowed = set(descriptors)
+        for name, descriptor in descriptors.items():
+            setattr(cls, name, _live_property(name, descriptor))
+        for field in row["python_fields"]:
+            for alias in field.get("aliases", []):
+                allowed.add(alias)
+                def get(owner, name=field["name"]):
+                    return getattr(owner, name)
+                def set_value(owner, value, name=field["name"]):
+                    setattr(owner, name, value)
+                setattr(cls, alias, property(get, set_value))
+        # __dict__ remains an implementation detail for live views/weakrefs;
+        # arbitrary public attributes must never masquerade as native options.
+        def set_attribute(owner, name, value, allowed=frozenset(allowed)):
+            if name not in allowed:
+                raise AttributeError(f"{type(owner).__name__}: unknown configuration field {name!r}")
+            object.__setattr__(owner, name, value)
+        cls.__setattr__ = set_attribute
     for row in entries:
         if row.get("role") == "parameter" and (row["feature"] == "cap-batch" or "cap-batch" in row.get("required_capabilities", [])):
             fields = tuple(field["name"] for field in row["python_fields"])
@@ -114,7 +371,7 @@ def install(module, document):
         owner = _owner(module, base, names)
         original = getattr(owner, base["python_name"])
         configured = getattr(owner, target["python_name"])
-        call = _wrapper(original, configured, target, configurations, module)
+        call = _wrapper(original, configured, target, configurations, module, entries)
         if owner is not module and "self" not in inspect.signature(original).parameters:
             call = staticmethod(call)
         setattr(owner, base["python_name"], call)
@@ -133,9 +390,21 @@ def declarations(module, stub, document):
     stub = enum_input_declarations(module, stub, document)
     tree = ast.parse(stub)
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    alias_declarations = []
+    for row in document["entries"]:
+        if row.get("role") != "parameter":
+            continue
+        cls = classes[row["python_name"]]
+        for field in row["python_fields"]:
+            for alias in field.get("aliases", []):
+                descriptor = inspect.getattr_static(getattr(module, row["python_name"]), alias)
+                if not isinstance(descriptor, property) or descriptor.fset is None:
+                    raise TypeError(f"{row['python_name']}.{alias}: real alias property missing")
+                alias_declarations.append((cls.end_lineno, f"    {alias}: {field['type']}\n"))
     names = {row["semantic_id"].removeprefix("types."): row["python_name"] for row in document["entries"] if row["item"] == "type"}
     replacements = []
     for base, target, configurations in pairs(document["entries"]):
+        options, _ = _keyword_options(configurations, document["entries"])
         owner = _owner(module, base, names)
         function = getattr(owner, base["python_name"])
         expected = (target["semantic_id"], tuple((field["name"], row["semantic_id"]) for field, row in configurations))
@@ -152,7 +421,7 @@ def declarations(module, stub, document):
         keywords = copy.deepcopy(targets[0])
         keywords.name = source.name
         config_names = {field["name"] for field, row in configurations}
-        config_fields = {field["name"] for _, row in configurations for field in row["python_fields"]}
+        config_fields = {key for values in options.values() for key in values}
         default_configs = {
             field["name"]: row["python_name"]
             for field, row in configurations
@@ -166,10 +435,14 @@ def declarations(module, stub, document):
             source.args.defaults,
         ))
         source_defaults.update({arg.arg: default for arg, default in zip(source.args.kwonlyargs, source.args.kw_defaults) if default is not None})
+        optional_inputs = {field["name"] for field in target["parameters"] if _compact(field["type"]).startswith("Option<")}
         for form in (explicit, keywords):
             args = form.args.posonlyargs + form.args.args
             defaults = [None] * (len(args) - len(form.args.defaults)) + form.args.defaults
             defaults = [source_defaults.get(arg.arg, default) if arg.arg not in config_names | config_fields else default for arg, default in zip(args, defaults)]
+            # The runtime wrapper supplies None for omitted optional inputs,
+            # including Morgan's additional_output; the overload must agree.
+            defaults = [ast.Constant(value=None) if default is None and arg.arg in optional_inputs else default for arg, default in zip(args, defaults)]
             if form is explicit:
                 # The installed wrapper constructs omitted defaultable records,
                 # including when only the execution params object is supplied.
@@ -211,8 +484,8 @@ def declarations(module, stub, document):
         # fragment atoms), but not conflicting convenience configuration defaults.
         remove_arguments(default, config_names | {arg.arg for arg in default.args.kwonlyargs if arg.arg in config_fields})
         remove_arguments(keywords, config_names)
-        for _, row in configurations:
-            for field in row["python_fields"]:
+        for values in options.values():
+            for _, field in values.values():
                 keywords.args.kwonlyargs.append(ast.arg(arg=field["name"], annotation=ast.parse(field["type"], mode="eval").body))
                 keywords.args.kw_defaults.append(None if field["default"] is None else ast.parse(field["default"], mode="eval").body)
         forms = [default, explicit, keywords]
@@ -232,6 +505,7 @@ def declarations(module, stub, document):
         end = max(node.end_lineno for node in originals)
         replacements.append((start, end, text))
     lines = stub.splitlines(keepends=True)
+    replacements.extend((line, line, text) for line, text in alias_declarations)
     for start, end, text in sorted(replacements, reverse=True):
         lines[start:end] = [text]
     return "".join(lines)

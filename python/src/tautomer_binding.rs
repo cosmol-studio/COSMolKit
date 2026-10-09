@@ -135,7 +135,7 @@ impl TautomerScoreTerm {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct TautomerScoreParams {
     pub(crate) inner: ck::TautomerScoreParams,
@@ -494,7 +494,7 @@ impl ck::TautomerScorer for PyScorer {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 pub(crate) struct TautomerParams {
     pub(crate) inner: ck::TautomerParams,
     callback: Option<Py<PyAny>>,
@@ -542,6 +542,7 @@ fn callable(py: Python<'_>, value: Option<Py<PyAny>>) -> PyResult<Option<Py<PyAn
     }
     Ok(value)
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerParams {

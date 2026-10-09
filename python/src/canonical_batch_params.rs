@@ -6,7 +6,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::sync::{Arc, Mutex};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", eq)]
+#[pyclass(module = "cosmolkit", eq, dict, weakref)]
 pub(crate) struct BatchParams {
     pub(crate) inner: ck::BatchParams,
 }
@@ -20,7 +20,7 @@ impl PartialEq for BatchParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BatchExportParams {
     pub(crate) inner: ck::BatchExportParams,
 }
@@ -129,7 +129,7 @@ impl BatchParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 #[derive(Default)]
 pub(crate) struct BatchQueryParams {
     n_jobs: Option<usize>,
@@ -224,7 +224,7 @@ impl BatchQueryParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BatchImageParams {
     pub(crate) inner: ck::BatchImageParams,
 }

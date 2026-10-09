@@ -127,7 +127,7 @@ impl ReactionCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionParseParams {
     pub(crate) inner: ck::ReactionParseParams,
 }
@@ -176,7 +176,7 @@ impl ReactionParseParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionValidationParams {
     pub(crate) inner: ck::ReactionValidationParams,
 }
@@ -197,7 +197,7 @@ impl ReactionValidationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionSingleRunParams {
     pub(crate) inner: ck::ReactionSingleRunParams,
 }
@@ -222,7 +222,7 @@ impl ReactionSingleRunParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionRunParams {
     pub(crate) inner: ck::ReactionRunParams,
 }
@@ -267,7 +267,7 @@ impl ReactionRunParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionApplyParams {
     pub(crate) inner: ck::ReactionApplyParams,
 }
@@ -288,7 +288,7 @@ impl ReactionApplyParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionTemplateRemovalParams {
     pub(crate) inner: ck::ReactionTemplateRemovalParams,
 }
@@ -316,7 +316,7 @@ impl ReactionTemplateRemovalParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionWriteParams {
     pub(crate) inner: ck::ReactionWriteParams,
 }
@@ -524,11 +524,14 @@ impl Reaction {
         }
     }
     fn match_params(&self) -> SubstructMatchParams {
-        SubstructMatchParams {
-            inner: self.inner.match_params().clone(),
-        }
+        SubstructMatchParams::from_inner(self.inner.match_params().clone())
     }
     fn with_match_params(&self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<Self> {
+        if params.has_python_callbacks() {
+            return Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                "Python match callbacks are supported by Molecule substructure matching; persistent Reaction callbacks are not yet projected",
+            ));
+        }
         self.inner
             .with_match_params(&params.inner)
             .map(|inner| Self { inner })

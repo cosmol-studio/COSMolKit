@@ -32,6 +32,7 @@ const PERSISTENT_FORCEFIELD_IDS: &[&str] = &[
     "MolecularForceField.set_fixed_atoms_",
     "MolecularForceField.energy",
     "MolecularForceField.gradient",
+    "MolecularForceField.gradient_unconstrained",
     "MolecularForceField.energy_gradient",
     "MolecularForceField.minimize_",
     "MolecularForceField.minimize_with_params_",
@@ -988,11 +989,30 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.SubstructMatchParams",
                 "types.SubstructMatchError",
                 "types.MatchResult",
+                "types.QueryAtom",
+                "QueryAtom.id",
+                "QueryAtom.atomic_number",
+                "QueryAtom.formal_charge",
+                "QueryAtom.explicit_hydrogens",
+                "QueryAtom.isotope",
+                "QueryAtom.atom_map",
+                "QueryAtom.is_aromatic",
+                "QueryAtom.no_implicit",
+                "QueryAtom.radical_electrons",
                 "types.CompiledQuery",
                 "types.QueryCompileError",
                 "types.MatchError",
                 "types.SmartsWriteParams",
                 "types.SmartsWriteError",
+                "types.McsParameters",
+                "types.McsAtomCompareParameters",
+                "types.McsBondCompareParameters",
+                "types.McsAtomComparator",
+                "types.McsBondComparator",
+                "types.McsResult",
+                "types.McsError",
+                "search.maximum_common_substructure",
+                "search.maximum_common_substructure_with_params",
                 "search.parse_smarts",
                 "search.parse_smarts_with_params",
                 "QueryGraph.from_smarts",
@@ -2992,7 +3012,13 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "Molecule.with_atom_property"
                 | "Molecule.set_atom_property_"
         );
-        let expected = if native_coordinates || native_batch || native_atom_properties {
+        let native_unconstrained_gradient =
+            contract.semantic_id == "MolecularForceField.gradient_unconstrained";
+        let expected = if native_coordinates
+            || native_batch
+            || native_atom_properties
+            || native_unconstrained_gradient
+        {
             FunctionStatus::Native
         } else if fuzzy {
             FunctionStatus::Parity { reference: "RDKit" }

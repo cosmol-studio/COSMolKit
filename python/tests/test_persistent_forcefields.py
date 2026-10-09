@@ -88,6 +88,36 @@ def test_invalid_updates_preserve_positions_energy_and_pins(kind, operation, arg
 
 
 @pytest.mark.parametrize("kind", ["mmff", "uff"])
+def test_unconstrained_gradient_is_exact_independent_and_keeps_fixed_atoms(kind):
+    mol = molecule()
+    handle = getattr(mol, f"{kind}_force_field")()
+    peer = getattr(mol, f"{kind}_force_field")()
+    handle.set_fixed_atoms_([0])
+    for x in (1.9, 2.3):
+        handle.set_position_(1, [x, 0.2, 0.0])
+        peer.set_position_(1, [x, 0.2, 0.0])
+        before = handle.positions()
+        actual = handle.gradient_unconstrained()
+        expected = peer.gradient()
+        assert actual.dtype == np.float64
+        assert actual.shape == (4, 3)
+        np.testing.assert_array_equal(actual.view(np.uint64), expected.view(np.uint64))
+        assert np.any(actual[0] != 0.0)
+        constrained = handle.gradient()
+        np.testing.assert_array_equal(constrained[0], [0.0, 0.0, 0.0])
+        np.testing.assert_array_equal(constrained[1:].view(np.uint64), actual[1:].view(np.uint64))
+        actual[:] = 123.0
+        np.testing.assert_array_equal(
+            handle.gradient_unconstrained().view(np.uint64), expected.view(np.uint64)
+        )
+        assert handle.fixed_atoms() == (0,)
+        np.testing.assert_array_equal(handle.positions(), before)
+    anchor = handle.position(0)
+    handle.minimize_(max_iterations=2)
+    assert handle.position(0) == anchor
+
+
+@pytest.mark.parametrize("kind", ["mmff", "uff"])
 def test_fixed_atom_dragging_and_minimization(kind):
     handle = getattr(molecule(), f"{kind}_force_field")()
     handle.set_fixed_atoms_([1, 0, 1])

@@ -162,6 +162,10 @@ impl Molecule {
         self.state.topology.atoms.len()
     }
 
+    pub fn num_bonds(&self) -> usize {
+        self.state.topology.bonds.len()
+    }
+
     pub(crate) fn derived_cache_runtime(&self) -> &DerivedCacheBlock {
         &self.state.derived_cache
     }

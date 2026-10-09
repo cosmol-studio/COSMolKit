@@ -1001,6 +1001,22 @@ fn mcs_progress_callback_timeout(params: &McsParameters, start: u64, now: u64) -
     params.timeout == 0 || now.wrapping_sub(start) <= u64::from(params.timeout) * 1_000_000
 }
 
+fn mcs_elapsed_microseconds(elapsed: std::time::Duration) -> u64 {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FMCS/DebugTrace.h :: nanoClock
+    // RDKit❗✔️: static inline unsigned long long nanoClock(
+    // RDKit❗✔️:     void) {  // actually returns microseconds
+    // RDKit❗✔️:   struct timeval t;
+    // RDKit❗✔️:   gettimeofday(&t, (struct timezone *)nullptr);
+    // RDKit❗✔️:   return t.tv_usec + t.tv_sec * 1000000ULL;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION
+    // Preserve the existing cross-platform monotonic elapsed clock, not the
+    // source wall-clock origin. Its intervals must use the source microsecond
+    // unit before comparison with timeout * 1_000_000. Constant-time integer
+    // conversion allocates nothing and retains sub-microsecond truncation.
+    elapsed.as_micros() as u64
+}
+
 fn mcs_progress_after_seed<'a>(
     params: &McsParameters,
     start: u64,
@@ -5440,11 +5456,14 @@ fn mcs_build_result_query_graph(
             let mut predicate = make_atom_num_query(source.atomic_number());
             for &(target_index, target_atom) in atom_match_sets[result_atom].values() {
                 let target = &targets[target_index].atoms()[target_atom];
+                // QueryAtom.h supplies the omitted third argument in the
+                // source call copied above; keep the source query first.
+                // RDKit✔️✔️:                    bool maintainOrder = true) override;
                 query_atom_expand_query(
                     &mut predicate,
                     make_atom_num_query(target.atomic_number()),
                     CompositeQueryType::Or,
-                    false,
+                    true,
                 );
                 if params.atom_compare_parameters.match_chiral_tag
                     && matches!(
@@ -5516,11 +5535,14 @@ fn mcs_build_result_query_graph(
         let mut predicate = make_bond_order_equals_query(source.order());
         let mut stereo = BondStereo::None;
         for &(target_order, target_index, target_bond) in bond_match_sets[result_bond].values() {
+            // QueryBond.h has the same default as QueryAtom.h. Child order
+            // changes neither allocation shape nor the expansion complexity.
+            // RDKit✔️✔️:                    bool maintainOrder = true) override;
             query_bond_expand_query(
                 &mut predicate,
                 make_bond_order_equals_query(target_order),
                 CompositeQueryType::Or,
-                false,
+                true,
             );
             let candidate_stereo = targets[target_index].bonds()[target_bond].stereo();
             if params.bond_compare_parameters.match_stereo
@@ -5819,7 +5841,9 @@ pub fn find_mcs(
     // avoid molecule clones. Every target table is rebuilt for each source
     // init, and full matching retains its documented VF2-pruning gap.
     let order = prepare_mcs_input_order(molecules, params.threshold)?;
-    let started = std::time::Instant::now();
+    // Native uses std::time::Instant; WASM uses the host's monotonic clock.
+    // Elapsed-time units and source timeout decisions remain unchanged.
+    let started = web_time::Instant::now();
     let mut effective_params = params.clone();
     if effective_params.atom_compare_parameters.match_chiral_tag {
         effective_params.bond_compare_parameters.match_stereo = true;
@@ -5908,7 +5932,7 @@ pub fn find_mcs(
         query_single_matched_atom = initial.query_single_matched_atom;
         are_seeds_empty = initial.queue.seeds.is_empty();
         if !are_seeds_empty {
-            let mut now = || started.elapsed().as_nanos() as u64;
+            let mut now = || mcs_elapsed_microseconds(started.elapsed());
             canceled = mcs_grow_seeds(
                 &mut initial.queue,
                 &mut state,
@@ -11123,6 +11147,42 @@ mod tests {
     }
 
     #[test]
+    fn q130_elapsed_clock_uses_microseconds_for_the_seconds_timeout() {
+        use std::time::Duration;
+        let params = McsParameters {
+            timeout: 30,
+            ..McsParameters::default()
+        };
+        assert_eq!(mcs_elapsed_microseconds(Duration::from_nanos(999)), 0);
+        assert_eq!(mcs_elapsed_microseconds(Duration::from_micros(1)), 1);
+        assert_eq!(
+            mcs_elapsed_microseconds(Duration::from_secs(30)),
+            30_000_000
+        );
+        for elapsed in [
+            Duration::from_millis(31),
+            Duration::from_secs(29),
+            Duration::from_secs(30),
+            Duration::from_secs(30) + Duration::from_nanos(999),
+        ] {
+            assert!(
+                mcs_progress_callback_timeout(&params, 0, mcs_elapsed_microseconds(elapsed)),
+                "{elapsed:?}"
+            );
+        }
+        assert!(!mcs_progress_callback_timeout(
+            &params,
+            0,
+            mcs_elapsed_microseconds(Duration::from_secs(30) + Duration::from_micros(1))
+        ));
+        assert!(mcs_progress_callback_timeout(
+            &McsParameters::default(),
+            0,
+            mcs_elapsed_microseconds(Duration::from_secs(60))
+        ));
+    }
+
+    #[test]
     fn q130_progress_updates_best_before_callback_and_preserves_partial_result() {
         let params = McsParameters {
             timeout: 1,
@@ -11166,6 +11226,41 @@ mod tests {
         assert_eq!(outcome.best_atoms, [4, 2]);
         assert_eq!(outcome.best_bonds, [7]);
         assert_eq!(outcome.progress, progress);
+    }
+
+    #[test]
+    fn q130_native_timeout_retains_exact_partial_state_without_callback() {
+        let best = McsMoleculeFragment {
+            atoms: vec![4, 2],
+            bonds: vec![7],
+            seed_atom_index_map: BTreeMap::new(),
+        };
+        for store_all in [false, true] {
+            let params = McsParameters {
+                timeout: 1,
+                store_all,
+                ..McsParameters::default()
+            };
+            for (now, canceled) in [(1_000_000, false), (1_000_001, true)] {
+                let mut progress = McsProgressData {
+                    seed_processed: 9,
+                    ..McsProgressData::default()
+                };
+                let result =
+                    mcs_progress_after_seed(&params, 0, now, &best, &mut progress, None).unwrap();
+                assert_eq!(result.canceled, canceled);
+                assert_eq!(result.best_atoms, [4, 2]);
+                assert_eq!(result.best_bonds, [7]);
+                assert_eq!(
+                    result.progress,
+                    McsProgressData {
+                        num_atoms: 2,
+                        num_bonds: 1,
+                        seed_processed: 9,
+                    }
+                );
+            }
+        }
     }
 
     #[test]
@@ -11890,15 +11985,15 @@ mod tests {
         assert_eq!(
             result.atoms()[0].predicate(),
             &QueryNode::or(vec![
-                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(9)),
                 QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(9)),
             ])
         );
         assert_eq!(
             result.atoms()[1].predicate(),
             &QueryNode::or(vec![
-                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(17)),
                 QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(17)),
             ])
         );
         assert_eq!(result.atoms()[0].chiral_tag(), ChiralTag::TetrahedralCw);
@@ -11911,8 +12006,8 @@ mod tests {
         assert_eq!(
             result.bonds()[0].predicate(),
             &QueryNode::or(vec![
-                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
                 QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
             ])
         );
     }

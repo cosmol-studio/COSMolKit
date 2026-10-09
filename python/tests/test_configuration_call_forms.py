@@ -3,6 +3,28 @@ import pytest
 import cosmolkit as ck
 
 
+@pytest.mark.parametrize("method", ["fingerprint_morgan", "fingerprint_morgan_sparse", "fingerprint_morgan_count", "fingerprint_morgan_sparse_count"])
+def test_morgan_short_methods_accept_generator_keywords(method):
+    molecule = ck.Molecule.from_smiles("CC(C)O")
+    function = getattr(molecule, method)
+    params = ck.MorganFingerprintParams(generator=ck.MorganParams(radius=2, fp_size=256, include_chirality=True), from_atoms=[0, 1])
+    expected = getattr(molecule, method + "_with_params")(params, None)
+    actual = function(radius=2, fp_size=256, include_chirality=True, from_atoms=[0, 1])
+    project = lambda value: value.on_bits() if hasattr(value, "on_bits") else value.nonzero_elements()
+    assert project(actual) == project(expected) == project(function(params))
+    assert project(function(generator=params.generator, from_atoms=[0, 1])) == project(expected)
+    if hasattr(actual, "n_bits") and "sparse" not in method:
+        assert actual.n_bits() == 256
+    with pytest.raises(TypeError, match="mutually exclusive"):
+        function(params, radius=2)
+    with pytest.raises(TypeError, match="mutually exclusive"):
+        function(generator=ck.MorganParams(), radius=2)
+    with pytest.raises((TypeError, OverflowError)):
+        function(radius=-1)
+    with pytest.raises(TypeError):
+        function(unknown_morgan_option=True)
+
+
 def test_search_configuration_forms_are_effective_and_mutually_exclusive():
     molecule = ck.Molecule.from_smiles("CCC")
     query = ck.parse_smarts("C")

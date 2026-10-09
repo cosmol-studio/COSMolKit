@@ -1,5 +1,6 @@
 """DRAW delivery proposals: canonical mutation/query/value and typed IO behavior."""
 import errno
+import numpy as np
 import pytest
 import cosmolkit
 
@@ -11,10 +12,10 @@ def test_default_and_configured_mutation_match_value_transform():
     assert value.has_2d_coordinates()
     assert source.compute_2d_coordinates_() is None
     assert source.has_2d_coordinates()
-    assert source.coordinates_2d() == value.coordinates_2d()
+    np.testing.assert_array_equal(source.coordinates_2d(), value.coordinates_2d())
     configured = cosmolkit.Molecule.from_smiles("CCO")
     assert configured.compute_2d_coordinates_with_params_(cosmolkit.Coordinate2DParams()) is None
-    assert configured.coordinates_2d() == value.coordinates_2d()
+    np.testing.assert_array_equal(configured.coordinates_2d(), value.coordinates_2d())
     assert configured.to_smiles() == "CCO"
 
 
@@ -22,7 +23,9 @@ def test_empty_coordinate_presence_distinguishes_absence():
     molecule = cosmolkit.Molecule.new()
     assert not molecule.has_2d_coordinates() and molecule.coordinates_2d() is None
     assert molecule.compute_2d_coordinates_() is None
-    assert molecule.has_2d_coordinates() and molecule.coordinates_2d() == []
+    assert molecule.has_2d_coordinates()
+    output = molecule.coordinates_2d()
+    assert isinstance(output, np.ndarray) and output.shape == (0, 3)
 
 
 @pytest.mark.parametrize("suffix", ["svg", "png"])

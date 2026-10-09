@@ -104,7 +104,7 @@ def test_invalid_binding_settings_transport_preserves_previous_value(name, value
         setattr(settings, name, value)
     assert getattr(settings, name) == old
 
-def test_frozen_call_params_own_every_list_and_preserve_none_empty():
+def test_call_params_copy_constructor_lists_and_expose_live_configuration_lists():
     supplied = [0]
     params = ck.MorganCallParams(from_atoms=supplied, ignore_atoms=supplied,
                                custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1], conformer_id=3)
@@ -113,9 +113,11 @@ def test_frozen_call_params_own_every_list_and_preserve_none_empty():
     assert params.custom_atom_invariants == [11, 12, 13] and params.custom_bond_invariants == [1, 1]
     assert params.conformer_id == 3
     for name in ("from_atoms", "ignore_atoms", "custom_atom_invariants", "custom_bond_invariants"):
-        snapshot = getattr(params, name)
-        snapshot.append(99)
-        assert getattr(params, name) != snapshot
+        view = getattr(params, name)
+        before = list(view)
+        view.append(99)
+        assert getattr(params, name) == before + [99]
+        assert getattr(params, name) is view
         original = getattr(params, name)
         setattr(params, name, [])
         assert getattr(params, name) == []

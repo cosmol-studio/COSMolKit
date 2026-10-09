@@ -68,7 +68,7 @@ impl AvalonFingerprintFlags {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AvalonFingerprintParams {
     pub(crate) inner: ck::AvalonFingerprintParams,
 }

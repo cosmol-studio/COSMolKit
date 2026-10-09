@@ -49,10 +49,11 @@ pub(crate) fn error(py: Python<'_>, source: ck::InchiError) -> PyErr {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct InchiReadParams {
     pub(crate) inner: ck::InchiReadParams,
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl InchiReadParams {
@@ -81,10 +82,11 @@ impl InchiReadParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct InchiWriteParams {
     pub(crate) inner: ck::InchiWriteParams,
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl InchiWriteParams {

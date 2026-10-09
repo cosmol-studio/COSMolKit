@@ -184,6 +184,31 @@ fn preparation_timeout(record: &Record) -> Option<&crate::uff::PreparationTimeou
     }
 }
 
+// User-approved exception: no reference value exists when this pinned native
+// Layered branch crashes. Keep the complete observation, never call it equal,
+// and do not extend this disposition to ordinary errors or killed processes.
+fn known_upstream_crash(record: &Record) -> bool {
+    use crate::fingerprints::{Observation, Params, Roots};
+    matches!(
+        (&record.input, &record.output),
+        (
+            Input::Fingerprint(crate::fingerprints::FingerprintInput {
+                params: Params::Layered {
+                    branched: false,
+                    roots: Roots::All,
+                    ..
+                },
+                ..
+            }),
+            registry::Value::Fingerprint(Observation::ReferenceProcessFailure {
+                exit_code: -11 | 0xc000_0005,
+                process_id: 1..,
+                ..
+            })
+        )
+    )
+}
+
 #[derive(serde::Serialize)]
 #[serde(untagged)]
 enum ReportActual<'a> {
@@ -215,6 +240,7 @@ struct CorpusReport {
     total: usize,
     failed: usize,
     timed_out: usize,
+    upstream_crashed: usize,
 }
 impl CorpusReport {
     fn new() -> Result<Self> {
@@ -229,6 +255,7 @@ impl CorpusReport {
             total: 0,
             failed: 0,
             timed_out: 0,
+            upstream_crashed: 0,
         })
     }
     fn push<T: serde::Serialize + ?Sized>(
@@ -236,6 +263,7 @@ impl CorpusReport {
         row: &T,
         matches: Option<bool>,
         skipped: bool,
+        upstream_crashed: bool,
     ) -> Result<()> {
         if self.total != 0 {
             self.writer.write_all(b",").map_err(|e| e.to_string())?;
@@ -244,13 +272,14 @@ impl CorpusReport {
         self.total += 1;
         self.failed += usize::from(matches == Some(false));
         self.timed_out += usize::from(skipped);
+        self.upstream_crashed += usize::from(upstream_crashed);
         Ok(())
     }
     fn finish(mut self, key: &str, report: &std::path::Path) -> Result<()> {
         self.writer.write_all(b"]").map_err(|e| e.to_string())?;
         self.writer.flush().map_err(|e| e.to_string())?;
         drop(self.writer);
-        let compared = self.total - self.timed_out;
+        let compared = self.total - self.timed_out - self.upstream_crashed;
         let mut output =
             std::io::BufWriter::new(std::fs::File::create(report).map_err(|e| e.to_string())?);
         write!(
@@ -268,25 +297,27 @@ impl CorpusReport {
         serde_json::to_writer(&mut output, key).map_err(|e| e.to_string())?;
         write!(
             output,
-            ",\"timed_out\":{},\"total\":{}}}",
-            self.timed_out, self.total
+            ",\"timed_out\":{},\"upstream_crashed\":{},\"total\":{}}}",
+            self.timed_out, self.upstream_crashed, self.total
         )
         .map_err(|e| e.to_string())?;
         output.flush().map_err(|e| e.to_string())?;
         drop(output);
         println!(
-            "{key}: {}/{} matched; {} timed out (not compared); {}",
+            "{key}: {}/{} matched; {} timed out; {} upstream crashes (not compared); {}",
             compared - self.failed,
             compared,
             self.timed_out,
+            self.upstream_crashed,
             report.display()
         );
         // A report I/O error has already returned. Keep complete diagnostics
         // for empty/all-timeout/mismatching cases before rejecting them.
         if compared == 0 {
             return Err(format!(
-                "{key}: zero comparisons; {} timed out; {}",
+                "{key}: zero comparisons; {} timed out; {} upstream crashes; {}",
                 self.timed_out,
+                self.upstream_crashed,
                 report.display()
             ));
         }
@@ -306,7 +337,12 @@ impl CorpusReport {
 fn write_corpus_report(key: &str, results: &[Value], report: &std::path::Path) -> Result<()> {
     let mut writer = CorpusReport::new()?;
     for row in results {
-        writer.push(row, row["matches"].as_bool(), row["skipped"] == true)?;
+        writer.push(
+            row,
+            row["matches"].as_bool(),
+            row["skipped"] == true && row["stage"] != "UpstreamReferenceCrash",
+            row["stage"] == "UpstreamReferenceCrash",
+        )?;
     }
     writer.finish(key, report)
 }
@@ -328,6 +364,27 @@ pub fn run_corpus(key: &str) -> Result<()> {
                 // Deserialize the borrowed original Value directly: do not
                 // create an intermediate cloned JSON tree for each record.
                 let expected = Record::deserialize(&row).map_err(|e| e.to_string())?;
+                if known_upstream_crash(&expected) {
+                    let actual = crate::execute::run(&expected.input);
+                    report.push(
+                        &ReportRow {
+                            actual: Some(match &actual {
+                                Ok(record) => ReportActual::Record { record },
+                                Err(error) => ReportActual::Error { error },
+                            }),
+                            expected: &row,
+                            index,
+                            matches: None,
+                            skipped: Some(true),
+                            stage: Some("UpstreamReferenceCrash"),
+                            timeout: None,
+                        },
+                        None,
+                        false,
+                        true,
+                    )?;
+                    continue;
+                }
                 if let Some(timeout) = preparation_timeout(&expected) {
                     report.push(
                         &ReportRow {
@@ -341,6 +398,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
                         },
                         None,
                         true,
+                        false,
                     )?;
                     continue;
                 }
@@ -359,6 +417,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
                             },
                             Some(matches),
                             false,
+                            false,
                         )?;
                     }
                     Err(error) => report.push(
@@ -372,6 +431,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
                             timeout: None,
                         },
                         Some(false),
+                        false,
                         false,
                     )?,
                 }
@@ -391,6 +451,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
                         },
                         Some(matches),
                         false,
+                        false,
                     )?;
                 }
                 Err(error) => report.push(
@@ -404,6 +465,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
                         timeout: None,
                     },
                     Some(false),
+                    false,
                     false,
                 )?,
             },
@@ -431,7 +493,7 @@ pub(crate) fn special_snapshot(key: &str) -> Result<&'static Snapshot> {
 mod tests {
     use super::*;
     #[test]
-    fn native_reference_failure_is_a_failed_comparison_and_never_a_timeout_skip() {
+    fn native_reference_crashes_never_compare_equal_and_are_separately_accounted() {
         use crate::fingerprints::{Counts, FingerprintInput, Mask, Observation, Params, Roots};
         let expected = Record {
             input: Input::Fingerprint(FingerprintInput {
@@ -459,7 +521,20 @@ mod tests {
             }),
         };
         assert!(preparation_timeout(&expected).is_none());
+        assert!(known_upstream_crash(&expected));
         assert!(!equal(&expected, &expected));
+        for code in [-9, 0, 1] {
+            let mut other = expected.clone();
+            let registry::Value::Fingerprint(Observation::ReferenceProcessFailure {
+                exit_code,
+                ..
+            }) = &mut other.output
+            else {
+                unreachable!()
+            };
+            *exit_code = code;
+            assert!(!known_upstream_crash(&other));
+        }
         let error = crate::execute::run(&expected.input).unwrap_err();
         assert_eq!(error, "enumerated path contains invalid bond index");
         // Also retain the returned-value comparison guard: a native process
@@ -473,6 +548,7 @@ mod tests {
             panic!("expected the Layered fixture");
         };
         *branched = true;
+        assert!(!known_upstream_crash(&value_expected));
         let actual = crate::execute::run(&value_expected.input).unwrap();
         assert!(!equal(&value_expected, &actual));
         let folder = tempfile::tempdir().unwrap();
@@ -484,12 +560,29 @@ mod tests {
                    "expected":value_expected,"actual":{"record":actual}}),
         ];
         assert!(write_corpus_report("layered_fingerprint_smiles", &rows, &report).is_err());
-        let saved: Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+        let saved: Value = serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
         assert_eq!(saved["total"], 2);
         assert_eq!(saved["compared"], 2);
         assert_eq!(saved["failed"], 2);
         assert_eq!(saved["timed_out"], 0);
         assert_eq!(saved["rows"], json!(rows));
+        assert_eq!(saved["upstream_crashed"], 0);
+
+        let rows = [
+            json!({"index":0,"matches":null,"skipped":true,
+                   "stage":"UpstreamReferenceCrash",
+                   "expected":expected,"actual":{"error":error}}),
+            json!({"index":1,"matches":true,"actual":{"record":actual}}),
+        ];
+        write_corpus_report("fingerprint_layered_smiles", &rows, &report).unwrap();
+        let saved: Value = serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
+        assert_eq!(saved["total"], 2);
+        assert_eq!(saved["compared"], 1);
+        assert_eq!(saved["failed"], 0);
+        assert_eq!(saved["timed_out"], 0);
+        assert_eq!(saved["upstream_crashed"], 1);
+        assert_eq!(saved["rows"], json!(rows));
+        assert!(write_corpus_report("fingerprint_layered_smiles", &rows[..1], &report).is_err());
     }
 
     #[test]
@@ -756,6 +849,7 @@ mod tests {
                 },
                 Some(true),
                 false,
+                false,
             )
             .unwrap();
         report
@@ -770,6 +864,7 @@ mod tests {
                     timeout: None,
                 },
                 Some(false),
+                false,
                 false,
             )
             .unwrap();
@@ -786,6 +881,7 @@ mod tests {
                 },
                 None,
                 true,
+                false,
             )
             .unwrap();
         assert!(
@@ -798,7 +894,7 @@ mod tests {
         assert_eq!(
             saved,
             json!({"task":"full-task","total":3,"compared":2,
-            "failed":1,"timed_out":1,"rows":[
+            "failed":1,"timed_out":1,"upstream_crashed":0,"rows":[
                 {"index":0,"matches":true,"expected":expected,"actual":{"output":actual}},
                 {"index":1,"matches":false,"expected":expected,"actual":{"error":error}},
                 {"index":2,"matches":null,"expected":expected,"actual":null,
@@ -818,7 +914,12 @@ mod tests {
         assert!(!error.contains("zero comparisons"));
         let mut failed = CorpusReport::new().unwrap();
         failed
-            .push(&json!({"index":0,"matches":false}), Some(false), false)
+            .push(
+                &json!({"index":0,"matches":false}),
+                Some(false),
+                false,
+                false,
+            )
             .unwrap();
         let error = failed.finish("mismatch", &impossible).unwrap_err();
         assert!(!error.contains("mismatches"));
@@ -834,7 +935,7 @@ mod tests {
         assert_eq!(
             saved,
             json!({"task":"empty","total":0,"compared":0,
-                                "failed":0,"timed_out":0,"rows":[]})
+                "failed":0,"timed_out":0,"upstream_crashed":0,"rows":[]})
         );
     }
 
@@ -866,6 +967,7 @@ mod tests {
                     timeout: None,
                 },
                 Some(true),
+                false,
                 false,
             )
             .unwrap();

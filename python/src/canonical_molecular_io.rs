@@ -6,7 +6,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 
 pyo3::create_exception!(cosmolkit, MolecularIoError, PyValueError);
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct XyzWriteParams {
     pub(crate) inner: ck::XyzWriteParams,
 }
@@ -215,7 +215,7 @@ impl From<ck::SdfFormat> for SdfFormat {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Mol2ReadParams {
     pub(crate) inner: ck::Mol2ReadParams,
 }
@@ -316,7 +316,7 @@ impl MolCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MolBlockWriteParams {
     pub(crate) inner: ck::MolBlockWriteParams,
 }

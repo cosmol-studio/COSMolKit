@@ -8,8 +8,8 @@ pub use registry::{
     BINDING_CONTRACT_PYTHON_ADAPTERS,
 };
 pub use types::{
-    BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
-    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
+    BindingCallableContract, BindingConfigurationField, BindingContractEntry, BindingDefault,
+    BindingItem, BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
     BindingPropertyAccess, BindingPropertyContract, BindingPythonAdapterContract, BindingReceiver,
     BindingTypeRole, FunctionStatus, StateModel,
 };

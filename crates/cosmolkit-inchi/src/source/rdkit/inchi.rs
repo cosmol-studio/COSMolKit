@@ -4892,6 +4892,18 @@ pub(crate) fn fix_option_symbol(
 }
 
 fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
+    // BEGIN RDKIT C++ TRAVERSAL: Substruct/vf2.hpp:303-315
+    // RDKit✔️✔️:         boost::tie(n1iter_beg, n1iter_end) =
+    // RDKit✔️✔️:             boost::adjacent_vertices(pair.n1, *g1);
+    // RDKit✔️✔️:         while (n1iter_beg != n1iter_end && core_1[*n1iter_beg] == NULL_NODE) {
+    // RDKit✔️✔️:           ++n1iter_beg;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         assert(n1iter_beg != n1iter_end);
+    // RDKit✔️✔️:         boost::tie(pair.nbrbeg, pair.nbrend) =
+    // RDKit✔️✔️:             boost::adjacent_vertices(core_1[*n1iter_beg], *g2);
+    // END RDKIT C++ TRAVERSAL
+    // Adjacency preserves bond insertion order, as in RDKit's graph. Sorting
+    // neighbor atom IDs changes the first unique mapping selected by VF2.
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp:706 Atom::Match
     // RDKit✔️❌: bool Atom::Match(Atom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
@@ -4934,7 +4946,7 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
         {
             continue;
         }
-        let mut central_atoms = molecule.adjacency[query_0 as usize]
+        let central_atoms = molecule.adjacency[query_0 as usize]
             .iter()
             .filter_map(|&(neighbor, bond)| {
                 (molecule.atoms[neighbor as usize].atomic_number == 17
@@ -4943,9 +4955,8 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
                     .then_some(neighbor)
             })
             .collect::<Vec<_>>();
-        central_atoms.sort_unstable();
         for query_1 in central_atoms {
-            let mut oxygen_atoms = molecule.adjacency[query_1 as usize]
+            let oxygen_atoms = molecule.adjacency[query_1 as usize]
                 .iter()
                 .filter_map(|&(neighbor, bond)| {
                     (neighbor != query_0
@@ -4954,7 +4965,6 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
                         .then_some(neighbor)
                 })
                 .collect::<Vec<_>>();
-            oxygen_atoms.sort_unstable();
             for &query_2 in &oxygen_atoms {
                 if molecule.atoms[query_2 as usize].formal_charge != -1 {
                     continue;
@@ -9009,6 +9019,73 @@ mod tests {
                 })
                 .collect(),
         )
+    }
+
+    #[test]
+    fn inchi_perchlorate_cleanup_matches_follow_bond_insertion_order() {
+        // Frozen RDKit 2026.03.6 GetSubstructMatches results for the literal
+        // rCleanUp query [O-][Cl+3]([O-])([O-])O, not a second matcher oracle.
+        for (neighbors, expected) in [
+            ([0, 2, 3, 4], [0, 1, 2, 3, 4]),
+            ([4, 3, 2, 0], [0, 1, 4, 3, 2]),
+            ([3, 0, 4, 2], [0, 1, 3, 4, 2]),
+        ] {
+            let bonds = neighbors.map(|neighbor| (1, neighbor, BondType::Single));
+            let mut molecule = graph(&[(8, -1), (17, 3), (8, -1), (8, -1), (8, -1)], &bonds);
+            assert_eq!(r_cleanup_matches(&molecule), vec![expected]);
+            r_clean_up(&mut molecule);
+            assert_eq!(molecule.atoms[0].formal_charge, -1);
+            assert!(
+                molecule.atoms[1..]
+                    .iter()
+                    .all(|atom| atom.formal_charge == 0)
+            );
+            for bond in &molecule.bonds {
+                assert_eq!(
+                    bond.bond_type,
+                    if bond.end_atom_index == 0 {
+                        BondType::Single
+                    } else {
+                        BondType::Double
+                    }
+                );
+            }
+        }
+
+        // One charged oxygen connects to two Cl centers. The first center
+        // follows its incident-bond order too, not its atom index.
+        let atoms = [
+            (8, -1),
+            (17, 3),
+            (17, 3),
+            (8, -1),
+            (8, -1),
+            (8, 0),
+            (8, -1),
+            (8, -1),
+            (8, 0),
+        ];
+        for centers in [[1, 2], [2, 1]] {
+            let bonds = [
+                (0, centers[0], BondType::Single),
+                (0, centers[1], BondType::Single),
+                (1, 3, BondType::Single),
+                (1, 4, BondType::Single),
+                (1, 5, BondType::Single),
+                (2, 6, BondType::Single),
+                (2, 7, BondType::Single),
+                (2, 8, BondType::Single),
+            ];
+            let mut molecule = graph(&atoms, &bonds);
+            let matches = r_cleanup_matches(&molecule);
+            assert_eq!(matches.len(), 2);
+            assert_eq!([matches[0][1], matches[1][1]], centers);
+            r_clean_up(&mut molecule);
+            // The first cleanup neutralizes shared O0; the next match then
+            // has two neutral oxygens and takes the source early return.
+            assert_eq!(molecule.atoms[centers[0] as usize].formal_charge, 0);
+            assert_eq!(molecule.atoms[centers[1] as usize].formal_charge, 3);
+        }
     }
 
     #[test]

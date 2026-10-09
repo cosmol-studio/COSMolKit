@@ -30,6 +30,7 @@ const PERSISTENT_FORCEFIELD_IDS: &[&str] = &[
     "MolecularForceField.set_fixed_atoms_",
     "MolecularForceField.energy",
     "MolecularForceField.gradient",
+    "MolecularForceField.gradient_unconstrained",
     "MolecularForceField.energy_gradient",
     "MolecularForceField.minimize_",
     "MolecularForceField.minimize_with_params_",

@@ -18,6 +18,7 @@ pub enum SpecialRegressionSchema {
     TautomerBranches,
     TautomerFocused,
     MolAlign,
+    Mcs,
 }
 pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
     SpecialRegression {
@@ -61,6 +62,18 @@ pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
         fixture: "special/tautomer_focused.json",
         rows: 18,
         schema: SpecialRegressionSchema::TautomerFocused,
+    },
+    SpecialRegression {
+        key: "mcs_upstream",
+        fixture: "special/mcs_upstream.json",
+        rows: 44,
+        schema: SpecialRegressionSchema::Mcs,
+    },
+    SpecialRegression {
+        key: "mcs_jnk1",
+        fixture: "special/mcs_jnk1.json",
+        rows: 210,
+        schema: SpecialRegressionSchema::Mcs,
     },
 ];
 

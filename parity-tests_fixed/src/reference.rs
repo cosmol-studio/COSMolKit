@@ -27,6 +27,10 @@ pub(crate) fn source_digest_at(spec: &Spec, checkout: &std::path::Path) -> Resul
         directory().join("tools/forcefield_preparation.py"),
         directory().join("Cargo.toml"),
     ];
+    if matches!(*spec, Spec::Special(s) if matches!(s.schema, registry::SpecialRegressionSchema::Mcs))
+    {
+        paths.push(directory().join("tools/mcs.py"));
+    }
     if matches!(*spec, Spec::Corpus(t) if matches!(t.operation, registry::Operation::Fingerprint(_)))
     {
         paths.push(directory().join("tools/fingerprints.py"));

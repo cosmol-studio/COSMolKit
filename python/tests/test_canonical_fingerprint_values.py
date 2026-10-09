@@ -83,7 +83,11 @@ class TestMorganParams:
         assert cosmolkit._binding_profile == "canonical-bootstrap"
         assert {field: cast(object, getattr(params, field)) for field in DEFAULTS} == DEFAULTS
         for field, value in DEFAULTS.items():
-            assert type(cast(object, getattr(params, field))) is type(value)
+            actual = cast(object, getattr(params, field))
+            if isinstance(value, list):
+                assert isinstance(actual, list)
+            else:
+                assert type(actual) is type(value)
         assert cosmolkit.MorganParams(count_bounds=None).count_bounds == [1, 2, 4, 8]
 
     def test_all_fields(self):
@@ -117,15 +121,16 @@ class TestMorganParams:
         assert cosmolkit.MorganParams(count_bounds=[]).count_bounds == []
         assert cosmolkit.MorganParams(count_bounds=[0, 4294967295]).count_bounds == [0, 4294967295]
 
-    def test_owned_bounds(self):
+    def test_configuration_bounds_copy_input_and_write_through(self):
         supplied = [8, 1, 1, 0]
         params = cosmolkit.MorganParams(count_bounds=supplied)
         supplied.append(99)
         first = params.count_bounds
         first[0] = 77
         first.append(123)
-        assert params.count_bounds == [8, 1, 1, 0]
-        assert first is not params.count_bounds
+        assert params.count_bounds == [77, 1, 1, 0, 123]
+        assert supplied == [8, 1, 1, 0, 99]
+        assert first is params.count_bounds
         default_result = cosmolkit.MorganParams().count_bounds
         default_result.clear()
         assert cosmolkit.MorganParams().count_bounds == [1, 2, 4, 8]

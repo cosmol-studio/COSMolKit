@@ -79,6 +79,15 @@ forms/defaults, and complete enabled language projections. A failed gate does
 not write a replacement stub or export an npm distribution. Do not bypass it
 with handwritten declarations or a second API inventory.
 
+For `SubstructMatchParams`, the registry exhaustively names the Rust fields;
+omitting a field fails compilation. Registered Python configuration records
+reject unknown attributes, and the stub gate compares effective assignment
+with construction using a different valid value. Callback fields declare an
+executable contract: stub generation checks acceptance, rejection and original
+exception propagation through the registered matching methods, parameter
+objects, keywords and declared aliases. A callable annotation alone is not
+sufficient.
+
 ## Domain designs and protocols
 
 - [Double formatting](./double_formatting_contract.md): approved Boost-compatible pure-Rust binary64 string conversion and its validation boundary.

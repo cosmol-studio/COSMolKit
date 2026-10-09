@@ -13,7 +13,7 @@ pub(crate) enum ValenceModel {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ValenceParams {
     pub(crate) inner: ck::ValenceParams,
 }

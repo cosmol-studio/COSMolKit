@@ -64,6 +64,8 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "InchiErrorKind",
         "MmffVariant",
         "RotatableBondsOptions",
+        "McsAtomComparator",
+        "McsBondComparator",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -130,6 +132,7 @@ _binding_profile: builtins.str
         "SmilesError",
         "SmartsParseError",
         "SmilesWriteError",
+        "McsError",
         "MorganReadError",
         "AtomPairReadError",
         "TopologicalTorsionReadError",

@@ -185,7 +185,7 @@ fn enum_value(py: Python<'_>, name: &str, value: &str) -> PyResult<Py<PyAny>> {
         .unbind())
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct PotentialStereoParams {
     pub(crate) inner: ck::PotentialStereoParams,
 }

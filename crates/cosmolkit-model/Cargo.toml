@@ -12,6 +12,6 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-types = { version = "0.5.0-rc.20", path = "../cosmolkit-types" }
+cosmolkit-types = { version = "0.5.0-rc.21", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 serde_json = "1"

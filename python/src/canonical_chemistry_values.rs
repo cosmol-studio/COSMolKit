@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct KekulizeParams {
     pub(crate) inner: ck::KekulizeParams,
 }
@@ -39,7 +39,7 @@ impl KekulizeParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct RingSearchParams {
     pub(crate) inner: ck::RingSearchParams,
 }
@@ -68,7 +68,7 @@ impl RingSearchParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct StructureTagParams {
     pub(crate) inner: ck::StructureTagParams,
 }
@@ -97,7 +97,7 @@ impl StructureTagParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct DistanceMatrixParams {
     pub(crate) inner: ck::DistanceMatrixParams,
 }
@@ -126,7 +126,7 @@ impl DistanceMatrixParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct DistanceMatrix3dParams {
     pub(crate) inner: ck::DistanceMatrix3dParams,
 }
@@ -155,7 +155,7 @@ impl DistanceMatrix3dParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AtomPositionParams {
     pub(crate) inner: ck::AtomPositionParams,
 }
@@ -177,7 +177,7 @@ impl AtomPositionParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct RemoveHsParams {
     pub(crate) inner: ck::RemoveHsParams,
 }
@@ -330,7 +330,7 @@ impl AromaticityModel {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AromaticityParams {
     pub(crate) inner: ck::AromaticityParams,
 }
@@ -354,7 +354,7 @@ impl AromaticityParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AddHsParams {
     pub(crate) inner: ck::AddHsParams,
 }
@@ -899,7 +899,7 @@ impl SanitizeOperations {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SanitizeParams {
     pub(crate) inner: ck::SanitizeParams,
 }

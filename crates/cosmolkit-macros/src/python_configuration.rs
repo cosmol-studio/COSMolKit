@@ -118,6 +118,33 @@ pub(crate) fn expand(mut implementation: ItemImpl, fieldwise: bool) -> syn::Resu
             }
         })?);
     }
+    refresh(implementation)
+}
+
+pub(crate) fn refresh(mut implementation: ItemImpl) -> syn::Result<TokenStream> {
+    implementation.attrs.insert(
+        0,
+        syn::parse_quote! {
+            #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+        },
+    );
+    // The Python projection keeps a native child object for a live nested
+    // configuration view. Refresh only that detached value after validated
+    // parent assignment; never expose a mutable Rust/runtime reference.
+    implementation.items.push(syn::parse_quote! {
+        #[gen_stub(skip)]
+        fn _configuration_replace(
+            slf: &pyo3::Bound<'_, Self>,
+            value: &pyo3::Bound<'_, Self>,
+        ) -> pyo3::PyResult<()> {
+            use pyo3::prelude::*;
+            if slf.is(value) {
+                return Ok(());
+            }
+            std::mem::swap(&mut *slf.try_borrow_mut()?, &mut *value.try_borrow_mut()?);
+            Ok(())
+        }
+    });
     Ok(quote!(#implementation))
 }
 
@@ -140,6 +167,7 @@ mod tests {
         assert_eq!(output.matches("fn set_flag").count(), 1);
         assert!(!output.contains("fn set_py"));
         assert!(output.contains("value : usize"));
+        assert_eq!(output.matches("fn _configuration_replace").count(), 1);
         assert!(output.find("get_type").unwrap() < output.find("current =").unwrap());
     }
 

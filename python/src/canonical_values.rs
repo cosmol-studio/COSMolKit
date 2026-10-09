@@ -333,7 +333,7 @@ fn fingerprint_pyerr(
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmilesParseParams {
     pub(crate) inner: ck::SmilesParseParams,
 }
@@ -403,7 +403,7 @@ impl SmilesParseParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmilesWriteParams {
     pub(crate) inner: ck::SmilesWriteParams,
 }

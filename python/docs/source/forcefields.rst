@@ -151,15 +151,8 @@ optimization uses 1000 iterations; its van der Waals threshold is 10.0.
 Malformed inputs and evaluation failures propagate as Python exceptions;
 non-convergence is an optimization result, not an exception.
 
-Proposed Persistent API — Not Yet Implemented
----------------------------------------------
-
-.. warning::
-
-   Everything below is a target API design, not a currently callable API.
-   ``MolecularForceField`` and its factory, parameter, result, and error types
-   are proposed names. This page does not register them, implement them, or
-   claim release or parity acceptance.
+Persistent force fields
+-----------------------
 
 The goal is to build an owned force field once, then update its coordinates,
 evaluate it, fix atoms, and perform short minimization runs without repeating
@@ -170,7 +163,6 @@ Interactive Python workflow
 
 .. code-block:: python
 
-   # DESIGN EXAMPLE ONLY: these methods do not exist yet.
    ff = mol.mmff_force_field(
        conformer_id=conformer_id,
        mmff_variant="MMFF94",
@@ -181,22 +173,23 @@ Interactive Python workflow
    # ff = mol.uff_force_field(conformer_id=conformer_id, vdw_threshold=10.0)
 
    x, y, z = ff.position(1)
-   ff.set_position(1, (x + 0.2, y, z))
+   ff.set_position_(1, (x + 0.2, y, z))
    print(ff.energy())
    gradient = ff.gradient()  # independent float64 NumPy array, shape (N, 3)
 
-   ff.set_fixed_atoms([0, 2])
-   outcome = ff.minimize(max_iterations=20)
+   ff.set_fixed_atoms_([0, 2])
+   full_gradient = ff.gradient_unconstrained()  # includes fixed-atom rows
+   outcome = ff.minimize_(max_iterations=20)
    print(outcome.converged, outcome.iterations, outcome.energy)
 
    # Another drag, followed by relaxation from the current coordinates.
-   ff.set_position(1, (x + 0.4, y, z))
-   outcome = ff.minimize(max_iterations=20)
+   ff.set_position_(1, (x + 0.4, y, z))
+   outcome = ff.minimize_(max_iterations=20)
 
    positions = ff.positions()  # independent writable NumPy snapshot
    positions[:, 2] += 0.1
-   ff.set_positions(positions)
-   ff.set_fixed_atoms([])      # replace the fixed set with an empty set
+   ff.set_positions_(positions)
+   ff.set_fixed_atoms_([])      # replace the fixed set with an empty set
 
    evaluation = ff.energy_gradient()
    print(evaluation.energy, evaluation.gradient.shape)
@@ -204,7 +197,7 @@ Interactive Python workflow
 Factory and configuration surface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Proposed Python factories accept keyword-only configuration:
+Python factories accept keyword-only configuration:
 
 .. code-block:: python
 
@@ -218,17 +211,16 @@ Proposed Python factories accept keyword-only configuration:
        ignore_interfragment_interactions=True,
    ) -> MolecularForceField
 
-Reusable configuration remains available through immutable parameter objects:
+Reusable configuration remains available through parameter objects:
 
 .. code-block:: python
 
-   # DESIGN EXAMPLE ONLY.
    params = ck.MmffForceFieldParams(
        conformer_id=conformer_id,
        mmff_variant="MMFF94",
    )
    ff = mol.mmff_force_field_with_params(params)
-   outcome = ff.minimize_with_params(
+   outcome = ff.minimize_with_params_(
        ck.ForceFieldMinimizeParams(
            max_iterations=20, force_tolerance=1e-4, energy_tolerance=1e-6
        )
@@ -238,28 +230,28 @@ Rust retains default factories and explicit ``*_with_params`` methods with
 typed parameters. Python keyword calls must construct those same parameter
 values, with fields and defaults taken from the same binding contract. They
 must not implement a second force-field path or a separate default table.
-This keyword convenience projection must be explicitly settled in the API
-rules and registry before implementation; it is not an existing overload.
+The registry defines the keyword projection and defaults.
 
-Proposed handle and result API
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Handle and result API
+~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
    class MolecularForceField:
        def position(self, atom_id: int) -> tuple[float, float, float]: ...
-       def set_position(self, atom_id: int, position) -> None: ...
+       def set_position_(self, atom_id: int, position) -> None: ...
        def positions(self) -> np.ndarray: ...
-       def set_positions(self, positions) -> None: ...
+       def set_positions_(self, positions) -> None: ...
        def fixed_atoms(self) -> tuple[int, ...]: ...
-       def set_fixed_atoms(self, atom_ids) -> None: ...
+       def set_fixed_atoms_(self, atom_ids) -> None: ...
        def energy(self) -> float: ...
        def gradient(self) -> np.ndarray: ...
+       def gradient_unconstrained(self) -> np.ndarray: ...
        def energy_gradient(self) -> ForceFieldEnergyGradient: ...
-       def minimize(self, *, max_iterations: int = 200,
+       def minimize_(self, *, max_iterations: int = 200,
                     force_tolerance: float = 1e-4,
                     energy_tolerance: float = 1e-6) -> ForceFieldMinimizeOutcome: ...
-       def minimize_with_params(self, params) -> ForceFieldMinimizeOutcome: ...
+       def minimize_with_params_(self, params) -> ForceFieldMinimizeOutcome: ...
 
    class ForceFieldEnergyGradient:
        energy: float           # read-only
@@ -270,14 +262,14 @@ Proposed handle and result API
        iterations: int         # actual completed iterations
        energy: float           # final energy, read-only
 
-``set_position`` accepts a three-component sequence. ``set_positions`` accepts
+``set_position_`` accepts a three-component sequence. ``set_positions_`` accepts
 nested numeric sequences or NumPy arrays of shape ``(N, 3)``; input values are
 copied into handle-owned storage. Python atom IDs are indices in the fixed
 atom order, not IDs transferable between unrelated molecules. Rust uses
 ``AtomId`` and borrowed coordinate slices; Python never receives a mutable
 view into the handle's live storage.
 
-Both keyword minimization and immutable ``ForceFieldMinimizeParams`` expose
+Both keyword minimization and ``ForceFieldMinimizeParams`` expose
 ``energy_tolerance=1e-6``, alongside ``max_iterations=200`` and
 ``force_tolerance=1e-4``. Rust constructs these parameters with
 ``ForceFieldMinimizeParams::new(max_iterations, force_tolerance, energy_tolerance)``.
@@ -312,7 +304,12 @@ Ownership, updates, and numerical semantics
   positions or retyping atoms; this does not make energy evaluation O(1).
 * ``positions()`` and ``gradient()`` return independent NumPy snapshots.
   Editing a snapshot alone does not change the force field.
-* ``set_fixed_atoms`` replaces the complete fixed set. Fixed atoms remain in
+* ``gradient_unconstrained()`` returns an independent float64 ``(N, 3)``
+  array of full energy derivatives, including fixed-atom rows. It omits only
+  the fixed-atom zeroing performed by ``gradient()``; it does not remove energy
+  terms, change the fixed set or alter minimization. Physical force is the
+  negative of this gradient.
+* ``set_fixed_atoms_`` replaces the complete fixed set. Fixed atoms remain in
   energy terms but have zero components in the constrained gradient and do
   not move during minimization. Explicit setters may move them to new anchors.
 * Non-bonded contributions are selected at construction using the configured
@@ -323,7 +320,7 @@ Ownership, updates, and numerical semantics
   a new optimizer history. Two 20-iteration calls are not promised to equal
   one 40-iteration call. Non-convergence is reported by ``converged=False``.
 
-Proposed construction errors are ``MmffForceFieldError`` and
+Construction errors are ``MmffForceFieldError`` and
 ``UffForceFieldError``; handle update, evaluation, and minimization errors use
 ``ForceFieldError`` with structured kinds and preserved causes. Invalid MMFF
 parameterization must fail construction rather than return a dummy handle.

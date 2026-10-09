@@ -12,6 +12,15 @@ pub(crate) fn validate(
     schema: registry::SpecialRegressionSchema,
 ) -> Result<Snapshot> {
     let fixture: Value = serde_json::from_slice(input).map_err(|e| e.to_string())?;
+    if matches!(schema, registry::SpecialRegressionSchema::Mcs) {
+        let rows = std::str::from_utf8(reference)
+            .map_err(|e| e.to_string())?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<Value>>>()?;
+        crate::mcs::validate(&fixture, &rows, count)?;
+        return Ok(Snapshot { fixture, rows });
+    }
     if matches!(
         schema,
         registry::SpecialRegressionSchema::ForcefieldOptimizers
@@ -69,6 +78,7 @@ pub(crate) fn validate(
         | registry::SpecialRegressionSchema::MmffBuiltin => unreachable!("validated above"),
         registry::SpecialRegressionSchema::BioMmcifSwitches => unreachable!("validated above"),
         registry::SpecialRegressionSchema::MolAlign => unreachable!("validated above"),
+        registry::SpecialRegressionSchema::Mcs => unreachable!("validated above"),
         registry::SpecialRegressionSchema::StructureTags => &["cases", "octahedral_switch_cases"],
         registry::SpecialRegressionSchema::TautomerBranches
         | registry::SpecialRegressionSchema::TautomerFocused => &["cases"],

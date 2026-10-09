@@ -132,23 +132,27 @@ pub use sdf_batch::{BatchExportParams, SdfBatchIterator, SdfReaderBatchIterator}
 pub mod search;
 #[cfg(feature = "cap-search")]
 pub use search::{
-    compile_query, parse_smarts, parse_smarts_with_params, write_cx_smarts, write_smarts,
+    compile_query, maximum_common_substructure, maximum_common_substructure_with_params,
+    parse_smarts, parse_smarts_with_params, write_cx_smarts, write_smarts,
 };
 #[cfg(feature = "cap-smiles")]
 mod smiles;
 mod strict;
 #[cfg(feature = "cap-search")]
 pub use cosmolkit_search::{
-    CompiledQuery, MatchError, MatchResult, QueryCompileError, SmartsParseError, SmartsParseParams,
-    SmartsWriteError, SmartsWriteParams, SubstructMatchError, SubstructMatchParams,
+    AtomComparator as McsAtomComparator, BondComparator as McsBondComparator, CompiledQuery,
+    MatchError, MatchResult, McsAtomCompareParameters, McsBondCompareParameters,
+    McsCandidateMatchError as McsError, McsParameters, McsResult, QueryCompileError,
+    SmartsParseError, SmartsParseParams, SmartsWriteError, SmartsWriteParams, SubstructMatchError,
+    SubstructMatchParams,
 };
 
 #[doc(hidden)]
 pub use binding_contract::{
     BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
-    BINDING_CONTRACT_PYTHON_ADAPTERS, BindingCallableContract, BindingContractEntry,
-    BindingDefault, BindingItem, BindingKeywordContract, BindingKind, BindingOwner,
-    BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
+    BINDING_CONTRACT_PYTHON_ADAPTERS, BindingCallableContract, BindingConfigurationField,
+    BindingContractEntry, BindingDefault, BindingItem, BindingKeywordContract, BindingKind,
+    BindingOwner, BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
     BindingPythonAdapterContract, BindingReceiver, BindingTypeRole, FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]

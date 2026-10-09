@@ -5,6 +5,52 @@ use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
+/// Read-only query carrier, including wildcard atomic identities.
+#[wasm_bindgen]
+pub struct QueryAtom {
+    inner: ck::QueryAtom,
+}
+#[wasm_bindgen]
+impl QueryAtom {
+    #[wasm_bindgen(js_name = id)]
+    pub fn id(&self) -> usize {
+        self.inner.id().index()
+    }
+    #[wasm_bindgen(js_name = atomicNumber)]
+    pub fn atomic_number(&self) -> u8 {
+        self.inner.atomic_number()
+    }
+    #[wasm_bindgen(js_name = formalCharge)]
+    pub fn formal_charge(&self) -> i8 {
+        self.inner.formal_charge()
+    }
+    #[wasm_bindgen(js_name = explicitHydrogens)]
+    pub fn explicit_hydrogens(&self) -> u8 {
+        self.inner.explicit_hydrogens()
+    }
+    #[wasm_bindgen(js_name = isotope, unchecked_return_type = "number | null")]
+    pub fn isotope(&self) -> JsValue {
+        self.inner
+            .isotope()
+            .map_or(JsValue::NULL, |v| JsValue::from(v as u32))
+    }
+    #[wasm_bindgen(js_name = atomMap, unchecked_return_type = "number | null")]
+    pub fn atom_map(&self) -> JsValue {
+        self.inner.atom_map().map_or(JsValue::NULL, JsValue::from)
+    }
+    #[wasm_bindgen(js_name = isAromatic)]
+    pub fn is_aromatic(&self) -> bool {
+        self.inner.is_aromatic()
+    }
+    #[wasm_bindgen(js_name = noImplicit)]
+    pub fn no_implicit(&self) -> bool {
+        self.inner.no_implicit()
+    }
+    #[wasm_bindgen(js_name = radicalElectrons)]
+    pub fn radical_electrons(&self) -> u8 {
+        self.inner.radical_electrons()
+    }
+}
 #[wasm_bindgen]
 pub struct SubstructMatchParams {
     pub(crate) inner: ck::SubstructMatchParams,
@@ -378,8 +424,12 @@ impl SubstructMatchParams {
         // Its callback performs only a detached parameter copy, no operation.
         if visit_substructmatchparams(value, &mut |params: &SubstructMatchParams| {
             inner = Some(params.inner.clone());
-        }).is_ok() {
-            return inner.map(|inner| Self { inner }).ok_or_else(|| type_error("params"));
+        })
+        .is_ok()
+        {
+            return inner
+                .map(|inner| Self { inner })
+                .ok_or_else(|| type_error("params"));
         }
         Self::from_js_options(value)
     }
@@ -404,17 +454,27 @@ impl Molecule {
     pub fn substruct_match(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions"
+        )]
+        params: JsValue,
     ) -> Result<JsValue, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_match(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
+        let configured = (!params.is_undefined())
+            .then(|| SubstructMatchParams::from_configuration(&params))
+            .transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                configured.as_ref().map_or_else(
-                    || self.inner.substruct_match(&q.inner),
-                    |params| self.inner.substruct_match_with_params(&q.inner, &params.inner),
-                )
+                configured
+                    .as_ref()
+                    .map_or_else(
+                        || self.inner.substruct_match(&q.inner),
+                        |params| {
+                            self.inner
+                                .substruct_match_with_params(&q.inner, &params.inner)
+                        },
+                    )
                     .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
@@ -425,17 +485,27 @@ impl Molecule {
     pub fn substruct_matches(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions"
+        )]
+        params: JsValue,
     ) -> Result<Vec<MatchResult>, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_matches(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
+        let configured = (!params.is_undefined())
+            .then(|| SubstructMatchParams::from_configuration(&params))
+            .transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                configured.as_ref().map_or_else(
-                    || self.inner.substruct_matches(&q.inner),
-                    |params| self.inner.substruct_matches_with_params(&q.inner, &params.inner),
-                )
+                configured
+                    .as_ref()
+                    .map_or_else(
+                        || self.inner.substruct_matches(&q.inner),
+                        |params| {
+                            self.inner
+                                .substruct_matches_with_params(&q.inner, &params.inner)
+                        },
+                    )
                     .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect())
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
@@ -446,17 +516,27 @@ impl Molecule {
     pub fn has_substruct_match(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions"
+        )]
+        params: JsValue,
     ) -> Result<bool, JsValue> {
         // COSMolKit❗✔️: self.inner.has_substruct_match(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
+        let configured = (!params.is_undefined())
+            .then(|| SubstructMatchParams::from_configuration(&params))
+            .transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                configured.as_ref().map_or_else(
-                    || self.inner.has_substruct_match(&q.inner),
-                    |params| self.inner.has_substruct_match_with_params(&q.inner, &params.inner),
-                )
+                configured
+                    .as_ref()
+                    .map_or_else(
+                        || self.inner.has_substruct_match(&q.inner),
+                        |params| {
+                            self.inner
+                                .has_substruct_match_with_params(&q.inner, &params.inner)
+                        },
+                    )
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
         })?;
@@ -500,7 +580,9 @@ impl Molecule {
                     self.inner
                         .substruct_match_with_params(&q.inner, &p.inner)
                         .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
-                        .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
+                        .map_err(|e| {
+                            crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
+                        }),
                 );
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
@@ -520,7 +602,9 @@ impl Molecule {
                 inner_result = Some(
                     self.inner
                         .has_substruct_match_with_params(&q.inner, &p.inner)
-                        .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
+                        .map_err(|e| {
+                            crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
+                        }),
                 );
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));

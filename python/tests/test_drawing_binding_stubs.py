@@ -40,7 +40,7 @@ def test_selected_stub_classes_and_methods():
         if isinstance(node, ast.FunctionDef):
             methods.setdefault(node.name, node)
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
-                "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[builtins.list[builtins.list[builtins.float]]]",
+                "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]",
                 "has_2d_coordinates": "builtins.bool", "compute_2d_coordinates_": "None",
                 "compute_2d_coordinates_with_params_": "None", "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
                 "to_svg": "builtins.str", "to_png": "builtins.bytes", "write_svg": "None", "write_png": "None"}

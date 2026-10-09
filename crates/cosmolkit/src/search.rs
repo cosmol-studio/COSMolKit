@@ -3,6 +3,33 @@
 use crate::{Molecule, QueryGraph, SmartsParseError, SmartsParseParams};
 use cosmolkit_search::{MatchResult, SubstructMatchError, SubstructMatchParams};
 
+/// Find a maximum common query substructure using the source owner's defaults.
+///
+/// This experimental search borrows at least two molecules without modifying
+/// their topology, coordinates, properties or derived caches. The result is a
+/// query, not a concrete molecule. Full FMCS parity/performance is not claimed.
+pub fn maximum_common_substructure(
+    inputs: &[&Molecule],
+) -> Result<crate::McsResult, crate::McsError> {
+    maximum_common_substructure_with_params(inputs, &crate::McsParameters::default())
+}
+
+/// Find an MCS with explicit options. `timeout` is in seconds; an interrupted
+/// search returns its best partial result with `completed == false`.
+///
+/// Options requiring ring or valence state use only valid existing assignments;
+/// absent state produces the owner's typed error, never an implicit write-back.
+pub fn maximum_common_substructure_with_params(
+    inputs: &[&Molecule],
+    params: &crate::McsParameters,
+) -> Result<crate::McsResult, crate::McsError> {
+    let targets: Vec<_> = inputs
+        .iter()
+        .map(|mol| mol.detached_search_target())
+        .collect();
+    cosmolkit_search::find_mcs(&targets, params)
+}
+
 /// Parse SMARTS with the source owner's unchanged defaults.
 pub fn parse_smarts(text: &str) -> Result<QueryGraph, SmartsParseError> {
     parse_smarts_with_params(text, &SmartsParseParams::default())
@@ -272,6 +299,66 @@ mod original_smarts_public_regressions {
     use super::*;
     use cosmolkit_search::SearchTargetAccess;
     use std::sync::Arc;
+
+    #[test]
+    fn mcs_public_default_query_and_inputs_are_preserved() {
+        let a = Molecule::from_smiles("CCO").unwrap();
+        let b = Molecule::from_smiles("CCN").unwrap();
+        let topology = a.topology_arc_runtime();
+        let coordinates = a.coordinates_arc_runtime();
+        let cache = a.derived_cache_arc_runtime();
+        let result = maximum_common_substructure(&[&a, &b]).unwrap();
+        assert_eq!(
+            (result.atom_count, result.bond_count, result.completed),
+            (2, 1, true)
+        );
+        assert_eq!(result.smarts, "[#6]-[#6]".into());
+        let query = result.query.as_ref().unwrap();
+        assert!(a.has_substruct_match(query).unwrap());
+        assert!(b.has_substruct_match(query).unwrap());
+        assert!(Arc::ptr_eq(&topology, &a.topology_arc_runtime()));
+        assert!(Arc::ptr_eq(&coordinates, &a.coordinates_arc_runtime()));
+        assert!(Arc::ptr_eq(&cache, &a.derived_cache_arc_runtime()));
+        assert_eq!(a.to_smiles().unwrap(), "CCO".into());
+        assert_eq!(b.to_smiles().unwrap(), "CCN".into());
+    }
+
+    #[test]
+    fn mcs_public_options_empty_result_and_errors_are_forwarded() {
+        let a = Molecule::from_smiles("CCO").unwrap();
+        let b = Molecule::from_smiles("CCN").unwrap();
+        let params = crate::McsParameters {
+            atom_comparator: crate::McsAtomComparator::AtomCompareAny,
+            ..Default::default()
+        };
+        let result = maximum_common_substructure_with_params(&[&a, &b], &params).unwrap();
+        assert_eq!((result.atom_count, result.bond_count), (3, 2));
+        let c = Molecule::from_smiles("Cl").unwrap();
+        let d = Molecule::from_smiles("Br").unwrap();
+        let empty = maximum_common_substructure(&[&c, &d]).unwrap();
+        assert_eq!(
+            (empty.atom_count, empty.bond_count, empty.completed),
+            (0, 0, true)
+        );
+        assert!(empty.query.is_none());
+        assert!(empty.smarts.is_empty());
+        assert!(matches!(
+            maximum_common_substructure(&[&a]),
+            Err(crate::McsError::State(
+                cosmolkit_search::McsError::TooFewInputs { count: 1 }
+            ))
+        ));
+        let invalid = crate::McsParameters {
+            threshold: 1.1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            maximum_common_substructure_with_params(&[&a, &b], &invalid),
+            Err(crate::McsError::State(
+                cosmolkit_search::McsError::ThresholdAboveOne
+            ))
+        ));
+    }
 
     #[test]
     fn configured_single_and_boolean_matching_preserve_callback_policy_and_inputs() {

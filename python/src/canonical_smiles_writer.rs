@@ -173,7 +173,7 @@ impl CxCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct CxSmilesWriteParams {
     pub(crate) inner: ck::CxSmilesWriteParams,
 }
@@ -218,7 +218,7 @@ impl CxSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct RandomSmilesWriteParams {
     pub(crate) inner: ck::RandomSmilesWriteParams,
 }
@@ -261,7 +261,7 @@ impl RandomSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct FragmentSmilesWriteParams {
     pub(crate) inner: ck::FragmentSmilesWriteParams,
 }
@@ -315,7 +315,7 @@ impl FragmentSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct FragmentCxSmilesWriteParams {
     pub(crate) inner: ck::FragmentCxSmilesWriteParams,
 }

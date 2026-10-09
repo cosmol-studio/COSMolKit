@@ -4,6 +4,7 @@ mod descriptors;
 mod execute;
 pub mod fingerprints;
 pub mod forcefield_regression;
+pub mod mcs;
 pub mod mmff;
 pub mod molalign;
 pub mod molecular;

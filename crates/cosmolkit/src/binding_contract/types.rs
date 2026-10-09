@@ -57,6 +57,18 @@ pub struct BindingParameterContract {
     pub default: BindingDefault,
 }
 
+/// One configuration input, including its Rust field and Python spellings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingConfigurationField {
+    pub name: &'static str,
+    pub rust_field: &'static str,
+    pub type_name: &'static str,
+    pub default: BindingDefault,
+    pub aliases: &'static [&'static str],
+    /// Executable binding probe, not a chemistry-parity specification.
+    pub callback: Option<&'static str>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BindingCallableContract {
     pub kind: BindingKind,
@@ -111,7 +123,7 @@ pub struct BindingContractEntry {
     pub python_native: Option<&'static str>,
     /// Configuration constructor schema in Python's own projection vocabulary.
     /// Rust public-field records need not grow a redundant `new` method.
-    pub python_configuration: Option<&'static [BindingParameterContract]>,
+    pub python_configuration: Option<&'static [BindingConfigurationField]>,
     pub python_property: Option<BindingPropertyAccess>,
     pub javascript_name: &'static str,
     pub feature: &'static str,

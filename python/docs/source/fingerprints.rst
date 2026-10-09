@@ -478,6 +478,25 @@ the fingerprint and experimental provenance data:
 Supported Parameters
 --------------------
 
+The short Morgan methods accept a parameter record or configuration keywords:
+
+.. code-block:: python
+
+   fp = mol.fingerprint_morgan(radius=2, fp_size=256, include_chirality=True)
+
+   params = ck.MorganFingerprintParams(from_atoms=[0])
+   params.generator.radius = 2
+   params.generator.fp_size = 256
+   params.from_atoms.append(1)
+   fp = mol.fingerprint_morgan(params)
+
+Nested parameters and configuration lists are live views of their parent
+record. Edits go through native conversion and validation; rejected edits leave
+the record unchanged. Constructor inputs are copied, so editing a parameter
+record does not modify a list or generator previously passed into it. Do not
+combine a parameter record with its configuration keywords, or ``generator=``
+with generator keywords such as ``radius=``.
+
 The Python binding exposes the source-backed Morgan generator branches covered
 by exact RDKit bit parity:
 

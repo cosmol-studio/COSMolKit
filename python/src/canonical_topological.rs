@@ -43,7 +43,7 @@ pub(crate) fn topological_pyerr(py: Python<'_>, source: ck::TopologicalFingerpri
     err
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct TopologicalFingerprintParams {
     pub(crate) inner: ck::TopologicalFingerprintParams,
 }
@@ -129,7 +129,7 @@ impl TopologicalFingerprintParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct TopologicalFingerprintOutputRequest {
     pub(crate) inner: ck::TopologicalFingerprintOutputRequest,
 }

@@ -45,7 +45,7 @@ def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
     if mol.has_2d_coordinates():
         coords2d = np.asarray(mol.coordinates_2d())
-        assert coords2d.shape == (atom_count, 2), coords2d.shape
+        assert coords2d.shape == (atom_count, 3), coords2d.shape
     for conformer_index in range(mol.num_3d_conformers()):
         coords3d = np.asarray(mol.coordinates_3d(conformer_index))
         assert coords3d.shape == (atom_count, 3), coords3d.shape
@@ -205,7 +205,7 @@ $$$$
     assert len(removed) == 1
     assert removed.has_2d_coordinates()
     assert removed.num_3d_conformers() == 1
-    assert np.asarray(removed.coordinates_2d()).shape == (1, 2)
+    assert np.asarray(removed.coordinates_2d()).shape == (1, 3)
     assert np.asarray(removed.coordinates_3d()).shape == (1, 3)
 
 
@@ -337,8 +337,8 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert np.asarray(embedded.coordinates_3d()).shape == (len(embedded), 3)
     assert result.conf_id() == 0
     assert result.ok() is True
-    assert result.params().failures == params.failures
-    assert params.failures and sum(params.failures) == 0
+    assert params.failures == []
+    assert result.params().failures and sum(result.params().failures) == 0
     assert params.et_version == 2
     assert params.use_exp_torsion_angle_prefs is True
     assert params.use_basic_knowledge is True
@@ -366,7 +366,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert mutable.num_3d_conformers() == 1
 
     json_params = cosmolkit.EmbedParams.dg()
-    json_params.update_from_json(
+    json_params = json_params.with_json(
         '{"randomSeed": 17, "useRandomCoords": true, "boxSizeMult": 3.5, "forceTransAmides": false, "trackFailures": true}'
     )
     assert json_params.random_seed == 17
@@ -387,7 +387,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     }
     mapped_params.cpci = {(0, 3): 0.5, (1, 4): -0.25}
 
-    assert mapped_params.coord_map == {
+    assert {atom: tuple(point) for atom, point in mapped_params.coord_map.items()} == {
         0: (0.0, 0.0, 0.0),
         1: (0.0, 0.0, 1.5),
         2: (0.0, 1.5, 1.5),
@@ -418,9 +418,9 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     assert failed.num_3d_conformers() == 0
     assert failed_result.conf_id() == -1
     assert failed_result.ok() is False
-    assert failed_result.params().failures == chiral_params.failures
-    assert chiral_params.failures
-    assert sum(chiral_params.failures) > 0
+    assert chiral_params.failures == []
+    assert failed_result.params().failures
+    assert sum(failed_result.params().failures) > 0
 
     mol = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
     embed_params = cosmolkit.EmbedParams.etkdg_v3()
@@ -429,7 +429,7 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     embedded = mol.with_3d_conformer(embed_params)
     coords_before = embedded.coordinates_3d().copy()
 
-    uff = embedded.with_uff_optimized(max_iters=100)
+    uff = embedded.with_uff_optimized(max_iterations=100)
     assert uff.molecule().num_3d_conformers() == 1
     assert uff.energy() >= 0.0
     assert isinstance(uff.needs_more(), bool)
@@ -437,8 +437,8 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     assert np.allclose(embedded.coordinates_3d(), coords_before)
     assert not np.allclose(uff.molecule().coordinates_3d(), coords_before)
 
-    if embedded.has_mmff_params():
-        mmff = embedded.with_mmff_optimized(max_iters=50)
+    if embedded.mmff_has_all_molecule_params():
+        mmff = embedded.with_mmff_optimized(max_iterations=50)
         assert mmff.molecule().num_3d_conformers() == 1
         assert isinstance(mmff.needs_more(), bool)
         assert mmff.status_code() in (-1, 0, 1)
@@ -603,7 +603,7 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     assert result.n_bits() == 256
     assert len(additional.atom_counts()) == len(chiral)
     assert isinstance(additional.bit_info_map(), dict)
-    avalon = chiral.avalon_fingerprint(n_bits=256, bit_flags=0x007FFF)
+    avalon = chiral.fingerprint_avalon(n_bits=256, bit_flags=0x007FFF)
     assert avalon.n_bits() == 256
     assert chiral.fingerprint_topological(fp_size=256).n_bits() == 256
     assert chiral.fingerprint_maccs().n_bits() == 166
@@ -702,7 +702,7 @@ def test_python_substruct_atom_bond_callback():
     atom_calls = []
 
     def oxygen_only(query_atom, target_atom):
-        assert isinstance(query_atom, cosmolkit.Atom)
+        assert isinstance(query_atom, cosmolkit.QueryAtom)
         assert isinstance(target_atom, cosmolkit.Atom)
         atom_calls.append((query_atom.id(), target_atom.id()))
         return target_atom.atomic_number() == 8
@@ -721,7 +721,7 @@ def test_python_substruct_atom_bond_callback():
         assert isinstance(query_bond, cosmolkit.Bond)
         assert isinstance(target_bond, cosmolkit.Bond)
         bond_calls.append((query_bond.id(), target_bond.id()))
-        return target_bond.bond_type_name() == "DOUBLE"
+        return target_bond.order_name() == "DOUBLE"
 
     bond_matches = bond_target.substruct_matches(
         bond_query, uniquify=False, bond_match=double_only
@@ -842,17 +842,15 @@ def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
     assert disconnected.largest_fragment().to_smiles() == "CC"
 
     aromatic = cosmolkit.Molecule.from_smiles("c1ccccc1CCO")
-    assert isinstance(aromatic.hash(), int)
-    assert isinstance(aromatic.hash_with_ranks([0] * len(aromatic)), int)
+    assert isinstance(aromatic.molecular_hash(), int)
+    assert isinstance(aromatic.molecular_hash_with_ranks([0] * len(aromatic)), int)
     assert aromatic.murcko_scaffold().num_atoms() > 0
     assert aromatic.net_scaffold().num_atoms() > 0
 
     payload = aromatic.to_binary()
     restored_method = cosmolkit.Molecule.from_binary(payload)
-    restored_fn = cosmolkit.mol_from_binary(payload)
     assert restored_method.to_smiles() == aromatic.to_smiles()
-    assert restored_fn.to_smiles() == aromatic.to_smiles()
-    assert cosmolkit.mol_to_binary(aromatic) == payload
+    assert restored_method.to_binary() == payload
     assert cosmolkit.version() == cosmolkit.__version__
 
 
@@ -861,15 +859,16 @@ def test_draw_and_substructure_bindings_are_available():
     png = mol.to_png(width=200, height=150)
     assert bytes(png).startswith(b"\x89PNG\r\n\x1a\n")
 
-    pdb_block = mol.to_pdb_block()
-    assert isinstance(pdb_block, str)
-    assert "HETATM" in pdb_block or "ATOM" in pdb_block
-
-    pdb_mol = cosmolkit.Molecule.from_pdb_block(
+    pdb_structure = cosmolkit.BioStructure.from_pdb(
         """\
 HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C  
 HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O  
-""",
+"""
+    )
+    pdb_block = pdb_structure.to_pdb()
+    assert isinstance(pdb_block, str)
+    assert "HETATM" in pdb_block or "ATOM" in pdb_block
+    pdb_mol = pdb_structure.to_molecule(
         sanitize=False,
         remove_hs=False,
         proximity_bonding=True,
@@ -877,18 +876,19 @@ HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
     assert pdb_mol.num_atoms() == 2
     assert pdb_mol.num_bonds() == 1
 
-    metal_pdb_mol = cosmolkit.Molecule.from_pdb_block(
+    metal_pdb_mol = cosmolkit.BioStructure.from_pdb(
         """\
 HETATM    1 HG    HG     1      -2.213  10.563  24.265  1.00 32.73          HG
 HETATM    2 CD    CD     1      -3.467  18.396  77.649  0.50 39.48          CD
-""",
+"""
+    ).to_molecule(
         sanitize=False,
         remove_hs=False,
         proximity_bonding=False,
     )
     assert [atom.atomic_number() for atom in metal_pdb_mol.atoms()] == [80, 48]
 
-    mmcif_mol = cosmolkit.Molecule.from_mmcif_block(
+    mmcif_mol = cosmolkit.BioStructure.from_mmcif(
         """\
 data_demo
 loop_
@@ -905,7 +905,8 @@ _atom_site.Cartn_y
 _atom_site.Cartn_z
 HETATM 1 C C1 . LIG A 1 0.000 0.000 0.000
 HETATM 2 O O1 . LIG A 1 1.200 0.000 0.000
-""",
+"""
+    ).to_molecule(
         sanitize=False,
         remove_hs=False,
         proximity_bonding=True,
@@ -936,16 +937,14 @@ H -0.758 0.000 0.504
         ),
     )
 
-    query = cosmolkit.Molecule.from_smiles("c1ccccc1")
-    assert cosmolkit.has_substruct_match(mol, query) is True
-    first = cosmolkit.get_substruct_match(mol, query)
+    query = cosmolkit.QueryGraph.from_smarts("c1ccccc1")
+    assert mol.has_substruct_match(query) is True
+    first = mol.substruct_match(query)
     assert first is not None
-    assert len(first.atom_mapping()) == len(query)
-    matches = cosmolkit.get_substruct_matches(mol, query)
+    assert len(first.atom_mapping()) == query.num_atoms()
+    matches = mol.substruct_matches(query)
     assert len(matches) >= 1
-    matches_limited = cosmolkit.get_substruct_matches_with_params(
-        mol, query, max_matches=1, uniquify=True
-    )
+    matches_limited = mol.substruct_matches(query, max_matches=1, uniquify=True)
     assert len(matches_limited) == 1
 
 

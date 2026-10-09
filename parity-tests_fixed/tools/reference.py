@@ -405,6 +405,12 @@ def generate(request):
     pin = json.loads((PACKAGE / "testdata/reference/rdkit.json").read_text())
     if rdBase.rdkitVersion != pin["version"]:
         raise RuntimeError(f"RDKit version {rdBase.rdkitVersion} != {pin['version']}")
+    if kind in ("mcs_upstream", "mcs_jnk1"):
+        from mcs import mcs_case
+        fixture = request["input"]
+        return parallel(mcs_case,
+                        [(case, [fixture["molecules"][i] for i in case["inputs"]])
+                         for case in fixture["cases"]], threads, progress)
     if kind == "descriptors":
         return parallel(descriptor_case, request["corpus"], threads, progress)
     if kind in ("forcefield_optimizers", "mmff_builtin"):

@@ -42,6 +42,8 @@ pub fn manifest() -> Value {
             "python_native": entry.python_native,
             "python_fields": entry.python_configuration.map(|fields| fields.iter().map(|field| json!({
                 "name": field.name, "type": field.type_name,
+                "rust_field": field.rust_field, "aliases": field.aliases,
+                "callback": field.callback,
                 "default": match field.default {
                     BindingDefault::Required => Value::Null,
                     BindingDefault::Value(value) => json!(value),

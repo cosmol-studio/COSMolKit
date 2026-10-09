@@ -285,7 +285,7 @@ fn default_force_tolerance() -> f64 {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct MmffForceFieldParams {
     pub(crate) inner: ck::MmffForceFieldParams,
@@ -330,7 +330,7 @@ impl MmffForceFieldParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct UffForceFieldParams {
     pub(crate) inner: ck::UffForceFieldParams,
@@ -369,7 +369,7 @@ impl UffForceFieldParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct ForceFieldMinimizeParams {
     pub(crate) inner: ck::ForceFieldMinimizeParams,
@@ -552,6 +552,16 @@ impl MolecularForceField {
     fn gradient<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         self.inner
             .gradient()
+            .map(|rows| snapshot(py, &rows))
+            .map_err(|e| force_pyerr(py, &e))
+    }
+    /// Full energy derivative as an independent float64 (N, 3) array.
+    /// Fixed-atom rows are not zeroed; the fixed set and positions are unchanged.
+    /// Physical force is the negative of this gradient.
+    #[gen_stub(override_return_type(type_repr="numpy.typing.NDArray[numpy.float64]",imports=("numpy","numpy.typing")))]
+    fn gradient_unconstrained<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        self.inner
+            .gradient_unconstrained()
             .map(|rows| snapshot(py, &rows))
             .map_err(|e| force_pyerr(py, &e))
     }

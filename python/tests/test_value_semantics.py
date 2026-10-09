@@ -8,7 +8,7 @@ import pytest
 def assert_coordinate_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
     if mol.has_2d_coordinates():
-        assert np.asarray(mol.coordinates_2d()).shape == (atom_count, 2)
+        assert np.asarray(mol.coordinates_2d()).shape == (atom_count, 3)
     for conformer_index in range(mol.num_3d_conformers()):
         assert np.asarray(mol.coordinates_3d(conformer_index)).shape == (atom_count, 3)
 
@@ -77,7 +77,7 @@ def test_setting_2d_coordinates_is_value_style_and_validates_input():
     assert with_coords is not mol
     assert not mol.has_2d_coordinates()
     assert with_coords.has_2d_coordinates()
-    assert np.allclose(with_coords.coordinates_2d(), coords)
+    assert np.allclose(with_coords.coordinates_2d(), np.column_stack([coords, np.zeros(3)]))
 
     with pytest.raises(ValueError, match="row count mismatch"):
         mol.with_2d_coordinate_block([[0.0, 0.0]])
@@ -91,7 +91,7 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
     coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
 
     strict = mol.with_2d_coordinate_block(coords3, z_policy=cosmolkit.CoordinateZPolicy.RequireZero)
-    assert np.allclose(strict.coordinates_2d(), np.asarray(coords3)[:, :2])
+    assert np.allclose(strict.coordinates_2d(), coords3)
 
     with pytest.raises(ValueError, match="z_policy='error'"):
         mol.with_2d_coordinate_block(coords3, z_policy=cosmolkit.CoordinateZPolicy.from_name("error"))
@@ -104,7 +104,7 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
 
     assert mol.set_2d_coordinates_(coords3) is None
     assert mol.has_2d_coordinates()
-    assert np.allclose(mol.coordinates_2d(), np.asarray(coords3)[:, :2])
+    assert np.allclose(mol.coordinates_2d(), coords3)
 
 
 def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
@@ -335,14 +335,14 @@ def test_molecule_batch_sanitize_flag_and_transform_are_not_noops():
     assert sanitized == ["C[N+](=O)[O-]"]
 
 
-def test_structural_array_access_returns_owned_lists_convertible_to_numpy():
+def test_structural_array_access_returns_owned_numpy_arrays():
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
     coords = mol.coordinates_2d()
     bounds = mol.dg_bounds_matrix()
 
-    assert isinstance(coords, list)
-    assert np.asarray(coords).shape == (3, 2)
+    assert isinstance(coords, np.ndarray)
+    assert coords.shape == (3, 3)
     assert isinstance(bounds, np.ndarray)
     assert bounds.shape == (3, 3)
     coords[0][0] = -999.0
@@ -416,7 +416,7 @@ def test_structural_array_access_supports_numpy_operations():
 
     centered = coords - coords.mean(axis=0)
     assert centered.shape == coords.shape
-    assert np.allclose(centered.mean(axis=0), np.zeros(2))
+    assert np.allclose(centered.mean(axis=0), np.zeros(3))
     assert np.asarray(coords) is coords
     assert np.asarray(bounds) is bounds
     assert np.isclose(bounds[0, 1], bounds[0][1])
@@ -478,7 +478,7 @@ $$$$
     mol_2d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
     mol_3d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
 
-    assert np.asarray(mol_2d.coordinates_2d()).shape == (1, 2)
+    assert np.asarray(mol_2d.coordinates_2d()).shape == (1, 3)
     assert np.allclose(mol_3d.coordinates_3d(), np.array([[0.0, 0.0, 0.0]]))
 
 
@@ -820,12 +820,12 @@ $$$$
     removed_2d = mol_2d.without_hydrogens(sanitize=False)
 
     assert len(removed_2d) == 2
-    assert np.asarray(removed_2d.coordinates_2d()).shape == (2, 2)
-    assert np.allclose(removed_2d.coordinates_2d(), np.array([[0.0, 0.0], [2.0, 0.0]]))
+    assert np.asarray(removed_2d.coordinates_2d()).shape == (2, 3)
+    assert np.allclose(removed_2d.coordinates_2d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
 
     both = mol_3d.with_2d_coordinates().without_hydrogens(sanitize=False)
     assert len(both) == 2
-    assert np.asarray(both.coordinates_2d()).shape == (2, 2)
+    assert np.asarray(both.coordinates_2d()).shape == (2, 3)
     assert np.asarray(both.coordinates_3d()).shape == (2, 3)
 
 

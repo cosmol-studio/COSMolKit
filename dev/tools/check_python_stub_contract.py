@@ -524,6 +524,12 @@ def check_configuration(module, document):
             read_types = [attr.annotation for attr in writable] + [fn.returns for fn in getters]
             if not read_types or any(not _read_type_matches(ty, annotation.annotation, classes) for ty in read_types) or any(_annotation(ty) != _annotation(annotation.annotation) for ty in write_types):
                 errors.append(f"{name}.{key}: constructor/getter/setter types differ")
+            if "Callable[" in field["type"] and not field.get("callback"):
+                errors.append(f"{name}.{key}: callable input requires an executable callback contract")
+            for alias in field.get("aliases", []):
+                aliases = [node.annotation for node in cls.body if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == alias]
+                if len(aliases) != 1 or _annotation(aliases[0]) != _annotation(annotation.annotation):
+                    errors.append(f"{name}.{alias}: registered configuration alias declaration missing or mistyped")
 
     for base, target, configurations in configuration_calls(entries):
         owner = "Molecule" if base["owner"] == "molecule" else types.get(base["semantic_id"].rsplit(".", 1)[0], base["semantic_id"].rsplit(".", 1)[0])
@@ -558,6 +564,137 @@ def check_configuration(module, document):
                 errors.append(f"{path}: missing keyword-only {configuration['python_name']} field call form")
             if len(forms) < 2 or any(not any(isinstance(d, ast.Name) and d.id == "overload" or isinstance(d, ast.Attribute) and d.attr == "overload" for d in form.decorator_list) for form in forms):
                 errors.append(f"{path}: configuration call forms require explicit overload declarations")
+            for field in configuration["fields"]:
+                for alias in field.get("aliases", []):
+                    if not any(alias in _arguments(form) and _annotation(_arguments(form)[alias][0].annotation) == _annotation(ast.parse(field["type"], mode="eval").body) for form in forms):
+                        errors.append(f"{path}: registered configuration keyword alias {alias!r} missing or mistyped")
+    return errors
+
+
+def _assignment_probes(previous, field):
+    """Candidate values are validated by the real constructor before assignment.
+
+    No domain-specific configuration names or second registry live here.
+    """
+    if isinstance(previous, bool):
+        return [not previous]
+    if isinstance(previous, int):
+        return [previous + 1, 1, 0]
+    if isinstance(previous, float):
+        return [previous + 0.5, 0.5, 1.0]
+    if isinstance(previous, str):
+        return [previous + "_ck_probe", ""]
+    if isinstance(previous, list):
+        return [[], list(previous) + list(previous[:1])]
+    if isinstance(previous, dict):
+        return [{}]
+    if previous is None and "Sequence[" in field["type"]:
+        return [[]]
+    return []
+
+
+def check_effective_assignment(cls, row, field, schemas):
+    errors = []
+    for probe in _assignment_probes(getattr(cls(), field["name"]), field):
+        value = cls()
+        original = _configuration_snapshot(value, schemas)
+        arguments = {item["name"]: getattr(value, item["name"]) for item in row["fields"]}
+        try:
+            candidate = cls(**dict(arguments, **{field["name"]: probe}))
+        except (TypeError, ValueError, OverflowError):
+            continue  # A source-defined constructor constraint, not a setter defect.
+        expected = _configuration_snapshot(candidate, schemas)
+        if expected == original:
+            continue
+        try:
+            setattr(value, field["name"], probe)
+            if _configuration_snapshot(value, schemas) != expected:
+                errors.append(f"{row['python_name']}.{field['name']}: effective assignment differs from constructor (ignored input or changed sibling fields)")
+        except Exception as error:
+            errors.append(f"{row['python_name']}.{field['name']}: valid constructor input rejected by setter: {error}")
+        break
+    return errors
+
+
+def check_callback_runtime(module, document):
+    """Exercise registered callbacks through every matching call form.
+
+    Two atoms are sufficient to detect missing dispatch; this is a binding
+    contract probe, not a reference/corpus test or a new chemistry oracle.
+    """
+    errors = []
+    for base, target, configurations in configuration_calls(document["entries"]):
+        if base["owner"] != "molecule":
+            continue
+        for parameter, row in configurations:
+            for field in row["fields"]:
+                if not field.get("callback"):
+                    continue
+                path = f"{base['semantic_id']}({field['name']})"
+                try:
+                    molecule = module.Molecule.from_smiles("CC")
+                    query = module.parse_smarts("C~C")
+                    baseline = getattr(molecule, base["python_name"])(query)
+                    if not baseline:
+                        raise AssertionError("callback probe has no baseline match")
+                    before = molecule.to_smiles()
+                    for form, name in [("constructor", field["name"]), ("assignment", field["name"]), ("parameter", field["name"]), ("keyword", field["name"])] + [(form, alias) for alias in field.get("aliases", []) for form in ("assignment", "keyword")]:
+                        for behavior in ("accept", "reject", "raise"):
+                            seen = []
+                            original_error = RuntimeError("binding callback probe")
+
+                            def callback(*args):
+                                kind = field["callback"]
+                                if len(args) != 2:
+                                    raise AssertionError("callback arity differs from its contract")
+                                if kind == "final_match":
+                                    if not isinstance(args[0], module.Molecule) or len(args[1]) != 2 or any(type(index) is not int or not 0 <= index < 2 for index in args[1]):
+                                        raise AssertionError("invalid final-match callback arguments")
+                                elif kind == "atom_match":
+                                    if not isinstance(args[0], module.QueryAtom) or not isinstance(args[1], module.Atom):
+                                        raise AssertionError("invalid atom-match callback arguments")
+                                elif kind == "bond_match":
+                                    if not all(isinstance(arg, module.Bond) for arg in args):
+                                        raise AssertionError("invalid bond-match callback arguments")
+                                else:
+                                    raise AssertionError("unknown callback contract")
+                                seen.append(args)
+                                if behavior == "raise":
+                                    raise original_error
+                                return behavior == "accept"
+
+                            cls = getattr(module, row["python_name"])
+                            if form == "keyword":
+                                call = lambda: getattr(molecule, base["python_name"])(query, **{name: callback})
+                            else:
+                                params = cls(**{name: callback}) if form in ("constructor", "parameter") else cls()
+                                if form == "assignment":
+                                    setattr(params, name, callback)
+                                if getattr(params, name) is not callback:
+                                    raise AssertionError(f"{name}: callback assignment was discarded")
+                                entry = base if form == "parameter" else target
+                                call = lambda: getattr(molecule, entry["python_name"])(query, params)
+                            try:
+                                result = call()
+                            except Exception as error:
+                                if behavior != "raise" or error is not original_error:
+                                    raise AssertionError(f"{form}/{behavior}: original callback exception not propagated") from error
+                            else:
+                                def snapshot(value):
+                                    if isinstance(value, list):
+                                        return [snapshot(item) for item in value]
+                                    if value is None or type(value) is bool:
+                                        return value
+                                    return tuple(value.atom_mapping())
+                                expected = snapshot(baseline) if behavior == "accept" else [] if isinstance(baseline, list) else False if type(baseline) is bool else None
+                                if behavior == "raise" or snapshot(result) != expected:
+                                    raise AssertionError(f"{form}/{behavior}: callback result ignored")
+                            if not seen or behavior == "raise" and len(seen) != 1:
+                                raise AssertionError(f"{form}/{behavior}: callback not invoked or invoked again after exception")
+                            if molecule.to_smiles() != before:
+                                raise AssertionError("read-only matching changed the receiver")
+                except Exception as error:
+                    errors.append(f"{path}: callback contract failed: {error}")
     return errors
 
 
@@ -605,7 +742,8 @@ def check_runtime(module, document):
 
     Default-constructible configuration values and an empty batch are used.
     Filesystem smoke checks use disposable empty files; invalid/protocol probes
-    stop before IO. No chemical calculation or external fixture is used.
+    stop before IO. Callback checks use a two-atom in-memory molecule; no
+    external fixture or reference installation is used.
     """
     import inspect
     document = python_document(document)
@@ -654,6 +792,14 @@ def check_runtime(module, document):
         except Exception as error:
             errors.append(f"{row['python_name']}: default construction failed: {error}")
             continue
+        try:
+            setattr(value, "ck_unknown_configuration_field", object())
+        except AttributeError:
+            pass
+        except Exception as error:
+            errors.append(f"{row['python_name']}: unknown configuration field raised the wrong error: {error}")
+        else:
+            errors.append(f"{row['python_name']}: unknown configuration field was silently accepted")
         if requires_configuration_repr(row):
             errors.extend(check_configuration_repr(value, row, schemas))
         for field in row["fields"]:
@@ -666,6 +812,7 @@ def check_runtime(module, document):
                 setattr(value, field["name"], previous)
                 if _configuration_snapshot(value, schemas) != before:
                     errors.append(f"{row['python_name']}.{field['name']}: assignment did not preserve the value")
+                errors.extend(check_effective_assignment(cls, row, field, schemas))
                 vocabulary = getattr(type(previous), "_enum_string_values", None)
                 if vocabulary is None and hasattr(type(previous), "__members__"):
                     vocabulary = [(name.lower(), member) for name, member in type(previous).__members__.items()]
@@ -698,4 +845,5 @@ def check_runtime(module, document):
             except Exception as error:
                 errors.append(f"{row['python_name']}.{field['name']}: actual assignment failed: {error}")
     errors.extend(check_path_runtime(module, document))
+    errors.extend(check_callback_runtime(module, document))
     return errors

@@ -434,6 +434,8 @@ def test_actual_readonly_extension_style_descriptor_cannot_be_hidden_by_writable
     from types import SimpleNamespace
 
     class SearchParams:
+        __slots__ = ("_limit",)
+
         def __init__(self, limit=100):
             self._limit = limit
 
@@ -455,3 +457,75 @@ def test_actual_readonly_extension_style_descriptor_cannot_be_hidden_by_writable
         set_limit(self, value)
     SearchParams.limit = SearchParams.limit.setter(broken_set_limit)
     assert any("failed assignment changed" in error for error in check_runtime(SimpleNamespace(SearchParams=SearchParams), document))
+
+
+def test_runtime_gate_rejects_noop_setter_even_when_old_value_and_invalid_input_checks_pass():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        __slots__ = ("_limit",)
+
+        def __init__(self, limit=100):
+            self._limit = limit
+
+        @property
+        def limit(self):
+            return self._limit
+
+        @limit.setter
+        def limit(self, value):
+            if not isinstance(value, int):
+                raise TypeError("integer required")
+            # Deliberately ignore every valid assignment.
+
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    errors = check_runtime(SimpleNamespace(SearchParams=SearchParams), document)
+    assert any("effective assignment differs from constructor" in error for error in errors)
+
+
+def test_runtime_gate_rejects_unregistered_dynamic_attributes():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        def __init__(self, limit=100):
+            self.limit = limit
+
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    assert any("unknown configuration field was silently accepted" in error for error in check_runtime(SimpleNamespace(SearchParams=SearchParams), document))
+
+
+def test_callable_configuration_requires_registered_behavior_not_just_a_typed_stub():
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    document["entries"][0]["python_fields"] = [{"name": "limit", "type": "typing.Optional[typing.Callable[..., bool]]", "default": "None"}]
+    stub = "class SearchParams:\n    limit: typing.Optional[typing.Callable[..., bool]]\n    def __new__(cls, *, limit: typing.Optional[typing.Callable[..., bool]] = None) -> SearchParams: ...\n"
+    assert any("requires an executable callback contract" in error for error in check_contract(stub, json.dumps(document)))
+
+
+def test_callback_gate_detects_binding_that_accepts_and_discards_callbacks():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        def __init__(self, limit=None):
+            self.limit = limit
+
+    class Molecule:
+        @classmethod
+        def from_smiles(cls, text):
+            return cls()
+
+        def to_smiles(self):
+            return "CC"
+
+        def matches(self, query, **kwargs):
+            return [SimpleNamespace(atom_mapping=lambda: [0, 1])]
+
+        def matches_with_params(self, query, params):
+            return [SimpleNamespace(atom_mapping=lambda: [0, 1])]  # Never invoke params.limit.
+
+    document = _configuration_document()
+    document["entries"][0]["fields"] = [{"name": "limit", "type": "typing.Optional[typing.Callable[..., bool]]", "default": "None", "callback": "final_match"}]
+    module = SimpleNamespace(Molecule=Molecule, SearchParams=SearchParams, parse_smarts=lambda _: object())
+    assert any("callback not invoked" in error for error in _checker.check_callback_runtime(module, document))

@@ -84,7 +84,7 @@ pub(crate) fn parameter_query_pyerr(py: Python<'_>, source: ck::UffParameterQuer
     error
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct UffOptimizationParams {
     pub(crate) inner: ck::UffOptimizationParams,
@@ -134,7 +134,7 @@ impl UffOptimizationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct UffConformerOptimizationParams {
     pub(crate) inner: ck::UffConformerOptimizationParams,
@@ -308,7 +308,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
 pub(crate) struct UffEvaluationParams {
     pub(crate) inner: ck::UffEvaluationParams,

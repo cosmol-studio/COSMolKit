@@ -21,7 +21,8 @@ def test_immutable_update_owns_values_and_survives_receiver_lifetime(kind):
     assert original.count_bounds == [1, 2, 4, 8]
     bounds = updated.count_bounds
     bounds.append(99)
-    assert updated.count_bounds == [1, 3, 7]
+    assert updated.count_bounds == [1, 3, 7, 99]
+    assert original.count_bounds == [1, 2, 4, 8]
     updated.fp_size = 12
     assert updated.fp_size == 12
     assert original.fp_size != 12

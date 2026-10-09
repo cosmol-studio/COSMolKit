@@ -54,18 +54,26 @@ pub fn python_enum(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// Generate configuration setters from the binding's actual constructor.
 /// Each setter validates a replacement through that constructor before commit.
 /// `fieldwise` retains preset-only state in records with public Rust fields.
+/// `existing_setters` retains handwritten descriptors and adds view refresh only.
 #[proc_macro_attribute]
 pub fn python_configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let fieldwise = attribute.to_string() == "fieldwise";
-    if !attribute.is_empty() && !fieldwise {
+    let existing_setters = attribute.to_string() == "existing_setters";
+    if !attribute.is_empty() && !fieldwise && !existing_setters {
         return syn::Error::new(
             proc_macro2::Span::call_site(),
-            "expected no arguments or fieldwise",
+            "expected no arguments, fieldwise or existing_setters",
         )
         .to_compile_error()
         .into();
     }
-    match syn::parse(item).and_then(|item| python_configuration::expand(item, fieldwise)) {
+    match syn::parse(item).and_then(|item| {
+        if existing_setters {
+            python_configuration::refresh(item)
+        } else {
+            python_configuration::expand(item, fieldwise)
+        }
+    }) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }

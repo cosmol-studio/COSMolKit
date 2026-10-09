@@ -86,9 +86,13 @@ and native feature masks; both sides receive the recorded explicit flags.
 The upstream unrooted-linear Layered branch is executed in an isolated
 process because the pinned source can crash while treating atom-path indices
 as bond indices. Every original case and seeded profile is retained. Native
-process failures retain their exit code, process ID and diagnostics as explicit
-failing reference observations; they are never matches or timeout exclusions.
-Successful native results keep the existing exact comparison.
+segmentation faults retain their complete inputs, exit code, process ID,
+diagnostics and CK outcome in reports under `UpstreamReferenceCrash`. This
+explicitly approved exception applies only to that unrooted-linear Layered
+branch with SIGSEGV/Windows access-violation exits. Reports count these rows
+separately as `upstream_crashed`, never as matches or preparation timeouts.
+Other native failures remain failures; zero actual comparisons still fails.
+All successful native results retain the existing exact comparison.
 
 ## Special regressions
 
@@ -99,7 +103,8 @@ cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolk
 
 For one special regression, replace `all` with `structure_tags`,
 `tautomer_long_conjugated`, `tautomer_focused`, `molalign_focused`, or
-`bio_mmcif_switches`, `forcefield_optimizers`, or `mmff_builtin`, then use the same name as
+`bio_mmcif_switches`, `forcefield_optimizers`, `mmff_builtin`, `mcs_upstream`, or
+`mcs_jnk1`, then use the same name as
 Cargo's test filter. The focused tautomer matrix keeps 18 inputs, eight profiles
 and all 136 valid enumeration branches; it is not part of ordinary crate tests.
 MolAlign retains its 14 fixed boundary calls, including typed errors, through
@@ -114,6 +119,30 @@ counts compare exactly. The original seed and CXSMILES input geometry are retain
 `mmff_builtin` retains all 2,052 rows of the four upstream dative/hypervalent
 matrices, comparing availability and every MMFF94/MMFF94s atom type.
 These references are regenerated with the current pin, not copied from old goldens.
+
+MCS uses the same two-command workflow:
+
+```bash
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --special mcs_upstream --threads 112
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test special_regression mcs_upstream
+```
+
+Replace `mcs_upstream` in both commands with `mcs_jnk1` for the complete
+**210 pairs** from 21 upstream JNK1 ligands. `mcs_upstream` retains **44 calls**:
+42 calls from 14 selected upstream Python test methods, plus the C++
+Github9034/StoreAll and JNK1/MaxDistance cases. It is not the entire upstream
+callback/type-validation suite. Original SMILES/MOL text, parsing options,
+source paths/lines/checksums and comparison parameters are frozen under
+`testdata/special/mcs_*.json`; preparation and tests need no external fixture
+checkout. Each call requests a 30-second timeout; original upstream timeout
+values remain recorded separately.
+
+Each case is an independent Cargo test. Counts, completion, SMARTS text,
+degenerate SMARTS keys, serialized query and query-to-input match results
+compare exactly; input molecule binaries must remain unchanged. SMARTS are
+never normalized to hide differences. Native/CK errors and incomplete results
+remain failing observations, even when both sides fail or counts agree.
+Per-case results are saved under `reports/mcs_upstream/` and `reports/mcs_jnk1/`.
 
 `bio_mmcif_switches` reuses the existing `bio/sample.pdb` and `bio/sample.cif`
 inputs. It compares exact mmCIF output bytes with pinned Gemmi for its 32

@@ -16,6 +16,10 @@ mod batch;
 pub use batch::{BatchRecord, MoleculeBatch};
 #[cfg(feature = "cap-inchi")]
 mod inchi;
+#[cfg(feature = "cap-search")]
+mod mcs;
+#[cfg(feature = "cap-search")]
+pub use mcs::{maximum_common_substructure, maximum_common_substructure_with_params};
 #[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(feature = "cap-smiles")]

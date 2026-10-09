@@ -10,6 +10,22 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 pyo3::create_exception!(cosmolkit, CoordinateInputError, PyValueError);
 pyo3::create_exception!(cosmolkit, Coordinate3DReadError, PyValueError);
 
+/// Python owns this XYZ snapshot; it never aliases a molecule's COW block.
+/// The runtime keeps XY storage for 2D; only the Python projection pads z.
+pub(crate) fn coordinate_array<'py, const D: usize>(
+    py: Python<'py>,
+    rows: &[[f64; D]],
+) -> Bound<'py, numpy::PyArray2<f64>> {
+    use numpy::IntoPyArray;
+    let mut array = numpy::ndarray::Array2::zeros((rows.len(), 3));
+    for (i, row) in rows.iter().enumerate() {
+        for j in 0..D {
+            array[[i, j]] = row[j];
+        }
+    }
+    array.into_pyarray(py)
+}
+
 #[cosmolkit_macros::python_enum(existing_methods)]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
@@ -50,7 +66,7 @@ impl CoordinateZPolicy {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate2DInputParams {
     pub(crate) inner: ck::Coordinate2DInputParams,
 }
@@ -73,7 +89,7 @@ impl Coordinate2DInputParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate3DInputParams {
     pub(crate) inner: ck::Coordinate3DInputParams,
 }
@@ -94,7 +110,7 @@ impl Coordinate3DInputParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Replace3DCoordinatesParams {
     pub(crate) inner: ck::Replace3DCoordinatesParams,
 }

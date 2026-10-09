@@ -89,7 +89,7 @@ impl From<ck::SdfCoordinateMode> for SdfCoordinateMode {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SdfReadParams {
     pub(crate) inner: ck::SdfReadParams,
 }

@@ -21,6 +21,7 @@ directly.
    quickstart
    confseq
    molecule
+   mcs
    reaction
    forcefields
    batch

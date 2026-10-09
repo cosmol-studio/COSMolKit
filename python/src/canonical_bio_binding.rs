@@ -320,7 +320,7 @@ fn index(index: isize, len: usize, kind: &str) -> PyResult<usize> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioReadParams {
     inner: ck::BioReadParams,
 }
@@ -358,7 +358,7 @@ impl BioReadParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioPdbReadParams {
     inner: ck::BioPdbReadParams,
 }
@@ -436,10 +436,11 @@ impl BioSelection {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioMmcifWriteParams {
     inner: ck::BioMmcifWriteParams,
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -914,10 +915,11 @@ impl BioMmcifWriteParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioPdbWriteParams {
     inner: ck::BioPdbWriteParams,
 }
+#[cosmolkit_macros::python_configuration(existing_setters)]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -2410,7 +2412,7 @@ impl ProteinAtomRef {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
+#[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioMoleculeParams {
     inner: ck::BioMoleculeParams,
 }

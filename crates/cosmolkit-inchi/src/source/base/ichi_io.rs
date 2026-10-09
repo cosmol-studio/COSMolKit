@@ -1001,7 +1001,13 @@ pub(crate) fn inchi_ios_print(
         if maximum_length < 0 {
             return Ok(-1);
         }
-        let additional_length = (INCHI_ADD_STR_LEN as i32).max(maximum_length);
+        // The source estimate counts printable bytes, not the trailing NUL
+        // written by vsprintf. Reserve that slot explicitly in safe storage;
+        // retain the source growth quantum and formatted output unchanged.
+        let required_length = maximum_length
+            .checked_add(1)
+            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        let additional_length = (INCHI_ADD_STR_LEN as i32).max(required_length);
         let new_string_length = i64::from(ios.s.nAllocatedLength)
             .checked_add(i64::from(additional_length))
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
@@ -1150,7 +1156,11 @@ pub(crate) fn inchi_ios_print_nodisplay(
         if maximum_length < 0 {
             return Ok(-1);
         }
-        let additional_length = (INCHI_ADD_STR_LEN as i32).max(maximum_length);
+        // vsprintf also writes the terminating NUL, outside max_len's count.
+        let required_length = maximum_length
+            .checked_add(1)
+            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        let additional_length = (INCHI_ADD_STR_LEN as i32).max(required_length);
         let new_string_length = i64::from(ios.s.nAllocatedLength)
             .checked_add(i64::from(additional_length))
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
@@ -1301,7 +1311,11 @@ pub(crate) fn inchi_ios_eprint(
             return Ok(-1);
         }
         if ios.s.nAllocatedLength - ios.s.nUsedLength <= maximum_length {
-            let additional_length = (INCHI_ADD_STR_LEN as i32).max(maximum_length);
+            // vsprintf also writes the terminating NUL, outside max_len's count.
+            let required_length = maximum_length
+                .checked_add(1)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            let additional_length = (INCHI_ADD_STR_LEN as i32).max(required_length);
             let allocation_length = i64::from(ios.s.nAllocatedLength)
                 .checked_add(i64::from(additional_length))
                 .ok_or(SourceHeapError::AllocationSizeOverflow)?;
@@ -2665,6 +2679,74 @@ mod tests {
         SourceVoid,
     };
     use crate::test_support::allocate_source_fixture;
+
+    #[test]
+    fn inchi_string_printers_reserve_nul_at_growth_boundaries() {
+        let block = INCHI_ADD_STR_LEN as usize;
+        for printer in 0..3 {
+            for prefix in ["", "prefix:"] {
+                for length in [block - 1, block, block + 1, 2 * block] {
+                    let mut heap = SourceHeap::default();
+                    let stdout = heap.allocate(vec![SourceFile::default()]).unwrap();
+                    let format = source_format(&mut heap, "%s");
+                    let payload = "x".repeat(length);
+                    let text = source_format(&mut heap, &payload);
+                    let arguments = SourceVaList {
+                        arguments: vec![SourceFormatArgument::Bytes(text.as_const())],
+                        position: 0,
+                    };
+                    let mut stream = INCHI_IOSTREAM {
+                        type_: INCHI_IOS_TYPE_STRING as i32,
+                        ..Default::default()
+                    };
+                    if !prefix.is_empty() {
+                        stream.s.pStr = source_format(&mut heap, prefix);
+                        stream.s.nUsedLength = prefix.len() as i32;
+                        stream.s.nAllocatedLength = prefix.len() as i32 + 1;
+                    }
+                    let result = match printer {
+                        0 => inchi_ios_print(
+                            &mut heap,
+                            Some(&mut stream),
+                            stdout,
+                            format.as_const(),
+                            &arguments,
+                        ),
+                        1 => inchi_ios_print_nodisplay(
+                            &mut heap,
+                            Some(&mut stream),
+                            stdout,
+                            format.as_const(),
+                            &arguments,
+                        ),
+                        _ => inchi_ios_eprint(
+                            &mut heap,
+                            Some(&mut stream),
+                            format.as_const(),
+                            &arguments,
+                        ),
+                    };
+                    assert_eq!(
+                        result,
+                        Ok(length as i32),
+                        "printer={printer}, prefix={prefix}, length={length}"
+                    );
+                    let expected = format!("{prefix}{payload}\0");
+                    let bytes = heap.slice(stream.s.pStr.as_const()).unwrap();
+                    assert_eq!(stream.s.nUsedLength as usize, expected.len() - 1);
+                    assert_eq!(stream.s.nAllocatedLength as usize, bytes.len());
+                    assert_eq!(
+                        bytes[..expected.len()]
+                            .iter()
+                            .map(|x| *x as u8)
+                            .collect::<Vec<_>>(),
+                        expected.as_bytes()
+                    );
+                    assert_eq!(stream.s.nPtr, 0);
+                }
+            }
+        }
+    }
 
     #[test]
     fn source_port__ichi_io__inchi_strbuf_addline__line_1635() {

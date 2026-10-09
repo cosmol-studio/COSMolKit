@@ -198,6 +198,7 @@ struct BindingEntry {
     python: LitStr,
     python_native: Option<LitStr>,
     python_configuration: Option<Vec<PythonConfigurationField>>,
+    exhaustive_configuration: bool,
     python_property: Option<PythonProperty>,
     javascript: LitStr,
     feature: LitStr,
@@ -212,6 +213,9 @@ struct BindingEntry {
 
 struct PythonConfigurationField {
     name: Ident,
+    rust_field: Ident,
+    aliases: Vec<Ident>,
+    callback: Option<LitStr>,
     python_type: LitStr,
     default: Option<LitStr>,
 }
@@ -219,7 +223,10 @@ impl Parse for PythonConfigurationField {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let content;
         braced!(content in input);
-        let mut name = None;
+        let mut name: Option<Ident> = None;
+        let mut rust_field = None;
+        let mut aliases = None;
+        let mut callback = None;
         let mut python_type = None;
         let mut default = None;
         while !content.is_empty() {
@@ -227,6 +234,19 @@ impl Parse for PythonConfigurationField {
             content.parse::<Token![:]>()?;
             match key.to_string().as_str() {
                 "name" => set_once(&mut name, content.parse()?, &key)?,
+                "rust_field" => set_once(&mut rust_field, content.parse()?, &key)?,
+                "aliases" => {
+                    let values;
+                    bracketed!(values in content);
+                    set_once(
+                        &mut aliases,
+                        Punctuated::<Ident, Token![,]>::parse_terminated(&values)?
+                            .into_iter()
+                            .collect(),
+                        &key,
+                    )?;
+                }
+                "callback" => set_once(&mut callback, content.parse()?, &key)?,
                 "python_type" => set_once(&mut python_type, content.parse()?, &key)?,
                 "default" => {
                     let value = if content.peek(LitStr) {
@@ -247,8 +267,12 @@ impl Parse for PythonConfigurationField {
             }
             consume_comma(&content)?;
         }
+        let name = required(name, "configuration.name")?;
         Ok(Self {
-            name: required(name, "configuration.name")?,
+            rust_field: rust_field.unwrap_or_else(|| name.clone()),
+            aliases: aliases.unwrap_or_default(),
+            callback,
+            name,
             python_type: required(python_type, "configuration.python_type")?,
             default: required(default, "configuration.default")?,
         })
@@ -314,6 +338,7 @@ struct BindingEntryDraft {
     python: Option<LitStr>,
     python_native: Option<LitStr>,
     python_configuration: Option<Vec<PythonConfigurationField>>,
+    exhaustive_configuration: Option<syn::LitBool>,
     python_property: Option<Ident>,
     javascript: Option<LitStr>,
     feature: Option<LitStr>,
@@ -391,6 +416,9 @@ fn parse_binding_entry(
                 )?;
             }
             "python_property" => set_once(&mut draft.python_property, input.parse()?, &key)?,
+            "exhaustive_configuration" => {
+                set_once(&mut draft.exhaustive_configuration, input.parse()?, &key)?
+            }
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
             "requires" => {
@@ -566,6 +594,9 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         python,
         python_native: draft.python_native,
         python_configuration: draft.python_configuration,
+        exhaustive_configuration: draft
+            .exhaustive_configuration
+            .is_some_and(|flag| flag.value),
         python_property,
         javascript,
         feature,
@@ -581,6 +612,12 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
 
 fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
     for entry in entries {
+        if entry.exhaustive_configuration && entry.python_configuration.is_none() {
+            return Err(syn::Error::new_spanned(
+                &entry.semantic_id,
+                "exhaustive_configuration requires python_configuration",
+            ));
+        }
         if let Some(fields) = &entry.python_configuration {
             if entry.item != ItemClass::Type || entry.type_role != Some(TypeRole::Parameter) {
                 return Err(syn::Error::new_spanned(
@@ -589,6 +626,7 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                 ));
             }
             let mut names = HashSet::new();
+            let mut rust_fields = HashSet::new();
             for field in fields {
                 if !names.insert(field.name.to_string()) {
                     return Err(syn::Error::new_spanned(
@@ -597,6 +635,37 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                     ));
                 }
                 require_nonempty(&field.python_type, "configuration.python_type")?;
+                if field.python_type.value().contains("Callable[") && field.callback.is_none() {
+                    return Err(syn::Error::new_spanned(
+                        &field.python_type,
+                        "callable configuration requires an executable callback contract",
+                    ));
+                }
+                if !rust_fields.insert(field.rust_field.to_string()) {
+                    return Err(syn::Error::new_spanned(
+                        &field.rust_field,
+                        "duplicate Rust configuration field",
+                    ));
+                }
+                for alias in &field.aliases {
+                    if !names.insert(alias.to_string()) {
+                        return Err(syn::Error::new_spanned(
+                            alias,
+                            "duplicate configuration alias",
+                        ));
+                    }
+                }
+                if let Some(callback) = &field.callback
+                    && !matches!(
+                        callback.value().as_str(),
+                        "final_match" | "atom_match" | "bond_match"
+                    )
+                {
+                    return Err(syn::Error::new_spanned(
+                        callback,
+                        "unknown callback binding probe",
+                    ));
+                }
             }
         }
         if let Some(native) = &entry.python_native {
@@ -1428,12 +1497,18 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             Some(fields) => {
                 let fields = fields.iter().map(|field| {
                     let name = field.name.to_string();
+                    let rust_field = field.rust_field.to_string();
+                    let aliases = field.aliases.iter().map(ToString::to_string);
+                    let callback = match &field.callback {
+                        Some(value) => quote!(Some(#value)),
+                        None => quote!(None),
+                    };
                     let ty = &field.python_type;
                     let default = match &field.default {
                         Some(default) => quote!(crate::BindingDefault::Value(#default)),
                         None => quote!(crate::BindingDefault::Required),
                     };
-                    quote!(crate::BindingParameterContract {name: #name, type_name: #ty, default: #default})
+                    quote!(crate::BindingConfigurationField {name: #name, rust_field: #rust_field, type_name: #ty, default: #default, aliases: &[#(#aliases),*], callback: #callback})
                 });
                 quote!(Some(&[#(#fields),*]))
             }
@@ -1559,8 +1634,21 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                     }; });
                 }
             } else {
+                let exhaustive = if entry.exhaustive_configuration {
+                    let fields = entry
+                        .python_configuration
+                        .as_ref()
+                        .expect("validated configuration")
+                        .iter()
+                        .map(|field| &field.rust_field);
+                    // No `..`: missing Rust field projections are compiler errors.
+                    quote! { fn assert_fields(value: #rust) { let #rust { #(#fields: _),* } = value; } }
+                } else {
+                    quote! {}
+                };
                 assertions.push(quote! { #(#cfg)* const #assertion: fn() = || {
                     fn assert_public_type<T>() {} assert_public_type::<#rust>();
+                    #exhaustive
                 }; });
             }
         }
