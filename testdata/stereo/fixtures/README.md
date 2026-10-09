@@ -2,7 +2,7 @@
 
 This directory stores committed stereo input fixtures and provenance, not
 generated expectations. Preparation, preflight, and comparison are managed by
-[`parity-tests`](../../../parity-tests/README.md).
+[`parity-tests_fixed`](../../../parity-tests_fixed/README.md).
 
 Recorded sources, byte lengths, and SHA-256 checksums are in
 [`source_manifest.jsonl`](source_manifest.jsonl).
@@ -27,7 +27,7 @@ Numeric strings specify exact binary64 construction, not tolerances;
 octahedral cases cover every nested switch branch with both volume signs.
 All cases, including exceptions and non-finite coordinates, must be retained.
 Execution and generated identity checks belong to the
-[special-regression lane](../../../parity-tests/README.md#special-regression-3d-structure-tags),
+[special-regression lane](../../../parity-tests_fixed/README.md#special-regressions),
 not a SMILES profile.
 
 ## Modern CIPLabeler cases

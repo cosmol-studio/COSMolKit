@@ -18,7 +18,7 @@
         },
         {
           "path": "testdata/reference/rdkit.json",
-          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+          "sha256": "2b639915967d828547e279264d32be31207dac2922297caf1aa3be762fc011f5"
         },
         {
           "path": "tools/testdata/rdkit/_generate_forcefield_coverage_golden.py",
@@ -26,7 +26,7 @@
         },
         {
           "path": "tools/testdata/rdkit/_generate_forcefield_params_golden.py",
-          "sha256": "b9ab547718cb3fcdcc413850134efe3262cf7775c709dab1ea11e2653359618f"
+          "sha256": "9d3476d9ad0ad2e5b6ec3893cf1c14c8e63539d63cf9b8d8c07ed9005439d317"
         }
       ],
       "inputs": [
@@ -57,8 +57,8 @@
   "profile": "smiles_small",
   "reference_implementation": {
     "name": "rdkit",
-    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
-    "version": "2026.03.1"
+    "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985",
+    "version": "2026.03.6"
   },
   "reference_runtime": {
     "implementation": "cpython",

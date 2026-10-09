@@ -218,7 +218,9 @@ struct CorpusReport {
 }
 impl CorpusReport {
     fn new() -> Result<Self> {
-        let spool = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+        let artifacts = directory().join("reports");
+        std::fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
+        let spool = tempfile::NamedTempFile::new_in(artifacts).map_err(|e| e.to_string())?;
         let mut writer = std::io::BufWriter::new(spool.reopen().map_err(|e| e.to_string())?);
         writer.write_all(b"[").map_err(|e| e.to_string())?;
         Ok(Self {
@@ -458,17 +460,34 @@ mod tests {
         };
         assert!(preparation_timeout(&expected).is_none());
         assert!(!equal(&expected, &expected));
-        let actual = crate::execute::run(&expected.input).unwrap();
-        assert!(!equal(&expected, &actual));
+        let error = crate::execute::run(&expected.input).unwrap_err();
+        assert_eq!(error, "enumerated path contains invalid bond index");
+        // Also retain the returned-value comparison guard: a native process
+        // failure must never match a CK result, whether it is a value or error.
+        let mut value_expected = expected.clone();
+        let Input::Fingerprint(FingerprintInput {
+            params: Params::Layered { branched, .. },
+            ..
+        }) = &mut value_expected.input
+        else {
+            panic!("expected the Layered fixture");
+        };
+        *branched = true;
+        let actual = crate::execute::run(&value_expected.input).unwrap();
+        assert!(!equal(&value_expected, &actual));
         let folder = tempfile::tempdir().unwrap();
         let report = folder.path().join("native-failure.json");
-        let rows = [json!({"index":0,"matches":equal(&expected,&actual),
-                          "expected":expected,"actual":{"record":actual}})];
+        let rows = [
+            json!({"index":0,"matches":false,
+                   "expected":expected,"actual":{"error":error}}),
+            json!({"index":1,"matches":equal(&value_expected,&actual),
+                   "expected":value_expected,"actual":{"record":actual}}),
+        ];
         assert!(write_corpus_report("layered_fingerprint_smiles", &rows, &report).is_err());
         let saved: Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
-        assert_eq!(saved["total"], 1);
-        assert_eq!(saved["compared"], 1);
-        assert_eq!(saved["failed"], 1);
+        assert_eq!(saved["total"], 2);
+        assert_eq!(saved["compared"], 2);
+        assert_eq!(saved["failed"], 2);
         assert_eq!(saved["timed_out"], 0);
         assert_eq!(saved["rows"], json!(rows));
     }

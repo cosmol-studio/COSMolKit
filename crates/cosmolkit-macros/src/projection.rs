@@ -616,6 +616,17 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             } else {
                 quote! {}
             };
+            let mapped_emission = if operation.fields.output == MoleculeOutput::Multiple
+                && operation.fields.requires_mapping == MappingRequirement::Required
+            {
+                quote! {
+                    pub(crate) fn emit_mapped(&mut self, candidates: Vec<(cosmolkit_model::TopologyBlock, cosmolkit_model::CoordinateBlock, cosmolkit_model::MoleculeProperties, cosmolkit_model::TopologyMapping)>) -> Result<(), crate::OperationError> {
+                        self.emit_mapped_runtime(candidates)
+                    }
+                }
+            } else {
+                quote! {}
+            };
             let emission = if operation.fields.output == MoleculeOutput::LazyMultiple {
                 quote! {
                     pub(crate) fn emit_lazy<I>(&mut self, candidates: I) -> Result<(), crate::OperationError>
@@ -662,6 +673,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                 impl<'a> crate::MultiOutputOpParts<'a, #marker> {
                     #(#read_methods)*
                     #prepared_emission
+                    #mapped_emission
 
                     #emission
                 }

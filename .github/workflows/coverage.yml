@@ -16,8 +16,7 @@ jobs:
         env:
             # Use the optimized development-test profile for all test stages.
             RUST_MIN_STACK: "8388608"
-            PARITY_CACHE_SCHEMA: v2
-            PARITY_DATA: target/parity-tests-ci
+            PARITY_CACHE_SCHEMA: fixed-v1
             # show-env derives its build directory from CARGO_TARGET_DIR.
             # Keep it equal to the profile directory before evaluating show-env.
             CARGO_TARGET_DIR: target/coverage-build
@@ -32,7 +31,7 @@ jobs:
             - uses: Swatinem/rust-cache@v2
               with:
                   shared-key: unified-dev-test-coverage-v3
-                  key: ${{ hashFiles('crates/**/*.rs', 'parity-tests/**/*.rs') }}
+                  key: ${{ hashFiles('crates/**/*.rs', 'parity-tests_fixed/**/*.rs') }}
                   workspaces: |
                       . -> target/rust-build
                       . -> target/coverage-build
@@ -46,7 +45,7 @@ jobs:
                   cargo metadata --format-version 1 --no-deps > "$RUNNER_TEMP/workspace.json"
                   jq -r '. as $workspace | .packages[] |
                       select(.id as $id | $workspace.workspace_members | index($id)) |
-                      select(.publish != [] or .name == "cosmolkit-parity-tests") |
+                      select(.publish != [] or .name == "cosmolkit-parity-tests-fixed") |
                       .name' "$RUNNER_TEMP/workspace.json" > "$RUNNER_TEMP/test-packages.txt"
                   test -s "$RUNNER_TEMP/test-packages.txt"
                   cat "$RUNNER_TEMP/test-packages.txt"
@@ -74,7 +73,7 @@ jobs:
               run: |
                   packages=()
                   while IFS= read -r package; do
-                      if [[ "$package" != cosmolkit-parity-tests ]]; then packages+=(-p "$package"); fi
+                      if [[ "$package" != cosmolkit-parity-tests-fixed ]]; then packages+=(-p "$package"); fi
                   done < "$RUNNER_TEMP/test-packages.txt"
                   # show-env instrumentation is shared by every ordinary Cargo stage.
                   # Do not combine it with cargo-llvm-cov's separate test wrapper.
@@ -86,7 +85,7 @@ jobs:
                       --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   # The runner's corpus target belongs AFTER reference preparation.
-                  cargo test -p cosmolkit-parity-tests --lib --bins --profile dev-test \
+                  cargo test -p cosmolkit-parity-tests-fixed --lib --bins --profile dev-test \
                       --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   exit "$status"
@@ -118,12 +117,11 @@ jobs:
               uses: actions/cache/restore@v4
               with:
                   path: |
-                      ${{ env.PARITY_DATA }}/*/input.json
-                      ${{ env.PARITY_DATA }}/*/reference.*
-                      ${{ env.PARITY_DATA }}/*/manifest.json
-                  key: parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/**', 'tools/testdata/**', 'testdata/**/fixtures/**', 'testdata/**/corpus/**', 'testdata/reference/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                      parity-tests_fixed/expected/corpus
+                      parity-tests_fixed/expected/special
+                  key: parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests_fixed/Cargo.toml', 'parity-tests_fixed/src/**', 'parity-tests_fixed/tools/**', 'parity-tests_fixed/testdata/**', 'tools/oracles/**', 'tools/testdata/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/**', 'tools/testdata/**', 'testdata/**/fixtures/**', 'testdata/**/corpus/**', 'testdata/reference/**') }}-
+                      parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests_fixed/Cargo.toml', 'parity-tests_fixed/src/**', 'parity-tests_fixed/tools/**', 'parity-tests_fixed/testdata/**', 'tools/oracles/**', 'tools/testdata/**') }}-
 
             - name: Prepare and validate all reference values
               id: prepare
@@ -135,25 +133,24 @@ jobs:
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  cargo build -p cosmolkit-parity-tests --profile dev-test \
-                      --bin cosmolkit-parity-tests \
+                  cargo build -p cosmolkit-parity-tests-fixed --profile dev-test \
+                      --bin cosmolkit-parity-tests-fixed \
                       --features cosmolkit/op-contracts-strict
                   # Sequential generator calls; each Python function parallelizes cases.
                   set +e
-                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
-                      --smiles testdata/smiles/corpus/smiles_5000.smi \
-                      --data "$PARITY_DATA" --python .venv/bin/python --threads "$(nproc)" \
-                      2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
-                  statuses=("${PIPESTATUS[@]}")
-                  status=${statuses[0]}
-                  if [[ ${statuses[1]} != 0 ]]; then status=${statuses[1]}; fi
+                  status=0
+                  for selection in "--corpus smiles_5000" "--corpus bio_small" "--special all"; do
+                      read -r flag name <<< "$selection"
+                      "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests-fixed" prepare \
+                          "$flag" "$name" --threads "$(nproc)" \
+                          2>&1 | tee -a "$RUNNER_TEMP/parity-prepare.log"
+                      statuses=("${PIPESTATUS[@]}")
+                      if [[ ${statuses[0]} != 0 ]]; then status=${statuses[0]}; fi
+                      if [[ ${statuses[1]} != 0 ]]; then status=${statuses[1]}; fi
+                  done
                   set -e
-                  # This message is emitted only after successful global preflight.
-                  if grep -Eq '^Preparation complete: [0-9]+ reused tasks, [1-9][0-9]* generated tasks; [0-9]+ ready cases$' "$RUNNER_TEMP/parity-prepare.log"; then
+                  if [[ "$status" == 0 ]] && grep -Eq '^Prepared: [1-9][0-9]* generated, [0-9]+ reused, [0-9]+ rows$' "$RUNNER_TEMP/parity-prepare.log"; then
                       echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  fi
-                  if [[ "$status" == 0 ]]; then
-                      "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" preflight --data "$PARITY_DATA"
                   fi
                   exit "$status"
 
@@ -167,21 +164,27 @@ jobs:
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  # Discover all integration targets (corpus + special regressions).
-                  # No handwritten per-test target list or workflow-specific recipe.
-                  cargo test -p cosmolkit-parity-tests \
-                      --profile dev-test --test '*' --no-fail-fast \
+                  # The standard runner validates selected references before CK calls.
+                  status=0
+                  for corpus in smiles_5000 bio_small; do
+                      PARITY_CORPUS="$corpus" cargo test -p cosmolkit-parity-tests-fixed \
+                          --profile dev-test --test corpus --no-fail-fast \
+                          --features cosmolkit/op-contracts-strict \
+                          2>&1 | tee -a "$RUNNER_TEMP/parity-5000.log" || status=$?
+                  done
+                  PARITY_SPECIAL=all cargo test -p cosmolkit-parity-tests-fixed \
+                      --profile dev-test --test special_regression --no-fail-fast \
                       --features cosmolkit/op-contracts-strict \
-                      2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
+                      2>&1 | tee -a "$RUNNER_TEMP/parity-5000.log" || status=$?
+                  exit "$status"
 
             - name: Save validated reference generations
               if: ${{ !cancelled() && steps.prepare.outputs.regenerated == 'true' }}
               uses: actions/cache/save@v4
               with:
                   path: |
-                      ${{ env.PARITY_DATA }}/*/input.json
-                      ${{ env.PARITY_DATA }}/*/reference.*
-                      ${{ env.PARITY_DATA }}/*/manifest.json
+                      parity-tests_fixed/expected/corpus
+                      parity-tests_fixed/expected/special
                   key: ${{ steps.reference_cache.outputs.cache-primary-key }}
 
             - name: Upload parity results
@@ -192,9 +195,7 @@ jobs:
                   path: |
                       ${{ runner.temp }}/parity-prepare.log
                       ${{ runner.temp }}/parity-5000.log
-                      ${{ env.PARITY_DATA }}/special-run-*/*.json
-                      ${{ env.PARITY_DATA }}/rust-report.json
-                      ${{ env.PARITY_DATA }}/run-*/*.json
+                      parity-tests_fixed/reports/**/*.json
                   if-no-files-found: error
 
             - name: Generate coverage reports

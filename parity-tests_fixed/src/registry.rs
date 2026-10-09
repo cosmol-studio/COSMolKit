@@ -147,6 +147,8 @@ macro_rules! corpus_tasks {
             (molecular_formula_smiles, Operation::Molecular(molecule_plan::TaskId::MolecularFormula), CorpusType::Smiles, "generate_molecular_formula"),
             (num_heavy_atoms_smiles, Operation::Molecular(molecule_plan::TaskId::NumHeavyAtoms), CorpusType::Smiles, "generate_num_heavy_atoms"),
             (murcko_scaffold_smiles, Operation::Molecular(molecule_plan::TaskId::MurckoScaffold), CorpusType::Smiles, "generate_murcko_scaffold"),
+            (fragments_smiles, Operation::Molecular(molecule_plan::TaskId::Fragments), CorpusType::Smiles, "generate_fragments"),
+            (largest_fragment_smiles, Operation::Molecular(molecule_plan::TaskId::LargestFragment), CorpusType::Smiles, "generate_largest_fragment"),
             (net_scaffold_smiles, Operation::Molecular(molecule_plan::TaskId::NetScaffold), CorpusType::Smiles, "generate_net_scaffold"),
             (murcko_decompose_smiles, Operation::Molecular(molecule_plan::TaskId::MurckoDecompose), CorpusType::Smiles, "generate_murcko_decompose"),
             (total_atom_count_smiles, Operation::Molecular(molecule_plan::TaskId::TotalAtomCount), CorpusType::Smiles, "generate_total_atom_count"),
@@ -185,6 +187,7 @@ macro_rules! corpus_tasks {
             (fingerprint_topological_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Topological), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_layered_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Layered), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_pattern_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Pattern), CorpusType::Smiles, "generate_fingerprint"),
+            (fingerprint_avalon_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Avalon), CorpusType::Smiles, "generate_fingerprint"),
             (fuzzy_and_smiles, Operation::Fingerprint($crate::fingerprints::Kind::FuzzyAnd), CorpusType::Smiles, "generate_fingerprint"),
             (fuzzy_or_smiles, Operation::Fingerprint($crate::fingerprints::Kind::FuzzyOr), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_morgan_sparse_smiles, Operation::Molecular(molecule_plan::TaskId::MorganSparseFingerprint), CorpusType::Smiles, "generate_morgan_sparse_fingerprint"),
@@ -397,6 +400,8 @@ impl Input {
                 use molecule_plan::Profile::*;
                 match profile {
                     MurckoScaffold => "murcko_scaffold",
+                    Fragments => "fragments",
+                    LargestFragment => "largest_fragment",
                     NetScaffold => "net_scaffold",
                     MurckoDecompose => "murcko_decompose",
                     SmilesRead { .. } => "smiles_read",

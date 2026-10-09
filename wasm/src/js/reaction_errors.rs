@@ -738,6 +738,7 @@ impl ReactionProductError {
 pub(crate) fn product_error(source: &ck::ReactionProductError) -> Result<JsValue, JsValue> {
     use ck::ReactionProductError as E;
     let kind = match source {
+        E::StereoGroup(..) => "StereoGroup",
         E::Coordinate(..) => "Coordinate",
         E::TopologyEdit(..) => "TopologyEdit",
         E::Adjacency(..) => "Adjacency",

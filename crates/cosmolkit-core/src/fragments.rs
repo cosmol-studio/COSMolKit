@@ -1224,7 +1224,7 @@ struct FullCopyComponent {
     source_metadata: FragmentSourceMetadata,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 enum FullCopyComponentError {
     #[error(transparent)]
     SourceUInt(#[from] crate::PropertyUIntReadError),
@@ -1893,7 +1893,7 @@ struct AtomPathSubsetCopy {
     mapping: TopologyMapping,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 enum AtomPathSubsetCopyError {
     #[error("{0}")]
     StereoGroup(#[from] cosmolkit_model::StereoGroupError),
@@ -2213,7 +2213,7 @@ struct OrderedFragmentCopy {
     copy: FullCopyComponent,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 enum OrderedFragmentBuildError {
     #[error(transparent)]
     ComponentLabels(#[from] crate::paths::PathError),
@@ -2231,7 +2231,7 @@ enum OrderedFragmentBuildError {
     },
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 enum MoleculeFragmentsFailure {
     #[error("computed property clearing failed for fragment {component_index}: {source}")]
     FinalComputedProperties {
@@ -2260,6 +2260,23 @@ pub struct MoleculeFragment {
 }
 
 impl MoleculeFragment {
+    /// Move the detached component and its mapping into the operation runtime.
+    pub fn into_mapped_parts(
+        self,
+    ) -> (
+        TopologyBlock,
+        CoordinateBlock,
+        MoleculeProperties,
+        TopologyMapping,
+    ) {
+        (
+            self.copy.topology,
+            self.copy.coordinates,
+            self.copy.molecule_properties,
+            self.copy.mapping,
+        )
+    }
+
     /// Consume the detached fragment values, without cloning graph or coordinates.
     pub fn into_parts(self) -> (TopologyBlock, CoordinateBlock, MoleculeProperties) {
         (
@@ -2302,7 +2319,7 @@ impl MoleculeFragment {
 }
 
 /// A typed component-copy or final-sanitization failure.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MoleculeFragmentsError {
     failure: MoleculeFragmentsFailure,
 }
@@ -2675,6 +2692,23 @@ pub fn get_molecule_fragments(
         source_properties,
         sanitize_fragments,
         copy_conformers,
+    )
+}
+
+/// Select the most-atoms component, preserving the established CK last-tie rule.
+/// This convenience policy is not MolStandardize::LargestFragmentChooser.
+pub fn get_largest_molecule_fragment(
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    properties: &MoleculeProperties,
+) -> Result<Option<MoleculeFragment>, MoleculeFragmentsError> {
+    // CK native convenience policy, built on RDKit MolOps::getMolFrags:
+    // fragments.into_iter().max_by_key(|frag| frag.num_atoms())
+    // The complete source-ordered construction is shared; no second graph copy.
+    Ok(
+        get_molecule_fragments(topology, coordinates, properties, true, true)?
+            .into_iter()
+            .max_by_key(|fragment| fragment.topology().atoms.len()),
     )
 }
 

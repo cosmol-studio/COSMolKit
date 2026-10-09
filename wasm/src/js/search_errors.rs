@@ -212,6 +212,7 @@ impl SmartsWriteError {
 fn write_error_kind(source: &ck::SmartsWriteError) -> &'static str {
     use ck::SmartsWriteError as E;
     match source {
+        E::StereoGroup(..) => "StereoGroup",
         E::Traversal(..) => "Traversal",
         E::CxCoordinates(..) => "CxCoordinates",
         E::CxRingInfo(..) => "CxRingInfo",

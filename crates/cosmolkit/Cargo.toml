@@ -16,6 +16,14 @@ autoexamples = false
 name = "cosmolkit"
 path = "src/lib.rs"
 
+[[test]]
+name = "fragments_api"
+required-features = ["cap-transforms", "cap-smiles"]
+
+[[test]]
+name = "avalon_api"
+required-features = ["cap-fingerprints", "cap-smiles"]
+
 [package.metadata.docs.rs]
 features = ["full"]
 no-default-features = true
@@ -67,7 +75,7 @@ cap-hydrogens = ["dep:cosmolkit-core"]
 cap-confseq = ["dep:cosmolkit-conformer", "cap-conformer"]
 cap-depict = ["dep:cosmolkit-depict", "cosmolkit-io?/depict"]
 cap-descriptors = ["dep:cosmolkit-descriptors", "dep:cosmolkit-core"]
-cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"]
+cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io"]
 cap-forcefields = ["dep:cosmolkit-forcefields", "dep:cosmolkit-core"]
 cap-hashing = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"]
 cap-inchi = ["dep:cosmolkit-inchi", "dep:cosmolkit-core"]

@@ -79,6 +79,7 @@ impl<Access> ResultFinalizer<'_, Access> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreservationProof {
     UnchangedInput,
+    AtomUserProperties,
     CoordinateOnly,
     StableAtomCoordinates,
     StereoCleanup,
@@ -1176,6 +1177,30 @@ impl<'a, Access> OpParts<'a, Access> {
             && spec.may_mutate.contains(BlockSet::PROPERTIES);
         match spec.cip_state {
             CipStatePolicy::Preserve => {}
+            CipStatePolicy::FragmentSourceTransition => {
+                let blocks = BlockSet::TOPOLOGY
+                    .union(BlockSet::COORDINATES)
+                    .union(BlockSet::PROPERTIES)
+                    .union(BlockSet::DERIVED_CACHE);
+                if !matches!(
+                    (spec.method, spec.output),
+                    ("fragments", MoleculeOpOutput::Multiple)
+                        | ("largest_fragment", MoleculeOpOutput::Single)
+                ) || spec.kind != crate::MoleculeOpKind::Strong
+                    || spec.topology_edit != TopologyEditKind::Compacting
+                    || spec.requires_mapping != MappingRequirement::Required
+                    || !spec.access.read().is_empty()
+                    || spec.access.write() != blocks
+                    || spec.may_mutate != blocks
+                    || !spec.auto_remap.is_empty()
+                {
+                    return Err(OperationError::CipStateContract {
+                        operation: spec.method,
+                        policy: spec.cip_state,
+                        issue: "fragment source transition requires exact mapped compacting fragment authority",
+                    });
+                }
+            }
             CipStatePolicy::ScaffoldSourceTransition => {
                 let blocks = BlockSet::TOPOLOGY
                     .union(BlockSet::COORDINATES)
@@ -1472,6 +1497,48 @@ impl<'a, Access> OpParts<'a, Access> {
     ) -> Result<(), OperationError> {
         self.validate_effect_action("preserve", states, self.spec.derived_effects.preserve)?;
         match proof {
+            PreservationProof::AtomUserProperties => {
+                if OPERATION_CONTRACTS_ENABLED {
+                    let source = self.source.topology();
+                    let candidate = self.current_topology_candidate()?;
+                    let mut valid = source.atoms.len() == candidate.atoms.len()
+                        && source.bonds == candidate.bonds
+                        && source.adjacency == candidate.adjacency
+                        && source.stereo_groups == candidate.stereo_groups
+                        && source.substance_groups == candidate.substance_groups;
+                    if valid {
+                        for (old, new) in source.atoms.iter().zip(&candidate.atoms) {
+                            if old == new {
+                                continue;
+                            }
+                            let mut old = old.clone();
+                            let mut new = new.clone();
+                            for atom in [&mut old, &mut new] {
+                                let keys: Vec<_> = atom
+                                    .property_records(false, false)
+                                    .map_err(OperationError::AtomProperty)?
+                                    .filter(|(key, _)| {
+                                        cosmolkit_model::is_user_atom_property(key.as_bytes())
+                                    })
+                                    .map(|(key, _)| key.clone())
+                                    .collect();
+                                for key in keys {
+                                    atom.clear_prop(key).map_err(OperationError::AtomProperty)?;
+                                }
+                            }
+                            valid &= old == new;
+                        }
+                    }
+                    if !valid {
+                        return Err(Self::effect_error(
+                            self.spec,
+                            "preserve",
+                            states,
+                            "user-property proof changed chemical or reserved state",
+                        ));
+                    }
+                }
+            }
             PreservationProof::UnchangedInput => {
                 let unchanged = self.current_topology_candidate()? == self.source.topology()
                     && self.current_coordinates_candidate()?
@@ -2466,6 +2533,13 @@ impl<'a, Access> OpParts<'a, Access> {
                     }
                 }
             }
+            CipStatePolicy::FragmentSourceTransition => {
+                // MolOps::getTheFrags copies/remaps atom and bond properties,
+                // then sanitizeMol clears molecule computed properties. Core
+                // owns those source transitions; a global CIP clear here would
+                // erase copied labels. The exact declaration above, mapping,
+                // effects and candidate validators still apply independently.
+            }
             CipStatePolicy::StereoisomerSourceTransition => {
                 // The exact source owner clears _CIPCode during preprocessing,
                 // then ClearComputedProps(false) and legacy AssignStereochemistry
@@ -2805,6 +2879,7 @@ pub(super) fn validate_multiple_candidate(
     properties: MoleculeProperties,
     prepared_cache: Option<super::multiple::PreparedCacheValues>,
     reconstruction_validated: bool,
+    mapping_evidence: Option<TopologyMapping>,
 ) -> Result<
     (
         Arc<TopologyBlock>,
@@ -2833,30 +2908,54 @@ pub(super) fn validate_multiple_candidate(
             .iter()
             .zip(&topology.bonds)
             .all(|(before, after)| before.id() == after.id());
-    let mapping = match spec.requires_mapping {
-        MappingRequirement::Reconstruction => {
-            if !reconstruction_validated {
+    let mapping = if let Some(mapping) = mapping_evidence {
+        if spec.requires_mapping != MappingRequirement::Required {
+            return Err(OperationError::MappingContract {
+                operation: spec.method,
+                issue: "mapped candidate requires a required-mapping declaration",
+                requirement: spec.requires_mapping,
+            });
+        }
+        mapping
+            .validate_for_counts(
+                source.num_atoms(),
+                topology.atoms.len(),
+                source.num_bonds(),
+                topology.bonds.len(),
+            )
+            .map_err(|source| OperationError::InvalidTopologyMapping {
+                operation: spec.method,
+                source,
+            })?;
+        Some(mapping)
+    } else {
+        match spec.requires_mapping {
+            MappingRequirement::Reconstruction => {
+                if !reconstruction_validated {
+                    return Err(OperationError::MappingContract {
+                        operation: spec.method,
+                        issue: "candidate has no checked reconstruction origins",
+                        requirement: spec.requires_mapping,
+                    });
+                }
+                None
+            }
+            MappingRequirement::None => None,
+            MappingRequirement::Identity | MappingRequirement::Required
+                if row_identity_unchanged =>
+            {
+                Some(TopologyMapping::identity(
+                    topology.atoms.len(),
+                    topology.bonds.len(),
+                ))
+            }
+            MappingRequirement::Identity | MappingRequirement::Required => {
                 return Err(OperationError::MappingContract {
                     operation: spec.method,
-                    issue: "candidate has no checked reconstruction origins",
+                    issue: "multiple-output tuple has no non-identity mapping evidence",
                     requirement: spec.requires_mapping,
                 });
             }
-            None
-        }
-        MappingRequirement::None => None,
-        MappingRequirement::Identity | MappingRequirement::Required if row_identity_unchanged => {
-            Some(TopologyMapping::identity(
-                topology.atoms.len(),
-                topology.bonds.len(),
-            ))
-        }
-        MappingRequirement::Identity | MappingRequirement::Required => {
-            return Err(OperationError::MappingContract {
-                operation: spec.method,
-                issue: "multiple-output tuple has no non-identity mapping evidence",
-                requirement: spec.requires_mapping,
-            });
         }
     };
 

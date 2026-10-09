@@ -258,6 +258,7 @@ pub enum Outcome {
     UnsignedVector(Vec<u32>),
     Unsigned(u32),
     Text(String),
+    Texts(Vec<String>),
     Topology(Topology),
     Coordinates2d {
         topology: Topology,
@@ -533,7 +534,10 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
         }
         (Mqns { .. }, Outcome::UnsignedVector(values)) => values.len() == 42,
         (MolecularFormula { .. }, Outcome::Text(_)) => true,
-        (MurckoScaffold | NetScaffold | MurckoDecompose, Outcome::Text(_)) => true,
+        (MurckoScaffold | NetScaffold | MurckoDecompose | LargestFragment, Outcome::Text(_)) => {
+            true
+        }
+        (Fragments, Outcome::Texts(_)) => true,
         (SvgDefault, Outcome::Text(svg)) => svg.contains("<svg") && svg.contains("</svg>"),
         (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
         (TotalAtomCount { .. }, Outcome::Unsigned(_)) => true,
@@ -1269,6 +1273,25 @@ pub fn run(input: &Input) -> Result<Record, String> {
                             .map(Outcome::Text)
                             .map_err(|e| e.to_string())
                     });
+            }
+            Fragments => {
+                return mol
+                    .fragments()
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .map(|fragment| {
+                        let text = fragment.to_smiles().map_err(|e| e.to_string())?;
+                        String::from_utf8(text.into_bytes()).map_err(|e| e.to_string())
+                    })
+                    .collect::<Result<Vec<_>, String>>()
+                    .map(Outcome::Texts);
+            }
+            LargestFragment => {
+                let fragment = mol.largest_fragment().map_err(|e| e.to_string())?;
+                let text = fragment.to_smiles().map_err(|e| e.to_string())?;
+                return String::from_utf8(text.into_bytes())
+                    .map(Outcome::Text)
+                    .map_err(|e| e.to_string());
             }
             TotalAtomCount { .. } => {
                 return mol

@@ -168,9 +168,9 @@ Source-backed topological and Avalon fingerprints
 -------------------------------------------------
 
 ``Molecule.fingerprint_topological()`` and
-``Molecule.avalon_fingerprint()`` execute source-backed Rust implementations.
-The maintained topological matrix is exact across 5,000 rows and 14 profiles;
-the Avalon matrix is exact across 5,000 rows and 23 profiles.
+``Molecule.fingerprint_avalon()`` execute source-backed Rust implementations.
+The standard corpus workflow compares Avalon against pinned RDKit with one
+fixed-seed parameter combination per molecule.
 
 The two APIs are source-backed and return a fresh explicit bit vector:
 
@@ -178,14 +178,17 @@ The two APIs are source-backed and return a fresh explicit bit vector:
   ``RDKFingerprintMol``/RDKitFP generator behavior, including branched-path
   enumeration, source random-bit generation, density folding, atom
   invariants, and the exposed path and atom-selection parameters.
-- ``avalon_fingerprint()`` follows the complete Avalon/reaccs bit-vector path,
+- ``fingerprint_avalon()`` follows the Avalon/reaccs bit-vector path,
   including ``bitFlags``, ``isQuery``, hydrogen handling, aromaticity passes,
   and byte-rounded vector semantics. ``resetVect`` is an internal adapter
   detail and is not exposed on COSMolKit's value-returning API.
 
-The focused option fixtures and maintained corpus are exact source
-comparisons. Similarity correlation, partial bit agreement, or a heuristic
-replacement is not an acceptance condition.
+Comparison uses exact bit vectors, not similarity correlation or partial bit
+agreement. The default flags are the C++ ``0x007FFF``; RDKit's Python wrapper
+defaults to ``0xF07FFF``, so pass the same flags when comparing libraries.
+MOL conversion leaves the original molecule unchanged. Without coordinates,
+the source-defined conversion requires the ``depict`` capability; otherwise
+it returns a typed input-conversion error.
 
 .. code-block:: python
 
@@ -197,7 +200,7 @@ replacement is not an acceptance condition.
        fp_size=2048,
        num_bits_per_feature=2,
    )
-   avalon = mol.avalon_fingerprint(
+   avalon = mol.fingerprint_avalon(
        n_bits=512,
        is_query=False,
        bit_flags=0xF07FFF,
@@ -205,6 +208,23 @@ replacement is not an acceptance condition.
 
    print(topological.on_bits())
    print(avalon.on_bits())
+
+Connected fragments
+-------------------
+
+.. code-block:: python
+
+   mol = ck.Molecule.from_smiles("CC.O.[Na+]")
+   fragments = mol.fragments()
+   print([part.to_smiles() for part in fragments])  # ["CC", "O", "[Na+]"]
+   print(mol.largest_fragment().to_smiles())        # "CC"
+
+Fragments are sanitized, retain source component order and copy their
+conformer rows. Both methods return new molecules without changing ``mol``.
+``largest_fragment()`` chooses the most atoms and the last component on ties;
+it is not RDKit MolStandardize's chemically ranked fragment chooser. Empty
+input returns an empty fragment list; requesting its largest fragment raises
+a typed operation error.
 
 Layered fingerprints
 --------------------

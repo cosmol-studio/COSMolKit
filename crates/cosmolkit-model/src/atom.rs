@@ -918,6 +918,28 @@ fn validate_property_key(key: &PropertyText) -> Result<(), AtomPropertyError> {
     }
 }
 
+/// CK user-metadata namespace, shared by public writes and opt-in propagation.
+/// Underscore-prefixed properties are private/derived, not user annotations.
+/// The remaining excluded names are source atom-map/reaction bookkeeping.
+#[doc(hidden)]
+pub fn is_user_atom_property(key: &[u8]) -> bool {
+    !key.is_empty()
+        && !key.starts_with(b"_")
+        && !matches!(
+            key,
+            b"molAtomMapNumber"
+                | b"molInversionFlag"
+                | b"molParity"
+                | b"react_atom_idx"
+                | b"react_idx"
+                | b"old_mapno"
+                | b"was_dummy"
+                | b"dummyLabel"
+                | b"molRxnRole"
+                | b"molRxnComponent"
+        )
+}
+
 /// Immutable atom record owned by `Molecule`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom {

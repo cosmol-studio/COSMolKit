@@ -214,6 +214,8 @@ pub enum CipStatePolicy {
     ReactionSourceTransition,
     /// Exact MolHash/ChemTransforms scaffold transitions in the core owner.
     ScaffoldSourceTransition,
+    /// MolOps fragment copying and sanitation in the detached core owner.
+    FragmentSourceTransition,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

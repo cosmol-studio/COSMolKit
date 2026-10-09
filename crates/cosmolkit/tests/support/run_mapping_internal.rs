@@ -825,6 +825,31 @@ fn source_guards_keep_mapping_runtime_private_and_algorithm_free() {
     assert!(leaf_validation < prefix_validation);
     assert_eq!(leaf_proof.match_indices(".validate_for_counts(").count(), 1);
 
+    let multiple_start = context
+        .find("pub(super) fn validate_multiple_candidate(")
+        .expect("multiple outputs must use the shared runtime validator");
+    let multiple = &context[multiple_start..];
+    let evidence = multiple
+        .find("if let Some(mapping) = mapping_evidence")
+        .expect("nonidentity multiple outputs must carry explicit mapping evidence");
+    let required = multiple
+        .find("spec.requires_mapping != MappingRequirement::Required")
+        .expect("explicit mapping evidence must require declared mapping authority");
+    let multiple_validation = multiple
+        .find(".validate_for_counts(")
+        .expect("multiple outputs must validate both dimensions and inverse rows");
+    let typed_failure = multiple
+        .find("OperationError::InvalidTopologyMapping")
+        .expect("invalid mapping evidence must retain its typed error");
+    let construction = multiple
+        .find("let mut candidate = OpParts::<()>")
+        .expect("validated outputs must enter the canonical candidate lifecycle");
+    assert!(evidence < required);
+    assert!(required < multiple_validation);
+    assert!(multiple_validation < typed_failure);
+    assert!(typed_failure < construction);
+    assert_eq!(multiple.match_indices(".validate_for_counts(").count(), 1);
+
     let authoritative_validations = context
         .match_indices(".validate_for_counts(")
         .map(|(position, _)| position)
@@ -834,6 +859,7 @@ fn source_guards_keep_mapping_runtime_private_and_algorithm_free() {
         vec![
             obligation_start + obligation_validation,
             leaf_start + leaf_validation,
+            multiple_start + multiple_validation,
         ],
         "every mapping-dimension validation must belong to an audited authority boundary"
     );

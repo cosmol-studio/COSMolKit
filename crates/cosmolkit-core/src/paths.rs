@@ -664,9 +664,42 @@ pub fn query_bond_paths_in_range(
     upper_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
+    query_paths_in_range(
+        query,
+        lower_length,
+        upper_length,
+        params,
+        PathRepresentation::Bonds,
+    )
+}
+
+/// Internal detached query entry for source `useBonds=false` atom paths.
+#[doc(hidden)]
+pub fn query_atom_paths_in_range(
+    query: &QueryGraph,
+    lower_length: usize,
+    upper_length: usize,
+    params: &SubgraphSearchParams,
+) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
+    query_paths_in_range(
+        query,
+        lower_length,
+        upper_length,
+        params,
+        PathRepresentation::Atoms,
+    )
+}
+
+fn query_paths_in_range(
+    query: &QueryGraph,
+    lower_length: usize,
+    upper_length: usize,
+    params: &SubgraphSearchParams,
+    representation: PathRepresentation,
+) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
     query.validate().map_err(PathError::QueryGraph)?;
     let path_params = PathSearchParams {
-        representation: PathRepresentation::Bonds,
+        representation,
         use_hydrogens: params.use_hydrogens,
         rooted_at_atom: params.rooted_at_atom,
         only_shortest_paths: false,

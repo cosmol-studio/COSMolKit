@@ -22,6 +22,12 @@ fn compact(text: &str) -> String {
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-transforms") {
+        expected.push("cap-transforms");
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.push("cap-hashing");
+    }
     if cfg!(feature = "cap-stereoisomers") {
         expected.push("cap-stereoisomers");
     }
@@ -67,9 +73,6 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "cap-hydrogens") {
         expected.push("cap-hydrogens");
     }
-    if cfg!(feature = "cap-transforms") {
-        expected.push("cap-transforms");
-    }
     if cfg!(feature = "cap-depict") {
         expected.push("cap-depict");
     }
@@ -78,6 +81,12 @@ fn expected_feature_names() -> Vec<&'static str> {
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-transforms") {
+        expected.extend(["with_atom_property", "fragments", "largest_fragment"]);
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.extend(["murcko_scaffold", "net_scaffold", "murcko_decompose"]);
+    }
     if cfg!(feature = "cap-stereoisomers") {
         expected.extend([
             "enumerate_stereoisomers_with_options",
@@ -187,7 +196,8 @@ fn expected_parity_methods() -> Vec<&'static str> {
         .filter(|method| {
             !matches!(
                 *method,
-                "with_2d_coordinate_block_with_params"
+                "with_atom_property"
+                    | "with_2d_coordinate_block_with_params"
                     | "with_3d_coordinates_with_params"
                     | "with_added_3d_conformer_with_params"
                     | "with_only_3d_conformer_with_params"

@@ -145,6 +145,63 @@ pub(crate) static REACTION_FEATURE: FeatureSpec = FeatureSpec {
 };
 
 molecule_ops! {
+    #[cfg(feature = "cap-transforms")]
+    op with_atom_property(atom: crate::AtomId, key: &str, value: &crate::PropertyValue) {
+        method: with_atom_property,
+        impl_fn: crate::ops::atom_properties::with_atom_property_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [], write: [topology, derived_cache] },
+        may_mutate: [topology, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families, valence, aromaticity, stereo, coordinates],
+            invalidate: [drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "atom_user_property",
+        inplace: true,
+        inplace_method: set_atom_property_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op fragments() {
+        method: fragments,
+        docs: "Return sanitized connected components in source order, including conformers, without changing self. Empty input returns an empty vector.",
+        impl_fn: crate::ops::fragments::fragments_impl,
+        output: multiple,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [], invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: fragment_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity: required_now, parity_profile: "fragments_rdkit_2026_03_6",
+        invariant_profile: "fragment_compacting_mapping_order_coordinates_and_source_cow",
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op largest_fragment() {
+        method: largest_fragment,
+        docs: "Return the sanitized fragment with most atoms, choosing the last on ties. Empty input is an error; self remains unchanged.",
+        impl_fn: crate::ops::fragments::largest_fragment_impl,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [], invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: fragment_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity: required_now, parity_profile: "largest_fragment_source_order_last_tie",
+        invariant_profile: "largest_fragment_mapping_and_source_cow",
+    }
 
     #[cfg(feature = "cap-hashing")]
     op murcko_scaffold() {

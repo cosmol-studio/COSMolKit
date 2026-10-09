@@ -2,6 +2,41 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
+    pub fn atom_property(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<ck::PropertyValue>, ck::OperationError> {
+        self.inner
+            .borrow()
+            .atom_property(ck::AtomId::new(atom), key)
+            .map(|v| v.cloned())
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &ck::PropertyValue,
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &ck::PropertyValue,
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_(ck::AtomId::new(atom), key, value)
+    }
     pub fn atom_property_string(
         &self,
         id: usize,

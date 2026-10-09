@@ -75,7 +75,12 @@ def _fingerprint_case(input_row):
             "length": 166, "on_bits": [i - 1 for i in raw["on_bits"] if i]}}}
     else:
         kind, p = next(iter(profile.items()))
-        if kind == "Topological":
+        if kind == "Avalon":
+            from rdkit.Avalon import pyAvalonTools
+            fp = pyAvalonTools.GetAvalonFP(mol, nBits=p["n_bits"],
+                                         isQuery=p["is_query"], bitFlags=p["bit_flags"])
+            output = {"Bits": {"fingerprint": bits(fp), "atom_counts": None}}
+        elif kind == "Topological":
             kwargs = dict(minPath=p["min_path"], maxPath=p["max_path"],
                           fpSize=p["fp_size"], nBitsPerHash=p["bits_per_feature"],
                           useHs=p["use_hs"], tgtDensity=p["density_milli"] / 1000,

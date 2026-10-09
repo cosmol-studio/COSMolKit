@@ -1557,6 +1557,16 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         expected.extend([
             "types.CipRankError",
             "types.MoleculeHashError",
+            "Molecule.murcko_scaffold",
+        ]);
+    }
+    if cfg!(feature = "cap-transforms") {
+        expected.extend(["Molecule.fragments", "Molecule.largest_fragment"]);
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.extend([
+            "Molecule.net_scaffold",
+            "Molecule.murcko_decompose",
             "Molecule.molecular_hash",
             "Molecule.molecular_hash_with_ranks",
         ]);
@@ -1665,6 +1675,12 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.fingerprint_maccs",
             "Molecule.fingerprint_maccs_raw",
             "Molecule.fingerprint_maccs_with_params",
+            "types.AvalonFingerprintParams",
+            "types.AvalonFingerprintFlags",
+            "types.AvalonFingerprintError",
+            "types.AvalonEngineError",
+            "Molecule.fingerprint_avalon",
+            "Molecule.fingerprint_avalon_with_params",
             "types.LayeredFingerprintParams",
             "types.LayeredFingerprintLayers",
             "types.LayeredFingerprintResult",
@@ -2210,6 +2226,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.to_inchi_key_with_params",
             "module.inchi_to_key",
         ]);
+    }
+    expected.push("Molecule.atom_property");
+    if cfg!(feature = "cap-transforms") {
+        expected.extend(["Molecule.with_atom_property", "Molecule.set_atom_property_"]);
     }
     assert_eq!(
         BINDING_CONTRACT
@@ -2966,7 +2986,13 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.fingerprint_topological_torsion_list"
                 | "MoleculeBatch.fingerprint_topological_torsion_list_with_params"
         );
-        let expected = if native_coordinates || native_batch {
+        let native_atom_properties = matches!(
+            contract.semantic_id,
+            "Molecule.atom_property"
+                | "Molecule.with_atom_property"
+                | "Molecule.set_atom_property_"
+        );
+        let expected = if native_coordinates || native_batch || native_atom_properties {
             FunctionStatus::Native
         } else if fuzzy {
             FunctionStatus::Parity { reference: "RDKit" }

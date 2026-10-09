@@ -22,7 +22,7 @@ pub(crate) use registry::{Corpus, Input, Record, Task};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-pub use workflow::{Preparation, Selection, prepare};
+pub use workflow::{Preparation, Selection, prepare, prepare_with_reuse};
 pub type Result<T> = std::result::Result<T, String>;
 
 pub fn root() -> PathBuf {

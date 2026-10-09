@@ -24,8 +24,8 @@ mod valence;
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{
     Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, TemplateAttachment,
-    TemplateAttachmentOrder, TemplateAttachmentOrderError, ordered_atom_properties,
-    replace_atom_template_attachment_order,
+    TemplateAttachmentOrder, TemplateAttachmentOrderError, is_user_atom_property,
+    ordered_atom_properties, replace_atom_template_attachment_order,
 };
 pub use bond::{Bond, BondId, BondSpec, BondValueError, ordered_bond_properties};
 pub use cip::{CipDescriptor, CipDescriptorError};

@@ -125,7 +125,7 @@ def molecular(row):
     try:
         params = Chem.SmilesParserParams()
         params.sanitize = options["sanitize"] if name == "SmilesRead" else name != "SanitizeAll"
-        params.removeHs = options["remove_hydrogens"] if name in ("SmilesRead", "NumHeavyAtoms", "TotalAtomCount", "LipinskiHBA", "LipinskiHBD", "FractionCSP3", "NumHeteroatoms", "NumHba", "NumHbd", "NumRings", "NumHeterocycles", "NumAromaticRings", "NumSaturatedRings", "NumAliphaticRings", "NumAromaticHeterocycles", "NumAromaticCarbocycles", "NumAliphaticHeterocycles", "NumAliphaticCarbocycles", "NumSaturatedHeterocycles", "NumSaturatedCarbocycles") else name != "SanitizeAll"
+        params.removeHs = options["remove_hs"] if name in ("SmilesRead", "NumHeavyAtoms", "TotalAtomCount", "LipinskiHBA", "LipinskiHBD", "FractionCSP3", "NumHeteroatoms", "NumHba", "NumHbd", "NumRings", "NumHeterocycles", "NumAromaticRings", "NumSaturatedRings", "NumAliphaticRings", "NumAromaticHeterocycles", "NumAromaticCarbocycles", "NumAliphaticHeterocycles", "NumAliphaticCarbocycles", "NumSaturatedHeterocycles", "NumSaturatedCarbocycles") else name != "SanitizeAll"
         params.allowCXSMILES = True
         params.strictCXSMILES = True
         params.parseName = True
@@ -141,6 +141,13 @@ def molecular(row):
             return {"Text": rdMolHash.MolHash(mol, function)}
         if name == "MurckoDecompose":
             return {"Text": Chem.MolToSmiles(Chem.MurckoDecompose(mol))}
+        if name in ("Fragments", "LargestFragment"):
+            fragments = Chem.GetMolFrags(mol, asMols=True, sanitizeFrags=True)
+            if name == "Fragments":
+                return {"Texts": [Chem.MolToSmiles(fragment) for fragment in fragments]}
+            # Rust max_by_key retains the last source-order fragment on equal size.
+            largest = max(enumerate(fragments), key=lambda item: (item[1].GetNumAtoms(), item[0]))[1]
+            return {"Text": Chem.MolToSmiles(largest)}
         if name == "SvgDefault":
             drawer = rdMolDraw2D.MolDraw2DSVG(300, 300, -1, -1, True)
             rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
@@ -724,6 +731,8 @@ def generate_substructure_match(corpus,parameters,threads,progress=None):
     return _generate(corpus,parameters,threads,_search_case, progress=progress)
 
 GENERATORS = {
+    "generate_fragments": generate_scaffolds,
+    "generate_largest_fragment": generate_scaffolds,
     "generate_murcko_scaffold": generate_scaffolds,
     "generate_net_scaffold": generate_scaffolds,
     "generate_murcko_decompose": generate_scaffolds,

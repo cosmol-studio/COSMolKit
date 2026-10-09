@@ -98,8 +98,12 @@ pub(crate) fn operation_pyerr(
     let source = source.borrow();
     use ck::OperationError as E;
     let kind = match source {
+        E::AtomPropertyIndex { .. } => "AtomPropertyIndex",
+        E::ReservedAtomPropertyKey { .. } => "ReservedAtomPropertyKey",
         E::ReactionRun(..) => "ReactionRun",
         E::Scaffold(..) => "Scaffold",
+        E::Fragments(..) => "Fragments",
+        E::EmptyFragments => "EmptyFragments",
         E::ReactionApply(..) => "ReactionApply",
         E::Alignment(..) => "Alignment",
         E::Enumeration(..) => "Enumeration",
@@ -155,6 +159,17 @@ pub(crate) fn operation_pyerr(
         .setattr("domain", "operation")
         .and_then(|()| error.value(py).setattr("kind", kind))
     {
+        return attribute_error;
+    }
+    let context = match source {
+        E::AtomPropertyIndex { atom, atom_count } => error
+            .value(py)
+            .setattr("atom_index", atom.index())
+            .and_then(|()| error.value(py).setattr("atom_count", atom_count)),
+        E::ReservedAtomPropertyKey { key } => error.value(py).setattr("key", key),
+        _ => Ok(()),
+    };
+    if let Err(attribute_error) = context {
         return attribute_error;
     }
     error.set_cause(
@@ -375,7 +390,7 @@ impl Molecule {
     #[pyo3(signature=(text, params=None, *, sanitize=None, remove_hs=None))]
     fn from_inchi(
         py: Python<'_>,
-        text: &str,
+        text: crate::text_input::TextInput<'_>,
         params: Option<&crate::canonical_inchi::InchiReadParams>,
         sanitize: Option<bool>,
         remove_hs: Option<bool>,
@@ -389,17 +404,17 @@ impl Molecule {
             sanitize: sanitize.unwrap_or(true),
             remove_hs: remove_hs.unwrap_or(true),
         });
-        ck::Molecule::from_inchi_with_params(text, &params)
+        ck::Molecule::from_inchi_with_params(&text.as_text()?, &params)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
     #[staticmethod]
     fn from_inchi_with_params(
         py: Python<'_>,
-        text: &str,
+        text: crate::text_input::TextInput<'_>,
         params: &crate::canonical_inchi::InchiReadParams,
     ) -> PyResult<Self> {
-        ck::Molecule::from_inchi_with_params(text, &params.inner)
+        ck::Molecule::from_inchi_with_params(&text.as_text()?, &params.inner)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
@@ -520,6 +535,42 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Read typed user metadata; missing keys return None.
+    #[gen_stub(override_return_type(
+        type_repr = "bool | int | float | str | list[int] | list[str] | None"
+    ))]
+    fn atom_property(&self, py: Python<'_>, atom: usize, key: &str) -> PyResult<Option<Py<PyAny>>> {
+        self.inner
+            .atom_property(ck::AtomId::new(atom), key)
+            .map_err(|e| operation_pyerr(py, e))?
+            .map(|v| crate::native_property::NativeProperty::to_python(v, py))
+            .transpose()
+    }
+    /// Return an independently editable molecule with one typed user property.
+    fn with_atom_property(
+        &self,
+        py: Python<'_>,
+        atom: usize,
+        key: &str,
+        value: crate::native_property::NativeProperty,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_atom_property(ck::AtomId::new(atom), key, &value.0)
+            .map(Self::from_inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    /// Set one typed user property in place; shared copies remain unchanged.
+    fn set_atom_property_(
+        &mut self,
+        py: Python<'_>,
+        atom: usize,
+        key: &str,
+        value: crate::native_property::NativeProperty,
+    ) -> PyResult<()> {
+        self.inner
+            .set_atom_property_(ck::AtomId::new(atom), key, &value.0)
+            .map_err(|e| operation_pyerr(py, e))
+    }
     fn atom_property_string(
         &self,
         py: Python<'_>,
@@ -920,6 +971,23 @@ impl Molecule {
             .fingerprint_layered()
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
+    }
+    /// Avalon C++ defaults; accepts configuration objects or keyword options.
+    fn fingerprint_avalon(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .fingerprint_avalon()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_avalon::error(py, e))
+    }
+    fn fingerprint_avalon_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_avalon::AvalonFingerprintParams,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .fingerprint_avalon_with_params(&params.inner)
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_avalon::error(py, e))
     }
     fn fingerprint_layered_with_params(
         &self,
@@ -2688,6 +2756,22 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return sanitized connected components in source order, copying conformers.
+    /// The source molecule is unchanged; empty input returns an empty list.
+    fn fragments(&self, py: Python<'_>) -> PyResult<Vec<Self>> {
+        self.inner
+            .fragments()
+            .map(|values| values.into_iter().map(|inner| Self { inner }).collect())
+            .map_err(|error| operation_pyerr(py, error))
+    }
+    /// Most atoms, last component on ties; empty input raises OperationError.
+    fn largest_fragment(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .largest_fragment()
+            .map(|inner| Self { inner })
+            .map_err(|error| operation_pyerr(py, error))
+    }
+
     /// MolHash MurckoScaffold: prune terminal atoms, returning a new molecule.
     fn murcko_scaffold(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
@@ -2958,8 +3042,8 @@ impl Molecule {
     }
 
     #[staticmethod]
-    fn from_smiles(py: Python<'_>, smiles: &str) -> PyResult<Self> {
-        ck::Molecule::from_smiles(smiles)
+    fn from_smiles(py: Python<'_>, smiles: crate::text_input::TextInput<'_>) -> PyResult<Self> {
+        ck::Molecule::from_smiles(&smiles.as_text()?)
             .map(|inner| Self { inner })
             .map_err(|error| smiles_pyerr(py, error))
     }
@@ -2967,10 +3051,10 @@ impl Molecule {
     #[staticmethod]
     fn from_smiles_with_params(
         py: Python<'_>,
-        input: &str,
+        input: crate::text_input::TextInput<'_>,
         params: &SmilesParseParams,
     ) -> PyResult<Self> {
-        ck::Molecule::from_smiles_with_params(input, &params.inner)
+        ck::Molecule::from_smiles_with_params(&input.as_text()?, &params.inner)
             .map(|inner| Self { inner })
             .map_err(|e| smiles_pyerr(py, e))
     }
@@ -4309,6 +4393,7 @@ pub(crate) fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_path_score::register(module)?;
     crate::canonical_maccs::register(module)?;
     crate::canonical_layered::register(module)?;
+    crate::canonical_avalon::register(module)?;
     crate::canonical_pattern::register(module)?;
     crate::canonical_topological::register(module)?;
     crate::canonical_element_metadata::register(module)?;

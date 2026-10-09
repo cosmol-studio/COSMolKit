@@ -18,11 +18,11 @@
         },
         {
           "path": "testdata/reference/rdkit.json",
-          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+          "sha256": "2b639915967d828547e279264d32be31207dac2922297caf1aa3be762fc011f5"
         },
         {
           "path": "tools/testdata/rdkit/_generate_forcefield_params_golden.py",
-          "sha256": "b9ab547718cb3fcdcc413850134efe3262cf7775c709dab1ea11e2653359618f"
+          "sha256": "9d3476d9ad0ad2e5b6ec3893cf1c14c8e63539d63cf9b8d8c07ed9005439d317"
         }
       ],
       "inputs": [
@@ -47,7 +47,7 @@
         "system": "Linux"
       },
       "records": 152,
-      "sha256": "7cf9e84bea3a66ee4d29f198639ed62b6caf0f5b0ad369d7812b5417e91519be"
+      "sha256": "7ea06db1f70822cb711aa6f19bf902aaad85ca4491fc1f591bc32aa0e54fec44"
     },
     {
       "generator": [
@@ -61,11 +61,11 @@
         },
         {
           "path": "testdata/reference/rdkit.json",
-          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+          "sha256": "2b639915967d828547e279264d32be31207dac2922297caf1aa3be762fc011f5"
         },
         {
           "path": "tools/testdata/rdkit/_generate_mmff_builtin_golden.py",
-          "sha256": "03fda9328d65a7a805a3e89c8e638525fefcef85ff0a05d12344a814447f1169"
+          "sha256": "38f0728f3262f11e2a5ded39b6d12830861523ea4753652be15a77fcd5b4cbfe"
         }
       ],
       "inputs": [
@@ -112,8 +112,8 @@
   "profile": "smiles_small",
   "reference_implementation": {
     "name": "rdkit",
-    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
-    "version": "2026.03.1"
+    "source_revision": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985",
+    "version": "2026.03.6"
   },
   "reference_runtime": {
     "implementation": "cpython",

@@ -9,6 +9,12 @@ use super::{BlockSet, MoleculeOpOutput, MoleculeOpSpec, OperationError};
 use crate::Molecule;
 
 enum DetachedCandidate {
+    Mapped(
+        TopologyBlock,
+        CoordinateBlock,
+        MoleculeProperties,
+        cosmolkit_model::TopologyMapping,
+    ),
     Blocks(TopologyBlock, CoordinateBlock, MoleculeProperties),
     SharedCoordinates(TopologyBlock, MoleculeProperties),
     #[cfg(feature = "cap-stereoisomers")]
@@ -370,6 +376,41 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         })
     }
 
+    pub(super) fn emit_mapped_runtime(
+        &mut self,
+        candidates: Vec<(
+            TopologyBlock,
+            CoordinateBlock,
+            MoleculeProperties,
+            cosmolkit_model::TopologyMapping,
+        )>,
+    ) -> Result<(), OperationError> {
+        self.require_output(MoleculeOpOutput::Multiple)?;
+        if self.spec.requires_mapping != super::MappingRequirement::Required {
+            return Err(OperationError::MappingContract {
+                operation: self.spec.method,
+                issue: "mapped output requires a required-mapping declaration",
+                requirement: self.spec.requires_mapping,
+            });
+        }
+        if self.emitted.is_some() {
+            return Err(OperationError::OperationContract {
+                operation: self.spec.method,
+                field: "outputs",
+                issue: "multiple-output operation emitted more than once",
+                expected: 0,
+                actual: 1,
+            });
+        }
+        self.emitted = Some(
+            candidates
+                .into_iter()
+                .map(|(t, c, p, m)| DetachedCandidate::Mapped(t, c, p, m))
+                .collect(),
+        );
+        Ok(())
+    }
+
     pub(super) fn emit_all_runtime(
         &mut self,
         candidates: Vec<(TopologyBlock, CoordinateBlock, MoleculeProperties)>,
@@ -455,8 +496,17 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         let validated = candidates
             .into_iter()
             .map(|candidate| {
+                let (candidate, mapping) = match candidate {
+                    DetachedCandidate::Mapped(t, c, p, m) => {
+                        (DetachedCandidate::Blocks(t, c, p), Some(m))
+                    }
+                    other => (other, None),
+                };
                 let (topology, coordinates, properties, prepared, reconstruction_validated) =
                     match candidate {
+                        DetachedCandidate::Mapped(..) => {
+                            unreachable!("unwrapped immediately above")
+                        }
                         DetachedCandidate::Blocks(t, c, p) => (t, Some(c), p, None, false),
                         DetachedCandidate::SharedCoordinates(t, p) => (t, None, p, None, false),
                         #[cfg(feature = "cap-stereoisomers")]
@@ -522,6 +572,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                     properties,
                     prepared,
                     reconstruction_validated,
+                    mapping,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -565,6 +616,13 @@ impl Iterator for StereoisomerIterator {
             Err(error) => return Some(Err(error)),
         };
         let (topology, coordinates, properties, prepared) = match candidate {
+            DetachedCandidate::Mapped(..) => {
+                return Some(Err(OperationError::MappingContract {
+                    operation: self.spec.method,
+                    issue: "mapped candidates are eager outputs",
+                    requirement: self.spec.requires_mapping,
+                }));
+            }
             DetachedCandidate::Blocks(t, c, p) => (t, Some(c), p, None),
             DetachedCandidate::SharedCoordinates(t, p) => (t, None, p, None),
             #[cfg(feature = "cap-stereoisomers")]
@@ -590,6 +648,7 @@ impl Iterator for StereoisomerIterator {
             properties,
             prepared,
             false,
+            None,
         )
         .and_then(|(t, c, p, cache)| Molecule::from_runtime_parts(t, c, p, cache));
         match result {
@@ -737,4 +796,38 @@ fn validate_reconstruction_rows(
 #[cfg(test)]
 mod tests {
     include!("../../tests/support/run_multiple_internal.rs");
+}
+
+#[cfg(all(test, feature = "cap-transforms", feature = "cap-smiles"))]
+mod mapped_tests {
+    use super::*;
+    #[test]
+    fn mapped_outputs_reject_invalid_inverse_rows_without_touching_source() {
+        let source = Molecule::from_smiles("CC.O").unwrap();
+        let before = source.clone();
+        let mut values = cosmolkit_core::get_molecule_fragments(
+            source.topology(),
+            source.coordinate_block_runtime(),
+            source.properties(),
+            true,
+            true,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|f| f.into_mapped_parts())
+        .collect::<Vec<_>>();
+        values[1].3.atoms.new_to_old[0] = Some(cosmolkit_model::AtomId::new(0));
+        let spec = crate::operation_spec("fragments").unwrap();
+        let mut transaction = MultiOutputOpParts::<()>::new(&source, spec).unwrap();
+        transaction.emit_mapped_runtime(values).unwrap();
+        assert!(matches!(
+            transaction.finish(),
+            Err(OperationError::InvalidTopologyMapping { .. })
+        ));
+        assert_eq!(source, before);
+        assert!(std::sync::Arc::ptr_eq(
+            &source.topology_arc_runtime(),
+            &before.topology_arc_runtime()
+        ));
+    }
 }

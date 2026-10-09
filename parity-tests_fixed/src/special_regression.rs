@@ -35,7 +35,7 @@ pub(crate) fn validate(
         return Ok(Snapshot { fixture, rows });
     }
     // These are distinct pinned spellings, not a version-normalization rule:
-    // rdBase reports 2026.03.1; Python distribution/fixture reports 2026.3.1.
+    // rdBase reports 2026.03.6; Python distribution/fixture reports 2026.3.6.
     let pin: Value = serde_json::from_str(include_str!("../testdata/reference/rdkit.json"))
         .map_err(|e| e.to_string())?;
     if matches!(schema, registry::SpecialRegressionSchema::MolAlign) {

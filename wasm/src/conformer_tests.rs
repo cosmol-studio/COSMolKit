@@ -1,5 +1,9 @@
 //! Canonical embedding owner integration with complete report and failure semantics.
 use crate::{EmbedParams, Molecule};
+// Pinned RDKit 2026.03.6, DistGeomHelpers/Embedder.h:25-41:
+// MINIMIZATION = 12, KTERM_VIOLATION = 13, CLASH = 14, END_OF_ENUM = 15.
+// This census follows upstream, not the length returned by the CK implementation.
+const EXPECTED_FAILURE_COUNTERS: usize = 15;
 #[test]
 fn conformer_reexports_all_operations_reports_and_atomic_failures() {
     let mut p = EmbedParams::dg();
@@ -28,7 +32,7 @@ fn conformer_reexports_all_operations_reports_and_atomic_failures() {
     let m = Molecule::from_smiles("C").unwrap();
     let out = m.with_3d_conformer_result_with_params(&p).unwrap();
     assert_eq!(out.molecule().num_3d_conformers(), 1);
-    assert_eq!(out.params().failures().len(), 12);
+    assert_eq!(out.params().failures().len(), EXPECTED_FAILURE_COUNTERS);
     assert_eq!(out.conf_id(), 0);
     assert!(out.ok());
     assert_eq!(m.num_3d_conformers(), 0);
@@ -41,7 +45,7 @@ fn conformer_reexports_all_operations_reports_and_atomic_failures() {
     let m = Molecule::from_smiles("C").unwrap();
     let out = m.embed_3d_conformer_result_with_params_(&p).unwrap();
     assert_eq!(out.molecule().num_3d_conformers(), 1);
-    assert_eq!(out.params().failures().len(), 12);
+    assert_eq!(out.params().failures().len(), EXPECTED_FAILURE_COUNTERS);
     assert_eq!(out.conf_id(), 0);
     assert!(out.ok());
     assert_eq!(m.num_3d_conformers(), 1);
@@ -69,7 +73,7 @@ fn conformer_reexports_all_operations_reports_and_atomic_failures() {
     let m = Molecule::from_smiles("C").unwrap();
     let out = m.with_3d_conformers_result_with_params(2, &p).unwrap();
     assert_eq!(out.molecule().num_3d_conformers(), 2);
-    assert_eq!(out.params().failures().len(), 12);
+    assert_eq!(out.params().failures().len(), EXPECTED_FAILURE_COUNTERS);
     assert_eq!(out.conf_ids(), [0, 1]);
     assert_eq!(out.requested_num_confs(), 2);
     assert_eq!(out.generated_count(), 2);
@@ -84,7 +88,7 @@ fn conformer_reexports_all_operations_reports_and_atomic_failures() {
     let m = Molecule::from_smiles("C").unwrap();
     let out = m.embed_3d_conformers_result_with_params_(2, &p).unwrap();
     assert_eq!(out.molecule().num_3d_conformers(), 2);
-    assert_eq!(out.params().failures().len(), 12);
+    assert_eq!(out.params().failures().len(), EXPECTED_FAILURE_COUNTERS);
     assert_eq!(out.conf_ids(), [0, 1]);
     assert_eq!(out.requested_num_confs(), 2);
     assert_eq!(out.generated_count(), 2);

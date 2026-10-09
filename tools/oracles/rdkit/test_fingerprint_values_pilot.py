@@ -11,17 +11,17 @@ def profiles(name, **axes):
 
 
 MATRICES = {
-    "smiles_read": profiles("SmilesRead", sanitize=[False, True], remove_hydrogens=[False, True]),
+    "smiles_read": profiles("SmilesRead", sanitize=[False, True], remove_hs=[False, True]),
     "sanitize": profiles("SanitizeAll"),
     "kekulize": profiles("Kekulize", clear_aromatic_flags=[False, True]),
     "molecular_weight": profiles("MolecularWeight", only_heavy=[False, True]),
     "exact_molecular_weight": profiles("ExactMolecularWeight", only_heavy=[False, True]),
     "molecular_formula": profiles("MolecularFormula", separate_isotopes=[False, True], abbreviate_h_isotopes=[False, True]),
-    "num_heavy_atoms": profiles("NumHeavyAtoms", remove_hydrogens=[False, True]),
-    "total_atom_count": profiles("TotalAtomCount", remove_hydrogens=[False, True]),
-    "lipinski_hba": profiles("LipinskiHBA", remove_hydrogens=[False, True]),
-    "lipinski_hbd": profiles("LipinskiHBD", remove_hydrogens=[False, True]),
-    "fraction_csp3": profiles("FractionCSP3", remove_hydrogens=[False, True]),
+    "num_heavy_atoms": profiles("NumHeavyAtoms", remove_hs=[False, True]),
+    "total_atom_count": profiles("TotalAtomCount", remove_hs=[False, True]),
+    "lipinski_hba": profiles("LipinskiHBA", remove_hs=[False, True]),
+    "lipinski_hbd": profiles("LipinskiHBD", remove_hs=[False, True]),
+    "fraction_csp3": profiles("FractionCSP3", remove_hs=[False, True]),
     "add_hydrogens": profiles("AddHydrogens", explicit_only=[False, True]),
     "remove_hydrogens": profiles("RemoveHydrogens", sanitize=[False, True]),
     "coordinates_2d": profiles("Coordinates2dDefault"),

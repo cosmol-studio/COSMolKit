@@ -531,6 +531,8 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
 pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, JsValue> {
     use ck::OperationError as E;
     let kind = match source {
+        E::AtomPropertyIndex { .. } => "AtomPropertyIndex",
+        E::ReservedAtomPropertyKey { .. } => "ReservedAtomPropertyKey",
         #[cfg(feature = "cap-reaction")]
         E::ReactionRun(..) => "ReactionRun",
         #[cfg(feature = "cap-reaction")]
@@ -548,6 +550,9 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::Tautomer(..) => "Tautomer",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
         E::Unsupported { .. } => "Unsupported",
+        #[cfg(feature = "cap-transforms")]
+        E::Fragments(..) => "Fragments",
+        E::EmptyFragments => "EmptyFragments",
         E::OutputMismatch { .. } => "OutputMismatch",
         E::AccessDenied { .. } => "AccessDenied",
         E::BlockCheckedOut { .. } => "BlockCheckedOut",
@@ -598,6 +603,14 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
     let error: JsValue = error.into();
     set(&error, "domain", "operation".into())?;
     set(&error, "kind", kind.into())?;
+    match source {
+        E::AtomPropertyIndex { atom, atom_count } => {
+            set(&error,"atomIndex",(atom.index() as f64).into())?;
+            set(&error,"atomCount",(*atom_count as f64).into())?;
+        }
+        E::ReservedAtomPropertyKey { key } => set(&error,"key",key.as_str().into())?,
+        _ => {},
+    }
     match source {
         #[cfg(feature = "cap-reaction")]
         E::ReactionRun(cause) => set(&error, "cause", crate::reaction_errors::run_error(cause)?)?,

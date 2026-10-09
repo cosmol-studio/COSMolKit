@@ -364,22 +364,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmolkit-parity-tests"
-version = "0.1.0"
-dependencies = [
- "cosmolkit",
- "cosmolkit-core",
- "cosmolkit-model",
- "cosmolkit-smiles",
- "cosmolkit-tautomer",
- "cosmolkit-types",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
 name = "cosmolkit-parity-tests-fixed"
 version = "0.1.0"
 dependencies = [

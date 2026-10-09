@@ -15,6 +15,12 @@ fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry 
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-transforms") {
+        expected.push("cap-transforms");
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.push("cap-hashing");
+    }
     if cfg!(feature = "cap-stereoisomers") {
         expected.push("cap-stereoisomers");
     }
@@ -60,9 +66,6 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "cap-hydrogens") {
         expected.push("cap-hydrogens");
     }
-    if cfg!(feature = "cap-transforms") {
-        expected.push("cap-transforms");
-    }
     if cfg!(feature = "cap-depict") {
         expected.push("cap-depict");
     }
@@ -71,6 +74,12 @@ fn expected_feature_names() -> Vec<&'static str> {
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-transforms") {
+        expected.extend(["with_atom_property", "fragments", "largest_fragment"]);
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.extend(["murcko_scaffold", "net_scaffold", "murcko_decompose"]);
+    }
     if cfg!(feature = "cap-stereoisomers") {
         expected.extend([
             "enumerate_stereoisomers_with_options",
@@ -180,7 +189,8 @@ fn expected_parity_methods() -> Vec<&'static str> {
         .filter(|method| {
             !matches!(
                 *method,
-                "with_2d_coordinate_block_with_params"
+                "with_atom_property"
+                    | "with_2d_coordinate_block_with_params"
                     | "with_3d_coordinates_with_params"
                     | "with_added_3d_conformer_with_params"
                     | "with_only_3d_conformer_with_params"
@@ -510,7 +520,8 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
             ParityPolicy::RequiredWhenSupported
         } else if matches!(
             operation.method,
-            "with_2d_coordinate_block_with_params"
+            "with_atom_property"
+                | "with_2d_coordinate_block_with_params"
                 | "with_3d_coordinates_with_params"
                 | "with_added_3d_conformer_with_params"
                 | "with_only_3d_conformer_with_params"
@@ -561,13 +572,13 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
         operation_invariant_matrix()[remove_index].profile,
         "strong_topology_with_coordinates"
     );
-    assert_eq!(parity_matrix()[add_index].profile, "add_hydrogens_rdkit");
-    assert_eq!(
-        parity_matrix()[remove_index].profile,
-        "remove_hydrogens_rdkit"
-    );
-    assert_eq!(parity_matrix()[add_index].rdkit_version, None);
-    assert_eq!(parity_matrix()[remove_index].rdkit_version, None);
+    let add_parity = operation_parity("with_hydrogens_with_params").expect("add-hydrogen parity");
+    let remove_parity =
+        operation_parity("without_hydrogens_with_params").expect("remove-hydrogen parity");
+    assert_eq!(add_parity.profile, "add_hydrogens_rdkit");
+    assert_eq!(remove_parity.profile, "remove_hydrogens_rdkit");
+    assert_eq!(add_parity.rdkit_version, None);
+    assert_eq!(remove_parity.rdkit_version, None);
 }
 
 #[cfg(feature = "cap-hydrogens")]

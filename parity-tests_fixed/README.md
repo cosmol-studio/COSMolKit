@@ -20,6 +20,12 @@ Without a task filter, all tasks for that corpus run.
 Preparation shows task N/total and a live completed-cases progress bar per task;
 parameter combinations for each case remain together. Valid references show `reused`.
 
+For the audited recovery cache, add `--reuse-from /path/to/recovery-checkout`
+to prepare. Only the approved recipe pair and identical complete inputs can
+be imported; three renamed input keys are converted without changing native
+outputs. Original manifests remain in an import receipt. Different parameters
+use normal reference generation; comparison validation is unchanged.
+
 To prepare and run just one task:
 
 ```bash
@@ -64,7 +70,7 @@ Reference transport preserves native float bits in both preparation and tests
 (`serde_json/float_roundtrip`); it must not round the inputs independently of
 the native results.
 
-MACCS, Topological, Layered, Pattern, fuzzy AND and fuzzy OR are registered
+MACCS, Topological, Layered, Pattern, Avalon, fuzzy AND and fuzzy OR are registered
 SMILES corpus tasks. Each molecule gets **one** reproducible parameter combination
 per task (seed `0x434b465020261007`, keyed by task, case ID and SMILES).
 Parameters are saved in `expected/` inputs; RDKit and CK consume the same values.
@@ -72,6 +78,11 @@ MACCS compares raw 167-bit and public 166-bit results; Layered also compares
 seeded atom counts. Fuzzy operations pair each molecule with the next (wrapping
 at the end), use Morgan counts, and sample signed counts and 32-/64-bit indices.
 No separate fingerprint-pairs corpus is needed. Results compare exactly.
+Avalon samples bit-vector sizes (including non-byte-aligned sizes), query mode
+and native feature masks; both sides receive the recorded explicit flags.
+`fragments_smiles` compares source-ordered sanitized fragment SMILES;
+`largest_fragment_smiles` selects the most atoms, retaining the last tie
+(CK's existing convenience rule, not MolStandardize's chooser policy).
 The upstream unrooted-linear Layered branch is executed in an isolated
 process because the pinned source can crash while treating atom-path indices
 as bond indices. Every original case and seeded profile is retained. Native

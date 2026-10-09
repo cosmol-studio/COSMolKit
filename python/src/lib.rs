@@ -36,6 +36,8 @@ mod canonical_valence;
 mod canonical_values;
 mod configuration_projection;
 mod drawing_binding;
+mod native_property;
+mod text_input;
 mod text_path;
 mod user_path;
 
@@ -50,6 +52,7 @@ mod canonical_property_values;
 mod uff_binding;
 
 mod alignment_binding;
+mod canonical_avalon;
 mod canonical_layered;
 mod canonical_maccs;
 mod canonical_path_score;

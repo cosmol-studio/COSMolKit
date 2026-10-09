@@ -66,6 +66,25 @@ class ForceFieldParamsGenerationTests(unittest.TestCase):
             expected_aromatic,
         )
 
+        # A pristine native control isolates adapter-induced mutation. Do not
+        # freeze a coordinate/energy from an older RDKit embedding algorithm.
+        # The control does not call any helper under test or CK implementation.
+        control_mol = Chem.Mol(parity_mol)
+        control = AllChem.UFFGetMoleculeForceField(
+            control_mol,
+            vdwThresh=FORCEFIELD_NONBONDED_THRESH,
+            confId=0,
+            ignoreInterfragInteractions=True,
+        )
+        self.assertIsNotNone(control)
+        expected_status = control.Minimize(maxIts=FORCEFIELD_OPT_MAX_ITERS)
+        expected_energy = control.CalcEnergy()
+        conformer = control_mol.GetConformer(0)
+        expected_coords = [
+            [float(conformer.GetAtomPosition(i)[axis]) for axis in range(3)]
+            for i in range(control_mol.GetNumAtoms())
+        ]
+
         properties = mmff_result(parity_mol)
         self.assertTrue(properties["ok"])
         self.assertFalse(properties["has_all"])
@@ -101,9 +120,10 @@ class ForceFieldParamsGenerationTests(unittest.TestCase):
             FORCEFIELD_OPT_MAX_ITERS,
         )
         self.assertTrue(optimized["ok"])
-        self.assertEqual(optimized["needs_more"], 0)
-        self.assertAlmostEqual(optimized["energy"], 8.341918182756241e-13, places=18)
-        self.assertAlmostEqual(optimized["coords"][0][0], 1.3370117772556993, places=12)
+        self.assertEqual(expected_status, 0)
+        self.assertEqual(optimized["needs_more"], expected_status)
+        self.assertEqual(optimized["energy"], expected_energy)
+        self.assertEqual(optimized["coords"], expected_coords)
         self.assertNotAlmostEqual(optimized["coords"][0][0], 1.3606108238464545, places=6)
 
 

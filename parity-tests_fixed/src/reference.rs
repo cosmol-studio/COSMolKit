@@ -14,6 +14,12 @@ pub(crate) fn uses_gemmi(spec: &Spec) -> bool {
 }
 
 pub(crate) fn source_digest(spec: &Spec) -> Result<String> {
+    source_digest_at(spec, &root())
+}
+
+pub(crate) fn source_digest_at(spec: &Spec, checkout: &std::path::Path) -> Result<String> {
+    let directory = || checkout.join("parity-tests_fixed");
+    let root = || checkout.to_path_buf();
     // JSON decoding is part of preparation: float_roundtrip must preserve the
     // native f64 inputs, including rank-deficient alignment coordinates.
     let mut paths = vec![
@@ -85,7 +91,9 @@ struct NativeRequest<'a> {
 fn invoke_output<T: serde::Serialize + Sync>(request: &T) -> Result<tempfile::NamedTempFile> {
     // The native command/inputs are unchanged. A private file replaces the
     // whole stdout Vec so native failures still precede JSON decoding errors.
-    let output = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let artifacts = directory().join("reports");
+    std::fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
+    let output = tempfile::NamedTempFile::new_in(artifacts).map_err(|e| e.to_string())?;
     let mut child = Command::new(root().join(".venv/bin/python"))
         .arg(directory().join("tools/reference.py"))
         .stdin(Stdio::piped())

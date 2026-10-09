@@ -49,6 +49,8 @@ const PREREQUISITES: &[(&str, &[&str])] = &[
         &["cap-forcefields", "cap-alignment", "cap-io"],
     ),
     ("cap-confseq", &["cap-conformer"]),
+    // Avalon converts through the molecular IO owner, without enabling depiction.
+    ("cap-fingerprints", &["cap-io"]),
     ("cap-search", &["cap-smiles"]),
     ("cap-serialization", &["cap-io"]),
     ("cap-stereoisomers", &["cap-stereo"]),
@@ -237,7 +239,7 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         ("cap-serialization", &["cap-io", "cosmolkit-io/binary"][..]),
         (
             "cap-fingerprints",
-            &["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"][..],
+            &["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io"][..],
         ),
     ] {
         let actual: BTreeSet<_> = manifest["features"][feature]

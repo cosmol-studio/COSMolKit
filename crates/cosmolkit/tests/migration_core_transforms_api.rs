@@ -133,7 +133,9 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
         "Molecule.clear_3d_conformers_",
     ];
     let mut complete_expected = expected.to_vec();
+    complete_expected.extend(["Molecule.fragments", "Molecule.largest_fragment"]);
     complete_expected.extend(coordinate_expected);
+    complete_expected.extend(["Molecule.with_atom_property", "Molecule.set_atom_property_"]);
     let complete_rows = BINDING_CONTRACT
         .iter()
         .filter(|row| row.feature == "cap-transforms")
@@ -145,7 +147,11 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
             .collect::<Vec<_>>(),
         complete_expected
     );
-    for row in &complete_rows[6..] {
+    for row in &complete_rows[6..8] {
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.item, BindingItem::Callable);
+    }
+    for row in &complete_rows[8..] {
         assert_eq!(row.status, FunctionStatus::Native);
     }
     let rows = &complete_rows[..6];
@@ -223,7 +229,12 @@ fn generated_registry_and_all_four_matrices_share_the_coordinate_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "cap-transforms")
+        .find(|row| {
+            row.feature.name == "cap-transforms"
+                && row
+                    .operation
+                    .is_some_and(|operation| operation.method == spec.method)
+        })
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }

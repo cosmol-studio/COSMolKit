@@ -1,8 +1,9 @@
 //! Source-backed Layered fingerprint over detached concrete topology.
 use crate::{Fingerprint, FingerprintError, hash::hash_range};
 use cosmolkit_core::{
-    GraphPath, PathError, PathSearchParams, SubgraphSearchParams, all_paths_in_range,
-    all_subgraphs_in_range, query_bond_paths_in_range, query_subgraphs_in_range,
+    GraphPath, PathError, PathRepresentation, PathSearchParams, SubgraphSearchParams,
+    all_paths_in_range, all_subgraphs_in_range, query_atom_paths_in_range,
+    query_bond_paths_in_range, query_subgraphs_in_range,
 };
 use cosmolkit_core::{
     RingFindingError, RingInfo, RingSearchParams, find_sssr, find_sssr_from_parts,
@@ -151,9 +152,11 @@ impl BitOrAssign for LayeredFingerprintLayers {
 pub struct LayeredFingerprintParams {
     /// Layer flags. Unknown high bits are retained and emit no components.
     pub layers: LayeredFingerprintLayers,
-    /// Minimum bond-path length. Zero is rejected as `minPath==0`.
+    /// Minimum path length. The unrooted linear source branch counts atoms;
+    /// branched and rooted paths count bonds. Zero is rejected as `minPath==0`.
     pub min_path: u32,
-    /// Maximum bond-path length. Values below `min_path` are rejected.
+    /// Maximum path length, in the same units as `min_path`.
+    /// Values below `min_path` are rejected.
     pub max_path: u32,
     /// Explicit output width. Zero is rejected.
     pub fp_size: u32,
@@ -162,7 +165,9 @@ pub struct LayeredFingerprintParams {
     pub atom_counts: Option<Vec<u32>>,
     /// Optional projection mask, which must have exactly `fp_size` bits.
     pub set_only_bits: Option<Fingerprint>,
-    /// Enumerate branched subgraphs when true and linear bond paths when false.
+    /// Enumerate branched subgraphs when true and linear paths when false.
+    /// Unrooted linear paths preserve the pinned source's atom-index selection
+    /// and subsequent bond-index interpretation; invalid accesses return an error.
     pub branched_paths: bool,
     /// `None` is an absent source pointer; `Some(Vec::new())` is a present
     /// empty selection and therefore enumerates no paths.
@@ -1095,7 +1100,7 @@ fn layered_fingerprint_impl(
     // RDKit✔️✔️:     if (branchedPaths) {
     // RDKit✔️✔️:       allPaths = findAllSubgraphsOfLengthsMtoN(mol, minPath, maxPath, false);
     // RDKit✔️✔️:     } else {
-    // RDKit❗✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, false);
+    // RDKit✔️✔️:       allPaths = findAllPathsOfLengthsMtoN(mol, minPath, maxPath, false);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     for (auto aidx : *fromAtoms) {
@@ -1115,20 +1120,57 @@ fn layered_fingerprint_impl(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // END RDKIT CPP BLOCK LayeredFingerprintMol path selection
-    // The pinned unrooted linear call passes `false` in the `useBonds` slot
-    // and can index atom paths as bonds. Isolated pinned-RDKit calls terminate
-    // with SIGSEGV for common acyclic molecules. The maintained Layered
-    // contract uses the header-documented bond-path semantics shared by the
-    // rooted call; COSMolKit does not reproduce an upstream process crash.
-    let all_paths = enumerate_fingerprint_paths(
-        graph,
-        params.min_path,
-        params.max_path,
-        false,
-        params.branched_paths,
-        params.from_atoms.as_deref(),
-        None,
-    )?;
+    // Preserve the pinned source's atom IDs, atom-length limits and ordering
+    // for this branch, including their later interpretation as bond IDs.
+    // Do not replace it with the rooted branch's corrected bond paths.
+    // Defined native accesses reproduce literally; the existing checked bond
+    // lookup below rejects paths which would access C++ storage out of bounds.
+    // Local cost: reuse CORE's same enumerator and move each ID vector into
+    // the existing per-length map; no graph clone or second enumeration.
+    let all_paths = if !params.branched_paths && params.from_atoms.is_none() {
+        let paths = match graph {
+            LayeredGraphInput::Concrete(topology) => all_paths_in_range(
+                topology,
+                params.min_path as usize,
+                params.max_path as usize,
+                &PathSearchParams {
+                    representation: PathRepresentation::Atoms,
+                    ..Default::default()
+                },
+            )?,
+            LayeredGraphInput::Query(query) => query_atom_paths_in_range(
+                query,
+                params.min_path as usize,
+                params.max_path as usize,
+                &SubgraphSearchParams::default(),
+            )?,
+        };
+        paths
+            .into_iter()
+            .map(|(size, rows)| {
+                let rows = rows
+                    .into_iter()
+                    .map(|row| match row {
+                        GraphPath::Atoms(ids) => Ok(ids.into_iter().map(|id| id.index()).collect()),
+                        GraphPath::Bonds(_) => Err(LayeredFingerprintError::InvalidArguments {
+                            reason: "atom path enumeration returned bond path",
+                        }),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok((size, rows))
+            })
+            .collect::<Result<BTreeMap<_, _>, LayeredFingerprintError>>()?
+    } else {
+        enumerate_fingerprint_paths(
+            graph,
+            params.min_path,
+            params.max_path,
+            false,
+            params.branched_paths,
+            params.from_atoms.as_deref(),
+            None,
+        )?
+    };
     let fp_size = params.fp_size as usize;
     let mut fingerprint = Fingerprint::new(params.fp_size);
 
@@ -1381,6 +1423,69 @@ mod tests {
             [360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
         );
         assert_eq!(result.atom_counts, Some(vec![2, 2, 1]));
+    }
+
+    #[test]
+    fn unrooted_linear_uses_pinned_atom_paths_for_concrete_and_query_graphs() {
+        // Pinned RDKit 2026.03.6 LayeredFingerprint, not CK-generated values:
+        // phenol, layerFlags=0xffffffff, minPath=2, maxPath=4, fpSize=4096,
+        // branchedPaths=False, zero atomCounts, even setOnlyBits.
+        let expected_bits = [
+            138, 170, 354, 366, 470, 978, 1590, 1672, 1750, 1784, 2016, 2096, 2152, 2366, 2610,
+            3758, 3870, 3926,
+        ];
+        let expected_counts = vec![5, 14, 14, 11, 10, 10, 11];
+        let topology = cosmolkit_smiles::parse_smiles("Oc1ccccc1", &Default::default())
+            .unwrap()
+            .topology;
+        let query = cosmolkit_search::parse_smarts("Oc1ccccc1", &Default::default()).unwrap();
+        let params = LayeredFingerprintParams {
+            min_path: 2,
+            max_path: 4,
+            fp_size: 4096,
+            branched_paths: false,
+            layers: LayeredFingerprintLayers::ALL_SOURCE_BITS,
+            atom_counts: Some(vec![0; 7]),
+            set_only_bits: Some(Fingerprint::from_on_bits(4096, (0..4096).step_by(2)).unwrap()),
+            ..Default::default()
+        };
+        let original = topology.clone();
+        let query_before = format!("{query:?}");
+        for graph in [
+            LayeredGraphInput::Concrete(&topology),
+            LayeredGraphInput::Query(&query),
+        ] {
+            let result = layered_fingerprint_impl(graph, None, &params).unwrap();
+            assert_eq!(result.fingerprint.on_bits(), expected_bits);
+            assert_eq!(result.atom_counts.as_ref(), Some(&expected_counts));
+        }
+        assert_eq!(topology, original);
+        assert_eq!(format!("{query:?}"), query_before);
+        assert_eq!(params.atom_counts, Some(vec![0; 7]));
+    }
+
+    #[test]
+    fn unrooted_linear_native_invalid_bond_access_is_a_checked_error() {
+        let topology = cco();
+        let original = topology.clone();
+        let params = LayeredFingerprintParams {
+            branched_paths: false,
+            ..Default::default()
+        };
+        assert!(matches!(
+            layered_fingerprint(&topology, None, &params),
+            Err(LayeredFingerprintError::InvalidArguments {
+                reason: "enumerated path contains invalid bond index"
+            })
+        ));
+        assert_eq!(topology, original);
+        let query = cosmolkit_search::parse_smarts("CCO", &Default::default()).unwrap();
+        assert!(matches!(
+            layered_query_fingerprint(&query, None, &params),
+            Err(LayeredFingerprintError::InvalidArguments {
+                reason: "enumerated path contains invalid bond index"
+            })
+        ));
     }
     #[test]
     fn counts_wrap_once_per_path_and_keep_extra_seed_entries() {

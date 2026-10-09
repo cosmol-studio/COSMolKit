@@ -627,16 +627,63 @@ fn run_reactants_source(
     while (product_id as usize) != combinations.len() {
         let set = product_id as usize;
         let combination = &combinations[set];
-        products.push(one_product_set(
-            reaction,
-            inputs,
-            combination,
-            selections,
-            set,
-        )?);
+        let mut product_set = one_product_set(reaction, inputs, combination, selections, set)?;
+        if params.copy_atom_properties {
+            for (template, product) in product_set.iter_mut().enumerate() {
+                copy_user_atom_properties(inputs, product).map_err(|source| {
+                    ReactionRunError::Product {
+                        set,
+                        template,
+                        source,
+                    }
+                })?;
+            }
+        }
+        products.push(product_set);
         product_id = product_id.wrapping_add(1);
     }
     Ok(products)
+}
+
+/// CK opt-in metadata propagation, not an alternative reaction algorithm.
+/// Existing typed origins include the reagent index and all duplicated rows.
+/// Only missing user keys are filled, so explicit template values always win.
+fn copy_user_atom_properties(
+    inputs: &[ReactionInput<'_>],
+    product: &mut ReactionProduct,
+) -> Result<(), ReactionProductError> {
+    if product.atom_origins.len() != product.topology.atoms.len() {
+        return Err(invariant(
+            "copy_atom_properties",
+            "origin count differs from atom count",
+            None,
+            None,
+            None,
+        ));
+    }
+    for (destination, origin) in product.topology.atoms.iter_mut().zip(&product.atom_origins) {
+        let Some(origin) = origin else { continue };
+        let source = inputs
+            .get(origin.input)
+            .and_then(|input| input.topology.atoms.get(origin.row.index()))
+            .ok_or_else(|| {
+                invariant(
+                    "copy_atom_properties",
+                    "source origin is out of range",
+                    Some(origin.row.index()),
+                    Some(destination.id().index()),
+                    None,
+                )
+            })?;
+        for (key, value) in source.property_records(false, false)? {
+            if cosmolkit_model::is_user_atom_property(key.as_bytes())
+                && destination.prop(key).is_none()
+            {
+                destination.set_prop(key.clone(), value)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[doc(hidden)]
@@ -1550,6 +1597,65 @@ mod complete_run_reactants_source_tests {
     use super::*;
     use cosmolkit_model::PropertyValue;
     use cosmolkit_types::Element;
+    #[test]
+    fn copied_user_atom_properties_use_origins_and_preserve_template_priority() {
+        let mut product = graph(&[Some(11), Some(11), Some(12), None]);
+        product
+            .atom_mut(0)
+            .unwrap()
+            .set_prop("tracking_id", PropertyValue::Int(99))
+            .unwrap();
+        let r = reaction(
+            vec![graph(&[Some(11)]), graph(&[Some(12), Some(13)])],
+            vec![product],
+        );
+        let mut first = topology(1, &[]);
+        let mut second = topology(2, &[]);
+        first.atoms[0].set_prop("tracking_id", 42).unwrap();
+        first.atoms[0].set_prop("note", "first").unwrap();
+        first.atoms[0].set_prop("_CIPCode", "R").unwrap();
+        first.atoms[0].set_computed_prop("derived", 7).unwrap();
+        second.atoms[0].set_prop("tracking_id", 84).unwrap();
+        second.atoms[1].set_prop("deleted", true).unwrap();
+        let coordinates = CoordinateBlock::default();
+        let properties = MoleculeProperties::default();
+        let inputs = [
+            input(&first, &coordinates, &properties),
+            input(&second, &coordinates, &properties),
+        ];
+        let native = run_reactants_source(&r, &inputs, &ReactionRunParams::default()).unwrap();
+        let copied = run_reactants_source(
+            &r,
+            &inputs,
+            &ReactionRunParams {
+                copy_atom_properties: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let atoms = &copied[0][0].topology.atoms;
+        assert_eq!(atoms.len(), 4);
+        assert_eq!(atoms[0].prop("tracking_id"), Some(&PropertyValue::Int(99)));
+        assert_eq!(atoms[1].prop("tracking_id"), Some(&PropertyValue::Int(42)));
+        assert_eq!(atoms[2].prop("tracking_id"), Some(&PropertyValue::Int(84)));
+        assert!(atoms[3].prop("tracking_id").is_none());
+        for atom in atoms {
+            assert!(atom.prop("deleted").is_none());
+            assert!(atom.prop("_CIPCode").is_none());
+            assert!(atom.prop("derived").is_none());
+        }
+        assert!(native[0][0].topology.atoms[1].prop("tracking_id").is_none());
+        assert_eq!(
+            native[0][0].topology.atoms[0].prop("tracking_id"),
+            Some(&PropertyValue::Int(99))
+        );
+        assert_eq!(native[0][0].atom_origins, copied[0][0].atom_origins);
+        assert_eq!(native[0][0].valence, copied[0][0].valence);
+        assert_eq!(
+            first.atoms[0].prop("tracking_id"),
+            Some(&PropertyValue::Int(42))
+        );
+    }
     fn reaction(reactants: Vec<QueryGraph>, products: Vec<QueryGraph>) -> Reaction {
         let mut r = Reaction::new();
         r.reactants = reactants;

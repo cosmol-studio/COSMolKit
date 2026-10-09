@@ -72,6 +72,11 @@
 mod additional_output;
 mod atom_code;
 mod atom_pair;
+mod avalon;
+/// Detached Avalon engine and its source-defined fingerprint options.
+pub use avalon::{
+    AvalonError, AvalonFingerprintFlags, AvalonFingerprintParams, avalon_fingerprint,
+};
 pub mod folding;
 mod generator;
 pub mod hash;

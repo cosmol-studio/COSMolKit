@@ -317,7 +317,7 @@ reading untrusted uploads or internet data. This does not change legacy readers.
   Producer metadata may change without a schema change. A byte difference
   alone is neither proof of incompatibility nor permission to rewrite goldens.
 - Keep focused owner tests in their owner; shared fixtures in repository
-  `testdata/`; corpus preparation/comparison in `parity-tests/`. Tests must not
+  `testdata/`; corpus preparation/comparison in `parity-tests_fixed/`. Tests must not
   generate their own expectations or invoke reference implementations.
 
 ## 8. References and limits

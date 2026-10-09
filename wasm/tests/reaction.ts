@@ -3,6 +3,11 @@ ReactionApplyParams,ReactionWriteParams,ReactionParseParams,ReactionValidationPa
 ReactionCoordinateSelection,ReactionValidationReport,ReactionRole,ReactionParseError,parseSmirks,
 parseSmirksWithParams,CxSmilesFields} from "cosmolkit-generated";
 declare const molecule:Molecule;
+const tagged:Molecule=molecule.withAtomProperty(0,"tracking_id",42);
+const tracking:boolean|number|string|number[]|string[]|null=tagged.atomProperty(0,"tracking_id");
+tagged.setAtomProperty(0,"tracking_id","tracked");
+const copying=new ReactionRunParams(undefined,undefined,true);
+copying.copyAtomProperties=false;
 const rxn:Reaction=parseSmirks("[C:1]>>[N:1]");
 const parsed:Reaction=parseSmirksWithParams("[C:1]>>[N:1]",new ReactionParseParams());
 const selected=new ReactionSingleRunParams(ReactionCoordinateSelection.threeD(42));
@@ -29,7 +34,6 @@ new ReactionSingleRunParams("Auto");
 const wrong:Molecule=molecule.applyReaction(rxn);
 // @ts-expect-error Immutable result properties cannot be assigned.
 result.changed=false;
-// @ts-expect-error Registered options are immutable.
 new ReactionRunParams().maxProducts=1;
 // @ts-expect-error Coordinate IDs require numbers, never strings.
 ReactionCoordinateSelection.threeD("42");

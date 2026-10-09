@@ -5,6 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::Digest;
+mod cache_import;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -80,7 +81,12 @@ impl OwnedRows {
         let mut source = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         // An anonymous temporary file is reclaimed by the OS even though
         // OnceLock/static values are not dropped at process exit.
-        let mut file = tempfile::tempfile().map_err(|e| e.to_string())?;
+        // References can exceed a host's RAM-backed /tmp quota. Keep private
+        // snapshots on the package artifact filesystem, not in the source
+        // reference directory (which may be read-only).
+        let artifacts = directory().join("reports");
+        fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
+        let mut file = tempfile::tempfile_in(artifacts).map_err(|e| e.to_string())?;
         let mut writer = BufWriter::new(&mut file);
         let mut hash = sha2::Sha256::new();
         std::io::copy(
@@ -703,6 +709,15 @@ fn materialize_special(checked: CheckedSnapshot) -> Result<Snapshot> {
 }
 
 pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Result<Preparation> {
+    prepare_with_reuse(selection, threads, task, None)
+}
+
+pub fn prepare_with_reuse(
+    selection: &Selection,
+    threads: usize,
+    task: Option<&str>,
+    reuse_from: Option<&Path>,
+) -> Result<Preparation> {
     if threads == 0 {
         return Err("threads must be positive".into());
     }
@@ -731,6 +746,14 @@ pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Res
             continue;
         }
         let input = inputs(spec, &plan.cases)?;
+        if let Some(source) = reuse_from {
+            if let Some(rows) = cache_import::import(&plan, spec, &input, source, &folder)? {
+                result.reused_tasks += 1;
+                result.rows += rows;
+                eprintln!("  [========================] imported {rows} verified native rows");
+                continue;
+            }
+        }
         let generator_before = reference::source_digest(spec)?;
         eprintln!("Generating {}", spec.key());
         let temporary = tempfile::Builder::new()
@@ -822,9 +845,26 @@ pub fn prepare(selection: &Selection, threads: usize, task: Option<&str>) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn checked_snapshot_uses_artifact_filesystem_and_survives_source_removal() {
+        use std::os::unix::fs::MetadataExt;
+        let source = tempfile::NamedTempFile::new().unwrap();
+        fs::write(source.path(), b"{\"output\":42}\n").unwrap();
+        let snapshot = OwnedRows::copy_from(source.path()).unwrap();
+        assert_eq!(
+            snapshot.file.lock().unwrap().metadata().unwrap().dev(),
+            fs::metadata(directory().join("reports")).unwrap().dev()
+        );
+        drop(source);
+        assert_eq!(
+            snapshot.iter().unwrap().next().unwrap().unwrap(),
+            json!({"output":42})
+        );
+    }
     #[test]
     fn registry_keys_and_cargo_declarations_share_one_census() {
-        assert_eq!(registry::TASKS.len(), 114);
+        assert_eq!(registry::TASKS.len(), 117);
         let mut unique = BTreeSet::new();
         for task in registry::TASKS {
             assert_eq!(
@@ -843,7 +883,7 @@ mod tests {
         assert!(plan(&Selection::Corpus("fingerprint_5000".into())).is_err());
         let smoke = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
         assert_eq!(smoke.cases.molecules.len(), 3);
-        assert_eq!(smoke.specs.len(), 113);
+        assert_eq!(smoke.specs.len(), 116);
         let bio = plan(&Selection::Corpus("bio_small".into())).unwrap();
         assert_eq!(bio.cases.bio_cases.len(), 2);
         assert_eq!(bio.specs.len(), 2);
@@ -985,7 +1025,7 @@ mod tests {
     #[test]
     fn task_selection_is_exact_and_must_apply_to_the_corpus() {
         let selection = Selection::Corpus("smiles_smoke".into());
-        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 113);
+        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 116);
         for key in [
             "num_heavy_atoms_smiles",
             "batch_smiles",

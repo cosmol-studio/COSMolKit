@@ -677,6 +677,10 @@ mod mmff;
 #[cfg(feature = "cap-forcefields")]
 pub use mmff::{MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult};
 
+#[cfg(feature = "cap-fingerprints")]
+mod avalon;
+#[cfg(feature = "cap-transforms")]
+mod fragments;
 #[cfg(feature = "cap-hashing")]
 mod hashing;
 

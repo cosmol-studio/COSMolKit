@@ -11,8 +11,10 @@ from pathlib import Path
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
 
-EXPECTED_RDKIT_VERSION = "2026.3.1"
 REPO_ROOT = Path(__file__).resolve().parents[3]
+EXPECTED_RDKIT_VERSION = json.loads(
+    (REPO_ROOT / "testdata/reference/rdkit.json").read_text(encoding="utf-8")
+)["python_distribution_version"]
 DEFAULT_FIXTURE_DIR = REPO_ROOT / "testdata" / "forcefield" / "fixtures" / "mmff" / "rdkit"
 DEFAULT_OUTPUT = (
     REPO_ROOT

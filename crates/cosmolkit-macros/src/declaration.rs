@@ -91,6 +91,7 @@ pub(crate) enum CipStatePolicy {
     StereoisomerSourceTransition,
     ReactionSourceTransition,
     ScaffoldSourceTransition,
+    FragmentSourceTransition,
 }
 
 #[derive(Clone, Debug)]
@@ -857,6 +858,36 @@ fn validate_cip_transition(
     may_mutate: &[MoleculeBlock],
     auto_remap: &[MoleculeBlock],
 ) -> syn::Result<()> {
+    if cip_state == CipStatePolicy::FragmentSourceTransition {
+        let blocks = [
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ];
+        let valid = matches!(
+            (operation.to_string().as_str(), output),
+            ("fragments", MoleculeOutput::Multiple) | ("largest_fragment", MoleculeOutput::Single)
+        ) && operation == method
+            && kind == OperationKind::Strong
+            && topology_edit == TopologyEditKind::Compacting
+            && mapping == MappingRequirement::Required
+            && access.read.is_empty()
+            && access.write.len() == blocks.len()
+            && may_mutate.len() == blocks.len()
+            && blocks
+                .iter()
+                .all(|b| access.write.contains(b) && may_mutate.contains(b))
+            && auto_remap.is_empty();
+        return if valid {
+            Ok(())
+        } else {
+            Err(syn::Error::new(
+                operation.span(),
+                "fragment source transition requires an exact mapped strong compacting fragment operation and four write-owned blocks",
+            ))
+        };
+    }
     if cip_state == CipStatePolicy::ScaffoldSourceTransition {
         let blocks = [
             MoleculeBlock::Topology,
@@ -1749,6 +1780,7 @@ fn parse_cip_state(value: &Ident) -> syn::Result<CipStatePolicy> {
         "stereoisomer_source_transition" => Ok(CipStatePolicy::StereoisomerSourceTransition),
         "reaction_source_transition" => Ok(CipStatePolicy::ReactionSourceTransition),
         "scaffold_source_transition" => Ok(CipStatePolicy::ScaffoldSourceTransition),
+        "fragment_source_transition" => Ok(CipStatePolicy::FragmentSourceTransition),
         other => Err(syn::Error::new_spanned(
             value,
             format!("unknown CIP state policy '{other}'"),
@@ -2015,5 +2047,77 @@ mod scaffold_contract_tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn fragment_transition_requires_exact_name_output_and_mapping() {
+        assert_eq!(
+            parse_cip_state(&format_ident!("fragment_source_transition")).unwrap(),
+            CipStatePolicy::FragmentSourceTransition
+        );
+        let blocks = vec![
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ];
+        let access = AccessFields {
+            read: vec![],
+            write: blocks.clone(),
+        };
+        let check = |name: &str, output, mapping| {
+            validate_cip_transition(
+                &format_ident!("{name}"),
+                &format_ident!("{name}"),
+                output,
+                &access,
+                CipStatePolicy::FragmentSourceTransition,
+                OperationKind::Strong,
+                TopologyEditKind::Compacting,
+                mapping,
+                &blocks,
+                &[],
+            )
+        };
+        assert!(
+            check(
+                "fragments",
+                MoleculeOutput::Multiple,
+                MappingRequirement::Required
+            )
+            .is_ok()
+        );
+        assert!(
+            check(
+                "largest_fragment",
+                MoleculeOutput::Single,
+                MappingRequirement::Required
+            )
+            .is_ok()
+        );
+        assert!(
+            check(
+                "unrelated",
+                MoleculeOutput::Multiple,
+                MappingRequirement::Required
+            )
+            .is_err()
+        );
+        assert!(
+            check(
+                "fragments",
+                MoleculeOutput::Single,
+                MappingRequirement::Required
+            )
+            .is_err()
+        );
+        assert!(
+            check(
+                "fragments",
+                MoleculeOutput::Multiple,
+                MappingRequirement::None
+            )
+            .is_err()
+        );
     }
 }

@@ -21,12 +21,19 @@ mod coordinate_input;
 #[cfg(feature = "cap-depict")]
 mod depict;
 mod error;
+#[cfg(feature = "cap-transforms")]
+mod fragments;
+#[cfg(feature = "cap-transforms")]
+pub(crate) use runtime::registry::{FragmentsAccess, LargestFragmentAccess};
 #[cfg(feature = "cap-hashing")]
 mod scaffolds;
 #[cfg(feature = "cap-hashing")]
 pub(crate) use runtime::registry::{
     MurckoDecomposeAccess, MurckoScaffoldAccess, NetScaffoldAccess,
 };
+mod atom_properties;
+#[cfg(feature = "cap-transforms")]
+pub(crate) use runtime::registry::WithAtomPropertyAccess;
 #[cfg(feature = "cap-hydrogens")]
 mod hydrogens;
 #[cfg(feature = "cap-kekulize")]

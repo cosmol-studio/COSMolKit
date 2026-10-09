@@ -191,10 +191,12 @@ impl ReactionRunParams {
     pub fn new(
         max_products: u32,
         coordinate_selections: Vec<crate::ReactionCoordinateSelection>,
+        copy_atom_properties: bool,
     ) -> Self {
         Self {
             max_products,
             coordinate_selections,
+            copy_atom_properties,
         }
     }
     pub fn max_products(&self) -> u32 {
@@ -202,6 +204,9 @@ impl ReactionRunParams {
     }
     pub fn coordinate_selections(&self) -> &[crate::ReactionCoordinateSelection] {
         &self.coordinate_selections
+    }
+    pub fn copy_atom_properties(&self) -> bool {
+        self.copy_atom_properties
     }
 }
 impl ReactionApplyParams {

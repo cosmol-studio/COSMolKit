@@ -16,13 +16,15 @@ mod parity_data {
             "original152" => (
                 "COSMOLKIT_CONFORMER_ORACLE_152",
                 "smiles_small",
-                "536fe7d81cfcf913ad3901645bcf52ba1078f2e1faac7f897e861e3cdffcc7b3",
+                // Pinned native 2026.03.6, unchanged original152 recipe.
+                "7948eff11e2a078e88a4526b3e00d2618e515df7d292ae43883454565f84376a",
                 152,
             ),
             "original5000" => (
                 "COSMOLKIT_CONFORMER_ORACLE_5000",
                 "smiles_5000",
-                "b41504555f0d5227599b1d904902840596a7fd5535726bb9e6b874aaba694bd0",
+                // Pinned native 2026.03.6, unchanged original5000 recipe.
+                "653bbd4801ea037fe6b8d3018991ae378b53ece1775faea2a41ff45ae059dc72",
                 5000,
             ),
             other => panic!("explicit frozen original library profile required: {other:?}"),
@@ -35,7 +37,7 @@ mod parity_data {
         });
         assert!(
             path.is_file(),
-            "Missing {profile} oracle: {}; set {key} to the pinned original JSONL file. Do not regenerate the reference.",
+            "Missing {profile} oracle: {}; set {key} to the pinned native JSONL with unchanged original inputs and parameters. Never generate expectations from CK.",
             path.display()
         );
         (path, digest, count)
@@ -47,11 +49,11 @@ mod parity_data {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
-        assert_eq!(actual, digest, "immutable original library bytes changed");
+        assert_eq!(actual, digest, "frozen pinned-native library bytes changed");
         path
     }
     pub fn regenerate_command() -> &'static str {
-        "original fixed reference only; do not regenerate to fit implementation"
+        "pinned RDKit 2026.03.6 with unchanged original library inputs and parameters; never generate expectations from CK"
     }
 }
 fn embed_molecule(

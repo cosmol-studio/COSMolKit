@@ -1,5 +1,19 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+test('typed atom metadata preserves native values and COW',()=>{
+ const source=b.Molecule.fromSmiles('CCO');
+ for(const value of [42,4294967295,true,false,1.25,-0,'α\u0000β',[1,-2],['a','β'],[]]){
+  const tagged=source.withAtomProperty(0,'tracking_id',value);
+  assert.deepEqual(tagged.atomProperty(0,'tracking_id'),value);
+  assert.equal(source.atomProperty(0,'tracking_id'),null);
+  const copied=tagged.withAtomProperty(0,'copy_note','copy'); tagged.setAtomProperty(0,'tracking_id',7);
+  assert.deepEqual(copied.atomProperty(0,'tracking_id'),value);
+  assert.equal(tagged.atomProperty(0,'tracking_id'),7);
+ }
+ assert.throws(()=>source.setAtomProperty(0,'_CIPCode','R'),e=>e.kind==='ReservedAtomPropertyKey');
+ assert.throws(()=>source.setAtomProperty(9,'tracking_id',1),e=>e.kind==='AtomPropertyIndex');
+ assert.throws(()=>source.setAtomProperty(0,'tracking_id',{}),TypeError);
+});
 const sdf="binding record\n  COSMolKit         2D\n\n  2  1  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.4000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\nM  END\n>  <NOTE>\nfirst\nline\n\n>  <NOTE>\nsecond\n\n>  <atom.iprop.score>\n-2147483648 2147483647\n\n>  <atom.prop.label>\nalpha n/a\n\n>  <atom.dprop.weight>\n0.1 -0\n\n>  <atom.bprop.flag>\n1 0\n\n>  <bond.iprop.edge>\n7\n\n>  <bond.prop.label>\nbeta\n\n>  <bond.dprop.weight>\n0.1\n\n>  <bond.bprop.flag>\n1\n\n$$$$\n";
 test('Atom and bond property strings use canonical floating/integer/bool spelling and exact null absence',()=>{
  const m=b.Molecule.fromSdf(sdf),before=Array.from(m.coordinates2d());

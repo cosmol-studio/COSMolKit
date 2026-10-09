@@ -1,6 +1,7 @@
 //! Source path filtering retains real query atomic numbers and borrowed identity.
 use cosmolkit_core::{
-    GraphPath, SubgraphSearchParams, query_bond_paths_in_range, query_subgraphs_in_range,
+    GraphPath, SubgraphSearchParams, query_atom_paths_in_range, query_bond_paths_in_range,
+    query_subgraphs_in_range,
 };
 use cosmolkit_model::BondOrder;
 use cosmolkit_model::{
@@ -81,6 +82,39 @@ fn query_roots_and_source_ranges_use_the_shared_enumerator() {
         [vec![BondId::new(2)]]
     );
     assert!(query_bond_paths_in_range(&query, 3, 2, &rooted).is_err());
+}
+
+#[test]
+fn layered_atom_paths_keep_atom_ids_lengths_and_query_hydrogen_filtering() {
+    let query = graph();
+    let before = query.clone();
+    let params = SubgraphSearchParams::default();
+    let paths = query_atom_paths_in_range(&query, 2, 3, &params).unwrap();
+    assert_eq!(
+        paths[&2],
+        [
+            GraphPath::Atoms(vec![AtomId::new(0), AtomId::new(1)]),
+            GraphPath::Atoms(vec![AtomId::new(1), AtomId::new(3)]),
+        ]
+    );
+    assert_eq!(
+        paths[&3],
+        [GraphPath::Atoms(vec![
+            AtomId::new(0),
+            AtomId::new(1),
+            AtomId::new(3)
+        ])]
+    );
+    assert!(query_atom_paths_in_range(&query, 3, 2, &params).is_err());
+    let with_hs = SubgraphSearchParams {
+        use_hydrogens: true,
+        ..params
+    };
+    assert_eq!(
+        query_atom_paths_in_range(&query, 2, 2, &with_hs).unwrap()[&2].len(),
+        3
+    );
+    assert_eq!(query, before);
 }
 #[test]
 fn search01_query_mask_keeps_real_hydrogen_and_zero_identity_gates() {

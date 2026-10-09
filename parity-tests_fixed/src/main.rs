@@ -1,4 +1,4 @@
-use cosmolkit_parity_tests_fixed::{Selection, prepare};
+use cosmolkit_parity_tests_fixed::{Selection, prepare_with_reuse};
 
 fn main() {
     if let Err(error) = entry() {
@@ -11,7 +11,7 @@ fn entry() -> Result<(), String> {
     let command = args.next().unwrap_or_else(|| "--help".into());
     if matches!(command.as_str(), "--help" | "help") {
         println!(
-            "prepare --corpus NAME | --special all|NAME [--threads N] [--task NAME]\nCompare with cargo test --test corpus or --test special_regression."
+            "prepare --corpus NAME | --special all|NAME [--threads N] [--task NAME] [--reuse-from CHECKOUT]\nCompare with cargo test --test corpus or --test special_regression."
         );
         return Ok(());
     }
@@ -20,6 +20,7 @@ fn entry() -> Result<(), String> {
     }
     let mut selection = None;
     let mut task = None;
+    let mut reuse_from = None;
     let mut threads = std::thread::available_parallelism().map_or(4, usize::from);
     let mut seen = std::collections::BTreeSet::new();
     while let Some(flag) = args.next() {
@@ -41,6 +42,7 @@ fn entry() -> Result<(), String> {
                 });
             }
             "--task" => task = Some(value),
+            "--reuse-from" => reuse_from = Some(std::path::PathBuf::from(value)),
             "--threads" => {
                 threads = value
                     .parse::<usize>()
@@ -52,7 +54,7 @@ fn entry() -> Result<(), String> {
         }
     }
     let selected = selection.ok_or("select --corpus NAME or --special all|NAME")?;
-    let result = prepare(&selected, threads, task.as_deref())?;
+    let result = prepare_with_reuse(&selected, threads, task.as_deref(), reuse_from.as_deref())?;
     println!(
         "Prepared: {} generated, {} reused, {} rows",
         result.generated_tasks, result.reused_tasks, result.rows

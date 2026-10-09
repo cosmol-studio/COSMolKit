@@ -351,6 +351,7 @@ impl ReactionRunParams {
         #[wasm_bindgen(unchecked_optional_param_type = "number")] max_products: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "ReactionCoordinateSelection[]")]
         coordinate_selections: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] copy_atom_properties: JsValue,
     ) -> Result<Self, JsValue> {
         let mut inner = ck::ReactionRunParams::default();
         if !max_products.is_undefined() {
@@ -359,11 +360,33 @@ impl ReactionRunParams {
         if !coordinate_selections.is_undefined() {
             inner.coordinate_selections = selections(&coordinate_selections)?;
         }
+        if !copy_atom_properties.is_undefined() {
+            inner.copy_atom_properties = bool_value(&copy_atom_properties, "copyAtomProperties")?;
+        }
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter,js_name=maxProducts)]
     pub fn max_products(&self) -> u32 {
         self.inner.max_products()
+    }
+    #[wasm_bindgen(getter,js_name=copyAtomProperties)]
+    pub fn copy_atom_properties(&self) -> bool {
+        self.inner.copy_atom_properties()
+    }
+    #[wasm_bindgen(setter,js_name=copyAtomProperties)]
+    pub fn set_copy_atom_properties(&mut self, #[wasm_bindgen(unchecked_param_type="boolean")] value:JsValue) -> Result<(),JsValue> {
+        self.inner.copy_atom_properties=bool_value(&value,"copyAtomProperties")?;
+        Ok(())
+    }
+    #[wasm_bindgen(setter,js_name=maxProducts)]
+    pub fn set_max_products(&mut self, #[wasm_bindgen(unchecked_param_type="number")] value:JsValue) -> Result<(),JsValue> {
+        self.inner.max_products=u32_value(&value,"maxProducts")?;
+        Ok(())
+    }
+    #[wasm_bindgen(setter,js_name=coordinateSelections)]
+    pub fn set_coordinate_selections(&mut self, #[wasm_bindgen(unchecked_param_type="ReactionCoordinateSelection[]")] value:JsValue) -> Result<(),JsValue> {
+        self.inner.coordinate_selections=selections(&value)?;
+        Ok(())
     }
     #[wasm_bindgen(getter,js_name=coordinateSelections,unchecked_return_type="ReactionCoordinateSelection[]")]
     pub fn coordinate_selections(&self) -> Array {

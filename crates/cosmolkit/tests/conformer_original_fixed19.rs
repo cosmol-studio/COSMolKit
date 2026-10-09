@@ -24,13 +24,15 @@ mod parity_data {
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>(),
-            "710255e3ace6d263cbbe47e7e68dd71db2cb5ca8986456c78c042bbd9dc6c352",
-            "original fixed19 golden bytes changed"
+            // Independently regenerated with pinned RDKit 2026.03.6;
+            // all original inputs, seeds and parameters are unchanged.
+            "8f8bf520cebd626cc9308bcaa4079a89c3a93f20f178bfe7d3f61c0bf354eda2",
+            "RDKit 2026.03.6 fixed19 golden bytes changed"
         );
         path
     }
     pub fn regenerate_command() -> &'static str {
-        "use the unchanged original fixed19 input and generator; do not regenerate expectations to fit implementation"
+        "use pinned RDKit 2026.03.6 with unchanged original fixed19 inputs and parameters; never generate expectations from CK"
     }
 }
 fn embed_molecule(

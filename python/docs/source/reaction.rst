@@ -48,6 +48,51 @@ execution method and registry entries require ``cap-reaction``.
 Use ``ReactionCoordinateSelection.auto()``, ``two_d(id)`` or ``three_d(id)``.
 Explicit IDs are conformer IDs, not vector positions.
 
+Typed atom metadata
+-------------------
+
+User metadata retains its type instead of being converted to text:
+
+.. code-block:: python
+
+   carbon = ck.Molecule.from_smiles("C")
+   tagged = carbon.with_atom_property(0, "tracking_id", 42)
+   assert carbon.atom_property(0, "tracking_id") is None
+   assert tagged.atom_property(0, "tracking_id") == 42
+   tagged.set_atom_property_(0, "tracking_id", 43)
+
+Values support ``bool``, ``int`` (signed 32-bit or unsigned 32-bit), ``float``,
+``str``, homogeneous ``list[int]`` (signed 32-bit), and ``list[str]``.
+An empty list is stored as a string list. Missing keys return ``None``;
+invalid atom indices, reserved keys and unsupported value types raise errors.
+Setters accept nonempty user keys, not underscore-prefixed private keys,
+computed properties, atom-map numbers or reaction bookkeeping keys.
+Clones and value-returning operations retain COW isolation.
+
+Reaction copying is an explicit CK extension, disabled by default:
+
+.. code-block:: python
+
+   oxygen = ck.Molecule.from_smiles("O").with_atom_property(0, "tracking_id", 84)
+   reaction = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
+   params = ck.ReactionRunParams(copy_atom_properties=True)
+   product = reaction.run([tagged, oxygen], params)[0][0]
+   assert [product.atom_property(i, "tracking_id") for i in range(2)] == [43, 84]
+
+Copying follows both the input-reactant index and source-atom index, not
+destination positions. Each duplicate inherits its source's user metadata;
+new atoms inherit none and deleted atoms contribute none. Existing product
+values, including explicit template values, win over copied values. Private,
+computed, CIP and reaction bookkeeping properties are not additionally copied.
+``False`` means no extra copying; it does not clear properties retained by the
+normal reaction algorithm. Chemical assignment follows the normal pipeline.
+
+JavaScript uses ``withAtomProperty``, ``setAtomProperty`` and ``atomProperty``;
+missing keys return ``null``. Numbers with integral values use the integer
+property types (except negative zero); other numbers use doubles. Arrays have
+the same homogeneous value restrictions as Python. Set
+``params.copyAtomProperties = true`` before ``reaction.run(inputs, params)``.
+
 Restricted application
 ----------------------
 
@@ -80,7 +125,8 @@ counts and ``is_valid``. ``with_initialized()`` returns an initialized copy
 without changing the source reaction. Explicit forms accept
 ``ReactionValidationParams(silent=True)``.
 
-Options/results are read-only. Errors retain ``domain``, ``kind`` and variant
+Results are read-only; ``ReactionRunParams`` fields are writable configuration.
+Errors retain ``domain``, ``kind`` and variant
 context such as ``role``, ``template``, ``index``, ``count`` and ``atom``.
 ``OperationError.__cause__`` retains ``ReactionRunError`` or
 ``ReactionApplyError``. Invalid initialization includes a validation ``report``.

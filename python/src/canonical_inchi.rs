@@ -122,8 +122,8 @@ pub(crate) fn write_params(
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
-fn inchi_to_key(py: Python<'_>, inchi: &str) -> PyResult<String> {
-    ck::inchi_to_key(inchi).map_err(|e| error(py, e))
+fn inchi_to_key(py: Python<'_>, inchi: crate::text_input::TextInput<'_>) -> PyResult<String> {
+    ck::inchi_to_key(&inchi.as_text()?).map_err(|e| error(py, e))
 }
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<InchiReadParams>()?;

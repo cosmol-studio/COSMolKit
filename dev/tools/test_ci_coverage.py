@@ -95,11 +95,26 @@ class CoverageWorkflowTests(unittest.TestCase):
                 self.assertNotIn("--no-report", script)
         self.assertNotIn("--test reference_parity", steps["Run all default crate regression suites with coverage"])
         parity = steps["Run all parity integration targets with coverage"]
-        self.assertIn("cargo test -p cosmolkit-parity-tests", parity)
-        self.assertIn("--test '*' --no-fail-fast", parity)
+        self.assertIn("cargo test -p cosmolkit-parity-tests-fixed", parity)
+        self.assertIn("--test corpus --no-fail-fast", parity)
+        self.assertIn("--test special_regression --no-fail-fast", parity)
+        self.assertIn("for corpus in smiles_5000 bio_small", parity)
         prepare = steps["Prepare and validate all reference values"]
-        self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests', prepare)
+        self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests-fixed', prepare)
+        self.assertIn('"--corpus smiles_5000" "--corpus bio_small" "--special all"', prepare)
+        self.assertNotIn(" preflight ", prepare)
         self.assertNotIn('$CARGO_TARGET_DIR/release/', prepare)
+
+    def test_workspace_and_workflow_use_only_the_current_runner(self):
+        workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]
+        self.assertNotIn("parity-tests", workspace["members"])
+        self.assertIn("parity-tests_fixed", workspace["members"])
+        workflow = (ROOT / ".github/workflows/coverage.yml").read_text()
+        self.assertNotIn("parity-tests/", workflow)
+        self.assertNotIn("PARITY_DATA", workflow)
+        self.assertIn("parity-tests_fixed/expected/corpus", workflow)
+        self.assertIn("parity-tests_fixed/expected/special", workflow)
+        self.assertIn("parity-tests_fixed/reports/**/*.json", workflow)
 
     def test_report_is_separate_and_test_failures_remain_failures(self):
         steps = shell_steps()

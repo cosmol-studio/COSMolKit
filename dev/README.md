@@ -43,14 +43,14 @@ building does not authorize publishing.
 ## Pre-commit checks
 
 Run from the repository root against the final changes. The command below
-excludes both parity packages, including `reference_parity`; run corpus and
+excludes the parity package; run corpus and
 special-regression suites separately through their prepare/test entrypoints.
 
 ```bash
 uv sync --locked --group dev
 cargo fmt --all --check
 cargo test --workspace --locked --profile dev-test --no-fail-fast \
-    --exclude cosmolkit-parity-tests --exclude cosmolkit-parity-tests-fixed \
+    --exclude cosmolkit-parity-tests-fixed \
     --features cosmolkit/op-contracts-strict
 cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
 .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml

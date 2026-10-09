@@ -15,6 +15,16 @@ use super::{
 /// Structured failure used while a capability is not yet implemented.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationError {
+    AtomPropertyIndex {
+        atom: crate::AtomId,
+        atom_count: usize,
+    },
+    ReservedAtomPropertyKey {
+        key: String,
+    },
+    #[cfg(feature = "cap-transforms")]
+    Fragments(cosmolkit_core::MoleculeFragmentsError),
+    EmptyFragments,
     #[cfg(feature = "cap-hashing")]
     Scaffold(cosmolkit_core::ScaffoldError),
     #[cfg(feature = "cap-reaction")]
@@ -185,8 +195,22 @@ pub enum OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AtomPropertyIndex { atom, atom_count } => write!(
+                formatter,
+                "atom {} is out of range for {atom_count} atoms",
+                atom.index()
+            ),
+            Self::ReservedAtomPropertyKey { key } => write!(
+                formatter,
+                "{key:?} is a reserved atom property, not user metadata"
+            ),
             #[cfg(feature = "cap-hashing")]
             Self::Scaffold(error) => error.fmt(formatter),
+            #[cfg(feature = "cap-transforms")]
+            Self::Fragments(error) => error.fmt(formatter),
+            Self::EmptyFragments => {
+                formatter.write_str("largest_fragment requires at least one atom")
+            }
             #[cfg(feature = "cap-reaction")]
             Self::ReactionRun(error) => error.fmt(formatter),
             #[cfg(feature = "cap-reaction")]
@@ -399,6 +423,8 @@ impl std::error::Error for OperationError {
         match self {
             #[cfg(feature = "cap-hashing")]
             Self::Scaffold(error) => Some(error),
+            #[cfg(feature = "cap-transforms")]
+            Self::Fragments(error) => Some(error),
             #[cfg(feature = "cap-reaction")]
             Self::ReactionRun(error) => Some(error),
             #[cfg(feature = "cap-reaction")]

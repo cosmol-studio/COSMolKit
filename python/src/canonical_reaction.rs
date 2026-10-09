@@ -231,10 +231,11 @@ pub(crate) struct ReactionRunParams {
 #[pymethods]
 impl ReactionRunParams {
     #[new]
-    #[pyo3(signature=(*,max_products=1000,coordinate_selections=None))]
+    #[pyo3(signature=(*,max_products=1000,coordinate_selections=None,copy_atom_properties=false))]
     fn new(
         max_products: u32,
         coordinate_selections: Option<Vec<PyRef<'_, ReactionCoordinateSelection>>>,
+        copy_atom_properties: bool,
     ) -> Self {
         Self {
             inner: ck::ReactionRunParams::new(
@@ -244,12 +245,17 @@ impl ReactionRunParams {
                     .iter()
                     .map(|v| v.inner)
                     .collect(),
+                copy_atom_properties,
             ),
         }
     }
     #[getter]
     fn max_products(&self) -> u32 {
         self.inner.max_products()
+    }
+    #[getter]
+    fn copy_atom_properties(&self) -> bool {
+        self.inner.copy_atom_properties()
     }
     #[getter]
     fn coordinate_selections(&self) -> Vec<ReactionCoordinateSelection> {

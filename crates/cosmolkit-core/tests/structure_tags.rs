@@ -1,5 +1,5 @@
 // Fixed local validation/numeric regressions. The 77 source-reference cases
-// are owned by parity-tests/tests/special_regression_structure_tags.rs.
+// are owned by parity-tests_fixed/tests/special_regression.rs.
 use std::process::Command;
 
 use cosmolkit_core::{

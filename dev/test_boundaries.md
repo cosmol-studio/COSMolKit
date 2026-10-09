@@ -6,8 +6,7 @@ There are two test categories:
   owning crate's unit modules or `tests/`. Python and JavaScript tests focus
   on their language boundary rather than repeating complete chemistry corpora.
 - Corpus tests and explicitly designated special regressions use the current
-  `parity-tests_fixed/` workflow. The old `parity-tests/` package is legacy;
-  its CLI and task table do not define another current workflow.
+  `parity-tests_fixed/` workflow.
 
 Complete 0.5.0 validation is pending. Results in
 [VALIDATION.md](../VALIDATION.md) are historical 0.3.0 evidence.

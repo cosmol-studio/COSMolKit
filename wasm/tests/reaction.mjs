@@ -72,7 +72,9 @@ test("Reaction options retain typed coordinate IDs and refuse host coercion",()=
  assert.equal(write.cxFields.bits(),0);assert.equal(write.rootedAtAtom,0);assert.equal(write.coordinateSelections[0].id,7);
  assert.equal(b.CxSmilesFields.COORDS.or(b.CxSmilesFields.ATOM_LABELS).bits(),5);
  assert.equal(b.CxSmilesFields.ALL.contains(b.CxSmilesFields.COORDS),true);
- assert.throws(()=>{params.maxProducts=4;},TypeError);
+ params.maxProducts=4;assert.equal(params.maxProducts,4);
+ params.coordinateSelections=[two];assert.equal(params.coordinateSelections[0].id,7);
+ assert.throws(()=>{params.maxProducts=-1;},RangeError);
  assert.throws(()=>new b.ReactionSingleRunParams("Auto"),TypeError);
  assert.throws(()=>new b.ReactionParseParams("false"),TypeError);
  assert.throws(()=>new b.ReactionRunParams(-1),RangeError);
@@ -122,4 +124,16 @@ test("Reaction failures preserve error kinds, contextual fields and validation r
  assert.equal(report.errors[0].role,b.ReactionRole.Reactant);assert.equal(report.errors[0].atom,null);
  assert.equal(typeof report.errors[0].detail,"string");
  assert.throws(()=>empty.withInitializedWithParams(new b.ReactionValidationParams(true)),e=>e.name==="ReactionInitializationError"&&e.kind==="Invalid"&&e.report.numErrors===2&&e.detail.report instanceof b.ReactionValidationReport);
+});
+test('reaction optionally copies typed atom properties by reagent origins',()=>{
+ const carbon=b.Molecule.fromSmiles('C').withAtomProperty(0,'tracking_id',42);
+ const oxygen=b.Molecule.fromSmiles('O').withAtomProperty(0,'tracking_id',84);
+ const rxn=b.Reaction.fromSmirks('[C:1].[O:2]>>[C:1][O:2]');
+ const params=new b.ReactionRunParams(undefined,undefined,true);
+ assert.equal(params.copyAtomProperties,true);
+ const product=rxn.run([carbon,oxygen],params)[0][0];
+ assert.deepEqual([0,1].map(i=>product.atomProperty(i,'tracking_id')),[42,84]);
+ params.copyAtomProperties=false;
+ assert.deepEqual([0,1].map(i=>rxn.run([carbon,oxygen],params)[0][0].atomProperty(i,'tracking_id')),[null,null]);
+ assert.equal(product.toSmiles(),'CO');
 });

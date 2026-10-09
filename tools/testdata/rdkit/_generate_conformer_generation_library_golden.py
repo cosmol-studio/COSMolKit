@@ -12,7 +12,10 @@ from typing import Iterable
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdDistGeom
 
-EXPECTED_RDKIT_VERSION = "2026.3.1"
+EXPECTED_RDKIT_VERSION = json.loads(
+    (Path(__file__).resolve().parents[3] / "testdata/reference/rdkit.json")
+    .read_text(encoding="utf-8")
+)["python_distribution_version"]
 CONFORMER_LIBRARY_SEED = 61453
 # Keep library parity on a deterministic embed-attempt budget. RDKit's
 # timeout is wall-clock based, so it is unsuitable for CI-stable parity rows.

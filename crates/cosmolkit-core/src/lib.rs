@@ -60,7 +60,10 @@ pub use platform_threads::{
 pub use random::{RdkitRandomEngine, RdkitRandomGenerator, with_rdkit_random_generator};
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
-pub use fragments::{MoleculeFragment, MoleculeFragmentsError, get_molecule_fragments};
+/// Detached, source-ordered fragment extraction with explicit topology mappings.
+pub use fragments::{
+    MoleculeFragment, MoleculeFragmentsError, get_largest_molecule_fragment, get_molecule_fragments,
+};
 pub use scaffolds::{
     ScaffoldError, ScaffoldResult, murcko_decompose, murcko_scaffold, net_scaffold,
 };
@@ -164,8 +167,9 @@ pub use paths::{
     PathError, PathRepresentation, PathSearchParams, SubgraphSearchParams, SubtopologyParams,
     SubtopologyResult, UniqueSubgraphParams, all_paths_in_range, all_paths_of_length,
     all_subgraphs_in_range, all_subgraphs_of_length, atom_environment, bond_ids_from_atom_path,
-    connected_components, query_bond_paths_in_range, query_connected_components,
-    query_subgraphs_in_range, shortest_path, subtopology_from_path, unique_subgraphs_of_length,
+    connected_components, query_atom_paths_in_range, query_bond_paths_in_range,
+    query_connected_components, query_subgraphs_in_range, shortest_path, subtopology_from_path,
+    unique_subgraphs_of_length,
 };
 
 pub use periodic_table::{

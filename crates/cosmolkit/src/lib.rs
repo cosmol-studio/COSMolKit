@@ -261,6 +261,8 @@ pub(crate) use ops::WithAssignedRadicalsAccess;
 pub(crate) use ops::WithAssignedValenceAccess;
 #[cfg(feature = "cap-transforms")]
 pub(crate) use ops::WithAtomPositionAccess;
+#[cfg(feature = "cap-transforms")]
+pub(crate) use ops::WithAtomPropertyAccess;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use ops::WithChiralTagsFromStructureAccess;
 #[cfg(feature = "cap-stereo")]
@@ -281,6 +283,8 @@ pub(crate) use ops::{
     CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess,
     ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
+#[cfg(feature = "cap-transforms")]
+pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};
@@ -418,7 +422,15 @@ pub(crate) use ops::{
 };
 
 #[cfg(feature = "cap-fingerprints")]
+mod avalon_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
 mod layered_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
+pub use avalon_fingerprint::AvalonFingerprintError;
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{
+    AvalonError as AvalonEngineError, AvalonFingerprintFlags, AvalonFingerprintParams,
+};
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion_path;
 #[cfg(feature = "cap-alignment")]

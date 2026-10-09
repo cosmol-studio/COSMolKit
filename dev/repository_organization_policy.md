@@ -277,8 +277,7 @@ chemistry execution. Do not duplicate these mechanisms in domain crates.
 ## 6. Rust Parity Pipeline Ownership
 
 `parity-tests_fixed/` (`cosmolkit-parity-tests-fixed`, unpublished) is the
-current 0.5.0 home for corpus and special-regression orchestration. The old
-`parity-tests/` package remains legacy, not a second current workflow.
+current 0.5.0 home for corpus and special-regression orchestration.
 The current runner's chemistry dependency is public
 `cosmolkit` with `full`, not individual domain crates. Its Rust registry
 declares operations, variants, typed inputs/results and reference identity.

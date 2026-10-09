@@ -1,9 +1,10 @@
 //! One seeded parameter combination per molecule and task, shared with RDKit.
 use crate::registry::{Input, Record, SmilesCase, Value};
 use cosmolkit::{
-    Fingerprint, LayeredFingerprintLayers, LayeredFingerprintParams, Molecule,
-    MorganFingerprintParams, MorganParams, PatternFingerprintParams, SparseCountFingerprint,
-    SparseCountFingerprint32, TopologicalFingerprintParams,
+    AvalonFingerprintFlags, AvalonFingerprintParams, Fingerprint, LayeredFingerprintLayers,
+    LayeredFingerprintParams, Molecule, MorganFingerprintParams, MorganParams,
+    PatternFingerprintParams, SparseCountFingerprint, SparseCountFingerprint32,
+    TopologicalFingerprintParams,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,6 +14,7 @@ pub const SEED: u64 = 0x434b_4650_2026_1007;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
     Maccs,
+    Avalon,
     Topological,
     Layered,
     Pattern,
@@ -23,6 +25,7 @@ impl Kind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Maccs => "fingerprint_maccs",
+            Self::Avalon => "fingerprint_avalon",
             Self::Topological => "fingerprint_topological",
             Self::Layered => "fingerprint_layered",
             Self::Pattern => "fingerprint_pattern",
@@ -35,6 +38,11 @@ impl Kind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Params {
     Maccs,
+    Avalon {
+        n_bits: u32,
+        is_query: bool,
+        bit_flags: u32,
+    },
     Topological {
         min_path: u32,
         max_path: u32,
@@ -74,6 +82,7 @@ impl Params {
     fn kind(&self) -> Kind {
         match self {
             Self::Maccs => Kind::Maccs,
+            Self::Avalon { .. } => Kind::Avalon,
             Self::Topological { .. } => Kind::Topological,
             Self::Layered { .. } => Kind::Layered,
             Self::Pattern { .. } => Kind::Pattern,
@@ -163,6 +172,14 @@ pub fn inputs(cases: &[SmilesCase], kind: Kind) -> Vec<Input> {
             let mut rng = Random(seed);
             let params = match kind {
                 Kind::Maccs => Params::Maccs,
+                Kind::Avalon => Params::Avalon {
+                    n_bits: rng.pick(&[9, 31, 32, 64, 511, 512, 513, 1024]),
+                    is_query: rng.boolean(),
+                    bit_flags: rng.pick(&[
+                        0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384,
+                        32767, 0xf00000, 0xf07fff,
+                    ]),
+                },
                 Kind::Topological => {
                     let min_path = rng.pick(&[1, 2]);
                     Params::Topological {
@@ -305,7 +322,10 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
                 && atom_counts.is_none() == (*counts == Counts::Absent)
         }
         (
-            Params::Pattern { fp_size, .. },
+            Params::Pattern { fp_size, .. }
+            | Params::Avalon {
+                n_bits: fp_size, ..
+            },
             Observation::Bits {
                 fingerprint,
                 atom_counts,
@@ -348,6 +368,21 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
                 .map_err(|e| e.to_string())?
                 .into(),
             public: mol.fingerprint_maccs().map_err(|e| e.to_string())?.into(),
+        },
+        Params::Avalon {
+            n_bits,
+            is_query,
+            bit_flags,
+        } => Observation::Bits {
+            fingerprint: mol
+                .fingerprint_avalon_with_params(&AvalonFingerprintParams {
+                    n_bits,
+                    is_query,
+                    bit_flags: AvalonFingerprintFlags::from_bits_retain(bit_flags),
+                })
+                .map_err(|e| e.to_string())?
+                .into(),
+            atom_counts: None,
         },
         Params::Topological {
             min_path,
@@ -620,6 +655,7 @@ mod tests {
             .collect();
         for kind in [
             Kind::Maccs,
+            Kind::Avalon,
             Kind::Topological,
             Kind::Layered,
             Kind::Pattern,

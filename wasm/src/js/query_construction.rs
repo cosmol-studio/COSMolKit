@@ -227,6 +227,7 @@ pub(crate) fn parse_error(source: &ck::SmartsParseError) -> Result<JsValue, JsVa
     use ck::SmartsParseError as E;
     use std::error::Error as _;
     let kind = match source {
+        E::StereoGroup(..) => "StereoGroup",
         E::MissingRecursiveQueryGraph => "MissingRecursiveQueryGraph",
         E::CxLowering(..) => "CxLowering",
         E::QueryGraph(..) => "QueryGraph",

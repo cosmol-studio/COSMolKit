@@ -35,6 +35,8 @@ impl TaskId {
     pub const fn name(self) -> &'static str {
         match self {
             Self::MurckoScaffold => "murcko_scaffold",
+            Self::Fragments => "fragments",
+            Self::LargestFragment => "largest_fragment",
             Self::NetScaffold => "net_scaffold",
             Self::MurckoDecompose => "murcko_decompose",
             Self::TautomerEnumeration => "tautomer_enumeration",
@@ -195,6 +197,8 @@ impl TaskId {
             | Self::Qed => Category::Descriptors,
             Self::SmilesRead => Category::Notation,
             Self::Sanitize
+            | Self::Fragments
+            | Self::LargestFragment
             | Self::MurckoScaffold
             | Self::NetScaffold
             | Self::MurckoDecompose
@@ -235,6 +239,8 @@ impl TaskId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TaskId {
+    Fragments,
+    LargestFragment,
     MurckoScaffold,
     NetScaffold,
     MurckoDecompose,
@@ -419,6 +425,8 @@ impl VsaBins {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Profile {
+    Fragments,
+    LargestFragment,
     MurckoScaffold,
     NetScaffold,
     MurckoDecompose,
@@ -716,6 +724,18 @@ use TaskId::*;
 /// Frozen matrices. Executable registration lives in the parent module;
 /// unregistered matrices remain planned, not passing evidence.
 pub const TASKS: &[Task] = &[
+    Task {
+        id: Fragments,
+        input: SanitizedHydrogensRemoved,
+        comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: LargestFragment,
+        input: SanitizedHydrogensRemoved,
+        comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
     Task {
         id: MurckoScaffold,
         input: SanitizedHydrogensRemoved,
@@ -1313,6 +1333,8 @@ impl TaskId {
         let booleans = [false, true];
         match self {
             MurckoScaffold => vec![Profile::MurckoScaffold],
+            Fragments => vec![Profile::Fragments],
+            LargestFragment => vec![Profile::LargestFragment],
             NetScaffold => vec![Profile::NetScaffold],
             MurckoDecompose => vec![Profile::MurckoDecompose],
             TautomerEnumeration | TautomerCanonicalization => {
