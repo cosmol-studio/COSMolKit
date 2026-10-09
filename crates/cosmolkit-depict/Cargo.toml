@@ -14,9 +14,10 @@ documentation = "https://docs.rs/cosmolkit"
 [dependencies]
 glam = "=0.34.1"
 tiny-skia = "=0.12.0"
-usvg = "=0.48.1"
-resvg = "=0.48.1"
+# Rasterize generated SVG with embedded fonts; no system fonts or image inputs.
+usvg = { version = "=0.48.1", default-features = false, features = ["text"] }
+resvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 thiserror = "2"
-cosmolkit-core = { version = "0.5.0-rc.17", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.17", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.0-rc.17", path = "../cosmolkit-search", default-features = false }
+cosmolkit-core = { version = "0.5.0-rc.19", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.19", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.0-rc.19", path = "../cosmolkit-search", default-features = false }

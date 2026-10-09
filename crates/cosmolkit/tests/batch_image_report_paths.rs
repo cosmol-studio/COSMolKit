@@ -44,13 +44,14 @@ fn options(jobs: usize) -> BatchImageParams {
 }
 #[test]
 #[cfg(feature = "cap-batch")]
-fn canonical_report_receiver_preserves_exact_source_json_csv_and_literal_rust_paths() {
+fn canonical_report_receiver_preserves_two_count_json_csv_and_literal_rust_paths() {
     let root = Directory::new();
     let report = BatchExportReport {
         written: 2,
-        skipped: 3,
-        failed: 1,
-        errors: vec![],
+        failed: 4,
+        errors: [1, 3, 4, 5]
+            .map(|index| cosmolkit::BatchError::new(index, "fixture", "failed record"))
+            .into(),
     };
     for name in [
         "report.json",
@@ -63,9 +64,9 @@ fn canonical_report_receiver_preserves_exact_source_json_csv_and_literal_rust_pa
         let path = root.0.join(name);
         report.write_report(&path).unwrap();
         let expected = if name.to_ascii_lowercase().ends_with(".csv") {
-            "written,skipped,failed\n2,3,1\n"
+            "written,failed\n2,4\n"
         } else {
-            "{\n  \"written\": 2,\n  \"skipped\": 3,\n  \"failed\": 1\n}\n"
+            "{\n  \"written\": 2,\n  \"failed\": 4\n}\n"
         };
         assert_eq!(std::fs::read(path).unwrap(), expected.as_bytes());
     }
@@ -73,7 +74,7 @@ fn canonical_report_receiver_preserves_exact_source_json_csv_and_literal_rust_pa
     std::fs::create_dir(&literal).unwrap();
     report.write_report(&literal.join("report.json")).unwrap();
     assert!(literal.join("report.json").is_file());
-    assert_eq!((report.written, report.skipped, report.failed), (2, 3, 1));
+    assert_eq!((report.written, report.failed, report.total()), (2, 4, 6));
 }
 #[test]
 #[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
@@ -108,7 +109,7 @@ fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer
         )
         .unwrap();
         assert_eq!(reads.get(), 2);
-        assert_eq!((result.written, result.skipped, result.failed), (1, 0, 0));
+        assert_eq!((result.written, result.failed), (1, 0));
         assert_eq!(
             std::fs::read(&image).unwrap(),
             batch.to_list()[0]
@@ -120,7 +121,7 @@ fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer
         );
         assert_eq!(
             std::fs::read(root.0.join("report.json")).unwrap(),
-            b"{\n  \"written\": 1,\n  \"skipped\": 0,\n  \"failed\": 0\n}\n"
+            b"{\n  \"written\": 1,\n  \"failed\": 0\n}\n"
         );
         assert_eq!(params.report_path, Some(PathBuf::from("~/report.json")));
         assert_eq!(params.execution.n_jobs, Some(jobs));

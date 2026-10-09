@@ -277,6 +277,7 @@ impl MoleculeBatch {
             )])
         })?;
         let params = BatchExportParams {
+            errors: Some(params.errors.unwrap_or(self.error_mode)),
             n_jobs: params.n_jobs.or(self.n_jobs),
             progress_bar: params.progress_bar.or(self.progress_bar),
             ..*params
@@ -306,6 +307,7 @@ impl MoleculeBatch {
             )])
         })?;
         let params = BatchExportParams {
+            errors: Some(params.errors.unwrap_or(self.error_mode)),
             n_jobs: params.n_jobs.or(self.n_jobs),
             progress_bar: params.progress_bar.or(self.progress_bar),
             ..*params

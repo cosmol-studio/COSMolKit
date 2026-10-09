@@ -1,7 +1,8 @@
 """Canonical language call forms, derived from the linked binding registry.
 
-Only argument normalization lives here. Native constructors validate options;
-the existing native configured method performs the operation. The registry is
+Only argument normalization and configuration display live here. Native
+constructors validate options; the existing native configured method performs
+the operation. The registry is
 the sole API inventory. This module is embedded in the extension, not imported
 from a developer checkout at runtime.
 """
@@ -10,6 +11,7 @@ import copy
 import functools
 import inspect
 import re
+import reprlib
 
 
 def _compact(value):
@@ -63,10 +65,11 @@ def _wrapper(original, configured, target, configurations, module):
                      for name, value in source_signature.parameters.items()
                      if name not in classes and name not in all_fields
                      and value.default is not inspect.Parameter.empty}
+    configured_only = signature.parameters.keys() - source_signature.parameters.keys()
 
     @functools.wraps(original)
     def call(*args, **kwargs):
-        configured_call = bool(set(kwargs) & (all_fields | classes.keys())) or any(isinstance(value, tuple(classes.values())) for value in args)
+        configured_call = bool(set(kwargs) & (all_fields | classes.keys() | configured_only)) or any(isinstance(value, tuple(classes.values())) for value in args)
         if not configured_call:
             return original(*args, **kwargs)
         values = {key: value for key, value in kwargs.items() if key not in all_fields}
@@ -103,6 +106,10 @@ def _wrapper(original, configured, target, configurations, module):
 def install(module, document):
     entries = document["entries"]
     names = {row["semantic_id"].removeprefix("types."): row["python_name"] for row in entries if row["item"] == "type"}
+    for row in entries:
+        if row.get("role") == "parameter" and (row["feature"] == "cap-batch" or "cap-batch" in row.get("required_capabilities", [])):
+            fields = tuple(field["name"] for field in row["python_fields"])
+            setattr(getattr(module, row["python_name"]), "_configuration_repr", _configuration_repr(fields))
     for base, target, configurations in pairs(entries):
         owner = _owner(module, base, names)
         original = getattr(owner, base["python_name"])
@@ -111,6 +118,14 @@ def install(module, document):
         if owner is not module and "self" not in inspect.signature(original).parameters:
             call = staticmethod(call)
         setattr(owner, base["python_name"], call)
+
+
+def _configuration_repr(fields):
+    @reprlib.recursive_repr(fillvalue="...")
+    def describe(self) -> str:
+        values = ", ".join(f"{field}={getattr(self, field)!r}" for field in fields)
+        return f"{type(self).__name__}({values})"
+    return describe
 
 
 def declarations(module, stub, document):
@@ -138,6 +153,11 @@ def declarations(module, stub, document):
         keywords.name = source.name
         config_names = {field["name"] for field, row in configurations}
         config_fields = {field["name"] for _, row in configurations for field in row["python_fields"]}
+        default_configs = {
+            field["name"]: row["python_name"]
+            for field, row in configurations
+            if all(value["default"] is not None for value in row["python_fields"])
+        }
         # Carry the real short-form defaults of non-configuration inputs into
         # the configured forms (batch error mode, progress selection, etc.).
         source_args = source.args.posonlyargs + source.args.args
@@ -150,6 +170,13 @@ def declarations(module, stub, document):
             args = form.args.posonlyargs + form.args.args
             defaults = [None] * (len(args) - len(form.args.defaults)) + form.args.defaults
             defaults = [source_defaults.get(arg.arg, default) if arg.arg not in config_names | config_fields else default for arg, default in zip(args, defaults)]
+            if form is explicit:
+                # The installed wrapper constructs omitted defaultable records,
+                # including when only the execution params object is supplied.
+                for index, arg in enumerate(args):
+                    if arg.arg in default_configs:
+                        arg.annotation = ast.parse(f"typing.Optional[{default_configs[arg.arg]}]", mode="eval").body
+                        defaults[index] = ast.Constant(value=None)
             # A required config following optional data is keyword-only,
             # never accidentally assigned the preceding data's default.
             seen_default = False

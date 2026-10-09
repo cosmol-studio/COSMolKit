@@ -16,7 +16,7 @@ const values: (Molecule|null)[] = batch.toList();
 const configured: MoleculeBatch = batch.withParallelJobs(2).withProgressBar(false).withValidRecords();
 const storedJobs: number|null = batch.parallelJobs(), storedProgress: boolean|null = batch.progressBar();
 const row: BatchError = errors[0], index: number = row.index(), operation: string = row.operation(), message: string = row.message();
-const details: [string,string][] = row.asDict(), cause: Error|null = row.cause();
+const details: {index:number;operation:string;message:string} = row.asDict(), cause: Error|null = row.cause();
 const failed: BatchRecord = BatchRecord.error(row), maybeMolecule: Molecule|null = failed.moleculeValue(), maybeError: BatchError|null = failed.errorValue();
 function inspect(error: BatchValidationError) {
     const count: number = error.errors, reason: null = error.reason, records: BatchError[] = error.recordErrors, cause: Error|null = error.cause;

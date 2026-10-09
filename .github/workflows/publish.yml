@@ -319,7 +319,7 @@ jobs:
                   name: npm-presets
                   path: npm-packages
 
-            - name: Publish npm presets, then default full package
+            - name: Publish separate npm preset packages
               run: |
                   set -euo pipefail
                   for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do

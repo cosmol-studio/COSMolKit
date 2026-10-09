@@ -47,7 +47,7 @@ fn batch_pattern_zero_and_source_unsigned_width_errors_retain_all_indices_and_ca
         &input,
         &Default::default(),
         &BatchParams {
-            errors: BatchErrorMode::KeepErrors,
+            errors: Some(BatchErrorMode::KeepErrors),
             n_jobs: Some(1),
             progress_bar: Some(false),
         },

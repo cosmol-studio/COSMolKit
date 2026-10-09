@@ -42,7 +42,7 @@ mod tests {
     fn batch_foundation_preserves_indices_settings_and_record_value_independence() {
         let input = ["CCO", "[", "O", "C("].map(str::to_owned);
         let params = ck::BatchParams {
-            errors: ck::BatchErrorMode::KeepErrors,
+            errors: Some(ck::BatchErrorMode::KeepErrors),
             ..Default::default()
         };
         let batch = MoleculeBatch::from_smiles_list_with_params(
@@ -151,6 +151,9 @@ impl MoleculeBatch {
     }
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+    pub fn error_mode(&self) -> ck::BatchErrorMode {
+        self.inner.error_mode()
     }
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
@@ -378,7 +381,7 @@ mod transform_tests {
             .with_hydrogens_with_params(
                 &invalid,
                 &ck::BatchParams {
-                    errors: ck::BatchErrorMode::KeepErrors,
+                    errors: Some(ck::BatchErrorMode::KeepErrors),
                     ..Default::default()
                 },
             )
@@ -389,7 +392,7 @@ mod transform_tests {
             &["C".into(), "[".into()],
             &ck::SmilesParseParams::default(),
             &ck::BatchParams {
-                errors: ck::BatchErrorMode::KeepErrors,
+                errors: Some(ck::BatchErrorMode::KeepErrors),
                 ..Default::default()
             },
         )
@@ -398,7 +401,7 @@ mod transform_tests {
             .with_hydrogens_with_params(
                 &ck::AddHsParams::default(),
                 &ck::BatchParams {
-                    errors: ck::BatchErrorMode::KeepErrors,
+                    errors: Some(ck::BatchErrorMode::KeepErrors),
                     ..Default::default()
                 },
             )
@@ -469,7 +472,7 @@ mod query_tests {
         let input = ["CCO".into(), "[".into(), "O".into()];
         let parse = ck::SmilesParseParams::default();
         let keep = ck::BatchParams {
-            errors: ck::BatchErrorMode::KeepErrors,
+            errors: Some(ck::BatchErrorMode::KeepErrors),
             ..Default::default()
         };
         let batch = MoleculeBatch::from_smiles_list_with_params(&input, &parse, &keep).unwrap();
@@ -588,7 +591,7 @@ mod image_tests {
                 .starts_with(b"\x89PNG\r\n\x1a\n")
         );
         let keep = ck::BatchParams {
-            errors: ck::BatchErrorMode::KeepErrors,
+            errors: Some(ck::BatchErrorMode::KeepErrors),
             ..Default::default()
         };
         let partial = MoleculeBatch::from_smiles_list_with_params(
@@ -613,10 +616,12 @@ mod image_tests {
                 report.total(),
                 report.success(),
                 report.failed(),
-                report.skipped
+                report.errors().len()
             ),
-            (3, 2, 0, 1)
+            (3, 2, 1, 1)
         );
+        assert_eq!(report.errors()[0].index, 1);
+        assert_eq!(report.errors()[0].operation, "batch.from_smiles_list");
         for path in ["custom/ethanol.svg", "custom/water.svg"] {
             assert!(
                 std::fs::read_to_string(base.join(path))
@@ -633,7 +638,7 @@ mod image_tests {
         report.write_report(&base.join("counts.CSV")).unwrap();
         assert_eq!(
             std::fs::read_to_string(base.join("counts.CSV")).unwrap(),
-            "written,skipped,failed\n2,1,0\n"
+            "written,failed\n2,1\n"
         );
         assert!(
             report
@@ -649,20 +654,29 @@ mod image_tests {
             .write_images_with_params(base.join("bad-format").to_str().unwrap(), &invalid)
             .unwrap();
         assert_eq!(
-            (failure.written, failure.skipped, failure.failed),
-            (0, 1, 2)
+            (failure.written, failure.failed, failure.errors().len()),
+            (0, 3, 3)
         );
+        assert_eq!(failure.errors()[1].index, 1);
+        assert_eq!(failure.errors()[1].operation, "batch.from_smiles_list");
         assert!(
             std::error::Error::source(&failure.errors[0])
                 .unwrap()
                 .downcast_ref::<ck::BatchImageError>()
                 .is_some()
         );
+        let strict = ck::BatchImageParams {
+            execution: ck::BatchParams {
+                errors: Some(ck::BatchErrorMode::Strict),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let strict_directory = base.join("strict");
         assert_eq!(
             partial
-                .write_images(base.join("strict").to_str().unwrap())
-                .err()
-                .unwrap()
+                .write_images_with_params(strict_directory.to_str().unwrap(), &strict)
+                .unwrap_err()
                 .errors,
             1
         );
@@ -778,7 +792,7 @@ mod atom_pair_tests {
             &["CCO".into(), "[".into(), "O".into()],
             &ck::SmilesParseParams::default(),
             &ck::BatchParams {
-                errors: ck::BatchErrorMode::KeepErrors,
+                errors: Some(ck::BatchErrorMode::KeepErrors),
                 ..Default::default()
             },
         )
@@ -914,7 +928,7 @@ mod layered_pattern_tests {
             &["CCO".into(), "[".into(), "O".into()],
             &ck::SmilesParseParams::default(),
             &ck::BatchParams {
-                errors: ck::BatchErrorMode::KeepErrors,
+                errors: Some(ck::BatchErrorMode::KeepErrors),
                 ..Default::default()
             },
         )
@@ -1062,7 +1076,7 @@ mod morgan_tests {
             &["CCO".into(), "[".into(), "O".into()],
             &ck::SmilesParseParams::default(),
             &ck::BatchParams {
-                errors: ck::BatchErrorMode::KeepErrors,
+                errors: Some(ck::BatchErrorMode::KeepErrors),
                 ..Default::default()
             },
         )

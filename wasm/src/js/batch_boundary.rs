@@ -61,16 +61,15 @@ impl BatchParams {
     ) -> Result<Self, JsValue> {
         Ok(Self {
             inner: ck::BatchParams {
-                errors: errors
-                    .map_or_else(|| ck::BatchParams::default().errors, BatchErrorMode::core),
+                errors: errors.map(BatchErrorMode::core),
                 n_jobs: optional_usize(&n_jobs, "nJobs")?,
                 progress_bar: optional_bool(&progress_bar, "progressBar")?,
             },
         })
     }
-    #[wasm_bindgen(getter)]
-    pub fn errors(&self) -> BatchErrorMode {
-        BatchErrorMode::from_core(self.inner.errors)
+    #[wasm_bindgen(getter, unchecked_return_type = "BatchErrorMode | null")]
+    pub fn errors(&self) -> JsValue {
+        self.inner.errors.map_or(JsValue::NULL, |mode| JsValue::from(BatchErrorMode::from_core(mode) as u32))
     }
     #[wasm_bindgen(getter, js_name = nJobs, unchecked_return_type = "number | null")]
     pub fn n_jobs(&self) -> JsValue {
@@ -105,21 +104,13 @@ impl BatchError {
     pub fn cause(&self) -> Result<JsValue, JsValue> {
         self.inner.source().map_or(Ok(JsValue::NULL), source_error)
     }
-    #[wasm_bindgen(js_name = asDict, unchecked_return_type = "[string, string][]")]
-    pub fn as_dict(&self) -> Array {
-        [
-            ("index", self.inner.index.to_string()),
-            ("operation", self.operation()),
-            ("message", self.message()),
-        ]
-        .into_iter()
-        .map(|(key, value)| {
-            let pair = Array::new();
-            pair.push(&key.into());
-            pair.push(&value.into());
-            pair
-        })
-        .collect()
+    #[wasm_bindgen(js_name = asDict, unchecked_return_type = "{ index: number; operation: string; message: string }")]
+    pub fn as_dict(&self) -> Result<JsValue, JsValue> {
+        let result: JsValue = js_sys::Object::new().into();
+        set(&result, "index", JsValue::from_f64(self.inner.index as f64))?;
+        set(&result, "operation", self.inner.operation.into())?;
+        set(&result, "message", JsValue::from_str(&self.inner.message))?;
+        Ok(result)
     }
 }
 
@@ -314,6 +305,10 @@ impl MoleculeBatch {
     }
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+    #[wasm_bindgen(js_name = errorMode)]
+    pub fn error_mode(&self) -> BatchErrorMode {
+        BatchErrorMode::from_core(self.inner.error_mode())
     }
     #[wasm_bindgen(js_name = isEmpty)]
     pub fn is_empty(&self) -> bool {

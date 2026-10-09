@@ -6,6 +6,7 @@ use crate::canonical_values::{
     Fingerprint, SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
 };
 use crate::drawing_binding::Molecule;
+use crate::text_path::TextPath;
 use ::cosmolkit as ck;
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -54,7 +55,7 @@ pyo3_stub_gen::inventory::submit! {
         "#
     }
 }
-use pyo3::types::{PyAny, PyBool, PySlice, PySliceMethods, PyType};
+use pyo3::types::{PyAny, PyBool, PyDict, PySlice, PySliceMethods, PyType};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 pyo3::create_exception!(cosmolkit, BatchImageError, PyValueError);
@@ -350,6 +351,7 @@ pub(crate) struct BatchError {
     inner: ck::BatchError,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BatchError {
     fn index(&self) -> usize {
@@ -361,12 +363,14 @@ impl BatchError {
     fn message(&self) -> String {
         self.inner.message.clone()
     }
-    fn as_dict(&self) -> Vec<(String, String)> {
-        vec![
-            ("index".into(), self.inner.index.to_string()),
-            ("operation".into(), self.operation()),
-            ("message".into(), self.message()),
-        ]
+    /// Return a fresh dictionary with an integer input index and string details.
+    #[gen_stub(override_return_type(type_repr = "dict[str, int | str]"))]
+    fn as_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(py);
+        result.set_item("index", self.inner.index)?;
+        result.set_item("operation", self.inner.operation)?;
+        result.set_item("message", &self.inner.message)?;
+        Ok(result)
     }
     fn __repr__(&self) -> String {
         format!(
@@ -407,14 +411,14 @@ impl MoleculeBatch {
     #[pyo3(signature=(path,read,errors=None,n_jobs=None,progress_bar=false))]
     fn read_sdf_with_params(
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         read: &crate::canonical_sdf::SdfReadParams,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> PyResult<Self> {
         ck::MoleculeBatch::read_sdf_with_params(
-            path,
+            path.as_str(),
             &read.inner,
             error_mode(errors)?,
             n_jobs,
@@ -478,12 +482,16 @@ impl MoleculeBatch {
     fn write_sdf_with_params(
         &self,
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         params: &crate::canonical_batch_params::BatchExportParams,
-        report_path: Option<&str>,
+        report_path: Option<TextPath>,
     ) -> PyResult<BatchExportReport> {
         self.inner
-            .write_sdf_with_params(path, &params.inner, report_path)
+            .write_sdf_with_params(
+                path.as_str(),
+                &params.inner,
+                report_path.as_ref().map(TextPath::as_str),
+            )
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
@@ -491,17 +499,17 @@ impl MoleculeBatch {
     fn write_sdf_files_with_params(
         &self,
         py: Python<'_>,
-        directory: &str,
+        directory: TextPath,
         params: &crate::canonical_batch_params::BatchExportParams,
         filenames: Option<Vec<Option<String>>>,
-        report_path: Option<&str>,
+        report_path: Option<TextPath>,
     ) -> PyResult<BatchExportReport> {
         self.inner
             .write_sdf_files_with_params(
-                directory,
+                directory.as_str(),
                 &params.inner,
                 filenames.as_deref(),
-                report_path,
+                report_path.as_ref().map(TextPath::as_str),
             )
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
@@ -873,12 +881,13 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    #[pyo3(signature=(options, collect_additional_output=true, params=None))]
     fn fingerprint_atom_pair_with_output_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
         collect_additional_output: bool,
-        params: &crate::canonical_batch_params::BatchQueryParams,
+        params: Option<&crate::canonical_batch_params::BatchQueryParams>,
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
@@ -928,7 +937,9 @@ impl MoleculeBatch {
         //             })
         //             .map_err(batch_validation_pyerr)
         //     }
+        let defaults = crate::canonical_batch_params::BatchQueryParams::default();
         params
+            .unwrap_or(&defaults)
             .execute(py, |execution| {
                 self.inner
                     .fingerprint_atom_pair_with_output_list_with_params(
@@ -1132,6 +1143,14 @@ impl MoleculeBatch {
             })
     }
 
+    /// Return Morgan fingerprints in input order (default radius 3, 2048 bits).
+    ///
+    /// Existing failed records produce None; new calculation errors raise
+    /// BatchValidationError. The source batch is unchanged.
+    /// Accepts MorganFingerprintParams as options and BatchQueryParams as params,
+    /// or their fields as keywords. For example:
+    /// batch.fingerprint_morgan_list(generator=ck.MorganParams(radius=2), n_jobs=1).
+    /// Omitted n_jobs uses the batch setting, or one worker if unset.
     fn fingerprint_morgan_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
         self.inner
             .fingerprint_morgan_list()
@@ -1143,6 +1162,9 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Return ordered Morgan fingerprints using explicit options and execution params.
+    /// Existing failed records produce None; new calculation errors raise
+    /// BatchValidationError. Does not modify the source batch.
     fn fingerprint_morgan_list_with_params(
         &self,
         py: Python<'_>,
@@ -1232,12 +1254,13 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    #[pyo3(signature=(options, collect_additional_output=true, params=None))]
     fn fingerprint_morgan_with_output_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganFingerprintParams,
         collect_additional_output: bool,
-        params: &crate::canonical_batch_params::BatchQueryParams,
+        params: Option<&crate::canonical_batch_params::BatchQueryParams>,
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
@@ -1299,7 +1322,9 @@ impl MoleculeBatch {
         //             })
         //             .map_err(batch_validation_pyerr)
         //     }
+        let defaults = crate::canonical_batch_params::BatchQueryParams::default();
         params
+            .unwrap_or(&defaults)
             .execute(py, |execution| {
                 self.inner.fingerprint_morgan_with_output_list_with_params(
                     &options.inner,
@@ -1315,12 +1340,22 @@ impl MoleculeBatch {
             })
     }
 
+    /// Parse SMILES strings into a MoleculeBatch, preserving input order.
+    ///
+    /// Defaults: sanitize=True, errors="raise", one worker. Invalid SMILES raise
+    /// BatchValidationError; errors="keep" retains failed slots and errors().
+    /// Accepts SmilesParseParams as parse and BatchParams as params,
+    /// or their fields as keywords. For example:
+    /// ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC"], errors="keep", n_jobs=1).
     #[staticmethod]
     fn from_smiles_list(py: Python<'_>, smiles: Vec<String>) -> PyResult<Self> {
         ck::MoleculeBatch::from_smiles_list(&smiles)
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Parse SMILES using explicit parse and execution params, preserving input order.
+    /// BatchParams.errors controls whether failures raise BatchValidationError
+    /// or remain as failed records accessible through errors().
     #[staticmethod]
     fn from_smiles_list_with_params(
         py: Python<'_>,
@@ -1423,6 +1458,19 @@ impl MoleculeBatch {
     fn len(&self) -> usize {
         self.inner.len()
     }
+    /// Return the error policy inherited by transforms and exports.
+    #[gen_stub(override_return_type(type_repr = "BatchErrorMode"))]
+    fn error_mode(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let name = match self.inner.error_mode() {
+            ck::BatchErrorMode::Strict => "RAISE",
+            ck::BatchErrorMode::KeepErrors => "KEEP",
+        };
+        Ok(py
+            .import("cosmolkit")?
+            .getattr("BatchErrorMode")?
+            .getattr(name)?
+            .unbind())
+    }
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -1432,12 +1480,22 @@ impl MoleculeBatch {
         }
     }
 
+    /// Return a new batch with explicit hydrogens; leave the source batch unchanged.
+    ///
+    /// Input order and the batch error policy are preserved. Override errors="raise"
+    /// to reject failures or errors="keep" to retain existing and new failed records.
+    /// Accepts AddHsParams as options and BatchParams as params,
+    /// or their fields as keywords: batch.with_hydrogens(errors="keep", n_jobs=1).
+    /// Omitted n_jobs uses the batch setting, or one worker if unset.
     fn with_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_hydrogens()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Return a new hydrogen-added batch using explicit options and execution params.
+    /// Input order is preserved; the source batch is unchanged. BatchParams.errors
+    /// controls whether existing and new failures raise or remain as failed records.
     fn with_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -1605,6 +1663,13 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
 
+    /// Return SMILES strings in input order; defaults to canonical, isomeric SMILES.
+    ///
+    /// Existing failed records produce None; new writing errors raise
+    /// BatchValidationError. The source batch is unchanged.
+    /// Accepts SmilesWriteParams as options and BatchQueryParams as params,
+    /// or their fields as keywords: batch.to_smiles_list(canonical=False, n_jobs=1).
+    /// Omitted n_jobs uses the batch setting, or one worker if unset.
     fn to_smiles_list(&self, py: Python<'_>) -> PyResult<Vec<Option<String>>> {
         self.inner
             .to_smiles_list()
@@ -1618,6 +1683,9 @@ impl MoleculeBatch {
             })
             .collect()
     }
+    /// Return ordered SMILES strings using explicit options and execution params.
+    /// Existing failed records produce None; new writing errors raise
+    /// BatchValidationError. Does not modify the source batch.
     fn to_smiles_list_with_params(
         &self,
         py: Python<'_>,
@@ -1863,13 +1931,13 @@ impl MoleculeBatch {
     fn read_sdf(
         _cls: &Bound<'_, PyType>,
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> PyResult<Self> {
         ck::MoleculeBatch::read_sdf_with_params(
-            path,
+            path.as_str(),
             &ck::SdfReadParams::default(),
             error_mode(errors)?,
             self::n_jobs(n_jobs)?,
@@ -1882,14 +1950,14 @@ impl MoleculeBatch {
     fn write_sdf(
         &self,
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         format: Option<&str>,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
-        report_path: Option<&str>,
+        report_path: Option<TextPath>,
         progress_bar: Option<bool>,
     ) -> PyResult<BatchExportReport> {
-        let mode = error_mode(errors)?;
+        let mode = errors.map(|value| error_mode(Some(value))).transpose()?;
         let format = write_params(format, true, true)?.format;
         let params = ck::BatchExportParams {
             format,
@@ -1898,7 +1966,11 @@ impl MoleculeBatch {
             progress_bar,
         };
         self.inner
-            .write_sdf_with_params(path, &params, report_path)
+            .write_sdf_with_params(
+                path.as_str(),
+                &params,
+                report_path.as_ref().map(TextPath::as_str),
+            )
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
@@ -1906,15 +1978,15 @@ impl MoleculeBatch {
     fn write_sdf_files(
         &self,
         py: Python<'_>,
-        out_dir: &str,
+        out_dir: TextPath,
         format: Option<&str>,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
-        report_path: Option<&str>,
+        report_path: Option<TextPath>,
         filenames: Option<Vec<Option<String>>>,
         progress_bar: Option<bool>,
     ) -> PyResult<BatchExportReport> {
-        let mode = error_mode(errors)?;
+        let mode = errors.map(|value| error_mode(Some(value))).transpose()?;
         let format = write_params(format, true, true)?.format;
         let params = ck::BatchExportParams {
             format,
@@ -1923,7 +1995,12 @@ impl MoleculeBatch {
             progress_bar,
         };
         self.inner
-            .write_sdf_files_with_params(out_dir, &params, filenames.as_deref(), report_path)
+            .write_sdf_files_with_params(
+                out_dir.as_str(),
+                &params,
+                filenames.as_deref(),
+                report_path.as_ref().map(TextPath::as_str),
+            )
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
@@ -2053,10 +2130,10 @@ impl SdfDataset {
     #[staticmethod]
     fn open_with_params(
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         params: &crate::canonical_sdf::SdfReadParams,
     ) -> PyResult<Self> {
-        ck::SdfDataset::open_with_params(path, &params.inner)
+        ck::SdfDataset::open_with_params(path.as_str(), &params.inner)
             .map(|inner| Self { inner })
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
@@ -2098,7 +2175,7 @@ impl SdfDataset {
     fn open(
         _cls: &Bound<'_, PyType>,
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         index: Option<&Bound<'_, PyAny>>,
         build: Option<&str>,
     ) -> PyResult<Self> {
@@ -2118,7 +2195,7 @@ impl SdfDataset {
                 }
             }
         }
-        ck::SdfDataset::open_with_params(path, &ck::SdfReadParams::default())
+        ck::SdfDataset::open_with_params(path.as_str(), &ck::SdfReadParams::default())
             .map(|inner| Self { inner })
             .map_err(|e| io_error(py, e))
     }
@@ -2255,10 +2332,10 @@ impl SdfReader {
     #[staticmethod]
     fn open_with_params(
         py: Python<'_>,
-        path: &str,
+        path: TextPath,
         params: &crate::canonical_sdf::SdfReadParams,
     ) -> PyResult<Self> {
-        ck::SdfReader::open_with_params(path, &params.inner)
+        ck::SdfReader::open_with_params(path.as_str(), &params.inner)
             .map(|inner| Self { inner })
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
@@ -2272,10 +2349,10 @@ impl SdfReader {
     }
     #[classmethod]
     #[pyo3(signature=(path))]
-    fn open(_cls: &Bound<'_, PyType>, py: Python<'_>, path: &str) -> PyResult<Self> {
+    fn open(_cls: &Bound<'_, PyType>, py: Python<'_>, path: TextPath) -> PyResult<Self> {
         // Python's source API stores a path/parameter configuration. Opening the
         // actual file is deferred to batches(), which delegates to Rust.
-        ck::SdfReader::open_with_params(path, &ck::SdfReadParams::default())
+        ck::SdfReader::open_with_params(path.as_str(), &ck::SdfReadParams::default())
             .map(|inner| Self { inner })
             .map_err(|e| io_error(py, e))
     }
@@ -2360,9 +2437,9 @@ pub(crate) struct BatchExportReport {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchExportReport {
-    fn write_report(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+    fn write_report(&self, py: Python<'_>, path: TextPath) -> PyResult<()> {
         self.inner
-            .write_report(std::path::Path::new(path))
+            .write_report(std::path::Path::new(path.as_str()))
             .map_err(|e| batch_error(py, e))
     }
     fn total(&self) -> usize {
@@ -2384,8 +2461,8 @@ impl BatchExportReport {
     }
     fn __repr__(&self) -> String {
         format!(
-            "BatchExportReport(written={}, skipped={}, failed={})",
-            self.inner.written, self.inner.skipped, self.inner.failed
+            "BatchExportReport(written={}, failed={})",
+            self.inner.written, self.inner.failed
         )
     }
 }
@@ -2426,7 +2503,7 @@ impl MoleculeBatch {
             .iter()
             .map(|index| self.inner.get(*index).expect("normalized index").clone())
             .collect();
-        ck::MoleculeBatch::from_records(records, ck::BatchErrorMode::KeepErrors)
+        ck::MoleculeBatch::from_records(records, self.inner.error_mode())
             .and_then(|batch| batch.with_parallel_jobs(self.inner.parallel_jobs()))
             .map(|inner| Self {
                 inner: inner.with_progress_bar(self.inner.progress_bar()),

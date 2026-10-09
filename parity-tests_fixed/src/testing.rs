@@ -124,7 +124,7 @@ fn batch(input: &Value) -> Result<Value> {
         &strings,
         &SmilesParseParams::default(),
         &BatchParams {
-            errors: BatchErrorMode::KeepErrors,
+            errors: Some(BatchErrorMode::KeepErrors),
             n_jobs: Some(workers),
             progress_bar: Some(false),
         },

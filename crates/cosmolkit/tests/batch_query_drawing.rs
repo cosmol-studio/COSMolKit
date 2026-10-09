@@ -9,7 +9,7 @@ fn batch() -> MoleculeBatch {
         &["CCO".into(), "C1".into(), "c1ccccc1".into()],
         &SmilesParseParams::default(),
         &BatchParams {
-            errors: BatchErrorMode::KeepErrors,
+            errors: Some(BatchErrorMode::KeepErrors),
             ..Default::default()
         },
     )
@@ -100,7 +100,7 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
         let params = BatchImageParams {
             format: format.into(),
             execution: BatchParams {
-                errors: BatchErrorMode::KeepErrors,
+                errors: Some(BatchErrorMode::KeepErrors),
                 n_jobs: Some(jobs),
                 progress_bar: Some(false),
             },
@@ -110,18 +110,16 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
         };
         let report = batch.write_images_with_params(&out, &params).unwrap();
         assert_eq!(
-            (
-                report.total(),
-                report.success(),
-                report.skipped,
-                report.failed()
-            ),
-            (3, 2, 1, 0)
+            (report.total(), report.success(), report.failed()),
+            (3, 2, 1)
         );
-        assert!(report.errors().is_empty());
+        assert_eq!(report.errors().len(), 1);
+        assert_eq!(report.errors()[0].index, 1);
+        assert_eq!(report.errors()[0].operation, "batch.from_smiles_list");
+        assert_eq!(report.errors()[0].message, batch.errors()[0].message);
         assert_eq!(
             std::fs::read_to_string(report_path).unwrap(),
-            "{\n  \"written\": 2,\n  \"skipped\": 1,\n  \"failed\": 0\n}\n"
+            "{\n  \"written\": 2,\n  \"failed\": 1\n}\n"
         );
         let values = batch.to_list();
         for (index, name) in [
@@ -160,7 +158,7 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
 }
 #[test]
 #[cfg(feature = "cap-depict")]
-fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_errors() {
+fn strict_export_finishes_valid_records_and_orders_all_failures_by_input() {
     let batch = batch();
     let directory = Directory::new();
     let out = directory.0.join("strict-svg");
@@ -169,6 +167,10 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
             &out,
             &BatchImageParams {
                 format: "svg".into(),
+                execution: BatchParams {
+                    errors: Some(BatchErrorMode::Strict),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )
@@ -188,6 +190,10 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
             &directory.0.join("bad-format"),
             &BatchImageParams {
                 format: "SVG".into(),
+                execution: BatchParams {
+                    errors: Some(BatchErrorMode::Strict),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )
@@ -198,7 +204,7 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
             .iter()
             .map(|e| e.index)
             .collect::<Vec<_>>(),
-        vec![0, 2, 1]
+        vec![0, 1, 2]
     );
     assert_eq!(
         strict
@@ -208,8 +214,8 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
             .collect::<Vec<_>>(),
         vec![
             "batch.write_images",
-            "batch.write_images",
-            "batch.from_smiles_list"
+            "batch.from_smiles_list",
+            "batch.write_images"
         ]
     );
     let kept = batch
@@ -218,14 +224,21 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
             &BatchImageParams {
                 format: "SVG".into(),
                 execution: BatchParams {
-                    errors: BatchErrorMode::KeepErrors,
+                    errors: Some(BatchErrorMode::KeepErrors),
                     ..Default::default()
                 },
                 ..Default::default()
             },
         )
         .unwrap();
-    assert_eq!((kept.written, kept.skipped, kept.failed), (0, 1, 2));
+    assert_eq!((kept.written, kept.failed, kept.errors().len()), (0, 3, 3));
+    assert_eq!(
+        kept.errors()
+            .iter()
+            .map(|error| error.index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
     let file = directory.0.join("file");
     std::fs::write(&file, "cannot create directory over file").unwrap();
     let error = batch.write_images(&file).unwrap_err();

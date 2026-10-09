@@ -38,6 +38,16 @@ def run(*args: str, cwd: Path, env: dict[str, str] | None = None) -> None:
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
+def workspace_manifest(metadata: dict) -> str:
+    # The generated crate is in an isolated workspace, so root profiles do not apply.
+    return (
+        '[workspace]\nmembers = ["wasm", "tmp/alef/wasm"]\nresolver = "2"\n'
+        "[workspace.package]\n"
+        + "\n".join(f"{key} = {json.dumps(metadata[key])}" for key in ("version", "edition", "license"))
+        + '\n\n[profile.release]\nopt-level = 3\nlto = "fat"\ncodegen-units = 1\n'
+    )
+
+
 def molecule_methods(sources) -> set[str]:
     return {
         name
@@ -69,10 +79,10 @@ def check_generated_surface(source: Path, active: set[str] | None = None) -> Non
 def prepare_package(package: Path, library_name: str, metadata: dict, preset: str = "full") -> None:
     module = f"{library_name}.js"
     declaration = f"{library_name}.d.ts"
-    version, tag = npm_release(metadata["version"], preset)
+    name, version, tag = npm_release(metadata["version"], preset)
     (package / "package.json").write_text(
         json.dumps({
-            "name": "@cosmol-studio/cosmolkit",
+            "name": name,
             "version": version,
             "cosmolkitPreset": preset,
             "cosmolkitVersion": metadata["version"],
@@ -177,10 +187,7 @@ def main() -> None:
         with (api_root / "Cargo.toml").open("rb") as source_manifest:
             package_metadata = tomllib.load(source_manifest)["workspace"]["package"]
         (workspace / "Cargo.toml").write_text(
-            '[workspace]\nmembers = ["wasm", "tmp/alef/wasm"]\nresolver = "2"\n'
-            "[workspace.package]\n"
-            + "\n".join(f"{key} = {json.dumps(package_metadata[key])}" for key in ("version", "edition", "license"))
-            + "\n",
+            workspace_manifest(package_metadata),
             encoding="utf-8",
         )
         config_text = CONFIG.read_text(encoding="utf-8")

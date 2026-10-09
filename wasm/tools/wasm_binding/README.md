@@ -62,7 +62,8 @@ example, `--preset core-bio --out-dir target/npm/core-bio`. Available presets
 are `core`, `core-search`, `core-fingerprints`, `core-analysis`, `core-reaction`, `core-depict`, `core-3d`,
 `core-bio`, `core-inchi`, and `full`. Each compiles without dependency defaults,
 selects only its binding modules and applicable tests, and exports its own
-version and npm tag. Domain-specific tests retain their assertions; mixed-domain
+package name. All packages share the Rust version and use `rc` or `latest` as
+their release channel. Domain-specific tests retain their assertions; mixed-domain
 suites run when all their prerequisites are selected.
 
 Export happens only after runtime and TypeScript checks pass. The package
@@ -80,15 +81,55 @@ Generated files are build output, not committed source.
 The release package follows the same isolated sequence:
 
 1. Alef extracts `wasm/src/lib.rs` into a temporary binding crate.
-2. Cargo builds that crate for `wasm32-unknown-unknown` in release mode.
+2. Cargo builds that crate for `wasm32-unknown-unknown` with explicit release
+   settings: `opt-level=3`, fat LTO, and `codegen-units=1`.
 3. `wasm-bindgen --target web` emits the JavaScript module, declarations, and
    background `.wasm` file.
-4. Runtime and TypeScript checks validate the generated package before export.
-5. [publish.yml](../../../.github/workflows/publish.yml) publishes that artifact
-   as `@cosmol-studio/cosmolkit`, using npm Trusted Publisher (OIDC). Each preset
-   uses its preset name as dist-tag and a distinct artifact version; full RCs
-   use `rc` and full stable releases use `latest`. Manual publishing is RC-only; stable releases
+4. Runtime and TypeScript checks validate the package before export.
+5. [publish.yml](../../../.github/workflows/publish.yml) publishes the full artifact
+   as `@cosmol-studio/cosmolkit` and each smaller preset as
+   `@cosmol-studio/cosmolkit-{preset}`, using npm Trusted Publisher (OIDC).
+   Every package uses the same release version: RCs use `rc`, stable releases
+   use `latest`. Manual CI publishing is RC-only; stable releases
    require a matching version tag.
 
 The committed Rust surface is the source of truth. Generated package files are
-build output and must stay outside the repository tree or under `tmp/`.
+build output and must stay outside the repository tree or under `target/`.
+
+## First Publication
+
+Build and validate each preset serially with a shared Cargo cache. Use a new
+output directory for every build; the runner does not overwrite packages:
+
+```bash
+export CARGO_TARGET_DIR="$PWD/target/wasm"
+mkdir -p target/npm-tarballs
+for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
+    python3 -B wasm/tools/wasm_binding/run.py --preset "$preset" --out-dir "target/npm/$preset"
+    npm pack "./target/npm/$preset" --pack-destination target/npm-tarballs
+done
+```
+
+Check each tarball contains JavaScript, declarations, the `.wasm` binary and
+snippets, not just `README.md` and `package.json`. The package manifest records
+its preset, name, version and publication channel.
+
+For the first RC publication, the package owner publishes the built tarballs
+manually (authenticate with `npm login` first):
+
+```bash
+for package in target/npm-tarballs/*.tgz; do
+    npm publish "$package" --access public --tag rc
+done
+```
+
+Then configure **each package's** Settings → Trusted Publisher for GitHub
+Actions: owner `cosmol-studio`, repository `COSMolKit`, workflow filename
+`publish.yml`, no environment (unless one is also configured on the workflow
+job). Allow direct `npm publish` if the form offers an action choice. Use npm
+11.5.1 or newer and Node 22.14 or newer; CI uses Node 24 and already grants
+`id-token: write`. No `NPM_TOKEN` is needed for these subsequent OIDC publishes.
+See [npm's trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).
+
+A published name/version cannot be reused. After manually publishing this RC,
+CI must publish a later version, not attempt the same version again.

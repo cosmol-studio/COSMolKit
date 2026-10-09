@@ -160,10 +160,6 @@ impl BatchExportReport {
     pub fn written(&self) -> usize {
         self.inner.written
     }
-    #[wasm_bindgen(getter)]
-    pub fn skipped(&self) -> usize {
-        self.inner.skipped
-    }
     #[wasm_bindgen(js_name=writeReport)]
     pub fn write_report(&self, path: &str) -> Result<(), JsValue> {
         self.inner

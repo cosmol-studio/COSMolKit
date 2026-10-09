@@ -7,7 +7,9 @@ pub use cosmolkit_batch::{BatchErrorMode, BatchRecordError as BatchError, BatchV
 /// Per-call scheduling and error policy; overrides never mutate stored batch configuration.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BatchParams {
-    pub errors: BatchErrorMode,
+    /// None inherits the batch policy; constructors without a batch use Strict.
+    pub errors: Option<BatchErrorMode>,
+    /// Inherit a stored batch setting when absent, otherwise default to one worker.
     pub n_jobs: Option<usize>,
     pub progress_bar: Option<bool>,
 }
@@ -19,6 +21,7 @@ pub enum BatchRecord {
 #[derive(Debug, Clone, Default)]
 pub struct MoleculeBatch {
     pub(super) records: Vec<BatchRecord>,
+    pub(super) error_mode: BatchErrorMode,
     pub(super) n_jobs: Option<usize>,
     pub(super) progress_bar: Option<bool>,
 }
@@ -38,12 +41,17 @@ impl MoleculeBatch {
         cosmolkit_batch::validate_record_errors(errors, mode)?;
         Ok(Self {
             records,
+            error_mode: mode,
             n_jobs: None,
             progress_bar: None,
         })
     }
     pub fn len(&self) -> usize {
         self.records.len()
+    }
+    /// The error policy inherited by subsequent transforms and exports.
+    pub fn error_mode(&self) -> BatchErrorMode {
+        self.error_mode
     }
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
@@ -139,6 +147,7 @@ impl MoleculeBatch {
                 .collect(),
             n_jobs: self.n_jobs,
             progress_bar: self.progress_bar,
+            error_mode: self.error_mode,
         }
     }
     #[cfg(feature = "cap-smiles")]
@@ -199,7 +208,7 @@ impl MoleculeBatch {
                 )),
             },
         )?;
-        Self::from_records(records, params.errors)
+        Self::from_records(records, params.errors.unwrap_or_default())
     }
     fn transform<E: std::error::Error + Send + Sync + 'static>(
         &self,
@@ -268,7 +277,8 @@ impl MoleculeBatch {
                 BatchRecord::Error(error) => BatchRecord::Error(error.clone()),
             },
         )?;
-        let mut result = Self::from_records(records, params.errors)?;
+        // Explicit overrides apply to the returned chain, never to the source batch.
+        let mut result = Self::from_records(records, params.errors.unwrap_or(self.error_mode))?;
         result.n_jobs = self.n_jobs;
         result.progress_bar = self.progress_bar;
         Ok(result)
@@ -478,6 +488,7 @@ impl MoleculeBatch {
 /// Runtime overrides for ordered read results; newly failed queries always raise.
 #[derive(Clone, Default)]
 pub struct BatchQueryParams {
+    /// Inherit a stored batch setting when absent, otherwise default to one worker.
     pub n_jobs: Option<usize>,
     pub progress_bar: Option<bool>,
     /// One notification after every completed input row, including invalid rows.
@@ -891,7 +902,7 @@ impl MoleculeBatch {
             params.progress_bar.or(self.progress_bar),
             "Writing molecule images",
             |index| match &self.records[index] {
-                BatchRecord::Error(_) => Ok(false),
+                BatchRecord::Error(error) => Err(error.clone()),
                 BatchRecord::Molecule(molecule) => {
                     let write = match options.format.as_str() {
                         "png" => molecule
@@ -902,30 +913,26 @@ impl MoleculeBatch {
                             .map_err(BatchImageError::Write),
                         other => Err(BatchImageError::InvalidFormat(other.to_owned())),
                     };
-                    write
-                        .map(|()| true)
-                        .map_err(|e| BatchError::with_source(index, "batch.write_images", e))
+                    write.map_err(|e| BatchError::with_source(index, "batch.write_images", e))
                 }
             },
         )?;
         let mut written = 0;
-        let mut skipped = 0;
         let mut errors = Vec::new();
         for outcome in outcomes {
             match outcome {
-                Ok(true) => written += 1,
-                Ok(false) => skipped += 1,
+                Ok(()) => written += 1,
                 Err(error) => errors.push(error),
             }
         }
-        if params.errors == BatchErrorMode::Strict && (skipped != 0 || !errors.is_empty()) {
-            let mut all = errors;
-            all.extend(self.errors());
-            return Err(BatchValidationError::from_record_errors(all));
+        // User-approved report contract: original and new errors are retained
+        // once per unsuccessful record, in input order, with their own causes.
+        if params.errors.unwrap_or(self.error_mode) == BatchErrorMode::Strict && !errors.is_empty()
+        {
+            return Err(BatchValidationError::from_record_errors(errors));
         }
         let report = crate::BatchExportReport {
             written,
-            skipped,
             failed: errors.len(),
             errors,
         };
@@ -1283,8 +1290,7 @@ impl MoleculeBatch {
     pub fn fingerprint_morgan_list(
         &self,
     ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        let mut options = crate::MorganFingerprintParams::default();
-        options.generator.radius = 2;
+        let options = crate::MorganFingerprintParams::default();
         self.fingerprint_morgan_list_with_params(&options, &BatchQueryParams::default())
     }
     pub fn fingerprint_morgan_list_with_params(
@@ -1422,8 +1428,7 @@ impl MoleculeBatch {
     pub fn fingerprint_morgan_with_output_list(
         &self,
     ) -> Result<Vec<Option<BatchFingerprintOutput>>, BatchValidationError> {
-        let mut options = crate::MorganFingerprintParams::default();
-        options.generator.radius = 2;
+        let options = crate::MorganFingerprintParams::default();
         self.fingerprint_morgan_with_output_list_with_params(
             &options,
             true,

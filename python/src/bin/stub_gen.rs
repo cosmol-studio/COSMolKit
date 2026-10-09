@@ -432,10 +432,10 @@ _binding_profile: builtins.str
         "__all__ = [\n",
         "__all__ = [\n    \"BatchValidationError\",\n",
     );
-    check_registered_python_callables(&mut text)?;
     // PyO3's PathBuf extractor accepts text-valued os.PathLike values. Its
     // upstream stub metadata omits the generic argument; make it explicit.
     text = text.replace("os.PathLike", "os.PathLike[builtins.str]");
+    check_registered_python_callables(&mut text)?;
     std::fs::write(path, text)?;
     Ok(())
 }

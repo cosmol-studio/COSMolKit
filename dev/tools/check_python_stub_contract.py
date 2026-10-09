@@ -182,11 +182,145 @@ def check_contract(stub: str, contract_json: str) -> list[str]:
             )
     if isinstance(document, dict):
         missing.extend(check_configuration(module, document))
+        missing.extend(check_path_declarations(module, document))
         for adapter in document["python_adapters"]:
             owner = next(row for row in entries if row["semantic_id"] == adapter["type_semantic_id"])
             if adapter["name"] not in classes.get(owner["python_name"], set()):
                 missing.append(f"{owner['python_name']}.{adapter['name']}: registered object adapter missing")
     return missing
+
+
+def sdf_path_calls(document):
+    """Select SDF filesystem arguments from enabled canonical registrations."""
+    for row in document["entries"]:
+        if row["item"] != "callable":
+            continue
+        owner, _, name = row["semantic_id"].rpartition(".")
+        if owner in ("SdfDataset", "SdfReader", "BatchExportReport") or owner == "MoleculeBatch" and name.startswith(("read_sdf", "write_sdf")):
+            fields = [field for field in row.get("parameters", []) or [] if field["name"] in ("path", "directory", "report_path")]
+            if fields:
+                yield row, owner, fields
+
+
+def _path_types(node):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _path_types(node.left) | _path_types(node.right)
+    if isinstance(node, ast.Subscript) and _annotation(node.value) in ("Union", "Optional"):
+        values = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        result = set().union(*(_path_types(value) for value in values))
+        return result | {"None"} if _annotation(node.value) == "Optional" else result
+    return {_annotation(node)}
+
+
+def check_path_declarations(stub, document):
+    classes = {node.name: node for node in stub.body if isinstance(node, ast.ClassDef)}
+    errors = []
+    for row, owner, fields in sdf_path_calls(document):
+        cls = classes.get(owner)
+        if cls is None:
+            continue  # Missing exports are reported by check_contract.
+        for function in _functions(cls.body, row["python_name"]):
+            arguments = _arguments(function)
+            for name, (argument, default, _) in arguments.items():
+                if name not in ("path", "directory", "out_dir", "report_path"):
+                    continue
+                # Rust's short method calls this `path`; the configured method
+                # calls it `directory`, and Python's short form uses `out_dir`.
+                registered = next((field for field in fields if field["name"] == name or name != "report_path" and field["name"] != "report_path"), None)
+                optional = registered is not None and compact(registered["type"]).startswith("Option<") or isinstance(default, ast.Constant) and default.value is None
+                required = {"str", "os.PathLike[str]"} | ({"None"} if optional else set())
+                actual = _path_types(argument.annotation)
+                # pathlib.Path is a redundant but valid PathLike[str] subtype.
+                if not required <= actual or actual - required - {"pathlib.Path"}:
+                    errors.append(f"{owner}.{function.name}({name}): expected str | os.PathLike[str]" + (" | None" if optional else ""))
+            for field in fields:
+                if field["name"] not in arguments and not (field["name"] != "report_path" and arguments.keys() & {"path", "directory", "out_dir"}):
+                    errors.append(f"{owner}.{function.name}: missing registered path argument {field['name']}")
+    return errors
+
+
+def check_path_input(call, arguments, name, text="__ck_path_probe__"):
+    """Verify fixed input forms, then probe rejection and error propagation."""
+    from pathlib import Path
+    class ObservedPath(Exception):
+        pass
+    class TextPath:
+        def __fspath__(self):
+            raise ObservedPath
+    class BytesPath:
+        def __fspath__(self):
+            return b"__ck_path_probe__"
+    class InvalidPath:
+        def __fspath__(self):
+            return 42
+    class ValidPath:
+        def __fspath__(self):
+            return text
+    errors = []
+    for value in (text, Path(text), ValidPath()):
+        try:
+            call(**dict(arguments, **{name: value}))
+        except Exception as error:
+            errors.append(f"{name}: {type(value).__name__} text path failed ({type(error).__name__}: {error})")
+    try:
+        call(**dict(arguments, **{name: TextPath()}))
+    except ObservedPath:
+        pass
+    except Exception as error:
+        errors.append(f"{name}: PathLike protocol was not propagated ({type(error).__name__})")
+    else:
+        errors.append(f"{name}: PathLike protocol was not invoked")
+    for value in (b"__ck_path_probe__", BytesPath(), InvalidPath(), object()):
+        try:
+            call(**dict(arguments, **{name: value}))
+        except TypeError:
+            pass
+        except Exception as error:
+            errors.append(f"{name}: invalid path must raise TypeError, got {type(error).__name__}")
+        else:
+            errors.append(f"{name}: invalid path was accepted")
+    return errors
+
+
+def check_path_runtime(module, document):
+    import inspect
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    errors = []
+    calls = list(sdf_path_calls(document))
+    if not calls:
+        return errors
+    with TemporaryDirectory(prefix="ck-stub-paths-") as folder:
+        batch = module.MoleculeBatch.from_smiles_list([])
+        path = str(Path(folder) / "empty.sdf")
+        try:
+            report = batch.write_sdf(path)
+        except Exception as error:
+            return [f"SDF path smoke setup failed: {error}"]
+        for row, owner, fields in calls:
+            try:
+                receiver = getattr(module, owner)
+                if row.get("receiver") is not None:
+                    if owner == "MoleculeBatch":
+                        receiver = batch
+                    elif owner == "BatchExportReport":
+                        receiver = report
+                call = getattr(receiver, row["python_name"])
+                arguments = {}
+                for name, parameter in inspect.signature(call).parameters.items():
+                    if name in ("path", "directory", "out_dir"):
+                        arguments[name] = str(Path(folder) / "records") if "files" in row["python_name"] else path
+                    elif name == "report_path":
+                        arguments[name] = None
+                    elif parameter.default is inspect.Parameter.empty:
+                        field = next(field for field in row["parameters"] if field["name"] == name)
+                        arguments[name] = None if compact(field["type"]).startswith("Option<") else getattr(module, compact(field["type"]).split("::")[-1])()
+                for name in arguments.keys() & {"path", "directory", "out_dir", "report_path"}:
+                    text = str(Path(folder) / "counts.json") if owner == "BatchExportReport" or name == "report_path" else arguments[name]
+                    errors.extend(f"{row['semantic_id']}: {error}" for error in check_path_input(call, arguments, name, text))
+            except Exception as error:
+                errors.append(f"{row['semantic_id']}: path check setup failed: {error}")
+    return errors
 
 
 def configuration_calls(entries):
@@ -340,6 +474,14 @@ def check_configuration(module, document):
         cls = classes.get(name)
         if cls is None:
             continue  # The surface check already reports this missing type.
+        if requires_configuration_repr(row):
+            methods = _functions(cls.body, "__repr__")
+            if (len(methods) != 1
+                or _annotation(methods[0].returns) != "str"
+                or [arg.arg for arg in methods[0].args.posonlyargs + methods[0].args.args] != ["self"]
+                or methods[0].args.kwonlyargs or methods[0].args.vararg
+                or methods[0].args.kwarg or methods[0].args.defaults):
+                errors.append(f"{name}: batch configuration requires __repr__(self) -> str")
         constructors = _functions(cls.body, "__new__") or _functions(cls.body, "__init__")
         if len(constructors) != 1:
             errors.append(f"{name}: expected one canonical constructor declaration")
@@ -434,11 +576,36 @@ def _configuration_snapshot(value, schemas):
     return (cls, value)
 
 
+def requires_configuration_repr(row):
+    return row.get("role") == "parameter" and (row["feature"] == "cap-batch" or "cap-batch" in row.get("required_capabilities", []))
+
+
+def check_configuration_repr(value, row, schemas):
+    """All registered fields must reflect live values without changing state."""
+    import inspect
+    name = row["python_name"]
+    if inspect.getattr_static(type(value), "__repr__") is object.__repr__:
+        return [f"{name}: actual batch configuration __repr__ missing"]
+    try:
+        before = _configuration_snapshot(value, schemas)
+        text = repr(value)
+        expected = f"{name}(" + ", ".join(f"{field['name']}={getattr(value, field['name'])!r}" for field in row["fields"]) + ")"
+        errors = []
+        if text != expected:
+            errors.append(f"{name}: repr must display all registered field values")
+        if _configuration_snapshot(value, schemas) != before:
+            errors.append(f"{name}: repr changed configuration state")
+        return errors
+    except Exception as error:
+        return [f"{name}: configuration repr failed: {error}"]
+
+
 def check_runtime(module, document):
     """Check actual extension exports and setters, not a promised stub.
 
-    Only default-constructible configuration values are instantiated; no
-    molecule or chemical calculation is performed by this checker.
+    Default-constructible configuration values and an empty batch are used.
+    Filesystem smoke checks use disposable empty files; invalid/protocol probes
+    stop before IO. No chemical calculation or external fixture is used.
     """
     import inspect
     document = python_document(document)
@@ -474,6 +641,8 @@ def check_runtime(module, document):
         cls = getattr(module, row["python_name"], None)
         if cls is None:
             continue
+        if requires_configuration_repr(row) and inspect.getattr_static(cls, "__repr__") is object.__repr__:
+            errors.append(f"{row['python_name']}: actual batch configuration __repr__ missing")
         for field in row["fields"]:
             descriptor = inspect.getattr_static(cls, field["name"], None)
             if descriptor is None or not hasattr(descriptor, "__set__") or isinstance(descriptor, property) and descriptor.fset is None:
@@ -485,6 +654,8 @@ def check_runtime(module, document):
         except Exception as error:
             errors.append(f"{row['python_name']}: default construction failed: {error}")
             continue
+        if requires_configuration_repr(row):
+            errors.extend(check_configuration_repr(value, row, schemas))
         for field in row["fields"]:
             try:
                 previous = getattr(value, field["name"])
@@ -526,4 +697,5 @@ def check_runtime(module, document):
                         errors.append(f"{row['python_name']}.{field['name']}: setter accepted an invalid scalar type")
             except Exception as error:
                 errors.append(f"{row['python_name']}.{field['name']}: actual assignment failed: {error}")
+    errors.extend(check_path_runtime(module, document))
     return errors

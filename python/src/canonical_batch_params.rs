@@ -28,6 +28,10 @@ pub(crate) struct BatchExportParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchExportParams {
+    fn __repr__(slf: &Bound<'_, Self>) -> PyResult<String> {
+        crate::configuration_projection::repr(slf.as_any())
+    }
+
     #[new]
     #[pyo3(signature=(*,format=None,errors=None,n_jobs=None,progress_bar=None))]
     fn new(
@@ -39,7 +43,9 @@ impl BatchExportParams {
         Ok(Self {
             inner: ck::BatchExportParams {
                 format: crate::canonical_batch::write_params(format, true, true)?.format,
-                errors: crate::canonical_batch::error_mode(errors)?,
+                errors: errors
+                    .map(|value| crate::canonical_batch::error_mode(Some(value)))
+                    .transpose()?,
                 n_jobs: crate::canonical_batch::n_jobs(n_jobs)?,
                 progress_bar,
             },
@@ -76,6 +82,10 @@ impl BatchExportParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchParams {
+    fn __repr__(slf: &Bound<'_, Self>) -> PyResult<String> {
+        crate::configuration_projection::repr(slf.as_any())
+    }
+
     #[new]
     #[pyo3(signature=(*,errors=None,n_jobs=None,progress_bar=None))]
     fn new(
@@ -85,15 +95,20 @@ impl BatchParams {
     ) -> PyResult<Self> {
         Ok(Self {
             inner: ck::BatchParams {
-                errors: crate::canonical_batch::error_mode(errors)?,
-                n_jobs,
+                errors: errors
+                    .map(|value| crate::canonical_batch::error_mode(Some(value)))
+                    .transpose()?,
+                n_jobs: crate::canonical_batch::n_jobs(n_jobs)?,
                 progress_bar,
             },
         })
     }
     #[getter]
     fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let name = match self.inner.errors {
+        let Some(mode) = self.inner.errors else {
+            return Ok(py.None());
+        };
+        let name = match mode {
             ck::BatchErrorMode::Strict => "RAISE",
             ck::BatchErrorMode::KeepErrors => "KEEP",
         };
@@ -115,6 +130,7 @@ impl BatchParams {
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
+#[derive(Default)]
 pub(crate) struct BatchQueryParams {
     n_jobs: Option<usize>,
     progress_bar: Option<bool>,
@@ -124,6 +140,10 @@ pub(crate) struct BatchQueryParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchQueryParams {
+    fn __repr__(slf: &Bound<'_, Self>) -> PyResult<String> {
+        crate::configuration_projection::repr(slf.as_any())
+    }
+
     #[new]
     #[pyo3(signature=(*,n_jobs=None,progress_bar=None,progress_callback=None))]
     fn new(
@@ -141,7 +161,7 @@ impl BatchQueryParams {
             ));
         }
         Ok(Self {
-            n_jobs,
+            n_jobs: crate::canonical_batch::n_jobs(n_jobs)?,
             progress_bar,
             progress_callback,
         })
@@ -212,6 +232,10 @@ pub(crate) struct BatchImageParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchImageParams {
+    fn __repr__(slf: &Bound<'_, Self>) -> PyResult<String> {
+        crate::configuration_projection::repr(slf.as_any())
+    }
+
     #[new]
     #[pyo3(signature=(*,format="png",width=300,height=300,execution=None,filenames=None,report_path=None))]
     fn new(

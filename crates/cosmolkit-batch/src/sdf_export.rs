@@ -13,7 +13,7 @@ pub enum SdfExportRecord<'a> {
 #[derive(Clone, Debug)]
 pub struct BatchExportReport {
     pub written: usize,
-    pub skipped: usize,
+    /// All unsuccessful records, including errors already present in the input.
     pub failed: usize,
     pub errors: Vec<BatchRecordError>,
 }
@@ -28,7 +28,7 @@ impl BatchExportReport {
         write_export_report(path, self)
     }
     pub fn total(&self) -> usize {
-        self.written + self.skipped + self.failed
+        self.written + self.failed
     }
     pub fn success(&self) -> usize {
         self.written
@@ -43,7 +43,8 @@ impl BatchExportReport {
 #[derive(Clone, Copy, Debug)]
 pub struct BatchExportParams {
     pub format: SdfFormat,
-    pub errors: BatchErrorMode,
+    /// The live batch resolves inheritance; detached exports default to Strict.
+    pub errors: Option<BatchErrorMode>,
     pub n_jobs: Option<usize>,
     pub progress_bar: Option<bool>,
 }
@@ -51,7 +52,7 @@ impl Default for BatchExportParams {
     fn default() -> Self {
         Self {
             format: SdfFormat::V2000,
-            errors: BatchErrorMode::Strict,
+            errors: None,
             n_jobs: None,
             progress_bar: None,
         }
@@ -120,7 +121,11 @@ pub fn export_sdf(
             Err(error) => errors.push(error),
         }
     }
-    crate::validate_record_errors(errors.clone(), params.errors)?;
+    // User-approved export contract: keep original input errors alongside new
+    // serialization errors; KEEP continues other rows without erasing failures.
+    if params.errors.unwrap_or_default() == BatchErrorMode::Strict && !errors.is_empty() {
+        return Err(BatchValidationError::from_record_errors(errors));
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| failure("batch.write_sdf", e))?;
     }
@@ -131,9 +136,8 @@ pub fn export_sdf(
     }
     Ok(BatchExportReport {
         written: blocks.len(),
-        skipped: errors.len(),
-        failed: 0,
-        errors: Vec::new(),
+        failed: errors.len(),
+        errors,
     })
 }
 pub fn export_sdf_files(
@@ -171,20 +175,16 @@ pub fn export_sdf_files(
             .enumerate()
             .map(|(index, record)| {
                 let result = match record {
-                    SdfExportRecord::Error(_) => Ok(false),
-                    SdfExportRecord::Molecule(_) => serialize(
-                        record,
-                        params.format,
-                        index,
-                        "batch.write_sdf_files",
-                    )
-                    .and_then(|block| {
-                        std::fs::write(&paths[index], block)
-                            .map(|()| true)
-                            .map_err(|e| {
-                                BatchRecordError::with_source(index, "batch.write_sdf_files", e)
-                            })
-                    }),
+                    SdfExportRecord::Error(error) => Err((*error).clone()),
+                    SdfExportRecord::Molecule(_) => {
+                        serialize(record, params.format, index, "batch.write_sdf_files").and_then(
+                            |block| {
+                                std::fs::write(&paths[index], block).map_err(|e| {
+                                    BatchRecordError::with_source(index, "batch.write_sdf_files", e)
+                                })
+                            },
+                        )
+                    }
                 };
                 if let Some(progress) = &progress {
                     progress.inc(1);
@@ -197,26 +197,18 @@ pub fn export_sdf_files(
         progress.finish();
     }
     let mut written = 0;
-    let mut skipped = 0;
     let mut errors = Vec::new();
     for result in outcomes? {
         match result {
-            Ok(true) => written += 1,
-            Ok(false) => skipped += 1,
+            Ok(()) => written += 1,
             Err(error) => errors.push(error),
         }
     }
-    if params.errors == BatchErrorMode::Strict && (skipped != 0 || !errors.is_empty()) {
-        let mut all = errors.clone();
-        all.extend(records.iter().filter_map(|r| match r {
-            SdfExportRecord::Error(e) => Some((*e).clone()),
-            _ => None,
-        }));
-        return Err(BatchValidationError::from_record_errors(all));
+    if params.errors.unwrap_or_default() == BatchErrorMode::Strict && !errors.is_empty() {
+        return Err(BatchValidationError::from_record_errors(errors));
     }
     Ok(BatchExportReport {
         written,
-        skipped,
         failed: errors.len(),
         errors,
     })
@@ -355,22 +347,19 @@ pub fn write_export_report(
     // fn complete_batch_filenames(
     //     filenames: Option<Vec<Option<String>>>,
     // Language boundary supplies the expanded path; Rust Path remains literal.
-    // Exact source JSON/CSV count-only report; this source-defined report does
-    // not contain per-record errors. Structured errors remain in the value.
+    // User-approved report contract removes skipped: every unsuccessful input
+    // contributes once to failed. Structured errors remain in the report value.
     let ext = path
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("json")
         .to_ascii_lowercase();
     let content = if ext == "csv" {
-        format!(
-            "written,skipped,failed\n{},{},{}\n",
-            report.written, report.skipped, report.failed
-        )
+        format!("written,failed\n{},{}\n", report.written, report.failed)
     } else {
         format!(
-            "{{\n  \"written\": {},\n  \"skipped\": {},\n  \"failed\": {}\n}}\n",
-            report.written, report.skipped, report.failed
+            "{{\n  \"written\": {},\n  \"failed\": {}\n}}\n",
+            report.written, report.failed
         )
     };
     std::fs::write(path, content).map_err(|e| failure("write error report", e))

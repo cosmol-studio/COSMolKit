@@ -5,7 +5,7 @@ import {pathToFileURL} from "node:url";
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 
 test("image parameters preserve all defaults, copied filenames, frozen nested execution and checked dimensions",()=>{
-    const defaults=new b.BatchImageParams();assert.equal(defaults.format,"png");assert.equal(defaults.width,300);assert.equal(defaults.height,300);assert.equal(defaults.filenames,null);assert.equal(defaults.reportPath,null);assert.equal(defaults.execution.errors,b.BatchErrorMode.Strict);
+    const defaults=new b.BatchImageParams();assert.equal(defaults.format,"png");assert.equal(defaults.width,300);assert.equal(defaults.height,300);assert.equal(defaults.filenames,null);assert.equal(defaults.reportPath,null);assert.equal(defaults.execution.errors,null);
     const execution=new b.BatchParams(b.BatchErrorMode.KeepErrors,2,false),filenames=["ethanol",null,"water.svg"];
     const custom=new b.BatchImageParams("svg",120,100,execution,filenames,"counts.json");filenames[0]="changed";
     assert.equal(execution.nJobs,2);assert.equal(custom.execution.nJobs,2);assert.equal(custom.execution.progressBar,false);assert.equal(custom.execution.errors,b.BatchErrorMode.KeepErrors);
@@ -31,10 +31,12 @@ test("KeepErrors retains failed write rows and report writing preserves the nati
     const keep=new b.BatchParams(b.BatchErrorMode.KeepErrors);
     const batch=b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O"],new b.SmilesParseParams(),keep);
     const report=batch.writeImagesWithParams("",new b.BatchImageParams("svg",120,100,keep,["ethanol",null,"water.svg"]));
-    assert.ok(report instanceof b.BatchExportReport);assert.equal(report.total(),3);assert.equal(report.written,0);assert.equal(report.success(),0);assert.equal(report.skipped,1);assert.equal(report.failed(),2);
-    const errors=report.errors();assert.deepEqual(errors.map(row=>row.index()),[0,2]);
-    for(const row of errors){assert.equal(row.operation(),"batch.write_images");assert.equal(row.cause().name,"BatchImageError");assert.equal(row.cause().cause.cause.kind,"Unsupported");}
-    assert.deepEqual(errors.map(row=>row.cause().cause.filename),["ethanol.svg","water.svg"]);
+    assert.ok(report instanceof b.BatchExportReport);assert.equal(report.total(),3);assert.equal(report.written,0);assert.equal(report.success(),0);assert.equal("skipped" in report,false);assert.equal(report.failed(),3);
+    const errors=report.errors();assert.deepEqual(errors.map(row=>row.index()),[0,1,2]);assert.equal(report.failed(),errors.length);
+    const inputError=errors[1];assert.equal(inputError.operation(),"batch.from_smiles_list");assert.equal(inputError.cause().domain,"smiles");assert.equal(inputError.cause().kind,"Parse");
+    const writeErrors=[errors[0],errors[2]];
+    for(const row of writeErrors){assert.equal(row.operation(),"batch.write_images");assert.equal(row.cause().name,"BatchImageError");assert.equal(row.cause().cause.cause.kind,"Unsupported");}
+    assert.deepEqual(writeErrors.map(row=>row.cause().cause.filename),["ethanol.svg","water.svg"]);
     assert.throws(()=>report.writeReport("counts.json"),e=>e.domain==="batch"&&e.cause.operation==="write error report"&&e.cause.cause.domain==="io"&&e.cause.cause.kind==="Unsupported");
     const empty=b.MoleculeBatch.fromSmilesList([]).writeImages("");assert.equal(empty.total(),0);assert.equal(empty.success(),0);assert.equal(empty.failed(),0);assert.deepEqual(empty.errors(),[]);
 });

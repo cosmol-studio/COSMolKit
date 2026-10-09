@@ -275,7 +275,7 @@ mod tests {
         for (format, index) in [(ck::SdfFormat::V2000, 0), (ck::SdfFormat::V3000, 1)] {
             let p = ck::BatchExportParams {
                 format,
-                errors: ck::BatchErrorMode::Strict,
+                errors: Some(ck::BatchErrorMode::Strict),
                 n_jobs: Some(2),
                 progress_bar: Some(false),
             };
@@ -307,20 +307,29 @@ mod tests {
         )
         .unwrap();
         let fail = root.join("strict-must-not-open.sdf");
-        assert!(mixed.write_sdf(fail.to_str().unwrap()).is_err());
+        let strict = ck::BatchExportParams {
+            errors: Some(ck::BatchErrorMode::Strict),
+            ..Default::default()
+        };
+        assert!(
+            mixed
+                .write_sdf_with_params(fail.to_str().unwrap(), &strict, None)
+                .is_err()
+        );
         assert!(!fail.exists());
         let keep = ck::BatchExportParams {
-            errors: ck::BatchErrorMode::KeepErrors,
+            errors: Some(ck::BatchErrorMode::KeepErrors),
             ..Default::default()
         };
         let r = mixed
             .write_sdf_with_params(fail.to_str().unwrap(), &keep, None)
             .unwrap();
         assert_eq!(
-            (r.total(), r.success(), r.failed(), r.skipped),
-            (2, 1, 0, 1)
+            (r.total(), r.success(), r.failed(), r.errors().len()),
+            (2, 1, 1, 1)
         );
-        assert!(r.errors().is_empty());
+        assert_eq!(r.errors()[0].operation, "test");
+        assert_eq!(r.errors()[0].message, "invalid");
         for entry in std::fs::read_dir(&root).unwrap() {
             let p = entry.unwrap().path();
             if p.is_dir() {

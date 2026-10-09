@@ -16,5 +16,5 @@ name = "cosmolkit_cx"
 path = "src/lib.rs"
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.17", path = "../cosmolkit-model" }
-cosmolkit-core = { version = "0.5.0-rc.17", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.19", path = "../cosmolkit-model" }
+cosmolkit-core = { version = "0.5.0-rc.19", path = "../cosmolkit-core" }

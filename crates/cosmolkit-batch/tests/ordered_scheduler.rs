@@ -8,9 +8,7 @@ fn ordered_completion_preserves_all_errors_and_configured_pool_width() {
         let calls = AtomicUsize::new(0);
         let rows = run_indexed(127, jobs, Some(false), "proposal", |index| {
             calls.fetch_add(1, Ordering::SeqCst);
-            if let Some(jobs) = jobs {
-                assert_eq!(rayon::current_num_threads(), jobs);
-            }
+            assert_eq!(rayon::current_num_threads(), jobs.unwrap_or(1));
             if index % 7 == 0 {
                 Err(BatchRecordError::with_source(
                     index,

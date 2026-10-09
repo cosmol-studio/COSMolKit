@@ -12,24 +12,24 @@ exceptions; successful methods return strings, numbers, typed arrays, or new
 npm install @cosmol-studio/cosmolkit
 ```
 
-The default package is **full**; there is no need for an `@full` tag. Fixed
-smaller distributions use npm dist-tags on the same package:
+The default package is **full**. Each smaller distribution has its own package
+name, so upgrading it cannot select a different feature combination:
 
-| Install suffix | Included public features |
+| Package name (under `@cosmol-studio/`) | Included public features |
 |---|---|
-| `@core` | `core`, including molecular IO and batch processing |
-| `@core-search` | `core + search` |
-| `@core-fingerprints` | `core + fingerprints` |
-| `@core-analysis` | `core + search + fingerprints + descriptors` |
-| `@core-reaction` | `core + reaction` (including search) |
-| `@core-depict` | `core + depict` |
-| `@core-3d` | `core + conformer` (including forcefields and alignment) |
-| `@core-bio` | `core + bio` |
-| `@core-inchi` | `core + inchi` |
-| no suffix | `full` |
+| `cosmolkit-core` | `core`, including molecular IO and batch processing |
+| `cosmolkit-core-search` | `core + search` |
+| `cosmolkit-core-fingerprints` | `core + fingerprints` |
+| `cosmolkit-core-analysis` | `core + search + fingerprints + descriptors` |
+| `cosmolkit-core-reaction` | `core + reaction` (including search) |
+| `cosmolkit-core-depict` | `core + depict` |
+| `cosmolkit-core-3d` | `core + conformer` (including forcefields and alignment) |
+| `cosmolkit-core-bio` | `core + bio` |
+| `cosmolkit-core-inchi` | `core + inchi` |
+| `cosmolkit` | `full` |
 
-For example: `npm install @cosmol-studio/cosmolkit@core-bio`. Imports keep the
-same package name. Omitted domains are absent from both exports and TypeScript
+For example: `npm install @cosmol-studio/cosmolkit-core-bio`, then import from
+`"@cosmol-studio/cosmolkit-core-bio"`. Omitted domains are absent from both exports and TypeScript
 declarations; they are not runtime placeholders.
 
 WASM uses the Rust facade's feature tree, generated from its Cargo manifest.
@@ -38,13 +38,15 @@ binary-only encoding dependencies are not compiled, even in `full`.
 Query IO needs `search`; automatic 2D coordinate generation needs `depict`.
 Without these capabilities, shared IO entrypoints report an explicit error.
 
-Preset artifacts have distinct npm versions, such as `0.5.0-core-bio.0` or
-`0.5.0-rc.15.core-bio.0`, because npm cannot replace an existing name/version
-with different contents. The default full artifact keeps the Rust release
-version. Stable full releases update `latest`; full RC releases update `rc`,
-not `latest`. Preset tags track the most recently published corresponding
-artifact, including manually published RCs. Pin the resolved version or use a
-lockfile for reproducible installs.
+All packages use the Rust release version, without a feature suffix. Stable
+releases update `latest`; RC releases update `rc`, not `latest`. To install an
+RC, use e.g. `npm install @cosmol-studio/cosmolkit-core-bio@rc`. Tags identify
+release channels, never feature combinations. Pin a version or use a lockfile
+for reproducible installs.
+
+Existing installations using feature dist-tags such as `cosmolkit@core-bio`
+must switch once to the corresponding package name. New releases do not update
+those old feature tags.
 
 InChI is available in `core-inchi` and the default full package:
 

@@ -10,7 +10,7 @@ fn kept(smiles: &[String]) -> MoleculeBatch {
         smiles,
         &SmilesParseParams::default(),
         &BatchParams {
-            errors: BatchErrorMode::KeepErrors,
+            errors: Some(BatchErrorMode::KeepErrors),
             ..Default::default()
         },
     )
@@ -37,6 +37,62 @@ fn filter_valid_preserves_surviving_input_order() {
     let filtered = kept(&smiles).with_valid_records();
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered.valid_mask(), vec![true, true]);
+}
+
+#[test]
+#[cfg(feature = "cap-hydrogens")]
+fn error_policy_inherits_through_transforms_and_overrides_only_the_returned_chain() {
+    let batch = kept(&["CCO".into(), "C1CC".into(), "O".into()]);
+    assert_eq!(batch.error_mode(), BatchErrorMode::KeepErrors);
+    let errors = batch.errors();
+    let next = batch.with_hydrogens().unwrap().without_hydrogens().unwrap();
+    assert_eq!(next.error_mode(), BatchErrorMode::KeepErrors);
+    assert_eq!(next.valid_mask(), [true, false, true]);
+    assert_eq!(next.errors()[0].message, errors[0].message);
+    assert_eq!(next.errors()[0].operation, errors[0].operation);
+    assert!(std::error::Error::source(&next.errors()[0]).is_some());
+    let bad = cosmolkit::AddHsParams {
+        only_on_atoms: Some(vec![cosmolkit::AtomId::new(99)]),
+        ..Default::default()
+    };
+    let failed = next
+        .with_hydrogens_with_params(&bad, &BatchParams::default())
+        .unwrap();
+    assert_eq!(failed.valid_mask(), [false, false, false]);
+    assert_eq!(
+        failed.errors().iter().map(|e| e.index).collect::<Vec<_>>(),
+        [0, 1, 2]
+    );
+    assert_eq!(failed.errors()[1].message, errors[0].message);
+    let strict = BatchParams {
+        errors: Some(BatchErrorMode::Strict),
+        ..Default::default()
+    };
+    let error = next.with_hydrogens_with_params(&bad, &strict).unwrap_err();
+    assert_eq!(
+        error
+            .record_errors
+            .iter()
+            .map(|e| e.index)
+            .collect::<Vec<_>>(),
+        [0, 1, 2]
+    );
+    let strict_chain = batch
+        .with_valid_records()
+        .with_hydrogens_with_params(&Default::default(), &strict)
+        .unwrap();
+    assert_eq!(strict_chain.error_mode(), BatchErrorMode::Strict);
+    assert!(
+        strict_chain
+            .with_hydrogens_with_params(&bad, &Default::default())
+            .is_err()
+    );
+    assert_eq!(batch.error_mode(), BatchErrorMode::KeepErrors);
+    assert_eq!(batch.to_list()[0].as_ref().unwrap().atoms().len(), 3);
+    assert_eq!(
+        MoleculeBatch::default().error_mode(),
+        BatchErrorMode::Strict
+    );
 }
 
 #[test]
@@ -104,7 +160,7 @@ fn transform_options_preserve_batch_configuration() {
         .with_2d_coordinates_with_params(
             &Coordinate2DParams::default(),
             &BatchParams {
-                errors: BatchErrorMode::Strict,
+                errors: Some(BatchErrorMode::Strict),
                 n_jobs: Some(1),
                 progress_bar: Some(false),
             },
@@ -141,7 +197,7 @@ fn strict_aggregates_all_original_parse_errors_and_transform_retains_original_in
         .with_progress_bar(Some(false));
     assert_eq!(batch.invalid_mask(), vec![true, false, true]);
     let keep = BatchParams {
-        errors: BatchErrorMode::KeepErrors,
+        errors: Some(BatchErrorMode::KeepErrors),
         n_jobs: Some(1),
         progress_bar: Some(false),
     };
@@ -175,7 +231,15 @@ fn strict_aggregates_all_original_parse_errors_and_transform_retains_original_in
             .len(),
         3
     );
-    let strict = batch.with_hydrogens().unwrap_err();
+    let strict = batch
+        .with_hydrogens_with_params(
+            &Default::default(),
+            &BatchParams {
+                errors: Some(BatchErrorMode::Strict),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
     assert_eq!(
         strict
             .record_errors

@@ -21,6 +21,105 @@ check_contract = cast(Callable[[str, str], list[str]], _checker.check_contract)
 check_runtime = _checker.check_runtime
 
 
+@pytest.mark.parametrize("method", ["", "def __repr__(self): ...", "def __repr__(self) -> int: ...", "def __repr__(self, extra) -> str: ...", "def __repr__(self, *args) -> str: ...", "def __repr__(self, **kwargs) -> str: ..."])
+def test_batch_configuration_gate_requires_typed_repr_declaration(method: str):
+    row = dict(_entry("types.Settings", "Settings", "type", "type"), rust_path="crate::Settings", feature="cap-batch", role="parameter", fields=[])
+    stub = "class Settings:\n    def __init__(self) -> None: ...\n"
+    if method:
+        stub += f"    {method}\n"
+    errors = check_contract(stub, json.dumps({"entries": [row], "python_adapters": []}))
+    assert len(errors) == 1
+    assert "requires __repr__(self) -> str" in errors[0]
+
+
+@pytest.mark.parametrize("feature,required", [("cap-batch", []), ("cap-io", ["cap-batch"])])
+def test_batch_repr_requirement_follows_registered_capabilities_not_class_name(feature: str, required: list[str]):
+    row = dict(_entry("types.Settings", "Settings", "type", "type"), rust_path="crate::Settings", feature=feature, required_capabilities=required, role="parameter", fields=[])
+    stub = "class Settings:\n    def __init__(self) -> None: ...\n    def __repr__(self) -> builtins.str: ...\n"
+    assert check_contract(stub, json.dumps({"entries": [row], "python_adapters": []})) == []
+
+
+def test_batch_repr_runtime_gate_rejects_missing_incomplete_stale_and_mutating_repr():
+    class Settings:
+        def __init__(self, count=1):
+            self.count = count
+
+    row = {"python_name": "Settings", "fields": [{"name": "count"}]}
+
+    def check(value):
+        return _checker.check_configuration_repr(value, row, {Settings: row["fields"]})
+
+    assert check(Settings())
+    Settings.__repr__ = lambda self: "Settings()"
+    assert check(Settings())
+    Settings.__repr__ = lambda self: "Settings(count=1)"
+    assert check(Settings()) == []
+    assert check(Settings(2))
+
+    def mutating_repr(self):
+        self.count += 1
+        return f"Settings(count={self.count})"
+
+    Settings.__repr__ = mutating_repr
+    assert any("changed configuration state" in error for error in check(Settings()))
+
+
+@pytest.mark.parametrize("annotation", ["str", "str | bytes", "str | os.PathLike", "str | os.PathLike[bytes]", "str | os.PathLike[str] | object", "str | os.PathLike[str] | None"])
+def test_sdf_path_gate_rejects_incomplete_or_overbroad_types(annotation: str):
+    row = dict(_entry("MoleculeBatch.read_sdf", "read_sdf", "type"), parameters=[{"name": "path", "type": "&str", "default": None}])
+    document = {"entries": [row], "python_adapters": []}
+    stub = f"class MoleculeBatch:\n    def read_sdf(path: {annotation}) -> MoleculeBatch: ...\n"
+    errors = check_contract(stub, json.dumps(document))
+    assert len(errors) == 1
+    assert "expected str | os.PathLike[str]" in errors[0]
+
+
+@pytest.mark.parametrize("annotation", ["str | os.PathLike[str]", "typing.Union[builtins.str, os.PathLike[builtins.str]]", "str | os.PathLike[str] | pathlib.Path"])
+def test_sdf_path_gate_accepts_only_text_filesystem_protocol(annotation: str):
+    row = dict(_entry("MoleculeBatch.read_sdf", "read_sdf", "type"), parameters=[{"name": "path", "type": "&str", "default": None}])
+    document = {"entries": [row], "python_adapters": []}
+    stub = f"class MoleculeBatch:\n    def read_sdf(path: {annotation}) -> MoleculeBatch: ...\n"
+    assert check_contract(stub, json.dumps(document)) == []
+
+
+def test_sdf_path_gate_checks_actual_extraction_not_just_annotations():
+    import os
+
+    def valid(path):
+        value = os.fspath(path)
+        if not isinstance(value, str):
+            raise TypeError("expected text path")
+
+    assert _checker.check_path_input(valid, {}, "path") == []
+    assert _checker.check_path_input(lambda path: str(path), {}, "path")
+    assert _checker.check_path_input(lambda path: os.fspath(path), {}, "path")
+
+    def rejects_valid_paths(path):
+        _ = os.fspath(path)
+        raise TypeError("broken conversion after fspath")
+
+    assert _checker.check_path_input(rejects_valid_paths, {}, "path")
+
+
+@pytest.mark.parametrize("annotation,valid", [("str | os.PathLike[str] | None", True), ("typing.Optional[typing.Union[str, os.PathLike[str]]]", True), ("str | os.PathLike[str]", False), ("str | os.PathLike[str] | bytes | None", False)])
+def test_sdf_path_gate_preserves_optional_report_contract(annotation: str, valid: bool):
+    row = dict(_entry("MoleculeBatch.write_sdf_with_params", "write_sdf_with_params", "type"), parameters=[
+        {"name": "path", "type": "&str", "default": None},
+        {"name": "report_path", "type": "Option<&str>", "default": None},
+    ])
+    stub = f"class MoleculeBatch:\n    def write_sdf_with_params(self, path: str | os.PathLike[str], report_path: {annotation}) -> None: ...\n"
+    errors = check_contract(stub, json.dumps({"entries": [row], "python_adapters": []}))
+    assert (not errors) == valid
+
+
+def test_sdf_path_gate_follows_registered_path_to_python_directory_name():
+    row = dict(_entry("MoleculeBatch.write_sdf_files", "write_sdf_files", "type"), parameters=[{"name": "path", "type": "&str", "default": None}])
+    document = {"entries": [row], "python_adapters": []}
+    stub = "class MoleculeBatch:\n    def write_sdf_files(self, out_dir: str | os.PathLike[str]) -> None: ...\n"
+    assert check_contract(stub, json.dumps(document)) == []
+    assert check_contract(stub.replace("out_dir", "unrelated"), json.dumps(document))
+
+
 def test_native_scalar_projection_is_explicit_not_a_missing_class_exemption():
     import types
     row = _entry("types.BioAtomId", "BioAtomId", "type", "type")

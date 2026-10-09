@@ -49,7 +49,7 @@ impl BatchExportParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "SdfFormat")] format: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "BatchErrorMode")] errors: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchErrorMode | null")] errors: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] n_jobs: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean | null")] progress_bar: JsValue,
     ) -> Result<Self, JsValue> {
@@ -61,8 +61,8 @@ impl BatchExportParams {
                 _ => return Err(js_sys::RangeError::new("invalid SdfFormat").into()),
             };
         }
-        if !errors.is_undefined() {
-            inner.errors = mode(&errors)?;
+        if !errors.is_undefined() && !errors.is_null() {
+            inner.errors = Some(mode(&errors)?);
         }
         inner.n_jobs = jobs(&n_jobs)?;
         inner.progress_bar = optional_bool(&progress_bar)?;
@@ -75,12 +75,12 @@ impl BatchExportParams {
             ck::SdfFormat::V3000 => 1,
         }
     }
-    #[wasm_bindgen(getter, unchecked_return_type = "BatchErrorMode")]
-    pub fn errors(&self) -> u32 {
-        match self.inner.errors {
-            ck::BatchErrorMode::Strict => 0,
-            ck::BatchErrorMode::KeepErrors => 1,
-        }
+    #[wasm_bindgen(getter, unchecked_return_type = "BatchErrorMode | null")]
+    pub fn errors(&self) -> JsValue {
+        self.inner.errors.map_or(JsValue::NULL, |mode| JsValue::from(match mode {
+            ck::BatchErrorMode::Strict => 0u32,
+            ck::BatchErrorMode::KeepErrors => 1u32,
+        }))
     }
     #[wasm_bindgen(getter,js_name=nJobs,unchecked_return_type="number | null")]
     pub fn n_jobs(&self) -> JsValue {

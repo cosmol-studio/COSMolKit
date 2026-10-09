@@ -1959,6 +1959,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.BatchParams",
             "types.BatchExportReport",
             "MoleculeBatch.len",
+            "MoleculeBatch.error_mode",
             "MoleculeBatch.is_empty",
             "MoleculeBatch.valid_mask",
             "MoleculeBatch.invalid_mask",
@@ -2893,6 +2894,7 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "types.BatchParams"
                 | "types.BatchExportReport"
                 | "MoleculeBatch.len"
+                | "MoleculeBatch.error_mode"
                 | "MoleculeBatch.is_empty"
                 | "MoleculeBatch.valid_mask"
                 | "MoleculeBatch.invalid_mask"

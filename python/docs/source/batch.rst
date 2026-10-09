@@ -17,12 +17,15 @@ transform, export, and filtering steps.
        errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   prepared = batch.with_hydrogens(errors=ck.BatchErrorMode.KEEP).with_2d_coordinates(
-       errors=ck.BatchErrorMode.KEEP,
-   )
+   prepared = batch.with_hydrogens().with_2d_coordinates()
 
    print(prepared.valid_mask())
    print(prepared.errors())
+
+``repr()`` on ``BatchParams``, ``BatchQueryParams``, ``BatchExportParams`` and
+``BatchImageParams`` displays every registered configuration field and its
+current value, including nested configuration. Printing does not execute a
+progress callback or modify the configuration.
 
 Error Handling
 --------------
@@ -31,8 +34,17 @@ Batch APIs accept ``errors``:
 
 - ``"raise"`` raises an exception when a record fails.
 - ``"keep"`` keeps failed records and exposes structured errors. Export methods
-  write valid records and count invalid records as skipped in the returned
-  report.
+  write valid records and include both existing input errors and new export
+  errors in the returned report. ``total() == success() + failed()`` and
+  ``failed() == len(errors())``; there is no separate skipped state.
+
+Omitting ``errors`` (or passing ``None``) inherits the batch policy for transforms
+and exports. New batches default to ``"raise"``. An explicit override becomes
+the returned batch's policy without modifying the source batch; ``error_mode()``
+reports that policy. Slices and filtering preserve it. Default ``BatchParams``
+and ``BatchExportParams`` therefore display ``errors=None`` (inherit).
+List-returning queries return ``None`` for existing failed records, but still
+raise on new calculation errors rather than losing their error details.
 
 String modes remain supported, but Python callers can also pass
 ``BatchErrorMode`` enum members. Per-record ``BatchError`` values expose the
@@ -97,6 +109,12 @@ directory, and missing extensions are filled from ``format``.
 Export SDF
 ----------
 
+SDF input/output paths, output directories and report paths accept ``str`` or
+``os.PathLike[str]``, including ``pathlib.Path``. This also applies to
+``SdfDataset.open()``, ``SdfReader.open()`` and their configured forms.
+Byte paths are rejected; custom path objects must return text from
+``__fspath__()``. Parameter-object and keyword-based calls use the same rules.
+
 .. code-block:: python
 
    report = prepared.write_sdf(
@@ -146,8 +164,7 @@ provenance through the following ``MoleculeBatch`` conveniences:
 .. code-block:: python
 
    results = prepared.fingerprint_morgan_with_output_list(
-       radius=2,
-       n_bits=2048,
+       generator=ck.MorganParams(radius=2, fp_size=2048),
    )
 
    for result in results:
@@ -156,7 +173,7 @@ provenance through the following ``MoleculeBatch`` conveniences:
            print(result.additional_output().bit_info_map())
 
    atom_pair_results = prepared.fingerprint_atom_pair_with_output_list(
-       n_bits=2048,
+       generator=ck.AtomPairParams(fp_size=2048),
    )
 
    for result in atom_pair_results:
@@ -204,6 +221,10 @@ input traversal while keeping the same CW/CCW chiral tag path:
 Parallel Work
 -------------
 
+Batch calls use one worker by default; ``n_jobs=1`` can be omitted. Explicit
+``n_jobs`` or a stored ``with_parallel_jobs()`` setting enables more workers.
+Changing the worker count never changes fingerprint parameters or results.
+
 ``with_parallel_jobs()`` returns a new batch with a default worker count for
 later parallel operations. Because molecule values use copy-on-write storage,
 this configuration step does not duplicate the molecular data.
@@ -218,7 +239,7 @@ Method-level ``n_jobs`` still overrides the batch default for a single call:
 
 .. code-block:: python
 
-   svgs = prepared.to_svg_list(n_jobs=2)
+   svgs = prepared.to_svg_list(300, 300, n_jobs=2)
 
 ``with_progress_bar()`` returns a new batch with a default Rust-side progress
 bar setting. Progress is emitted by Rust to stderr, matching the usual terminal

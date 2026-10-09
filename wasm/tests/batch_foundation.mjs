@@ -26,16 +26,25 @@ test("complete SMILES parser fields remain frozen and string maps are copied", (
 
 test("all batch foundation operations retain ordered rows, nulls and configuration value semantics", () => {
     const parse = new b.SmilesParseParams(), params = new b.BatchParams(b.BatchErrorMode.KeepErrors);
-    assert.equal(new b.BatchParams().errors,b.BatchErrorMode.Strict);
+    assert.equal(new b.BatchParams().errors,null);
     assert.equal(params.nJobs,null);assert.equal(params.progressBar,null);
     assert.throws(() => { params.nJobs = 3; },TypeError);
     const batch = b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O","C("],parse,params);
+    const oneWorkerParams=new b.BatchParams(b.BatchErrorMode.KeepErrors,1);
+    const oneWorkerBatch=b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O","C("],parse,oneWorkerParams);
+    assert.deepEqual(oneWorkerBatch.validMask(),batch.validMask());
+    oneWorkerBatch.free();oneWorkerParams.free();
     assert.equal(batch.len(),4);assert.equal(batch.isEmpty(),false);
     assert.deepEqual(batch.validMask(),[true,false,true,false]);assert.deepEqual(batch.invalidMask(),[false,true,false,true]);
     assert.equal(batch.validCount(),2);assert.equal(batch.invalidCount(),2);
     const errors = batch.errors();assert.deepEqual(errors.map(e => e.index()),[1,3]);
     assert.ok(errors[0].message().length > 0);assert.equal(errors[0].operation(),"batch.from_smiles_list");
-    assert.deepEqual(errors[0].asDict()[0],["index","1"]);
+    const details=errors[0].asDict();
+    assert.deepEqual(details,{index:1,operation:errors[0].operation(),message:errors[0].message()});
+    assert.equal(typeof details.index,"number");assert.equal(Array.isArray(details),false);
+    assert.deepEqual(JSON.parse(JSON.stringify(details)),details);
+    details.index=-1;details.message="changed";
+    assert.deepEqual(errors[0].asDict(),{index:1,operation:errors[0].operation(),message:errors[0].message()});
     assert.equal(errors[0].cause().domain,"smiles");assert.equal(errors[0].cause().kind,"Parse");
     const values = batch.toList();assert.deepEqual(values.map(v => v === null),[false,true,false,true]);assert.equal(values[0].numAtoms(),3);
     assert.equal(batch.parallelJobs(),null);assert.equal(batch.progressBar(),null);

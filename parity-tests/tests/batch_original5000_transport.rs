@@ -621,7 +621,7 @@ fn all_original131_profiles_fixed_random200_workers112() {
         &smiles,
         &ck::SmilesParseParams::default(),
         &ck::BatchParams {
-            errors: ck::BatchErrorMode::KeepErrors,
+            errors: Some(ck::BatchErrorMode::KeepErrors),
             n_jobs: Some(1),
             progress_bar: Some(false),
         },

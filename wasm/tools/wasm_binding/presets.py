@@ -76,15 +76,15 @@ def selected_names(groups: dict[str, str], active: set[str]) -> set[str]:
     return {name for group, names in groups.items() if set(group.split("+")) <= active for name in names.split()}
 
 
-def npm_release(version: str, preset: str) -> tuple[str, str]:
+def npm_release(version: str, preset: str) -> tuple[str, str, str]:
     if not re.fullmatch(r"\d+\.\d+\.\d+(?:-rc\.\d+)?", version):
         raise ValueError(f"Unsupported release version: {version}")
     if preset not in PRESETS:
         raise ValueError(f"Unknown WASM preset: {preset}")
-    if preset == "full":
-        return version, "rc" if "-" in version else "latest"
-    separator = "." if "-" in version else "-"
-    return f"{version}{separator}{preset}.0", preset
+    name = "@cosmol-studio/cosmolkit"
+    if preset != "full":
+        name += f"-{preset}"
+    return name, version, "rc" if "-" in version else "latest"
 
 
 def source_modules(active: set[str]) -> list[Path]:

@@ -36,6 +36,7 @@ mod canonical_valence;
 mod canonical_values;
 mod configuration_projection;
 mod drawing_binding;
+mod text_path;
 mod user_path;
 
 #[cfg(feature = "stubgen")]

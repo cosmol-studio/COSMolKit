@@ -21,7 +21,7 @@ fn batch(values: &[&str]) -> MoleculeBatch {
         &smiles(values),
         &Default::default(),
         &BatchParams {
-            errors: BatchErrorMode::KeepErrors,
+            errors: Some(BatchErrorMode::KeepErrors),
             ..Default::default()
         },
     )
@@ -535,14 +535,74 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
             }
         }
     }
-    let mut defaults = MorganFingerprintParams::default();
-    defaults.generator.radius = 2;
+    let defaults = MorganFingerprintParams::default();
     assert_eq!(
         batch.fingerprint_morgan_list().unwrap(),
         batch
             .fingerprint_morgan_list_with_params(&defaults, &execution(1))
             .unwrap()
     );
+}
+
+#[test]
+fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
+    let source = smiles(&["c1ccccc1", "CCO", "C[C@H](O)F"]);
+    let batch = MoleculeBatch::from_smiles_list(&source).unwrap();
+    let expected: Vec<_> = source
+        .iter()
+        .map(|text| {
+            Some(
+                Molecule::from_smiles(text)
+                    .unwrap()
+                    .fingerprint_morgan()
+                    .unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        expected[0].as_ref().unwrap().on_bits(),
+        vec![389, 1088, 1232, 1873]
+    );
+    assert_eq!(batch.fingerprint_morgan_list().unwrap(), expected);
+    let default_output = batch.fingerprint_morgan_with_output_list().unwrap();
+    for jobs in [None, Some(1), Some(2)] {
+        let execution = BatchQueryParams {
+            n_jobs: jobs,
+            ..Default::default()
+        };
+        assert_eq!(
+            batch
+                .fingerprint_morgan_list_with_params(&Default::default(), &execution)
+                .unwrap(),
+            expected
+        );
+        let output = batch
+            .fingerprint_morgan_with_output_list_with_params(&Default::default(), true, &execution)
+            .unwrap();
+        assert_eq!(output, default_output);
+        for (value, fingerprint) in output.iter().zip(&expected) {
+            assert_eq!(
+                value.as_ref().unwrap().fingerprint(),
+                fingerprint.as_ref().unwrap()
+            );
+        }
+    }
+    for radius in [2, 3] {
+        let mut options = MorganFingerprintParams::default();
+        options.generator.radius = radius;
+        let actual = batch
+            .fingerprint_morgan_list_with_params(&options, &execution(1))
+            .unwrap();
+        for (value, text) in actual.iter().zip(&source) {
+            assert_eq!(
+                value.as_ref().unwrap(),
+                &Molecule::from_smiles(text)
+                    .unwrap()
+                    .fingerprint_morgan_with_params(&options, None)
+                    .unwrap()
+            );
+        }
+    }
 }
 
 #[test]

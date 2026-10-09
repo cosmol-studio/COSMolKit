@@ -1,9 +1,13 @@
-//! Registry-driven language argument normalization; no chemistry or runtime access.
+//! Registry-driven argument normalization and configuration display; no chemistry.
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
 #[path = "../../crates/cosmolkit/examples/support/binding_contract_manifest.rs"]
 mod contract;
+
+pub(crate) fn repr(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    value.getattr("_configuration_repr")?.call0()?.extract()
+}
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();

@@ -1011,7 +1011,9 @@ def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
         str(tmp_path / "valid.sdf"), errors="keep", n_jobs=2
     )
     assert report.success() == 1
-    assert report.failed() == 0
+    assert report.failed() == 1
+    assert len(report.errors()) == 1
+    assert report.errors()[0].index() == 1
     assert (tmp_path / "valid.sdf").exists()
 
 
@@ -1102,11 +1104,11 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
     assert len(errors) == 1
     assert errors[0].operation() == "batch.from_smiles_list"
     assert errors[0].message() == "SMILES parsing failed: unclosed ring index 1"
-    assert errors[0].as_dict() == [
-        ("index", "1"),
-        ("operation", "batch.from_smiles_list"),
-        ("message", errors[0].message()),
-    ]
+    assert errors[0].as_dict() == {
+        "index": 1,
+        "operation": "batch.from_smiles_list",
+        "message": errors[0].message(),
+    }
     assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
 
     filtered = batch.with_valid_records().with_2d_coordinates(errors=cosmolkit.BatchErrorMode.KEEP)

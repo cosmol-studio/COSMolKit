@@ -42,19 +42,24 @@ class PresetTests(unittest.TestCase):
     def test_versions_and_default_tag(self):
         for release in ("0.5.0", "0.5.0-rc.15"):
             self.assertEqual(len({npm_release(release, p)[0] for p in PRESETS}), len(PRESETS))
-        self.assertEqual(npm_release("0.5.0", "full"), ("0.5.0", "latest"))
-        self.assertEqual(npm_release("0.5.0-rc.15", "full"), ("0.5.0-rc.15", "rc"))
-        self.assertEqual(npm_release("0.5.0", "core-bio"), ("0.5.0-core-bio.0", "core-bio"))
+            for preset in PRESETS:
+                name, version, tag = npm_release(release, preset)
+                self.assertEqual(name, "@cosmol-studio/cosmolkit" + ("" if preset == "full" else f"-{preset}"))
+                self.assertEqual(version, release)
+                self.assertEqual(tag, "rc" if "-" in release else "latest")
+        for version, preset in (("invalid", "full"), ("0.5.0", "unknown")):
+            with self.assertRaises(ValueError):
+                npm_release(version, preset)
 
     def test_package_records_exact_preset(self):
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory)
-            prepare_package(package, "wasm_wasm", {
-                "version": "0.5.0-rc.15", "license": "MIT",
-                "repository": "https://github.com/cosmol-studio/COSMolKit",
-            }, "core-bio")
-            metadata = json.loads((package / "package.json").read_text())
-            self.assertEqual(metadata["version"], "0.5.0-rc.15.core-bio.0")
-            self.assertEqual(metadata["cosmolkitVersion"], "0.5.0-rc.15")
-            self.assertEqual(metadata["cosmolkitPreset"], "core-bio")
-            self.assertEqual(metadata["publishConfig"]["tag"], "core-bio")
+            for preset in PRESETS:
+                prepare_package(package, "wasm_wasm", {
+                    "version": "0.5.0-rc.15", "license": "MIT",
+                    "repository": "https://github.com/cosmol-studio/COSMolKit",
+                }, preset)
+                metadata = json.loads((package / "package.json").read_text())
+                self.assertEqual((metadata["name"], metadata["version"], metadata["publishConfig"]["tag"]), npm_release("0.5.0-rc.15", preset))
+                self.assertEqual(metadata["cosmolkitVersion"], "0.5.0-rc.15")
+                self.assertEqual(metadata["cosmolkitPreset"], preset)
