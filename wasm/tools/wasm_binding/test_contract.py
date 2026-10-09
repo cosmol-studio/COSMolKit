@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-
-import pytest
+import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location("_wasm_contract", ROOT / "wasm/tools/wasm_binding/contract.py")
@@ -26,21 +25,22 @@ def _document():
     }]}
 
 
-def test_typescript_probe_requires_actual_writable_field_and_export():
-    probe = _checker.typescript_probe(_document())
-    assert "void ck.Configuration;" in probe
-    assert "p0.maxMatches = p0.maxMatches;" in probe
-    invalid = _document()
-    invalid["entries"][0]["fields"] = None
-    with pytest.raises(ValueError, match="registered canonical constructor"):
-        _checker.typescript_probe(invalid)
+class ContractTests(unittest.TestCase):
+    def test_typescript_probe_requires_actual_writable_field_and_export(self):
+        probe = _checker.typescript_probe(_document())
+        self.assertIn("void ck.Configuration;", probe)
+        self.assertIn("p0.maxMatches = p0.maxMatches;", probe)
+        invalid = _document()
+        invalid["entries"][0]["fields"] = None
+        with self.assertRaisesRegex(ValueError, "registered canonical constructor"):
+            _checker.typescript_probe(invalid)
 
 
-def test_actual_javascript_export_and_descriptor_gate():
-    executable = shutil.which("node") or shutil.which("bun")
-    assert executable is not None, "Install Node or Bun to check JavaScript bindings"
-    checker = (ROOT / "wasm/tools/wasm_binding/contract.mjs").as_uri()
-    script = f"""
+    def test_actual_javascript_export_and_descriptor_gate(self):
+        executable = shutil.which("node") or shutil.which("bun")
+        self.assertIsNotNone(executable, "Install Node or Bun to check JavaScript bindings")
+        checker = (ROOT / "wasm/tools/wasm_binding/contract.mjs").as_uri()
+        script = f"""
 import {{checkContract}} from {json.dumps(checker)};
 import assert from 'node:assert/strict';
 const document = {json.dumps(_document())};
@@ -50,4 +50,4 @@ assert.ok(checkContract({{Configuration}}, document).some(error => error.include
 Object.defineProperty(Configuration.prototype, 'maxMatches', {{get(){{return 100;}},set(value){{}}}});
 assert.deepEqual(checkContract({{Configuration}}, document), []);
 """
-    subprocess.run([executable, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
+        subprocess.run([executable, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)

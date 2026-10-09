@@ -48,16 +48,11 @@ jobs:
                   if-no-files-found: error
 
     build-wasm:
-        name: build and test npm ${{ matrix.preset }}
+        name: build and test npm presets
         runs-on: ubuntu-latest
-        # WASM does not consume Python stubs; start every preset immediately.
+        # One runner builds presets serially and reuses the same Cargo target.
         env:
             CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
-        strategy:
-            fail-fast: false
-            max-parallel: 10
-            matrix:
-                preset: [core, core-search, core-fingerprints, core-analysis, core-reaction, core-depict, core-3d, core-bio, core-inchi, full]
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@stable
@@ -69,8 +64,6 @@ jobs:
                   workspaces: ". -> target/wasm"
                   cache-workspace-crates: true
                   cache-on-failure: true
-                  # One writer avoids identical-key uploads from ten runners.
-                  save-if: ${{ matrix.preset == 'full' }}
             - uses: actions/setup-python@v7
               with:
                   python-version: "3.12"
@@ -80,20 +73,27 @@ jobs:
             - uses: taiki-e/install-action@v2
               with:
                   tool: alef@0.83.3,wasm-bindgen-cli@0.2.128
-            - name: Build and validate npm package
+            - name: Test WASM build tooling
+              run: python -m unittest discover -s wasm/tools/wasm_binding -p 'test_*.py' -v
+            - name: Build and validate npm presets serially
               env:
-                  NPM_PACKAGE_DIR: ${{ runner.temp }}/cosmolkit-npm/${{ matrix.preset }}
+                  NPM_PACKAGE_ROOT: ${{ runner.temp }}/cosmolkit-npm
               run: |
-                  python -m unittest discover -s wasm/tools/wasm_binding -p 'test_*.py' -v
+                  set -euo pipefail
                   # Temporary: test publication without blocking on incomplete registry projections.
                   # Compilation and JavaScript/TypeScript tests remain mandatory.
-                  python -B wasm/tools/wasm_binding/run.py --preset ${{ matrix.preset }} --skip-binding-contract --out-dir "$NPM_PACKAGE_DIR"
-                  npm pack --dry-run --json "$NPM_PACKAGE_DIR"
-            - name: Upload npm package
+                  for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
+                      echo "::group::Build and validate npm $preset"
+                      package_dir="$NPM_PACKAGE_ROOT/npm-package-$preset"
+                      python -B wasm/tools/wasm_binding/run.py --preset "$preset" --skip-binding-contract --out-dir "$package_dir"
+                      npm pack --dry-run --json "$package_dir"
+                      echo "::endgroup::"
+                  done
+            - name: Upload npm presets
               uses: actions/upload-artifact@v4
               with:
-                  name: npm-package-${{ matrix.preset }}
-                  path: ${{ runner.temp }}/cosmolkit-npm/${{ matrix.preset }}
+                  name: npm-presets
+                  path: ${{ runner.temp }}/cosmolkit-npm
                   if-no-files-found: error
 
     build-wheels:
@@ -316,7 +316,7 @@ jobs:
             - name: Download npm presets
               uses: actions/download-artifact@v4
               with:
-                  pattern: npm-package-*
+                  name: npm-presets
                   path: npm-packages
 
             - name: Publish npm presets, then default full package
