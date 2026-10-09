@@ -71,8 +71,59 @@ mod persistent_forcefields;
 pub fn binding_contract_module(
     py: pyo3::Python<'_>,
 ) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::types::PyModule>> {
+    use pyo3::prelude::*;
+
     let module = pyo3::types::PyModule::new(py, "cosmolkit")?;
     drawing_binding::cosmolkit(&module)?;
+    // Match normal extension loading: recursive imports in getters/setters must
+    // resolve to this build, never to an installed package or a missing module.
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("cosmolkit", &module)?;
     Ok(module)
 }
 mod rdkit_binding;
+
+#[cfg(all(test, feature = "stubgen"))]
+mod binding_contract_tests {
+    use pyo3::{prelude::*, types::PyModule};
+
+    #[test]
+    fn contract_imports_use_current_module_without_an_install_or_with_a_stale_module() {
+        Python::initialize();
+        Python::attach(|py| -> PyResult<()> {
+            let modules = py.import("sys")?.getattr("modules")?;
+            let previous = modules.call_method1("get", ("cosmolkit",))?;
+            let result = (|| -> PyResult<()> {
+                for stale in [false, true] {
+                    if stale {
+                        modules.set_item("cosmolkit", PyModule::new(py, "cosmolkit")?)?;
+                    } else {
+                        modules.call_method1("pop", ("cosmolkit", py.None()))?;
+                    }
+                    let module = super::binding_contract_module(py)?;
+                    assert!(py.import("cosmolkit")?.is(&module));
+                    for (name, field) in [
+                        ("BioReadParams", "format"),
+                        ("BatchParams", "errors"),
+                        ("BatchExportParams", "format"),
+                        ("BatchImageParams", "format"),
+                    ] {
+                        let value = module.getattr(name)?.call0()?;
+                        let before = value.getattr(field)?;
+                        value.setattr(field, &before)?;
+                        assert!(value.getattr(field)?.eq(&before)?);
+                    }
+                }
+                Ok(())
+            })();
+            if previous.is_none() {
+                modules.call_method1("pop", ("cosmolkit", py.None()))?;
+            } else {
+                modules.set_item("cosmolkit", previous)?;
+            }
+            result
+        })
+        .expect("contract checks must use the current in-memory extension");
+    }
+}
