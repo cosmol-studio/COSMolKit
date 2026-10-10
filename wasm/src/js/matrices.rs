@@ -1,4 +1,4 @@
-//! Complete immutable distance-matrix values, policies and canonical query projection.
+//! Distance-matrix values, writable policies and canonical query projection.
 use crate::Molecule;
 use crate::host_values::*;
 use cosmolkit_wasm::rust as ck;
@@ -31,6 +31,7 @@ impl DenseMatrix {
 pub struct DistanceMatrixParams {
     inner: ck::DistanceMatrixParams,
 }
+#[cosmolkit_wasm::javascript_options("DistanceMatrixParamsOptions")]
 #[wasm_bindgen]
 impl DistanceMatrixParams {
     #[wasm_bindgen(constructor)]
@@ -60,6 +61,7 @@ impl DistanceMatrixParams {
 pub struct DistanceMatrix3dParams {
     inner: ck::DistanceMatrix3dParams,
 }
+#[cosmolkit_wasm::javascript_options("DistanceMatrix3dParamsOptions")]
 #[wasm_bindgen]
 impl DistanceMatrix3dParams {
     #[wasm_bindgen(constructor)]
@@ -110,12 +112,25 @@ extern "C" {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=distanceMatrix)]
-    pub fn distance_matrix(&self) -> Result<DenseMatrix, JsValue> {
-        // COSMolKit❗✔️: self.inner.distance_matrix()
-        self.inner
-            .distance_matrix()
-            .map(|inner| DenseMatrix { inner })
-            .map_err(|e| crate::matrix_errors::matrix_error(&e).unwrap_or_else(|e| e))
+    pub fn distance_matrix(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "DistanceMatrixParams | DistanceMatrixParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<DenseMatrix, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.distance_matrix()
+                self.inner
+                    .distance_matrix()
+                    .map(|inner| DenseMatrix { inner })
+                    .map_err(|e| crate::matrix_errors::matrix_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::matrices::DistanceMatrixParams::from_js_configuration(&params)?;
+        self.distance_matrix_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=distanceMatrixWithParams)]
     pub fn distance_matrix_with_params(
@@ -135,12 +150,25 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=distanceMatrix3d)]
-    pub fn distance_matrix_3d(&self) -> Result<DenseMatrix, JsValue> {
-        // COSMolKit❗✔️: self.inner.distance_matrix_3d()
-        self.inner
-            .distance_matrix_3d()
-            .map(|inner| DenseMatrix { inner })
-            .map_err(|e| crate::matrix_errors::matrix_error(&e).unwrap_or_else(|e| e))
+    pub fn distance_matrix_3d(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "DistanceMatrix3dParams | DistanceMatrix3dParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<DenseMatrix, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.distance_matrix_3d()
+                self.inner
+                    .distance_matrix_3d()
+                    .map(|inner| DenseMatrix { inner })
+                    .map_err(|e| crate::matrix_errors::matrix_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::matrices::DistanceMatrix3dParams::from_js_configuration(&params)?;
+        self.distance_matrix_3d_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=distanceMatrix3dWithParams)]
     pub fn distance_matrix_3d_with_params(

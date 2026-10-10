@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 pub struct MaccsFingerprintParams {
     inner: ck::MaccsFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("MaccsFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl MaccsFingerprintParams {
     #[wasm_bindgen(constructor)]
@@ -136,12 +137,24 @@ fn error(e: ck::MaccsFingerprintError) -> JsValue {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=fingerprintMaccs)]
-    pub fn fingerprint_maccs(&self) -> Result<Fingerprint, JsValue> {
-        // COSMolKit❗✔️: .maccs_fingerprint()
-        self.inner
-            .fingerprint_maccs()
-            .map(|inner| Fingerprint { inner })
-            .map_err(error)
+    pub fn fingerprint_maccs(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MaccsFingerprintParams | MaccsFingerprintParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Fingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: .maccs_fingerprint()
+                self.inner
+                    .fingerprint_maccs()
+                    .map(|inner| Fingerprint { inner })
+                    .map_err(error)
+            };
+        }
+        let configuration_0 = crate::maccs::MaccsFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_maccs_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=fingerprintMaccsRaw)]
     pub fn fingerprint_maccs_raw(&self) -> Result<Fingerprint, JsValue> {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 test('All MACCS calls retain source raw and public projections and detached values',()=>{
- const p=new b.MaccsFingerprintParams();assert.equal(p.nBits,166);assert.throws(()=>{p.nBits=64;},TypeError);
+ const p=new b.MaccsFingerprintParams();assert.equal(p.nBits,166);{const previous=p.nBits;p.nBits=64;assert.deepEqual(p.nBits,64);p.nBits=previous;}
  for(const text of ['CCO','c1ccncc1','CC(=O)N','CC.O']){const m=b.Molecule.fromSmiles(text),before=m.toSmiles(),fp=m.fingerprintMaccs(),raw=m.fingerprintMaccsRaw();assert.ok(fp instanceof b.Fingerprint);assert.equal(fp.nBits(),166);assert.equal(raw.nBits(),167);assert.deepEqual(fp.onBits(),m.fingerprintMaccsWithParams(p).onBits());assert.deepEqual(fp.onBits(),raw.onBits().map(v=>v-1));assert.equal(m.toSmiles(),before);m.free();assert.equal(fp.nBits(),166);assert.ok(fp.onBits().length>0);}
 });
 test('Unsupported MACCS widths preserve exact source category, option and reason',()=>{

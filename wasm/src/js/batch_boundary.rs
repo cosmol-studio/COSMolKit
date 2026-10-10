@@ -49,16 +49,24 @@ fn optional_bool(value: &JsValue, name: &str) -> Result<Option<bool>, JsValue> {
 pub struct BatchParams {
     pub(crate) inner: ck::BatchParams,
 }
+#[cosmolkit_wasm::javascript_options("BatchParamsOptions")]
 #[wasm_bindgen]
 impl BatchParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "BatchErrorMode | null")] errors: Option<
-            BatchErrorMode,
-        >,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchErrorMode | null")] errors: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] n_jobs: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean | null")] progress_bar: JsValue,
     ) -> Result<Self, JsValue> {
+        let errors = if errors.is_null() || errors.is_undefined() {
+            None
+        } else {
+            Some(match crate::host_values::u32_value(&errors, "errors")? {
+                0 => BatchErrorMode::Strict,
+                1 => BatchErrorMode::KeepErrors,
+                _ => return Err(js_sys::RangeError::new("invalid BatchErrorMode").into()),
+            })
+        };
         Ok(Self {
             inner: ck::BatchParams {
                 errors: errors.map(BatchErrorMode::core),
@@ -69,7 +77,9 @@ impl BatchParams {
     }
     #[wasm_bindgen(getter, unchecked_return_type = "BatchErrorMode | null")]
     pub fn errors(&self) -> JsValue {
-        self.inner.errors.map_or(JsValue::NULL, |mode| JsValue::from(BatchErrorMode::from_core(mode) as u32))
+        self.inner.errors.map_or(JsValue::NULL, |mode| {
+            JsValue::from(BatchErrorMode::from_core(mode) as u32)
+        })
     }
     #[wasm_bindgen(getter, js_name = nJobs, unchecked_return_type = "number | null")]
     pub fn n_jobs(&self) -> JsValue {
@@ -282,11 +292,24 @@ impl MoleculeBatch {
     #[wasm_bindgen(js_name = fromSmilesList)]
     pub fn from_smiles_list(
         #[wasm_bindgen(unchecked_param_type = "string[]")] smiles: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SmilesParseParams | SmilesParseParamsOptions"
+        )]
+        parse: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
     ) -> Result<Self, JsValue> {
-        let values = strings(&smiles)?;
-        cosmolkit_wasm::MoleculeBatch::from_smiles_list(&values)
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+        if parse.is_undefined() && params.is_undefined() {
+            return {
+                let values = strings(&smiles)?;
+                cosmolkit_wasm::MoleculeBatch::from_smiles_list(&values)
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::smiles_parameters::SmilesParseParams::from_js_configuration(&parse)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        Self::from_smiles_list_with_params(smiles, &configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name = fromSmilesListWithParams)]
     pub fn from_smiles_list_with_params(
@@ -410,11 +433,24 @@ fn strings(value: &JsValue) -> Result<Vec<String>, JsValue> {
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name = sanitize)]
-    pub fn sanitize(&self) -> Result<Self, JsValue> {
-        self.inner
-            .sanitize()
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn sanitize(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "SanitizeParams | SanitizeParamsOptions")]
+        options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .sanitize()
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::transform_parameters::SanitizeParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        self.sanitize_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name = sanitizeWithParams)]
     pub fn sanitize_with_params(
@@ -428,11 +464,23 @@ impl MoleculeBatch {
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name = withHydrogens)]
-    pub fn with_hydrogens(&self) -> Result<Self, JsValue> {
-        self.inner
-            .with_hydrogens()
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_hydrogens(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "AddHsParams | AddHsParamsOptions")] options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .with_hydrogens()
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::transform_parameters::AddHsParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        self.with_hydrogens_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name = withHydrogensWithParams)]
     pub fn with_hydrogens_with_params(
@@ -446,11 +494,24 @@ impl MoleculeBatch {
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name = withoutHydrogens)]
-    pub fn without_hydrogens(&self) -> Result<Self, JsValue> {
-        self.inner
-            .without_hydrogens()
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn without_hydrogens(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "RemoveHsParams | RemoveHsParamsOptions")]
+        options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .without_hydrogens()
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::transform_parameters::RemoveHsParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        self.without_hydrogens_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name = withoutHydrogensWithParams)]
     pub fn without_hydrogens_with_params(
@@ -464,11 +525,24 @@ impl MoleculeBatch {
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name = withKekulizedBonds)]
-    pub fn with_kekulized_bonds(&self) -> Result<Self, JsValue> {
-        self.inner
-            .with_kekulized_bonds()
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_kekulized_bonds(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "KekulizeParams | KekulizeParamsOptions")]
+        options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .with_kekulized_bonds()
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::transform_parameters::KekulizeParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        self.with_kekulized_bonds_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name = withKekulizedBondsWithParams)]
     pub fn with_kekulized_bonds_with_params(
@@ -483,11 +557,26 @@ impl MoleculeBatch {
     }
     #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name = with2dCoordinates)]
-    pub fn with_2d_coordinates(&self) -> Result<Self, JsValue> {
-        self.inner
-            .with_2d_coordinates()
-            .map(|inner| Self { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_2d_coordinates(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "Coordinate2DParams | Coordinate2DParamsOptions"
+        )]
+        options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchParams | BatchParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .with_2d_coordinates()
+                    .map(|inner| Self { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::transform_parameters::Coordinate2DParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
+        self.with_2d_coordinates_with_params(&configuration_0, &configuration_1)
     }
     #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name = with2dCoordinatesWithParams)]

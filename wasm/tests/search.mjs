@@ -1,6 +1,38 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const maps=rows=>rows.map(row=>row.atomMapping());
+test('Substructure callbacks receive detached values, filter all call forms and preserve exceptions',()=>{
+ const molecule=b.Molecule.fromSmiles('CCO'),query=b.parseSmarts('*'),params=new b.SubstructMatchParams();
+ assert.deepEqual([params.finalMatch,params.atomMatch,params.bondMatch],[null,null,null]);
+ let retainedQuery,retainedAtom,retainedTarget;
+ params.atomMatch=(q,atom)=>{assert.ok(q instanceof b.QueryAtom);assert.ok(atom instanceof b.Atom);retainedQuery=q;retainedAtom=atom;return atom.atomicNumber()===8;};
+ params.finalMatch=(target,ids)=>{assert.ok(target instanceof b.Molecule);assert.equal(target.toSmiles(),'CCO');retainedTarget=target;target.addHydrogens();assert.equal(target.numAtoms(),9);return ids[0]===2;};
+ for(const configuration of [params,{atomMatch:params.atomMatch,finalMatch:params.finalMatch}]){
+  assert.deepEqual(maps(molecule.substructMatches(query,configuration)),[[2]]);
+  assert.deepEqual(molecule.substructMatch(query,configuration).atomMapping(),[2]);
+  assert.equal(molecule.hasSubstructMatch(query,configuration),true);
+ }
+ assert.deepEqual(maps(molecule.substructMatchesWithParams(query,params)),[[2]]);
+ assert.deepEqual(molecule.substructMatchWithParams(query,params).atomMapping(),[2]);
+ assert.equal(molecule.hasSubstructMatchWithParams(query,params),true);
+ assert.equal(molecule.numAtoms(),3);assert.equal(molecule.toSmiles(),'CCO');
+ const bondQuery=b.parseSmarts('**');let savedBond;
+ params.finalMatch=null;params.atomMatch=null;
+ params.bondMatch=(q,t)=>{assert.ok(q instanceof b.Bond);assert.ok(t instanceof b.Bond);savedBond=t;return t.id()===1;};
+ assert.deepEqual(maps(molecule.substructMatches(bondQuery,params)),[[1,2]]);
+ assert.equal(savedBond.begin(),1);
+ const exception=new Error('matching callback failure');
+ for(const name of ['finalMatch','atomMatch','bondMatch']){
+  const p=new b.SubstructMatchParams();let calls=0;p[name]=()=>{calls++;throw exception;};
+  for(const method of ['substructMatch','substructMatches','hasSubstructMatch','substructMatchWithParams','substructMatchesWithParams','hasSubstructMatchWithParams']){
+   calls=0;assert.throws(()=>molecule[method](bondQuery,p),error=>error===exception);assert.equal(calls,1);
+  }
+  p[name]=()=>1;assert.throws(()=>molecule.substructMatches(bondQuery,p),TypeError);
+  assert.throws(()=>{p[name]=true;},TypeError);assert.equal(typeof p[name],'function');
+  p[name]=null;assert.equal(p[name],null);assert.ok(molecule.hasSubstructMatch(bondQuery,p));
+ }
+ molecule.free();query.free();assert.equal(retainedQuery.atomicNumber(),0);assert.equal(retainedAtom.atomicNumber(),8);assert.equal(retainedTarget.numAtoms(),9);assert.equal(savedBond.end(),2);
+});
 test('Short matching methods accept checked parameter instances and options without changing targets',()=>{
  const m=b.Molecule.fromSmiles('F[C@](Cl)(Br)I'),q=b.parseSmarts('F[C@@](Cl)(Br)I'),before=m.toSmiles(),params=new b.SubstructMatchParams(undefined,undefined,true);
  for(const configuration of [params,{useChirality:true}]){

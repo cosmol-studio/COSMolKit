@@ -1,4 +1,4 @@
-//! Complete immutable writer policy and canonical concrete/query record projections.
+//! Writable writer policy and canonical concrete/query record projections.
 use crate::Molecule;
 use crate::host_values::{bool_value, type_error, u32_value, usize_value};
 use crate::io_errors::{io_error, sdf_error};
@@ -85,6 +85,7 @@ extern "C" {
 pub struct MolBlockWriteParams {
     pub(crate) inner: ck::MolBlockWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("MolBlockWriteParamsOptions")]
 #[wasm_bindgen]
 impl MolBlockWriteParams {
     #[wasm_bindgen(constructor)]
@@ -186,11 +187,24 @@ impl SdfRecord {
         result.ok_or_else(|| type_error("query"))?
     }
     #[wasm_bindgen(js_name=toMol)]
-    pub fn to_mol(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_mol()
-        self.inner
-            .to_mol()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_mol(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_mol()
+                self.inner
+                    .to_mol()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_mol_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toMolWithParams)]
     pub fn to_mol_with_params(
@@ -209,11 +223,24 @@ impl SdfRecord {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=toSdf)]
-    pub fn to_sdf(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf()
-        self.inner
-            .to_sdf()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_sdf(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_sdf()
+                self.inner
+                    .to_sdf()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_sdf_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toSdfWithParams)]
     pub fn to_sdf_with_params(
@@ -235,11 +262,24 @@ impl SdfRecord {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=toMol)]
-    pub fn to_mol(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_mol()
-        self.inner
-            .to_mol()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_mol(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_mol()
+                self.inner
+                    .to_mol()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_mol_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toMolWithParams)]
     pub fn to_mol_with_params(
@@ -258,11 +298,24 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=toSdf)]
-    pub fn to_sdf(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf()
-        self.inner
-            .to_sdf()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_sdf(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_sdf()
+                self.inner
+                    .to_sdf()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_sdf_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toSdfWithParams)]
     pub fn to_sdf_with_params(
@@ -281,11 +334,24 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=toSdf2d)]
-    pub fn to_sdf_2d(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf_2d()
-        self.inner
-            .to_sdf_2d()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_sdf_2d(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_sdf_2d()
+                self.inner
+                    .to_sdf_2d()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_sdf_2d_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toSdf2dWithParams)]
     pub fn to_sdf_2d_with_params(
@@ -304,11 +370,24 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=toSdf3d)]
-    pub fn to_sdf_3d(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf_3d()
-        self.inner
-            .to_sdf_3d()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_sdf_3d(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_sdf_3d()
+                self.inner
+                    .to_sdf_3d()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.to_sdf_3d_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toSdf3dWithParams)]
     pub fn to_sdf_3d_with_params(
@@ -327,11 +406,25 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=writeMol)]
-    pub fn write_mol(&self, path: &str) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.write_mol(path)
-        self.inner
-            .write_mol(path)
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn write_mol(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_mol(path)
+                self.inner
+                    .write_mol(path)
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.write_mol_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=writeMolWithParams)]
     pub fn write_mol_with_params(
@@ -351,11 +444,25 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=writeSdf)]
-    pub fn write_sdf(&self, path: &str) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.write_sdf(path)
-        self.inner
-            .write_sdf(path)
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn write_sdf(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_sdf(path)
+                self.inner
+                    .write_sdf(path)
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.write_sdf_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=writeSdfWithParams)]
     pub fn write_sdf_with_params(
@@ -379,13 +486,24 @@ impl Molecule {
         &self,
         directory: &str,
         #[wasm_bindgen(unchecked_param_type = "string | null")] file_name: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MolBlockWriteParams | MolBlockWriteParamsOptions"
+        )]
+        params: JsValue,
     ) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.write_sdf_files(directory,file_name.as_deref())
-        let file_name = optional_file_name(&file_name)?;
-        self.inner
-            .write_sdf_files(directory, file_name.as_deref())
-            .map(|p| p.display().to_string())
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_sdf_files(directory,file_name.as_deref())
+                let file_name = optional_file_name(&file_name)?;
+                self.inner
+                    .write_sdf_files(directory, file_name.as_deref())
+                    .map(|p| p.display().to_string())
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mol_sdf_writing::MolBlockWriteParams::from_js_configuration(&params)?;
+        self.write_sdf_files_with_params(directory, file_name, configuration_0.into())
     }
     #[wasm_bindgen(js_name=writeSdfFilesWithParams)]
     pub fn write_sdf_files_with_params(

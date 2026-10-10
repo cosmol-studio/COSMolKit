@@ -6,7 +6,6 @@ const counts:number[]=[report.total(),report.success(),report.failed(),report.wr
 // @ts-expect-error Invalid inputs are failures, not a separate skipped state.
 report.skipped;
 declare const imageError:BatchImageError,writeError:DrawingWriteError;const causes:(Error|null)[]=[imageError.cause,writeError.cause];
-// @ts-expect-error frozen values
 options.width=7;
 // @ts-expect-error filenames must be nullable strings
 new BatchImageParams("png",300,300,null,[7]);

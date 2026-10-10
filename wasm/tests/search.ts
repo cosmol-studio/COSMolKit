@@ -4,6 +4,16 @@ const first:MatchResult|null=m.substructMatch(q),all:MatchResult[]=m.substructMa
 const mm:number=params.maxMatches,u:boolean=params.uniquify,c:boolean=params.useChirality,e:boolean=params.useEnhancedStereo,s:boolean=params.specifiedStereoQueryMatchesUnspecified,qq:boolean=params.useQueryQueryMatches,r:boolean=params.recursionPossible,mr:number=params.maxRecursiveMatches,nt:number=params.numThreads,ac:boolean=params.aromaticMatchesConjugated,asd:boolean=params.aromaticMatchesSingleOrDouble,ap:string[]=params.atomProperties,bp:string[]=params.bondProperties,ea:boolean=params.extraAtomCheckOverridesDefaultCheck,eb:boolean=params.extraBondCheckOverridesDefaultCheck,g:boolean=params.useGenericMatchers;
 const am:boolean=w.includeAtomMaps,iso:boolean=w.isomericSmiles,db:boolean=w.includeDativeBonds,root:number|null=w.rootedAtAtom;
 const options:SubstructMatchOptions={useChirality:true,maxMatches:100};
+params.finalMatch=(target,atoms)=>target.numAtoms()>atoms.length;
+params.atomMatch=(query,target)=>query.atomicNumber()===0||target.atomicNumber()===8;
+params.bondMatch=(query,target)=>query.orderCode()===target.orderCode();
+params.finalMatch=null;
+const callbacks:SubstructMatchOptions={finalMatch:(target,atoms)=>atoms.length<=target.numAtoms(),atomMatch:(query,target)=>query.id()===target.id(),bondMatch:(query,target)=>query.id()===target.id()};
+m.substructMatches(q,callbacks);
+// @ts-expect-error callbacks must return boolean
+params.atomMatch=()=>1;
+// @ts-expect-error callbacks must be functions or null
+params.finalMatch=true;
 const configuredFirst:MatchResult|null=m.substructMatch(q,params),configuredHas:boolean=m.hasSubstructMatch(q,options),configuredAll:MatchResult[]=m.substructMatches(q,options),explicitFirst:MatchResult|null=m.substructMatchWithParams(q,params),explicitHas:boolean=m.hasSubstructMatchWithParams(q,params);
 // @ts-expect-error configuration fields are checked
 m.hasSubstructMatch(q,{unknownOption:true});
@@ -16,7 +26,6 @@ m.substructMatches(compiled);
 const required:MatchResult=m.substructMatch(q);
 // @ts-expect-error checked number thread count
 new SubstructMatchParams(undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,1n);
-// @ts-expect-error immutable policies
 params.numThreads=2;
 // @ts-expect-error writer params required
 writeSmarts(q);

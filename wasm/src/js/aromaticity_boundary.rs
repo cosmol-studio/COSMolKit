@@ -42,21 +42,28 @@ pub struct AromaticityParams {
     inner: ck::AromaticityParams,
 }
 
+#[cosmolkit_wasm::javascript_options("AromaticityParamsOptions")]
 #[wasm_bindgen]
 impl AromaticityParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "AromaticityModel | null")] model: Option<
-            AromaticityModel,
-        >,
-    ) -> Self {
-        Self {
-            inner: model.map_or_else(ck::AromaticityParams::default, |model| {
-                ck::AromaticityParams {
-                    model: model.core(),
-                }
-            }),
-        }
+        #[wasm_bindgen(unchecked_optional_param_type = "AromaticityModel | null")] model: JsValue,
+    ) -> Result<Self, JsValue> {
+        let model = if model.is_null() || model.is_undefined() {
+            ck::AromaticityParams::default().model
+        } else {
+            match crate::host_values::u32_value(&model, "model")? {
+                0 => ck::AromaticityModel::Rdkit,
+                1 => ck::AromaticityModel::Simple,
+                2 => ck::AromaticityModel::Mdl,
+                3 => ck::AromaticityModel::Mmff94,
+                4 => ck::AromaticityModel::Custom,
+                _ => return Err(js_sys::RangeError::new("invalid AromaticityModel").into()),
+            }
+        };
+        Ok(Self {
+            inner: ck::AromaticityParams { model },
+        })
     }
     #[wasm_bindgen(getter)]
     pub fn model(&self) -> AromaticityModel {
@@ -277,13 +284,26 @@ pub(crate) fn aromaticity_error(source: &ck::AromaticityError) -> Result<JsValue
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name = withAssignedAromaticity)]
-    pub fn with_assigned_aromaticity(&self) -> Result<Molecule, JsValue> {
-        self.inner
-            .with_assigned_aromaticity()
-            .map(|inner| Molecule {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_assigned_aromaticity(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "AromaticityParams | AromaticityParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Molecule, JsValue> {
+        if params.is_undefined() {
+            return {
+                self.inner
+                    .with_assigned_aromaticity()
+                    .map(|inner| Molecule {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::aromaticity_boundary::AromaticityParams::from_js_configuration(&params)?;
+        self.with_assigned_aromaticity_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name = withAssignedAromaticityWithParams)]
     pub fn with_assigned_aromaticity_with_params(
@@ -298,10 +318,23 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name = assignAromaticity)]
-    pub fn assign_aromaticity_(&self) -> Result<(), JsValue> {
-        self.inner
-            .assign_aromaticity_()
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn assign_aromaticity_(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "AromaticityParams | AromaticityParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                self.inner
+                    .assign_aromaticity_()
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::aromaticity_boundary::AromaticityParams::from_js_configuration(&params)?;
+        self.assign_aromaticity_with_params_(&configuration_0)
     }
     #[wasm_bindgen(js_name = assignAromaticityWithParams)]
     pub fn assign_aromaticity_with_params_(

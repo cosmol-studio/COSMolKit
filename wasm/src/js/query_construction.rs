@@ -11,6 +11,7 @@ pub struct SmartsParseParams {
     pub(crate) inner: ck::SmartsParseParams,
 }
 
+#[cosmolkit_wasm::javascript_options("SmartsParseParamsOptions")]
 #[wasm_bindgen]
 impl SmartsParseParams {
     #[wasm_bindgen(constructor)]
@@ -123,13 +124,26 @@ impl SmartsParseParams {
 #[wasm_bindgen]
 impl QueryGraph {
     #[wasm_bindgen(js_name=fromSmarts)]
-    pub fn from_smarts(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: canonical_search.rs::QueryGraph::from_smarts:
-        //         ck::search::from_smarts(text)
-        // No query parsing or chemical model duplication; one owned result.
-        ck::search::from_smarts(text)
-            .map(|inner| Self { inner })
-            .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
+    pub fn from_smarts(
+        text: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SmartsParseParams | SmartsParseParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: canonical_search.rs::QueryGraph::from_smarts:
+                //         ck::search::from_smarts(text)
+                // No query parsing or chemical model duplication; one owned result.
+                ck::search::from_smarts(text)
+                    .map(|inner| Self { inner })
+                    .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::query_construction::SmartsParseParams::from_js_configuration(&params)?;
+        Self::from_smarts_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromSmartsWithParams)]
     pub fn from_smarts_with_params(
@@ -142,10 +156,21 @@ impl QueryGraph {
     }
 }
 #[wasm_bindgen(js_name=parseSmarts)]
-pub fn parse_smarts(text: &str) -> Result<QueryGraph, JsValue> {
-    ck::parse_smarts(text)
-        .map(|inner| QueryGraph { inner })
-        .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
+pub fn parse_smarts(
+    text: &str,
+    #[wasm_bindgen(unchecked_optional_param_type = "SmartsParseParams | SmartsParseParamsOptions")]
+    params: JsValue,
+) -> Result<QueryGraph, JsValue> {
+    if params.is_undefined() {
+        return {
+            ck::parse_smarts(text)
+                .map(|inner| QueryGraph { inner })
+                .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
+        };
+    }
+    let configuration_0 =
+        crate::query_construction::SmartsParseParams::from_js_configuration(&params)?;
+    parse_smarts_with_params(text, &configuration_0)
 }
 #[wasm_bindgen(js_name=parseSmartsWithParams)]
 pub fn parse_smarts_with_params(

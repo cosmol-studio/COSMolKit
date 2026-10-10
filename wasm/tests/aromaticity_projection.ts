@@ -2,7 +2,6 @@ import { AromaticityModel, AromaticityParams, AromaticityError, Molecule } from 
 const params = new AromaticityParams(AromaticityModel.Rdkit);
 const defaultParams = new AromaticityParams();
 const model: AromaticityModel = params.model;
-// @ts-expect-error Parameters are frozen, matching the Python projection.
 params.model = AromaticityModel.Simple;
 const source = Molecule.fromSmiles("c1ccccc1");
 const value: Molecule = source.withAssignedAromaticity();

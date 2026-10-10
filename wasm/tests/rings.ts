@@ -5,7 +5,6 @@ const a:Molecule=m.withAssignedRings(),b:void=m.assignRings(),c:Molecule=m.withA
 m.assignRingFamiliesWithParams(new KekulizeParams());
 // @ts-expect-error parameters required
 m.withAssignedRingFamiliesWithParams();
-// @ts-expect-error immutable parameters
 p.includeDativeBonds=false;
 // @ts-expect-error mutation returns void
 const out:Molecule=m.assignRings();

@@ -24,12 +24,12 @@
   </a>
 </p>
 
-[COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs. Selected workflows are also available directly in the browser through the [COSMolKit Web Tools](https://tools.cosmol.org/tools).
+[COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python and JavaScript/TypeScript bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs. Selected workflows are also available directly in the browser through the [COSMolKit Web Tools](https://tools.cosmol.org/tools).
 
 
 For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. COSMolKit uses boundary-scoped parity claims: a feature is considered parity-covered only when its documented reference surface passes the required exact or numerical comparisons. Fixed reference oracles, source-backed implementations where reference semantics require them, committed regression corpora, and explicit capability boundaries are used together; aggregate success rates or approximate similarity are not treated as substitutes for behavioral parity.
 
-COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
+COSMolKit combines a native Rust API with Python interfaces for scientific and machine-learning workflows and JavaScript/TypeScript interfaces for browser applications. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data integrate with NumPy, PyTorch and JavaScript typed arrays.
 
 ## COSMolKit 0.5.0
 
@@ -69,6 +69,7 @@ browser-based JavaScript without relearning the chemistry API.
 * Rust documentation: https://docs.rs/cosmolkit/latest/cosmolkit/
 * Interactive Web Tools: https://tools.cosmol.org/tools
 
+<!--
 ## Validation Status
 
 COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
@@ -82,12 +83,23 @@ The historical ChEMBL 37, 5,000-record and 152-record results in
 They are retained as historical evidence, not a claim that 0.5.0 has passed
 the same comparisons. Current validation must record the tested implementation,
 reference versions, options, counts and actual outcomes.
+-->
 
 ## Installation
 
 ```bash
+# Rust
+cargo add cosmolkit
+
+# Python
 pip install cosmolkit
+
+# JavaScript/TypeScript (browser or bundler)
+npm install @cosmol-studio/cosmolkit
 ```
+
+The npm package defaults to `full`; [smaller feature combinations](wasm/README.md#install)
+are published as separate packages.
 
 ## Core Concepts
 
@@ -101,9 +113,9 @@ pip install cosmolkit
   structured per-record failures, and can run batch transforms and exports with
   configurable parallelism.
 - **Array-friendly data access:** coordinates, bounds matrices, fingerprints,
-  and graph features are exposed in forms that fit Python numerical workflows.
+  and graph features are exposed through NumPy and JavaScript typed arrays.
 - **Source-backed 3D workflows:** conformer generation and UFF/MMFF
-  optimization are available through the public Python API, and atom chiral
+  optimization are available through the Python and JavaScript APIs, and atom chiral
   tags can be assigned from a selected 3D conformer with pinned-RDKit parity.
 
 ### Value-Style Transformations
@@ -116,7 +128,7 @@ share unchanged internal storage efficiently.
 ```python
 import cosmolkit as ck
 
-mol = ck.Molecule.from_smiles("CCO")
+mol = ck.mol_from_smiles("CCO")
 mol_h = mol.with_hydrogens()
 
 assert mol is not mol_h
@@ -127,7 +139,7 @@ assert mol is not mol_h
 ```python
 import cosmolkit as ck
 
-mol = ck.Molecule.from_smiles("c1ccccc1O")
+mol = ck.mol_from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
@@ -151,11 +163,11 @@ print(layered.on_bits())
 pattern = mol.fingerprint_pattern()
 print(pattern.on_bits())
 
-stereoisomers = list(ck.Molecule.from_smiles("FC(Cl)Br").enumerate_stereoisomers())
+stereoisomers = list(ck.mol_from_smiles("FC(Cl)Br").enumerate_stereoisomers())
 print([isomer.to_smiles() for isomer in stereoisomers])
 
 batch = (
-    ck.MoleculeBatch.from_smiles_list(
+    ck.mols_from_smiles_list(
         ["CCO", "c1ccccc1", "CC(=O)O"],
     )
     .with_parallel_jobs(8)
@@ -168,6 +180,35 @@ print(prepared.to_smiles_list())
 
 prepared.write_images("molecule_images")
 ```
+
+## JavaScript Quick Start
+
+Initialize the WASM module once. Value-style transforms leave their input
+unchanged; call `free()` when WASM objects are no longer needed.
+
+```js
+import init, * as ck from "@cosmol-studio/cosmolkit";
+
+await init();
+
+const mol = ck.Molecule.fromSmiles("c1ccccc1O");
+const mol2d = mol.with2dCoordinates();
+const fp = mol.fingerprintMorgan();
+const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "c1ccccc1", "CC(=O)O"]);
+
+console.log(mol.toSmiles(), mol.molecularWeight());
+console.log(mol2d.toSvg(400, 300));
+console.log(fp.onBits());
+console.log(batch.toSmilesList());
+
+batch.free();
+fp.free();
+mol2d.free();
+mol.free();
+```
+
+See the [JavaScript guide](https://kit.cosmol.org/javascript) for browser/CDN
+initialization and more examples.
 
 ## Protein Structures
 
@@ -187,6 +228,8 @@ mmcif_text = structure.to_mmcif()
 roundtrip = ck.BioStructure.from_mmcif(mmcif_text)
 print(roundtrip.num_atoms())
 ```
+
+This example reads your `complex.pdb` file.
 
 The protein projection is explicit and leaves the full structure available:
 
@@ -220,12 +263,14 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
     smiles = batch.to_smiles_list()
 ```
 
+This example reads your `library.sdf` file.
+
 ## Conformer Generation And Optimization
 
 ```python
 import cosmolkit as ck
 
-mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+mol = ck.mol_from_smiles("CC(=O)NC").with_hydrogens()
 
 params = ck.EmbedParams(random_seed=0xF00D, num_threads=1)
 
@@ -293,8 +338,8 @@ inputs until a trusted graph has been constructed.
 
 ## Design Principles
 
-COSMolKit aims to be Python-friendly, batch-friendly, and suitable for
-model-building workflows.
+COSMolKit aims to be Python- and JavaScript-friendly, batch-friendly, and
+suitable for scientific and browser workflows.
 
 - Correctness comes before breadth.
 - Public transforms use value semantics.
@@ -311,7 +356,8 @@ model-building workflows.
 
 ## Examples
 
-Python examples live in `python/examples/`.
+Python examples live in `python/examples/`; JavaScript examples live in
+[`wasm/examples/vanilla/`](wasm/examples/vanilla/).
 For the current InChI interface, see
 [`python/examples/inchi_roundtrip.py`](python/examples/inchi_roundtrip.py).
 
@@ -324,18 +370,18 @@ iterating:
 cargo test -p cosmolkit-core <test-filter>
 ```
 
-Large local runs, parity suites, and CI tests should use release mode with the
+Daily checks and local parity runs use the optimized `dev-test` profile, with
 runtime strict checks enabled on `cosmolkit`:
 
 ```bash
-cargo test -p cosmolkit-core --release
-cargo test -p cosmolkit --release --features op-contracts-strict
+cargo test -p cosmolkit-core --profile dev-test
+cargo test -p cosmolkit --profile dev-test --features op-contracts-strict
 ```
 
-Detached core algorithms have no runtime-check features. Release-mode testing
-keeps operation contracts and runtime invariants enabled on `cosmolkit`
-through `op-contracts-strict`; optimized release builds for distribution use
-default features unless explicit runtime checks are requested.
+Detached core algorithms have no runtime-check features. `op-contracts-strict`
+enables operation contracts and runtime invariants on `cosmolkit` independently
+of the build profile. Distribution builds use `--release` with fat LTO and
+one codegen unit; daily `dev-test` builds avoid that overhead.
 
 ## Functionality in 0.5.0
 
@@ -390,7 +436,7 @@ Goal: keep the supported molecular core correct before expanding breadth.
 ### File I/O and Depiction
 
 Goal: make common molecule import, export, and visualization workflows usable
-from Python.
+from Python and JavaScript.
 
 - ✅ MOL/SDF reading
 - ✅ MOL2 reading

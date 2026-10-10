@@ -24,8 +24,9 @@ use quote::quote;
 /// an existing wasm-bindgen constructor. Native constructor validation wins.
 #[proc_macro_attribute]
 pub fn javascript_options(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    let result = syn::parse::<syn::LitStr>(attribute)
-        .and_then(|name| syn::parse(item).and_then(|item| javascript_options::expand(item, name)));
+    let result = syn::parse::<javascript_options::Options>(attribute).and_then(|options| {
+        syn::parse(item).and_then(|item| javascript_options::expand_with_options(item, options))
+    });
     match result {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),

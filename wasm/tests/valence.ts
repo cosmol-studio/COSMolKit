@@ -13,6 +13,5 @@ new ValenceParams("RdkitLike");
 const invalid: Molecule = molecule.assignValence();
 // @ts-expect-error Explicit parameters are required.
 molecule.withAssignedValenceWithParams();
-// @ts-expect-error Frozen parameter fields are read-only.
 params.strict = true;
 void [model, strict, prepared, assigned, assignedWithParams];

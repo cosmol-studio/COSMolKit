@@ -1,129 +1,10 @@
-//! Typed, immutable reaction option values.
+//! Typed, writable reaction option values.
 use crate::host_values::*;
+use crate::notation_writers::CxSmilesFields;
 use cosmolkit_wasm::rust as ck;
 use js_sys::{Array, Map, Object, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-#[wasm_bindgen]
-pub struct CxSmilesFields {
-    pub(crate) inner: ck::CxSmilesFields,
-}
-#[wasm_bindgen]
-impl CxSmilesFields {
-    pub fn bits(&self) -> u32 {
-        self.inner.bits()
-    }
-    pub fn contains(&self, other: &CxSmilesFields) -> bool {
-        self.inner.contains(other.inner)
-    }
-    pub fn or(&self, other: &CxSmilesFields) -> Self {
-        Self {
-            inner: self.inner | other.inner,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=NONE)]
-    pub fn flag_none() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::NONE,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ATOM_LABELS)]
-    pub fn flag_atom_labels() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ATOM_LABELS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=MOLFILE_VALUES)]
-    pub fn flag_molfile_values() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::MOLFILE_VALUES,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=COORDS)]
-    pub fn flag_coords() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::COORDS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=RADICALS)]
-    pub fn flag_radicals() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::RADICALS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ATOM_PROPS)]
-    pub fn flag_atom_props() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ATOM_PROPS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=LINKNODES)]
-    pub fn flag_linknodes() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::LINKNODES,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ENHANCED_STEREO)]
-    pub fn flag_enhanced_stereo() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ENHANCED_STEREO,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=SGROUPS)]
-    pub fn flag_sgroups() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::SGROUPS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=POLYMER)]
-    pub fn flag_polymer() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::POLYMER,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=BOND_CFG)]
-    pub fn flag_bond_cfg() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::BOND_CFG,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=BOND_ATROPISOMER)]
-    pub fn flag_bond_atropisomer() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::BOND_ATROPISOMER,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=COORDINATE_BONDS)]
-    pub fn flag_coordinate_bonds() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::COORDINATE_BONDS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=HYDROGEN_BONDS)]
-    pub fn flag_hydrogen_bonds() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::HYDROGEN_BONDS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ZERO_BONDS)]
-    pub fn flag_zero_bonds() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ZERO_BONDS,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ALL)]
-    pub fn flag_all() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ALL,
-        }
-    }
-    #[wasm_bindgen(getter,js_name=ALL_BUT_COORDS)]
-    pub fn flag_all_but_coords() -> Self {
-        Self {
-            inner: ck::CxSmilesFields::ALL_BUT_COORDS,
-        }
-    }
-}
 #[wasm_bindgen]
 pub struct ReactionCoordinateSelection {
     pub(crate) inner: ck::ReactionCoordinateSelection,
@@ -237,6 +118,7 @@ fn read_replacements(value: &JsValue) -> Result<BTreeMap<String, String>, JsValu
 pub struct ReactionParseParams {
     pub(crate) inner: ck::ReactionParseParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionParseParamsOptions")]
 #[wasm_bindgen]
 impl ReactionParseParams {
     #[wasm_bindgen(constructor)]
@@ -277,7 +159,7 @@ impl ReactionParseParams {
         self.inner.sanitize()
     }
     #[wasm_bindgen(getter,js_name=replacements,unchecked_return_type="Map<string,string>")]
-    pub fn read_replacements(&self) -> Map {
+    pub fn replacements(&self) -> Map {
         {
             let map = Map::new();
             for (k, v) in self.inner.replacements() {
@@ -299,6 +181,7 @@ impl ReactionParseParams {
 pub struct ReactionValidationParams {
     pub(crate) inner: ck::ReactionValidationParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionValidationParamsOptions")]
 #[wasm_bindgen]
 impl ReactionValidationParams {
     #[wasm_bindgen(constructor)]
@@ -320,6 +203,7 @@ impl ReactionValidationParams {
 pub struct ReactionSingleRunParams {
     pub(crate) inner: ck::ReactionSingleRunParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionSingleRunParamsOptions")]
 #[wasm_bindgen]
 impl ReactionSingleRunParams {
     #[wasm_bindgen(constructor)]
@@ -344,6 +228,7 @@ impl ReactionSingleRunParams {
 pub struct ReactionRunParams {
     pub(crate) inner: ck::ReactionRunParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionRunParamsOptions")]
 #[wasm_bindgen]
 impl ReactionRunParams {
     #[wasm_bindgen(constructor)]
@@ -374,18 +259,27 @@ impl ReactionRunParams {
         self.inner.copy_atom_properties()
     }
     #[wasm_bindgen(setter,js_name=copyAtomProperties)]
-    pub fn set_copy_atom_properties(&mut self, #[wasm_bindgen(unchecked_param_type="boolean")] value:JsValue) -> Result<(),JsValue> {
-        self.inner.copy_atom_properties=bool_value(&value,"copyAtomProperties")?;
+    pub fn set_copy_atom_properties(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "boolean")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.inner.copy_atom_properties = bool_value(&value, "copyAtomProperties")?;
         Ok(())
     }
     #[wasm_bindgen(setter,js_name=maxProducts)]
-    pub fn set_max_products(&mut self, #[wasm_bindgen(unchecked_param_type="number")] value:JsValue) -> Result<(),JsValue> {
-        self.inner.max_products=u32_value(&value,"maxProducts")?;
+    pub fn set_max_products(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.inner.max_products = u32_value(&value, "maxProducts")?;
         Ok(())
     }
     #[wasm_bindgen(setter,js_name=coordinateSelections)]
-    pub fn set_coordinate_selections(&mut self, #[wasm_bindgen(unchecked_param_type="ReactionCoordinateSelection[]")] value:JsValue) -> Result<(),JsValue> {
-        self.inner.coordinate_selections=selections(&value)?;
+    pub fn set_coordinate_selections(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "ReactionCoordinateSelection[]")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.inner.coordinate_selections = selections(&value)?;
         Ok(())
     }
     #[wasm_bindgen(getter,js_name=coordinateSelections,unchecked_return_type="ReactionCoordinateSelection[]")]
@@ -401,6 +295,7 @@ impl ReactionRunParams {
 pub struct ReactionApplyParams {
     pub(crate) inner: ck::ReactionApplyParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionApplyParamsOptions")]
 #[wasm_bindgen]
 impl ReactionApplyParams {
     #[wasm_bindgen(constructor)]
@@ -423,6 +318,7 @@ impl ReactionApplyParams {
 pub struct ReactionTemplateRemovalParams {
     pub(crate) inner: ck::ReactionTemplateRemovalParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionTemplateRemovalParamsOptions")]
 #[wasm_bindgen]
 impl ReactionTemplateRemovalParams {
     #[wasm_bindgen(constructor)]
@@ -455,6 +351,7 @@ impl ReactionTemplateRemovalParams {
 pub struct ReactionWriteParams {
     pub(crate) inner: ck::ReactionWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("ReactionWriteParamsOptions")]
 #[wasm_bindgen]
 impl ReactionWriteParams {
     #[wasm_bindgen(constructor)]

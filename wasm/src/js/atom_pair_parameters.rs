@@ -1,4 +1,4 @@
-//! Complete immutable AtomPair configuration transport through cosmolkit.
+//! Writable AtomPair configurations with canonical validation and defaults.
 use crate::fingerprint_values::u32_array;
 use crate::host_values::{bool_value, i32_value, type_error, u32_value};
 use cosmolkit_wasm::rust as ck;
@@ -24,6 +24,7 @@ pub(crate) fn optional_array(value: Option<&[u32]>) -> JsValue {
 pub struct AtomPairParams {
     pub(crate) inner: ck::AtomPairParams,
 }
+#[cosmolkit_wasm::javascript_options("AtomPairParamsOptions")]
 #[wasm_bindgen]
 impl AtomPairParams {
     #[wasm_bindgen(constructor)]
@@ -126,6 +127,7 @@ impl AtomPairParams {
 pub struct AtomPairAtomInvariantsGenerator {
     pub(crate) inner: ck::AtomPairAtomInvariantsGenerator,
 }
+#[cosmolkit_wasm::javascript_options("AtomPairAtomInvariantsGeneratorOptions")]
 #[wasm_bindgen]
 impl AtomPairAtomInvariantsGenerator {
     #[wasm_bindgen(constructor)]
@@ -186,6 +188,7 @@ extern "C" {
 pub struct AtomPairFingerprintParams {
     pub(crate) inner: ck::AtomPairFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("AtomPairFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl AtomPairFingerprintParams {
     #[wasm_bindgen(constructor)]

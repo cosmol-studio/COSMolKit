@@ -99,12 +99,19 @@ impl Reaction {
         }
     }
     #[wasm_bindgen(js_name=fromSmirks)]
-    pub fn from_smirks(text: &str) -> Result<Self, JsValue> {
+    pub fn from_smirks(text: &str, #[wasm_bindgen(unchecked_optional_param_type = "ReactionParseParams | ReactionParseParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         ck::Reaction::from_smirks(text)
             .map(|inner| Self {
                 inner: inner.into(),
             })
             .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionParseParams::from_js_configuration(&params)?;
+        Self::from_smirks_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromSmirksWithParams)]
     pub fn from_smirks_with_params(
@@ -263,12 +270,15 @@ impl Reaction {
     }
     #[wasm_bindgen(js_name=matchParams)]
     pub fn match_params(&self) -> SubstructMatchParams {
-        SubstructMatchParams {
-            inner: self.inner.borrow().match_params().clone(),
-        }
+        SubstructMatchParams::from_inner(self.inner.borrow().match_params().clone())
     }
     #[wasm_bindgen(js_name=withMatchParams)]
     pub fn with_match_params(&self, params: &SubstructMatchParams) -> Result<Self, JsValue> {
+        // The Python projection has the same explicit boundary: persistent
+        // reaction callbacks are not silently dropped or installed globally.
+        if params.has_callbacks() {
+            return Err(js_sys::Error::new("JavaScript match callbacks are supported by Molecule substructure matching; persistent Reaction callbacks are not yet projected").into());
+        }
         self.inner
             .borrow()
             .with_match_params(&params.inner)
@@ -278,13 +288,20 @@ impl Reaction {
             .map_err(|e| model_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=toSmirks)]
-    pub fn to_smirks(&self) -> Result<String, JsValue> {
+    pub fn to_smirks(&self, #[wasm_bindgen(unchecked_optional_param_type = "ReactionWriteParams | ReactionWriteParamsOptions")] params: JsValue) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
         let value = self
             .inner
             .borrow()
             .to_smirks()
             .map_err(|e| write_error(&e).unwrap_or_else(|e| e))?;
         text(&value)
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionWriteParams::from_js_configuration(&params)?;
+        self.to_smirks_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=toSmirksWithParams)]
     pub fn to_smirks_with_params(&self, params: &ReactionWriteParams) -> Result<String, JsValue> {
@@ -296,13 +313,20 @@ impl Reaction {
         text(&value)
     }
     #[wasm_bindgen(js_name=toCxSmirks)]
-    pub fn to_cx_smirks(&self) -> Result<String, JsValue> {
+    pub fn to_cx_smirks(&self, #[wasm_bindgen(unchecked_optional_param_type = "ReactionWriteParams | ReactionWriteParamsOptions")] params: JsValue) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
         let value = self
             .inner
             .borrow()
             .to_cx_smirks()
             .map_err(|e| write_error(&e).unwrap_or_else(|e| e))?;
         text(&value)
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionWriteParams::from_js_configuration(&params)?;
+        self.to_cx_smirks_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=toCxSmirksWithParams)]
     pub fn to_cx_smirks_with_params(
@@ -317,12 +341,19 @@ impl Reaction {
         text(&value)
     }
     #[wasm_bindgen(js_name=validate)]
-    pub fn validate(&self) -> Result<ReactionValidationReport, JsValue> {
+    pub fn validate(&self, #[wasm_bindgen(unchecked_optional_param_type = "ReactionValidationParams | ReactionValidationParamsOptions")] params: JsValue) -> Result<ReactionValidationReport, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .borrow()
             .validate()
             .map(|inner| ReactionValidationReport { inner })
             .map_err(|e| validation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionValidationParams::from_js_configuration(&params)?;
+        self.validate_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=validateWithParams)]
     pub fn validate_with_params(
@@ -336,7 +367,9 @@ impl Reaction {
             .map_err(|e| validation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withInitialized)]
-    pub fn with_initialized(&self) -> Result<Reaction, JsValue> {
+    pub fn with_initialized(&self, #[wasm_bindgen(unchecked_optional_param_type = "ReactionValidationParams | ReactionValidationParamsOptions")] params: JsValue) -> Result<Reaction, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .borrow()
             .with_initialized()
@@ -344,6 +377,11 @@ impl Reaction {
                 inner: inner.into(),
             })
             .map_err(|e| initialization_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionValidationParams::from_js_configuration(&params)?;
+        self.with_initialized_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=withInitializedWithParams)]
     pub fn with_initialized_with_params(
@@ -365,10 +403,11 @@ impl Reaction {
         }
     }
     #[wasm_bindgen(js_name=withoutUnmappedReactants)]
-    pub fn without_unmapped_reactants(&self) -> ReactionTemplateRemoval {
-        ReactionTemplateRemoval {
-            inner: self.inner.borrow().without_unmapped_reactants(),
-        }
+    pub fn without_unmapped_reactants(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "ReactionTemplateRemovalParams | ReactionTemplateRemovalParamsOptions")] params: JsValue,
+    ) -> Result<ReactionTemplateRemoval, JsValue> {
+        let params = ReactionTemplateRemovalParams::from_js_configuration(&params)?;
+        Ok(self.without_unmapped_reactants_with_params(&params))
     }
     #[wasm_bindgen(js_name=withoutUnmappedReactantsWithParams)]
     pub fn without_unmapped_reactants_with_params(
@@ -383,10 +422,11 @@ impl Reaction {
         }
     }
     #[wasm_bindgen(js_name=withoutUnmappedProducts)]
-    pub fn without_unmapped_products(&self) -> ReactionTemplateRemoval {
-        ReactionTemplateRemoval {
-            inner: self.inner.borrow().without_unmapped_products(),
-        }
+    pub fn without_unmapped_products(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "ReactionTemplateRemovalParams | ReactionTemplateRemovalParamsOptions")] params: JsValue,
+    ) -> Result<ReactionTemplateRemoval, JsValue> {
+        let params = ReactionTemplateRemovalParams::from_js_configuration(&params)?;
+        Ok(self.without_unmapped_products_with_params(&params))
     }
     #[wasm_bindgen(js_name=withoutUnmappedProductsWithParams)]
     pub fn without_unmapped_products_with_params(
@@ -457,8 +497,9 @@ impl Molecule {
     pub fn reaction_products(
         &self,
         reaction: &Reaction,
-        #[wasm_bindgen(unchecked_param_type = "number")] reactant_template: JsValue,
-    ) -> Result<Array, JsValue> {
+        #[wasm_bindgen(unchecked_param_type = "number")] reactant_template: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "ReactionSingleRunParams | ReactionSingleRunParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .reaction_products(
                 &mut reaction.inner.borrow_mut(),
@@ -466,6 +507,11 @@ impl Molecule {
             )
             .map(sets)
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionSingleRunParams::from_js_configuration(&params)?;
+        self.reaction_products_with_params(reaction, reactant_template, &configuration_0)
     }
     #[wasm_bindgen(js_name=reactionProductsWithParams,unchecked_return_type="Molecule[][]")]
     pub fn reaction_products_with_params(
@@ -498,11 +544,18 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=applyReaction)]
-    pub fn apply_reaction(&self, reaction: &Reaction) -> Result<ReactionApplyResult, JsValue> {
+    pub fn apply_reaction(&self, reaction: &Reaction, #[wasm_bindgen(unchecked_optional_param_type = "ReactionApplyParams | ReactionApplyParamsOptions")] params: JsValue) -> Result<ReactionApplyResult, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .apply_reaction(&mut reaction.inner.borrow_mut())
             .map(|inner| ReactionApplyResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionApplyParams::from_js_configuration(&params)?;
+        self.apply_reaction_with_params(reaction, &configuration_0)
     }
     #[wasm_bindgen(js_name=applyReactionWithParams)]
     pub fn apply_reaction_with_params(
@@ -516,10 +569,17 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=applyReaction_)]
-    pub fn apply_reaction_(&self, reaction: &Reaction) -> Result<bool, JsValue> {
+    pub fn apply_reaction_(&self, reaction: &Reaction, #[wasm_bindgen(unchecked_optional_param_type = "ReactionApplyParams | ReactionApplyParamsOptions")] params: JsValue) -> Result<bool, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .apply_reaction_(&mut reaction.inner.borrow_mut())
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionApplyParams::from_js_configuration(&params)?;
+        self.apply_reaction_with_params_(reaction, &configuration_0)
     }
     #[wasm_bindgen(js_name=applyReactionWithParams_)]
     pub fn apply_reaction_with_params_(
@@ -654,9 +714,16 @@ impl ReactionValidationIssue {
     }
 }
 #[wasm_bindgen(js_name=parseSmirks)]
-pub fn parse_smirks(text: &str) -> Result<Reaction, JsValue> {
-    Reaction::from_smirks(text)
-}
+pub fn parse_smirks(text: &str, #[wasm_bindgen(unchecked_optional_param_type = "ReactionParseParams | ReactionParseParamsOptions")] params: JsValue) -> Result<Reaction, JsValue> {
+        if params.is_undefined() {
+            return {
+    Reaction::from_smirks(text, JsValue::UNDEFINED)
+
+            };
+        }
+        let configuration_0 = crate::reaction_parameters::ReactionParseParams::from_js_configuration(&params)?;
+        parse_smirks_with_params(text, &configuration_0)
+    }
 #[wasm_bindgen(js_name=parseSmirksWithParams)]
 pub fn parse_smirks_with_params(
     text: &str,

@@ -29,6 +29,7 @@ pub(crate) fn format_value(value: &JsValue) -> Result<ck::BioCoordinateFormat, J
 pub struct BioReadParams {
     pub(crate) inner: ck::BioReadParams,
 }
+#[cosmolkit_wasm::javascript_options("BioReadParamsOptions")]
 #[wasm_bindgen]
 impl BioReadParams {
     #[wasm_bindgen(constructor)]
@@ -60,6 +61,7 @@ impl BioReadParams {
 pub struct BioPdbReadParams {
     pub(crate) inner: ck::BioPdbReadParams,
 }
+#[cosmolkit_wasm::javascript_options("BioPdbReadParamsOptions")]
 #[wasm_bindgen]
 impl BioPdbReadParams {
     #[wasm_bindgen(constructor)]
@@ -116,15 +118,27 @@ pub struct BioStructure {
 #[wasm_bindgen]
 impl BioStructure {
     #[wasm_bindgen(js_name=fromPdb)]
-    pub fn from_pdb(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: canonical_bio_binding.rs::BioStructure constructors:
-        //             .map(|x| Self { inner: Arc::new(x) })
-        // Shared immutable hierarchy snapshots; one public owner call, no parser logic.
-        ck::BioStructure::from_pdb(text)
-            .map(|inner| Self {
-                inner: Rc::new(inner),
-            })
-            .map_err(|e| crate::bio_read_errors::pdb_error(&e).unwrap_or_else(|e| e))
+    pub fn from_pdb(
+        text: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioPdbReadParams | BioPdbReadParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: canonical_bio_binding.rs::BioStructure constructors:
+                //             .map(|x| Self { inner: Arc::new(x) })
+                // Shared immutable hierarchy snapshots; one public owner call, no parser logic.
+                ck::BioStructure::from_pdb(text)
+                    .map(|inner| Self {
+                        inner: Rc::new(inner),
+                    })
+                    .map_err(|e| crate::bio_read_errors::pdb_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::bio_readers::BioPdbReadParams::from_js_configuration(&params)?;
+        Self::from_pdb_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromPdbWithParams)]
     pub fn from_pdb_with_params(text: &str, params: &BioPdbReadParams) -> Result<Self, JsValue> {
@@ -149,15 +163,25 @@ impl BioStructure {
             .map_err(|e| crate::bio_read_errors::mmcif_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=fromText)]
-    pub fn from_text(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: canonical_bio_binding.rs::BioStructure constructors:
-        //             .map(|x| Self { inner: Arc::new(x) })
-        // Shared immutable hierarchy snapshots; one public owner call, no parser logic.
-        ck::BioStructure::from_text(text)
-            .map(|inner| Self {
-                inner: Rc::new(inner),
-            })
-            .map_err(|e| crate::bio_read_errors::read_error(&e).unwrap_or_else(|e| e))
+    pub fn from_text(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "BioReadParams | BioReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: canonical_bio_binding.rs::BioStructure constructors:
+                //             .map(|x| Self { inner: Arc::new(x) })
+                // Shared immutable hierarchy snapshots; one public owner call, no parser logic.
+                ck::BioStructure::from_text(text)
+                    .map(|inner| Self {
+                        inner: Rc::new(inner),
+                    })
+                    .map_err(|e| crate::bio_read_errors::read_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::bio_readers::BioReadParams::from_js_configuration(&params)?;
+        Self::from_text_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromTextWithParams)]
     pub fn from_text_with_params(text: &str, params: &BioReadParams) -> Result<Self, JsValue> {

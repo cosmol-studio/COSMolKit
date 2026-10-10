@@ -33,7 +33,7 @@ impl StereoReadError {
     }
 }
 
-fn read_error(source: &ck::StereoReadError) -> Result<JsValue, JsValue> {
+pub(crate) fn read_error(source: &ck::StereoReadError) -> Result<JsValue, JsValue> {
     let kind = match source {
         ck::StereoReadError::InvalidTopology(_) => "InvalidTopology",
         ck::StereoReadError::Valence(_) => "Valence",

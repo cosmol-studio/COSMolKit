@@ -2,6 +2,18 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
+    pub fn to_smarts_with_params(
+        &self,
+        params: &ck::SmartsWriteParams,
+    ) -> Result<ck::PropertyText, ck::SmartsWriteError> {
+        self.inner.borrow().to_smarts_with_params(params)
+    }
+    pub fn to_cx_smarts_with_params(
+        &self,
+        params: &ck::SmartsWriteParams,
+    ) -> Result<ck::PropertyText, ck::SmartsWriteError> {
+        self.inner.borrow().to_cx_smarts_with_params(params)
+    }
     pub fn substruct_match(
         &self,
         query: &ck::QueryGraph,

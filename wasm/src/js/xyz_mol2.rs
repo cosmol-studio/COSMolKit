@@ -14,6 +14,7 @@ pub enum Mol2Type {
 pub struct Mol2ReadParams {
     inner: ck::Mol2ReadParams,
 }
+#[cosmolkit_wasm::javascript_options("Mol2ReadParamsOptions")]
 #[wasm_bindgen]
 impl Mol2ReadParams {
     #[wasm_bindgen(constructor)]
@@ -65,6 +66,7 @@ impl Mol2ReadParams {
 pub struct XyzWriteParams {
     inner: ck::XyzWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("XyzWriteParamsOptions")]
 #[wasm_bindgen]
 impl XyzWriteParams {
     #[wasm_bindgen(constructor)]
@@ -126,22 +128,42 @@ impl Molecule {
             .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=fromMol2)]
-    pub fn from_mol2(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_mol2(text)
-        cosmolkit_wasm::Molecule::from_mol2(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn from_mol2(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "Mol2ReadParams | Mol2ReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_mol2(text)
+                cosmolkit_wasm::Molecule::from_mol2(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::xyz_mol2::Mol2ReadParams::from_js_configuration(&params)?;
+        Self::from_mol2_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=readMol2)]
-    pub fn read_mol2(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_mol2(text)
-        cosmolkit_wasm::Molecule::read_mol2(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn read_mol2(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "Mol2ReadParams | Mol2ReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_mol2(text)
+                cosmolkit_wasm::Molecule::read_mol2(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::xyz_mol2::Mol2ReadParams::from_js_configuration(&params)?;
+        Self::read_mol2_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=fromMol2WithParams)]
     pub fn from_mol2_with_params(
@@ -180,18 +202,39 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=toXyz)]
-    pub fn to_xyz(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_xyz()
-        self.inner
-            .to_xyz()
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn to_xyz(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "XyzWriteParams | XyzWriteParamsOptions")]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_xyz()
+                self.inner
+                    .to_xyz()
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::xyz_mol2::XyzWriteParams::from_js_configuration(&params)?;
+        self.to_xyz_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=writeXyz)]
-    pub fn write_xyz(&self, path: &str) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.write_xyz(path)
-        self.inner
-            .write_xyz(path)
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn write_xyz(
+        &self,
+        path: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "XyzWriteParams | XyzWriteParamsOptions")]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_xyz(path)
+                self.inner
+                    .write_xyz(path)
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::xyz_mol2::XyzWriteParams::from_js_configuration(&params)?;
+        self.write_xyz_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=toXyzWithParams)]
     pub fn to_xyz_with_params(

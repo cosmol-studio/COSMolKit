@@ -12,7 +12,9 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name=fingerprintAtomPairList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_atom_pair_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_atom_pair_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "AtomPairFingerprintParams | AtomPairFingerprintParamsOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_atom_pair_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -22,6 +24,12 @@ impl MoleculeBatch {
                     .map(|value| value.map_or(JsValue::NULL, |inner| Fingerprint { inner }.into()))
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::atom_pair_parameters::AtomPairFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_atom_pair_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
     pub fn fingerprint_atom_pair_list_with_params(
@@ -42,7 +50,9 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairSparseCountList,unchecked_return_type="(SparseCountFingerprint | null)[]")]
-    pub fn fingerprint_atom_pair_sparse_count_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_atom_pair_sparse_count_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "AtomPairFingerprintParams | AtomPairFingerprintParamsOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_atom_pair_sparse_count_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -56,6 +66,12 @@ impl MoleculeBatch {
                     })
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::atom_pair_parameters::AtomPairFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_atom_pair_sparse_count_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairSparseCountListWithParams,unchecked_return_type="(SparseCountFingerprint | null)[]")]
     pub fn fingerprint_atom_pair_sparse_count_list_with_params(
@@ -80,7 +96,9 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairCountList,unchecked_return_type="(SparseCountFingerprint32 | null)[]")]
-    pub fn fingerprint_atom_pair_count_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_atom_pair_count_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "AtomPairFingerprintParams | AtomPairFingerprintParamsOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_atom_pair_count_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -94,6 +112,12 @@ impl MoleculeBatch {
                     })
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::atom_pair_parameters::AtomPairFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_atom_pair_count_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairCountListWithParams,unchecked_return_type="(SparseCountFingerprint32 | null)[]")]
     pub fn fingerprint_atom_pair_count_list_with_params(
@@ -118,7 +142,9 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairSparseBitsList,unchecked_return_type="(SparseBitFingerprint | null)[]")]
-    pub fn fingerprint_atom_pair_sparse_bits_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_atom_pair_sparse_bits_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "AtomPairFingerprintParams | AtomPairFingerprintParamsOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_atom_pair_sparse_bits_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -130,6 +156,12 @@ impl MoleculeBatch {
                     })
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::atom_pair_parameters::AtomPairFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_atom_pair_sparse_bits_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairSparseBitsListWithParams,unchecked_return_type="(SparseBitFingerprint | null)[]")]
     pub fn fingerprint_atom_pair_sparse_bits_list_with_params(
@@ -152,7 +184,15 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintAtomPairWithOutputList,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
-    pub fn fingerprint_atom_pair_with_output_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_atom_pair_with_output_list(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "AtomPairFingerprintParams | AtomPairFingerprintParamsOptions")] options: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue,
+    ) -> Result<Array, JsValue> {
+        if !options.is_undefined() || !params.is_undefined() {
+            let options = AtomPairFingerprintParams::from_js_configuration(&options)?;
+            let params = BatchQueryParams::from_js_configuration(&params)?;
+            return self.fingerprint_atom_pair_with_output_list_with_params(&options, true.into(), &params);
+        }
         self.inner
             .fingerprint_atom_pair_with_output_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))

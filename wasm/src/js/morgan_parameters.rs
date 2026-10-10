@@ -1,4 +1,4 @@
-//! Complete immutable Morgan generator/provider/call configuration transport.
+//! Writable Morgan generator/provider/call configuration transport.
 use crate::atom_pair_parameters::{
     AtomPairAtomInvariantsGenerator, optional_array, optional_u32_array,
 };
@@ -11,6 +11,7 @@ use wasm_bindgen::prelude::*;
 pub struct MorganParams {
     pub(crate) inner: ck::MorganParams,
 }
+#[cosmolkit_wasm::javascript_options("MorganParamsOptions")]
 #[wasm_bindgen]
 impl MorganParams {
     #[wasm_bindgen(constructor)]
@@ -175,6 +176,7 @@ extern "C" {
 pub struct MorganFingerprintParams {
     pub(crate) inner: ck::MorganFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("MorganFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl MorganFingerprintParams {
     #[wasm_bindgen(constructor)]
@@ -319,6 +321,7 @@ pub(crate) fn optional_bond(
 pub struct MorganBondInvariantsGenerator {
     pub(crate) inner: ck::MorganBondInvariantsGenerator,
 }
+#[cosmolkit_wasm::javascript_options("MorganBondInvariantsGeneratorOptions")]
 #[wasm_bindgen]
 impl MorganBondInvariantsGenerator {
     #[wasm_bindgen(constructor)]
@@ -347,11 +350,11 @@ impl MorganBondInvariantsGenerator {
             ),
         })
     }
-    #[wasm_bindgen(js_name=useBondTypes)]
+    #[wasm_bindgen(getter,js_name=useBondTypes)]
     pub fn use_bond_types(&self) -> bool {
         self.inner.use_bond_types()
     }
-    #[wasm_bindgen(js_name=includeChirality)]
+    #[wasm_bindgen(getter,js_name=includeChirality)]
     pub fn include_chirality(&self) -> bool {
         self.inner.include_chirality()
     }
@@ -360,6 +363,7 @@ impl MorganBondInvariantsGenerator {
 pub struct MorganCallParams {
     pub(crate) inner: ck::MorganCallParams,
 }
+#[cosmolkit_wasm::javascript_options("MorganCallParamsOptions")]
 #[wasm_bindgen]
 impl MorganCallParams {
     #[wasm_bindgen(constructor)]

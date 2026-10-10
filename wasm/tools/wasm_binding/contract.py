@@ -26,12 +26,26 @@ def compiled_contract(api_root: Path, active: set[str], destination: Path) -> di
     # The only platform exclusion comes from the canonical export, not names
     # or a distribution-local list of missing methods.
     document["entries"] = [row for row in document["entries"] if row["platform"] != "native"]
+    configuration_fields(document)
     destination.write_text(json.dumps(document), encoding="utf-8")
     return document
 
 
+def configuration_fields(document: dict) -> None:
+    """Use the registered configuration schema; Rust need not provide new().
+
+    The language constructor schema is already declared in the canonical
+    registry for public-field/Default Rust records. This only supplies the
+    fields to check: it does not synthesize a JavaScript constructor, property
+    or declaration. The actual JS/TS gates must still verify every field.
+    """
+    for row in document["entries"]:
+        if row.get("role") == "parameter" and row.get("python_fields") is not None:
+            row["fields"] = row["python_fields"]
+
+
 def camel(name: str) -> str:
-    return re.sub(r"_([a-z])", lambda match: match[1].upper(), name)
+    return re.sub(r"_([a-z0-9])", lambda match: match[1].upper(), name)
 
 
 def typescript_probe(document: dict) -> str:
@@ -64,22 +78,23 @@ def typescript_probe(document: dict) -> str:
             lines.append(f"p{index}.{key} = p{index}.{key};")
     for index, (base, target, configurations) in enumerate(_shared.configuration_calls(entries)):
         owner = "Molecule" if base["owner"] == "molecule" else types.get(base["semantic_id"].rsplit(".", 1)[0], base["semantic_id"].rsplit(".", 1)[0])
-        if len(configurations) != 1:
-            raise ValueError(f"{base['semantic_id']}: multiple configuration objects need an explicit canonical language projection")
-        parameter, configuration = configurations[0]
-        parameter_type = configuration["javascript_name"]
-        if configuration["fields"] is None:
-            continue  # The type check above already rejects this incomplete schema.
         if base["owner"] == "module":
             call = f"ck.{base['javascript_name']}"
+        elif not base.get("receiver"):
+            call = f"ck.{owner}.{base['javascript_name']}"
         else:
             lines.append(f"declare const receiver{index}: ck.{owner};")
             call = f"receiver{index}.{base['javascript_name']}"
         arguments = [f"null as unknown as Parameters<typeof {call}>[{position}]" for position, _ in enumerate(base.get("parameters") or [])]
         prefix = ", ".join(arguments)
         prefix += ", " if prefix else ""
-        lines.append(f"declare const configuration{index}: ck.{parameter_type};")
-        lines.append(f"{call}({prefix}configuration{index});")
-        options = ", ".join(f"{camel(field['name'])}: configuration{index}.{camel(field['name'])}" for field in configuration["fields"])
-        lines.append(f"{call}({prefix}{{{options}}});")
+        instances, objects = [], []
+        for position, (parameter, configuration) in enumerate(configurations):
+            variable = f"configuration{index}_{position}"
+            lines.append(f"declare const {variable}: ck.{configuration['javascript_name']};")
+            instances.append(variable)
+            options = ", ".join(f"{camel(field['name'])}: {variable}.{camel(field['name'])}" for field in configuration["fields"])
+            objects.append("{" + options + "}")
+        lines.append(f"{call}({prefix}{', '.join(instances)});")
+        lines.append(f"{call}({prefix}{', '.join(objects)});")
     return "\n".join(lines) + "\n"

@@ -68,9 +68,8 @@ jobs:
             - name: Generate checkout JavaScript type declarations
               env:
                   CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
-              # Match the publication build's temporary registry-gate policy.
-              # Compilation and generated JavaScript/TypeScript tests still run.
-              run: .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract --out-dir target/docs-js-package
+              # Validate actual exports and declarations before extracting API documentation.
+              run: .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --out-dir target/docs-js-package
 
             - name: Build Sphinx source
               run: |

@@ -1,5 +1,5 @@
 import {Molecule,EmbedParams,EmbedMoleculeResult,EmbedMultipleConfsResult,ConformerError,ConformerRunError} from 'cosmolkit-generated';
-const p=new EmbedParams(0,1,42),factories:EmbedParams[]=[EmbedParams.new(),EmbedParams.dg(),EmbedParams.kdg(),EmbedParams.etdg(),EmbedParams.etdgV2(),EmbedParams.etkdg(),EmbedParams.etkdgV2(),EmbedParams.etkdgV3(),EmbedParams.srEtkdgV3()],m=Molecule.fromSmiles('C');const cm:Map<number,number[]>|null=p.coordMap(),cpci:Map<readonly [number,number],number>|null=p.cpci(),failures:Uint32Array=p.failures(),json:string=p.toJson(),changed:EmbedParams=p.withJson(json),bounds:number[][]=m.dgBoundsMatrix();
+const p=new EmbedParams(0,1,42),factories:EmbedParams[]=[EmbedParams.new(),EmbedParams.dg(),EmbedParams.kdg(),EmbedParams.etdg(),EmbedParams.etdgV2(),EmbedParams.etkdg(),EmbedParams.etkdgV2(),EmbedParams.etkdgV3(),EmbedParams.srEtkdgV3()],m=Molecule.fromSmiles('C');const cm:Map<number,number[]>|null=p.coordMap,cpci:Map<readonly [number,number],number>|null=p.cpci,failures:Uint32Array=p.failures(),json:string=p.toJson(),changed:EmbedParams=p.withJson(json),bounds:number[][]=m.dgBoundsMatrix();
 const r0:Molecule=m.with3dConformer();
 const r1:Molecule=m.with3dConformerWithParams(p);
 const r2:void=m.embed3dConformer();
@@ -19,6 +19,9 @@ const r15:EmbedMultipleConfsResult=m.embed3dConformersResultWithParams(2,p);
 declare const single:EmbedMoleculeResult;declare const multiple:EmbedMultipleConfsResult;const returned:Molecule=single.molecule(),options:EmbedParams=single.params(),ok:boolean=single.ok(),id:number=single.confId(),ids:Int32Array=multiple.confIds(),requested:number=multiple.requestedNumConfs(),generated:number=multiple.generatedCount();declare const err:ConformerError;declare const run:ConformerRunError;const detail:string|null=err.detail,cause:Error|null=run.cause;
 // @ts-expect-error checked number argument
 m.with3dConformersWithParams('2',p);
-// @ts-expect-error readonly parameter methods
 p.randomSeed=42;
+// @ts-expect-error seed must be a number
+p.randomSeed='42';
+m.with3dConformer(p);
+m.with3dConformer({randomSeed:42});
 void [factories,cm,cpci,failures,changed,bounds,returned,options,ok,id,ids,requested,generated,detail,cause];

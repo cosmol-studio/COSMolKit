@@ -28,6 +28,27 @@ pub(crate) fn kind(value: ck::PropertyValueKind) -> u32 {
 pub struct PropertyValue {
     pub(crate) inner: ck::PropertyValue,
 }
+#[wasm_bindgen(js_name=propertyValueToText)]
+pub fn property_value_to_text(
+    #[wasm_bindgen(unchecked_param_type = "PropertyValue")] value: JsValue,
+) -> Result<String, JsValue> {
+    let mut result = None;
+    visit_property_value(&value, &mut |v: &PropertyValue| {
+        result = Some(
+            ck::property_value_to_text(&v.inner)
+                .map_err(|e| crate::alignment_values::source_error(&e).unwrap_or_else(|e| e))
+                .and_then(|text| crate::host_values::text(&text)),
+        );
+    })?;
+    result.ok_or_else(|| crate::host_values::type_error("PropertyValue"))?
+}
+#[wasm_bindgen(
+    inline_js = "export function visitPropertyValueText(v,f){try{f(v);}catch(cause){throw new TypeError('expected PropertyValue',{cause});}}"
+)]
+extern "C" {
+    #[wasm_bindgen(catch,js_name=visitPropertyValueText)]
+    fn visit_property_value(v: &JsValue, f: &mut dyn FnMut(&PropertyValue)) -> Result<(), JsValue>;
+}
 #[wasm_bindgen]
 impl PropertyValue {
     #[wasm_bindgen(unchecked_return_type = "PropertyValueKind")]

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const camel = name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+const camel = name => name.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
 export function checkContract(module, document) {
     const types = new Map(document.entries.filter(row => row.item === 'type').map(row => [row.semantic_id.split('.').at(-1), row.javascript_name]));
     const errors = [];

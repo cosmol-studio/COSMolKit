@@ -10,6 +10,7 @@ pub struct BatchImageParams {
     inner: ck::BatchImageParams,
 }
 #[cfg(feature = "cap-depict")]
+#[cosmolkit_wasm::javascript_options("BatchImageParamsOptions")]
 #[wasm_bindgen]
 impl BatchImageParams {
     #[wasm_bindgen(constructor)]
@@ -171,11 +172,25 @@ impl BatchExportReport {
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name=writeImages)]
-    pub fn write_images(&self, directory: &str) -> Result<BatchExportReport, JsValue> {
-        self.inner
-            .write_images(directory)
-            .map(|inner| BatchExportReport { inner })
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    pub fn write_images(
+        &self,
+        directory: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchImageParams | BatchImageParamsOptions"
+        )]
+        options: JsValue,
+    ) -> Result<BatchExportReport, JsValue> {
+        if options.is_undefined() {
+            return {
+                self.inner
+                    .write_images(directory)
+                    .map(|inner| BatchExportReport { inner })
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::batch_images::BatchImageParams::from_js_configuration(&options)?;
+        self.write_images_with_params(directory, &configuration_0)
     }
     #[wasm_bindgen(js_name=writeImagesWithParams)]
     pub fn write_images_with_params(

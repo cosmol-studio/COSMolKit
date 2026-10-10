@@ -11,6 +11,7 @@ use wasm_bindgen::prelude::*;
 pub struct MmffEvaluationParams {
     inner: ck::MmffEvaluationParams,
 }
+#[cosmolkit_wasm::javascript_options("MmffEvaluationParamsOptions")]
 #[wasm_bindgen]
 impl MmffEvaluationParams {
     #[wasm_bindgen(constructor)]
@@ -67,6 +68,7 @@ impl MmffEvaluationParams {
 pub struct MmffOptimizationParams {
     inner: ck::MmffOptimizationParams,
 }
+#[cosmolkit_wasm::javascript_options("MmffOptimizationParamsOptions")]
 #[wasm_bindgen]
 impl MmffOptimizationParams {
     #[wasm_bindgen(constructor)]
@@ -131,6 +133,7 @@ impl MmffOptimizationParams {
 pub struct MmffConformerOptimizationParams {
     inner: ck::MmffConformerOptimizationParams,
 }
+#[cosmolkit_wasm::javascript_options("MmffConformerOptimizationParamsOptions")]
 #[wasm_bindgen]
 impl MmffConformerOptimizationParams {
     #[wasm_bindgen(constructor)]
@@ -309,16 +312,28 @@ pub(crate) fn mmff_optimization_error(
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=mmffEnergyGradient,unchecked_return_type="MmffEnergyGradient | null")]
-    pub fn mmff_energy_gradient(&self) -> Result<JsValue, JsValue> {
-        // COSMolKit❗✔️: self.inner.mmff_energy_gradient()
-        self.inner
-            .mmff_energy_gradient()
-            .map(|inner| {
-                inner.map_or(JsValue::NULL, |inner| {
-                    JsValue::from(MmffEnergyGradient { inner })
-                })
-            })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn mmff_energy_gradient(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MmffEvaluationParams | MmffEvaluationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.mmff_energy_gradient()
+                self.inner
+                    .mmff_energy_gradient()
+                    .map(|inner| {
+                        inner.map_or(JsValue::NULL, |inner| {
+                            JsValue::from(MmffEnergyGradient { inner })
+                        })
+                    })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::mmff::MmffEvaluationParams::from_js_configuration(&params)?;
+        self.mmff_energy_gradient_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=mmffEnergyGradientWithParams,unchecked_return_type="MmffEnergyGradient | null")]
     pub fn mmff_energy_gradient_with_params(
@@ -336,12 +351,24 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withMmffOptimized)]
-    pub fn with_mmff_optimized(&self) -> Result<MmffOptimizeMoleculeResult, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_mmff_optimized()
-        self.inner
-            .with_mmff_optimized()
-            .map(|inner| MmffOptimizeMoleculeResult { inner })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_mmff_optimized(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MmffOptimizationParams | MmffOptimizationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<MmffOptimizeMoleculeResult, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.with_mmff_optimized()
+                self.inner
+                    .with_mmff_optimized()
+                    .map(|inner| MmffOptimizeMoleculeResult { inner })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::mmff::MmffOptimizationParams::from_js_configuration(&params)?;
+        self.with_mmff_optimized_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=withMmffOptimizedWithParams)]
     pub fn with_mmff_optimized_with_params(
@@ -355,12 +382,25 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withMmffOptimizedConformers)]
-    pub fn with_mmff_optimized_conformers(&self) -> Result<MmffOptimizeMoleculeConfsResult, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs()
-        self.inner
-            .with_mmff_optimized_conformers()
-            .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_mmff_optimized_conformers(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MmffConformerOptimizationParams | MmffConformerOptimizationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<MmffOptimizeMoleculeConfsResult, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs()
+                self.inner
+                    .with_mmff_optimized_conformers()
+                    .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::mmff::MmffConformerOptimizationParams::from_js_configuration(&params)?;
+        self.with_mmff_optimized_conformers_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=withMmffOptimizedConformersWithParams)]
     pub fn with_mmff_optimized_conformers_with_params(

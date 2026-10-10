@@ -1005,6 +1005,14 @@ impl MoleculeBatch {
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner.fingerprint_morgan_list()
     }
+    pub fn fingerprint_topological_torsion_list_with_params(
+        &self,
+        options: &ck::TopologicalTorsionFingerprintParams,
+        params: &ck::BatchQueryParams,
+    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
+        self.inner
+            .fingerprint_topological_torsion_list_with_params(options, params)
+    }
     pub fn fingerprint_morgan_list_with_params(
         &self,
         options: &ck::MorganFingerprintParams,

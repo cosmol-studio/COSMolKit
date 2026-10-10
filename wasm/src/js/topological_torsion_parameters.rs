@@ -1,4 +1,4 @@
-//! Complete immutable torsion configurations, with canonical defaults and JSON.
+//! Writable torsion configurations, with canonical defaults and JSON.
 use crate::atom_pair_parameters::{
     AtomPairAtomInvariantsGenerator, optional_array, optional_u32_array,
 };
@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 pub struct TopologicalTorsionParams {
     pub(crate) inner: ck::TopologicalTorsionParams,
 }
+#[cosmolkit_wasm::javascript_options("TopologicalTorsionParamsOptions")]
 #[wasm_bindgen]
 impl TopologicalTorsionParams {
     #[wasm_bindgen(constructor)]
@@ -127,6 +128,7 @@ extern "C" {
 pub struct TopologicalTorsionFingerprintParams {
     pub(crate) inner: ck::TopologicalTorsionFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("TopologicalTorsionFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl TopologicalTorsionFingerprintParams {
     #[wasm_bindgen(constructor)]
@@ -220,6 +222,7 @@ impl TopologicalTorsionFingerprintParams {
 pub struct TopologicalTorsionCallParams {
     pub(crate) inner: ck::TopologicalTorsionCallParams,
 }
+#[cosmolkit_wasm::javascript_options("TopologicalTorsionCallParamsOptions")]
 #[wasm_bindgen]
 impl TopologicalTorsionCallParams {
     #[wasm_bindgen(constructor)]
@@ -304,6 +307,7 @@ impl TopologicalTorsionCallParams {
 pub struct LegacyTopologicalTorsionParams {
     pub(crate) inner: ck::LegacyTopologicalTorsionParams,
 }
+#[cosmolkit_wasm::javascript_options("LegacyTopologicalTorsionParamsOptions")]
 #[wasm_bindgen]
 impl LegacyTopologicalTorsionParams {
     #[wasm_bindgen(constructor)]

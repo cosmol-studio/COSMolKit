@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import test from 'node:test';
+const ck = await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
+ck.initSync({module: readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+
+test('atom/bond snapshots retain typed identities and survive source mutation and disposal', () => {
+    const molecule = ck.Molecule.fromSmiles('[13CH3:7][C@H](F)Cl');
+    const atoms = molecule.atoms(), bonds = molecule.bonds();
+    assert.deepEqual(atoms.map(atom => atom.id()), [0, 1, 2, 3]);
+    assert.deepEqual(atoms.map(atom => atom.atomicNumber()), [6, 6, 9, 17]);
+    assert.equal(atoms[0].isotope(), 13);
+    assert.equal(atoms[0].atomMap(), 7);
+    assert.equal(atoms[2].isotope(), null);
+    assert.equal(atoms[2].element().symbol(), 'F');
+    assert.equal(atoms[1].chiralTag(), ck.ChiralTag.TetrahedralCcw);
+    assert.equal(atoms[1].hybridization(), ck.Hybridization.Sp3);
+    assert.equal(bonds[0].begin(), 0);
+    assert.equal(bonds[0].end(), 1);
+    assert.equal(bonds[0].order(), ck.BondOrder.Single);
+    assert.equal(bonds[0].direction(), ck.BondDirection.None);
+    assert.equal(bonds[0].stereo(), ck.BondStereo.None);
+    assert.equal(bonds[0].stereoAtoms(), null);
+    assert.equal(molecule.atom(99), null);
+    assert.equal(molecule.bond(99), null);
+    assert.throws(() => molecule.atom(-1), RangeError);
+    assert.throws(() => molecule.bond('0'), TypeError);
+    const metadata = molecule.atomMetadata();
+    assert.equal(metadata[0].degree(), 1);
+    assert.equal(metadata[0].totalHydrogens(), 3);
+    molecule.addHydrogens();
+    molecule.free();
+    assert.equal(atoms[0].explicitHydrogens(), 3);
+    assert.equal(bonds[0].end(), 1);
+    assert.equal(metadata[0].totalValence(), 4);
+    for (const value of [...atoms, ...bonds, ...metadata]) value.free();
+});
+
+test('template attachment values are borrowed, detached and reject duplicate targets structurally', () => {
+    const a = new ck.TemplateAttachment(2, 'A');
+    const b = new ck.TemplateAttachment(3, 'B');
+    const order = new ck.TemplateAttachmentOrder([a, b]);
+    assert.equal(a.target(), 2);
+    assert.equal(b.label(), 'B');
+    const entries = order.entries();
+    assert.deepEqual(entries.map(value => [value.target(), value.label()]), [[2, 'A'], [3, 'B']]);
+    assert.throws(() => new ck.TemplateAttachmentOrder([a, a]), error => {
+        assert.equal(error.kind, 'DuplicateTarget');
+        assert.ok(error.detail instanceof ck.TemplateAttachmentOrderError);
+        assert.equal(error.detail.firstPosition, 0);
+        assert.equal(error.detail.duplicatePosition, 1);
+        assert.equal(error.detail.target, 2);
+        return true;
+    });
+    assert.throws(() => new ck.TemplateAttachmentOrder([]), error => error.kind === 'Empty');
+    order.free(); a.free(); b.free();
+    assert.equal(entries[0].label(), 'A');
+    for (const value of entries) value.free();
+});

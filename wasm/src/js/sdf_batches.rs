@@ -44,6 +44,7 @@ fn optional_string(v: &JsValue) -> Result<Option<String>, JsValue> {
 pub struct BatchExportParams {
     inner: ck::BatchExportParams,
 }
+#[cosmolkit_wasm::javascript_options("BatchExportParamsOptions")]
 #[wasm_bindgen]
 impl BatchExportParams {
     #[wasm_bindgen(constructor)]
@@ -77,10 +78,12 @@ impl BatchExportParams {
     }
     #[wasm_bindgen(getter, unchecked_return_type = "BatchErrorMode | null")]
     pub fn errors(&self) -> JsValue {
-        self.inner.errors.map_or(JsValue::NULL, |mode| JsValue::from(match mode {
-            ck::BatchErrorMode::Strict => 0u32,
-            ck::BatchErrorMode::KeepErrors => 1u32,
-        }))
+        self.inner.errors.map_or(JsValue::NULL, |mode| {
+            JsValue::from(match mode {
+                ck::BatchErrorMode::Strict => 0u32,
+                ck::BatchErrorMode::KeepErrors => 1u32,
+            })
+        })
     }
     #[wasm_bindgen(getter,js_name=nJobs,unchecked_return_type="number | null")]
     pub fn n_jobs(&self) -> JsValue {
@@ -109,14 +112,41 @@ extern "C" {
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name=fromSdfRecords)]
-    pub fn from_sdf_records(text: &str) -> Result<Self, JsValue> {
+    pub fn from_sdf_records(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        read: JsValue,
+    ) -> Result<Self, JsValue> {
+        if !read.is_undefined() {
+            let read = SdfReadParams::from_js_configuration(&read)?;
+            return Self::from_sdf_records_with_params(
+                text,
+                read.into(),
+                0u32.into(),
+                JsValue::NULL,
+            );
+        }
         // COSMolKit❗✔️: cosmolkit_wasm::MoleculeBatch::from_sdf_records(text)
         cosmolkit_wasm::MoleculeBatch::from_sdf_records(text)
             .map(|inner| Self { inner })
             .map_err(error)
     }
     #[wasm_bindgen(js_name=readSdf)]
-    pub fn read_sdf(path: &str) -> Result<Self, JsValue> {
+    pub fn read_sdf(
+        path: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        read: JsValue,
+    ) -> Result<Self, JsValue> {
+        if !read.is_undefined() {
+            let read = SdfReadParams::from_js_configuration(&read)?;
+            return Self::read_sdf_with_params(
+                path,
+                read.into(),
+                0u32.into(),
+                JsValue::NULL,
+                false.into(),
+            );
+        }
         // COSMolKit❗✔️: cosmolkit_wasm::MoleculeBatch::read_sdf(path)
         cosmolkit_wasm::MoleculeBatch::read_sdf(path)
             .map(|inner| Self { inner })
@@ -212,7 +242,18 @@ impl MoleculeBatch {
             .collect()
     }
     #[wasm_bindgen(js_name=writeSdf)]
-    pub fn write_sdf(&self, path: &str) -> Result<BatchExportReport, JsValue> {
+    pub fn write_sdf(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchExportParams | BatchExportParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<BatchExportReport, JsValue> {
+        if !params.is_undefined() {
+            let params = BatchExportParams::from_js_configuration(&params)?;
+            return self.write_sdf_with_params(path, params.into(), JsValue::NULL);
+        }
         // COSMolKit❗✔️: self.inner.write_sdf(path)
         self.inner
             .write_sdf(path)
@@ -220,12 +261,26 @@ impl MoleculeBatch {
             .map_err(error)
     }
     #[wasm_bindgen(js_name=writeSdfFiles)]
-    pub fn write_sdf_files(&self, path: &str) -> Result<BatchExportReport, JsValue> {
-        // COSMolKit❗✔️: self.inner.write_sdf_files(path)
-        self.inner
-            .write_sdf_files(path)
-            .map(|inner| BatchExportReport { inner })
-            .map_err(error)
+    pub fn write_sdf_files(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchExportParams | BatchExportParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<BatchExportReport, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_sdf_files(path)
+                self.inner
+                    .write_sdf_files(path)
+                    .map(|inner| BatchExportReport { inner })
+                    .map_err(error)
+            };
+        }
+        let configuration_0 =
+            crate::sdf_batches::BatchExportParams::from_js_configuration(&params)?;
+        self.write_sdf_files_with_params(path, configuration_0.into(), JsValue::NULL, JsValue::NULL)
     }
     #[wasm_bindgen(js_name=writeSdfWithParams)]
     pub fn write_sdf_with_params(

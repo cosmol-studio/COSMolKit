@@ -10,7 +10,9 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name=fingerprintLayeredList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_layered_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_layered_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "LayeredFingerprintParams | LayeredFingerprintOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_layered_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -20,6 +22,12 @@ impl MoleculeBatch {
                     .map(|value| value.map_or(JsValue::NULL, |inner| Fingerprint { inner }.into()))
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::layered_pattern_values::LayeredFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_layered_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintLayeredListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
     pub fn fingerprint_layered_list_with_params(
@@ -40,7 +48,9 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintLayeredWithOutputList,unchecked_return_type="(LayeredFingerprintResult | null)[]")]
-    pub fn fingerprint_layered_with_output_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_layered_with_output_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "LayeredFingerprintParams | LayeredFingerprintOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_layered_with_output_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -54,6 +64,12 @@ impl MoleculeBatch {
                     })
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::layered_pattern_values::LayeredFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_layered_with_output_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintLayeredWithOutputListWithParams,unchecked_return_type="(LayeredFingerprintResult | null)[]")]
     pub fn fingerprint_layered_with_output_list_with_params(
@@ -78,7 +94,9 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintPatternList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_pattern_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_pattern_list(&self, #[wasm_bindgen(unchecked_optional_param_type = "PatternFingerprintParams | PatternFingerprintParamsOptions")] options: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions")] params: JsValue) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
         self.inner
             .fingerprint_pattern_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
@@ -88,6 +106,12 @@ impl MoleculeBatch {
                     .map(|value| value.map_or(JsValue::NULL, |inner| Fingerprint { inner }.into()))
                     .collect()
             })
+
+            };
+        }
+        let configuration_0 = crate::layered_pattern_values::PatternFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 = crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_pattern_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintPatternListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
     pub fn fingerprint_pattern_list_with_params(

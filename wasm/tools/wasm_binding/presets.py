@@ -22,10 +22,12 @@ PRESETS = {
 # Custom modules are language projections, not another chemistry API registry.
 # Each module is assigned to its existing binding-facing Cargo feature.
 MODULE_GROUPS = {
+    "cap-stereoisomers": "stereoisomers",
+    "cap-tautomer": "tautomer",
     "cap-transforms": "fragments",
     "cap-fingerprints+core": "avalon",
-    "cap-stereo": "stereo_queries",
-    "core": "query_values valence_operations element_boundary aromaticity_boundary smiles_boundary host_values smiles_parameters transform_parameters transform_errors property_values group_values io_errors sdf_reading property_strings xyz_mol2 xyz_mol2_errors mol_sdf_writing mol_write_errors sdf_datasets kekulize matrices matrix_errors bond_order radicals rings sanitize valence_errors hydrogens",
+    "cap-stereo": "stereo_queries stereo_operations stereo_errors atom_bond",
+    "core": "operation_metadata construction coordinate_input coordinate_errors notation_writers query_values valence_operations element_boundary aromaticity_boundary smiles_boundary host_values smiles_parameters transform_parameters transform_errors property_values group_values io_errors sdf_reading property_strings xyz_mol2 xyz_mol2_errors mol_sdf_writing mol_write_errors sdf_datasets kekulize matrices matrix_errors bond_order radicals rings sanitize valence_errors hydrogens",
     "cap-search": "query_construction search search_errors mcs",
     "cap-alignment": "alignment_parameters alignment_operations",
     "cap-io": "alignment_values",
@@ -36,18 +38,20 @@ MODULE_GROUPS = {
     "conformer": "embed_parameters conformer_operations conformer_errors",
     "cap-depict": "depict_operations depict_errors drawing_errors image_errors",
     "descriptors": "descriptor_values descriptor_errors descriptors",
-    "cap-forcefields": "forcefield_properties uff mmff",
+    "cap-forcefields": "forcefield_properties uff mmff persistent_forcefields",
     "cap-hashing": "hashing",
     "reaction": "reaction reaction_parameters reaction_errors",
     "inchi": "inchi",
 }
 
 TEST_GROUPS = {
+    "cap-stereoisomers": "stereoisomers",
+    "cap-tautomer": "tautomer",
     "cap-fingerprints+core": "avalon",
     "cap-transforms": "fragments",
-    "cap-stereo": "stereo_queries",
-    "core": "element_projection aromaticity_projection property_strings hydrogens xyz_mol2 kekulize matrices radicals sanitize preset_surface",
-    "cap-search": "query_construction search mcs",
+    "cap-stereo": "stereo_queries stereo_operations atom_bond",
+    "core": "operation_metadata construction element_projection aromaticity_projection property_strings hydrogens xyz_mol2 kekulize matrices radicals sanitize preset_surface configuration_properties",
+    "cap-search": "query_construction search mcs notation_writers",
     "cap-search+cap-depict": "sdf_reading sdf_datasets mol_sdf_writing",
     "cap-depict": "depict_projection",
     "core+fingerprints": "valence",
@@ -64,11 +68,11 @@ TEST_GROUPS = {
     "bio": "bio_residue bio_readers bio_metadata bio_hierarchy bio_parts bio_selection bio_writers bio_protein bio_conversion",
     "conformer": "conformer_projection",
     "descriptors": "descriptors_projection",
-    "cap-forcefields": "forcefield_properties uff mmff",
+    "cap-forcefields": "forcefield_properties uff mmff persistent_forcefields",
     "reaction": "reaction",
     "inchi": "inchi",
     # These original mixed-domain suites remain intact and run in full.
-    "full": "binding_surface chemical_boundary_regressions",
+    "full": "binding_surface chemical_boundary_regressions configuration_forwarding",
 }
 
 

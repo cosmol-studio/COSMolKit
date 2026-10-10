@@ -13,6 +13,7 @@ fn u16_value(v: &JsValue, name: &str) -> Result<u16, JsValue> {
 pub struct BioPdbWriteParams {
     pub(crate) inner: ck::BioPdbWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("BioPdbWriteParamsOptions")]
 #[wasm_bindgen]
 impl BioPdbWriteParams {
     #[wasm_bindgen(constructor)]
@@ -112,6 +113,7 @@ impl BioPdbWriteParams {
 pub struct BioMmcifWriteParams {
     pub(crate) inner: ck::BioMmcifWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("BioMmcifWriteParamsOptions")]
 #[wasm_bindgen]
 impl BioMmcifWriteParams {
     #[wasm_bindgen(constructor)]
@@ -346,6 +348,86 @@ impl BioMmcifWriteParams {
             inner.align_loops = u16_value(&align_loops, "alignLoops")?;
         }
         Ok(Self { inner })
+    }
+    /// Collective group switch; mixed selections read false, formatting is independent.
+    #[wasm_bindgen(getter, js_name = allGroups)]
+    pub fn all_groups(&self) -> bool {
+        [
+            self.inner.atoms,
+            self.inner.block_name,
+            self.inner.entry,
+            self.inner.database_status,
+            self.inner.author,
+            self.inner.cell,
+            self.inner.symmetry,
+            self.inner.entity,
+            self.inner.entity_poly,
+            self.inner.struct_ref,
+            self.inner.chem_comp,
+            self.inner.exptl,
+            self.inner.diffrn,
+            self.inner.reflns,
+            self.inner.refine,
+            self.inner.title_keywords,
+            self.inner.ncs,
+            self.inner.struct_asym,
+            self.inner.origx,
+            self.inner.struct_conf,
+            self.inner.struct_sheet,
+            self.inner.struct_biol,
+            self.inner.assembly,
+            self.inner.conn,
+            self.inner.cis,
+            self.inner.modres,
+            self.inner.scale,
+            self.inner.atom_type,
+            self.inner.entity_poly_seq,
+            self.inner.tls,
+            self.inner.software,
+            self.inner.group_pdb,
+        ]
+        .into_iter()
+        .all(|value| value)
+    }
+    #[wasm_bindgen(setter, js_name = allGroups)]
+    pub fn set_all_groups(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "boolean")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        let value = bool_value(&value, "allGroups")?;
+        self.inner.atoms = value;
+        self.inner.block_name = value;
+        self.inner.entry = value;
+        self.inner.database_status = value;
+        self.inner.author = value;
+        self.inner.cell = value;
+        self.inner.symmetry = value;
+        self.inner.entity = value;
+        self.inner.entity_poly = value;
+        self.inner.struct_ref = value;
+        self.inner.chem_comp = value;
+        self.inner.exptl = value;
+        self.inner.diffrn = value;
+        self.inner.reflns = value;
+        self.inner.refine = value;
+        self.inner.title_keywords = value;
+        self.inner.ncs = value;
+        self.inner.struct_asym = value;
+        self.inner.origx = value;
+        self.inner.struct_conf = value;
+        self.inner.struct_sheet = value;
+        self.inner.struct_biol = value;
+        self.inner.assembly = value;
+        self.inner.conn = value;
+        self.inner.cis = value;
+        self.inner.modres = value;
+        self.inner.scale = value;
+        self.inner.atom_type = value;
+        self.inner.entity_poly_seq = value;
+        self.inner.tls = value;
+        self.inner.software = value;
+        self.inner.group_pdb = value;
+        Ok(())
     }
     #[wasm_bindgen(getter,js_name=atoms)]
     pub fn atoms(&self) -> bool {
@@ -845,11 +927,24 @@ impl BioMmcifWriteParams {
 #[wasm_bindgen]
 impl BioStructure {
     #[wasm_bindgen(js_name=toPdb)]
-    pub fn to_pdb(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_pdb()
-        self.inner
-            .to_pdb()
-            .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
+    pub fn to_pdb(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioPdbWriteParams | BioPdbWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_pdb()
+                self.inner
+                    .to_pdb()
+                    .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_writers::BioPdbWriteParams::from_js_configuration(&params)?;
+        self.to_pdb_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=toPdbWithParams)]
     pub fn to_pdb_with_params(&self, params: &BioPdbWriteParams) -> Result<String, JsValue> {
@@ -859,11 +954,25 @@ impl BioStructure {
             .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=writePdb)]
-    pub fn write_pdb(&self, path: &str) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.write_pdb(Path::new(path))
-        self.inner
-            .write_pdb(Path::new(path))
-            .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
+    pub fn write_pdb(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioPdbWriteParams | BioPdbWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_pdb(Path::new(path))
+                self.inner
+                    .write_pdb(Path::new(path))
+                    .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_writers::BioPdbWriteParams::from_js_configuration(&params)?;
+        self.write_pdb_with_params(path, &configuration_0)
     }
     #[wasm_bindgen(js_name=writePdbWithParams)]
     pub fn write_pdb_with_params(
@@ -877,11 +986,24 @@ impl BioStructure {
             .map_err(|e| crate::bio_write_errors::pdb_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=toMmcif)]
-    pub fn to_mmcif(&self) -> Result<String, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_mmcif()
-        self.inner
-            .to_mmcif()
-            .map_err(|e| crate::bio_write_errors::mmcif_error(&e).unwrap_or_else(|e| e))
+    pub fn to_mmcif(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioMmcifWriteParams | BioMmcifWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.to_mmcif()
+                self.inner
+                    .to_mmcif()
+                    .map_err(|e| crate::bio_write_errors::mmcif_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_writers::BioMmcifWriteParams::from_js_configuration(&params)?;
+        self.to_mmcif_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=toMmcifWithParams)]
     pub fn to_mmcif_with_params(&self, params: &BioMmcifWriteParams) -> Result<String, JsValue> {
@@ -891,11 +1013,25 @@ impl BioStructure {
             .map_err(|e| crate::bio_write_errors::mmcif_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=writeMmcif)]
-    pub fn write_mmcif(&self, path: &str) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.write_mmcif(Path::new(path))
-        self.inner
-            .write_mmcif(Path::new(path))
-            .map_err(|e| crate::bio_write_errors::mmcif_error(&e).unwrap_or_else(|e| e))
+    pub fn write_mmcif(
+        &self,
+        path: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioMmcifWriteParams | BioMmcifWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.write_mmcif(Path::new(path))
+                self.inner
+                    .write_mmcif(Path::new(path))
+                    .map_err(|e| crate::bio_write_errors::mmcif_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_writers::BioMmcifWriteParams::from_js_configuration(&params)?;
+        self.write_mmcif_with_params(path, &configuration_0)
     }
     #[wasm_bindgen(js_name=writeMmcifWithParams)]
     pub fn write_mmcif_with_params(

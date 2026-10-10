@@ -61,13 +61,25 @@ impl ProteinSelectionSummary {
 #[wasm_bindgen]
 impl Protein {
     #[wasm_bindgen(js_name=fromPdb)]
-    pub fn from_pdb(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: ck::Protein::from_pdb(text)
-        ck::Protein::from_pdb(text)
-            .map(|inner| Self {
-                inner: Rc::new(inner),
-            })
-            .map_err(|e| read_error(&e).unwrap_or_else(|e| e))
+    pub fn from_pdb(
+        text: &str,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioPdbReadParams | BioPdbReadParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: ck::Protein::from_pdb(text)
+                ck::Protein::from_pdb(text)
+                    .map(|inner| Self {
+                        inner: Rc::new(inner),
+                    })
+                    .map_err(|e| read_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::bio_readers::BioPdbReadParams::from_js_configuration(&params)?;
+        Self::from_pdb_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromPdbWithParams)]
     pub fn from_pdb_with_params(text: &str, params: &BioPdbReadParams) -> Result<Self, JsValue> {
@@ -88,13 +100,23 @@ impl Protein {
             .map_err(|e| read_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=fromText)]
-    pub fn from_text(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: ck::Protein::from_text(text)
-        ck::Protein::from_text(text)
-            .map(|inner| Self {
-                inner: Rc::new(inner),
-            })
-            .map_err(|e| read_error(&e).unwrap_or_else(|e| e))
+    pub fn from_text(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "BioReadParams | BioReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: ck::Protein::from_text(text)
+                ck::Protein::from_text(text)
+                    .map(|inner| Self {
+                        inner: Rc::new(inner),
+                    })
+                    .map_err(|e| read_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::bio_readers::BioReadParams::from_js_configuration(&params)?;
+        Self::from_text_with_params(text, &configuration_0)
     }
     #[wasm_bindgen(js_name=fromTextWithParams)]
     pub fn from_text_with_params(text: &str, params: &BioReadParams) -> Result<Self, JsValue> {
@@ -184,7 +206,7 @@ impl Protein {
             })
             .map_err(|e| crate::bio_selection::operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=retainSelection_)]
+    #[wasm_bindgen(js_name=retainSelection)]
     pub fn retain_selection_(&mut self, selection: &BioSelection) -> Result<(), JsValue> {
         // COSMolKit❗✔️: Arc::make_mut(&mut self.inner)
         // Source's generated operation owns all validation, COW and atomic commit.
@@ -204,7 +226,7 @@ impl Protein {
             })
             .map_err(|e| crate::bio_selection::operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=translate_)]
+    #[wasm_bindgen(js_name=translate)]
     pub fn translate_(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "number[] | Float64Array")] offset: JsValue,

@@ -4,6 +4,7 @@ use crate::host_values::*;
 use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
+use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 /// Read-only query carrier, including wildcard atomic identities.
 #[wasm_bindgen]
@@ -52,10 +53,14 @@ impl QueryAtom {
     }
 }
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct SubstructMatchParams {
     pub(crate) inner: ck::SubstructMatchParams,
+    final_match: Option<js_sys::Function>,
+    atom_match: Option<js_sys::Function>,
+    bond_match: Option<js_sys::Function>,
 }
-#[cosmolkit_wasm::javascript_options("SubstructMatchOptions")]
+#[cosmolkit_wasm::javascript_options("SubstructMatchOptions", clone_snapshot)]
 #[wasm_bindgen]
 impl SubstructMatchParams {
     #[wasm_bindgen(constructor)]
@@ -81,6 +86,18 @@ impl SubstructMatchParams {
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
         extra_bond_check_overrides_default_check: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] use_generic_matchers: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "((target: Molecule, atoms: number[]) => boolean) | null"
+        )]
+        final_match: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "((query: QueryAtom, target: Atom) => boolean) | null"
+        )]
+        atom_match: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "((query: Bond, target: Bond) => boolean) | null"
+        )]
+        bond_match: JsValue,
     ) -> Result<Self, JsValue> {
         let mut inner = ck::SubstructMatchParams::default();
         if !max_matches.is_undefined() {
@@ -146,7 +163,12 @@ impl SubstructMatchParams {
         if !use_generic_matchers.is_undefined() {
             inner.use_generic_matchers = bool_value(&use_generic_matchers, "useGenericMatchers")?;
         }
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            final_match: callback(&final_match, "finalMatch")?,
+            atom_match: callback(&atom_match, "atomMatch")?,
+            bond_match: callback(&bond_match, "bondMatch")?,
+        })
     }
     #[wasm_bindgen(getter,js_name=maxMatches)]
     pub fn max_matches(&self) -> usize {
@@ -220,6 +242,57 @@ impl SubstructMatchParams {
     pub fn use_generic_matchers(&self) -> bool {
         self.inner.use_generic_matchers
     }
+    #[wasm_bindgen(getter, js_name = finalMatch, unchecked_return_type = "((target: Molecule, atoms: number[]) => boolean) | null")]
+    pub fn final_match(&self) -> JsValue {
+        self.final_match
+            .as_ref()
+            .map_or(JsValue::NULL, |v| v.clone().into())
+    }
+    #[wasm_bindgen(getter, js_name = atomMatch, unchecked_return_type = "((query: QueryAtom, target: Atom) => boolean) | null")]
+    pub fn atom_match(&self) -> JsValue {
+        self.atom_match
+            .as_ref()
+            .map_or(JsValue::NULL, |v| v.clone().into())
+    }
+    #[wasm_bindgen(getter, js_name = bondMatch, unchecked_return_type = "((query: Bond, target: Bond) => boolean) | null")]
+    pub fn bond_match(&self) -> JsValue {
+        self.bond_match
+            .as_ref()
+            .map_or(JsValue::NULL, |v| v.clone().into())
+    }
+}
+fn callback(value: &JsValue, name: &str) -> Result<Option<js_sys::Function>, JsValue> {
+    if value.is_null() || value.is_undefined() {
+        return Ok(None);
+    }
+    value
+        .clone()
+        .dyn_into()
+        .map(Some)
+        .map_err(|_| type_error(name))
+}
+
+#[derive(Default)]
+struct CallbackErrors(Mutex<Option<JsValue>>);
+impl CallbackErrors {
+    fn call(&self, call: impl FnOnce() -> Result<JsValue, JsValue>) -> bool {
+        // Do not call more user code after its first exception. Return false to
+        // the canonical matcher, then rethrow that same exception at the boundary.
+        if self.0.lock().expect("callback error mutex").is_some() {
+            return false;
+        }
+        let result = call().and_then(|v| {
+            v.as_bool()
+                .ok_or_else(|| type_error("callback result must be boolean"))
+        });
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                *self.0.lock().expect("callback error mutex") = Some(error);
+                false
+            }
+        }
+    }
 }
 fn strings(v: &JsValue, name: &str) -> Result<Vec<String>, JsValue> {
     if v.is_null() {
@@ -232,8 +305,9 @@ fn strings(v: &JsValue, name: &str) -> Result<Vec<String>, JsValue> {
 }
 #[wasm_bindgen]
 pub struct SmartsWriteParams {
-    inner: ck::SmartsWriteParams,
+    pub(crate) inner: ck::SmartsWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("SmartsWriteParamsOptions")]
 #[wasm_bindgen]
 impl SmartsWriteParams {
     #[wasm_bindgen(constructor)]
@@ -418,20 +492,83 @@ extern "C" {
     ) -> Result<(), JsValue>;
 }
 impl SubstructMatchParams {
-    fn from_configuration(value: &JsValue) -> Result<Self, JsValue> {
-        let mut inner = None;
-        // The generated visitor checks the actual native parameter class.
-        // Its callback performs only a detached parameter copy, no operation.
-        if visit_substructmatchparams(value, &mut |params: &SubstructMatchParams| {
-            inner = Some(params.inner.clone());
-        })
-        .is_ok()
-        {
-            return inner
-                .map(|inner| Self { inner })
-                .ok_or_else(|| type_error("params"));
+    pub(crate) fn from_inner(inner: ck::SubstructMatchParams) -> Self {
+        Self {
+            inner,
+            final_match: None,
+            atom_match: None,
+            bond_match: None,
         }
-        Self::from_js_options(value)
+    }
+    pub(crate) fn has_callbacks(&self) -> bool {
+        self.final_match.is_some() || self.atom_match.is_some() || self.bond_match.is_some()
+    }
+    fn with_callbacks<T>(
+        &self,
+        molecule: &cosmolkit_wasm::Molecule,
+        run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, ck::SubstructMatchError>,
+    ) -> Result<T, JsValue> {
+        let mut params = self.inner.clone();
+        let errors = Arc::new(CallbackErrors::default());
+        if let Some(callback) = &self.final_match {
+            let callback = callback.clone();
+            let errors = Arc::clone(&errors);
+            // Match Python's owned COW callback snapshot; never give a JS
+            // callback a mutable reference to the receiver's live runtime.
+            let snapshot = Mutex::new(molecule.clone());
+            params.extra_final_check = Some(Arc::new(move |_, ids| {
+                errors.call(|| {
+                    let target: JsValue = Molecule {
+                        inner: Arc::new(snapshot.lock().expect("callback snapshot mutex").clone()),
+                    }
+                    .into();
+                    let ids: Array = ids.iter().map(|id| JsValue::from(*id as u32)).collect();
+                    callback.call2(&JsValue::UNDEFINED, &target, &ids)
+                })
+            }));
+        }
+        if let Some(callback) = &self.atom_match {
+            let callback = callback.clone();
+            let errors = Arc::clone(&errors);
+            params.extra_atom_check = Some(Arc::new(move |_, query, _, target| {
+                errors.call(|| {
+                    let query: JsValue = QueryAtom {
+                        inner: query.clone(),
+                    }
+                    .into();
+                    let target: JsValue = crate::atom_bond::Atom {
+                        inner: target.clone(),
+                    }
+                    .into();
+                    callback.call2(&JsValue::UNDEFINED, &query, &target)
+                })
+            }));
+        }
+        if let Some(callback) = &self.bond_match {
+            let callback = callback.clone();
+            let errors = Arc::clone(&errors);
+            params.extra_bond_check = Some(Arc::new(move |query, target| {
+                errors.call(|| {
+                    let query: JsValue = crate::atom_bond::Bond {
+                        inner: query.clone(),
+                    }
+                    .into();
+                    let target: JsValue = crate::atom_bond::Bond {
+                        inner: target.clone(),
+                    }
+                    .into();
+                    callback.call2(&JsValue::UNDEFINED, &query, &target)
+                })
+            }));
+        }
+        let result = run(&params);
+        let error = errors.0.lock().expect("callback error mutex").take();
+        match error {
+            Some(error) => Err(error),
+            None => {
+                result.map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e))
+            }
+        }
     }
 }
 #[wasm_bindgen(
@@ -450,6 +587,40 @@ extern "C" {
 }
 #[wasm_bindgen]
 impl Molecule {
+    #[wasm_bindgen(js_name=toSmarts)]
+    pub fn to_smarts(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SmartsWriteParams | SmartsWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        self.to_smarts_with_params(&SmartsWriteParams::from_js_configuration(&params)?)
+    }
+    #[wasm_bindgen(js_name=toSmartsWithParams)]
+    pub fn to_smarts_with_params(&self, params: &SmartsWriteParams) -> Result<String, JsValue> {
+        self.inner
+            .to_smarts_with_params(&params.inner)
+            .map_err(|e| crate::search_errors::write_error(&e).unwrap_or_else(|e| e))
+            .and_then(|v| text(&v))
+    }
+    #[wasm_bindgen(js_name=toCxSmarts)]
+    pub fn to_cx_smarts(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "SmartsWriteParams | SmartsWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<String, JsValue> {
+        self.to_cx_smarts_with_params(&SmartsWriteParams::from_js_configuration(&params)?)
+    }
+    #[wasm_bindgen(js_name=toCxSmartsWithParams)]
+    pub fn to_cx_smarts_with_params(&self, params: &SmartsWriteParams) -> Result<String, JsValue> {
+        self.inner
+            .to_cx_smarts_with_params(&params.inner)
+            .map_err(|e| crate::search_errors::write_error(&e).unwrap_or_else(|e| e))
+            .and_then(|v| text(&v))
+    }
     #[wasm_bindgen(js_name=substructMatch,unchecked_return_type="MatchResult | null")]
     pub fn substruct_match(
         &self,
@@ -461,22 +632,14 @@ impl Molecule {
     ) -> Result<JsValue, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_match(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined())
-            .then(|| SubstructMatchParams::from_configuration(&params))
-            .transpose()?;
+        let configured = SubstructMatchParams::from_js_configuration(&params)?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
                 configured
-                    .as_ref()
-                    .map_or_else(
-                        || self.inner.substruct_match(&q.inner),
-                        |params| {
-                            self.inner
-                                .substruct_match_with_params(&q.inner, &params.inner)
-                        },
-                    )
-                    .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
-                    .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
+                    .with_callbacks(&self.inner, |params| {
+                        self.inner.substruct_match_with_params(&q.inner, params)
+                    })
+                    .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into())),
             );
         })?;
         result.ok_or_else(|| type_error("query"))?
@@ -492,22 +655,14 @@ impl Molecule {
     ) -> Result<Vec<MatchResult>, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_matches(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined())
-            .then(|| SubstructMatchParams::from_configuration(&params))
-            .transpose()?;
+        let configured = SubstructMatchParams::from_js_configuration(&params)?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
                 configured
-                    .as_ref()
-                    .map_or_else(
-                        || self.inner.substruct_matches(&q.inner),
-                        |params| {
-                            self.inner
-                                .substruct_matches_with_params(&q.inner, &params.inner)
-                        },
-                    )
-                    .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect())
-                    .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
+                    .with_callbacks(&self.inner, |params| {
+                        self.inner.substruct_matches_with_params(&q.inner, params)
+                    })
+                    .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect()),
             );
         })?;
         result.ok_or_else(|| type_error("query"))?
@@ -523,22 +678,11 @@ impl Molecule {
     ) -> Result<bool, JsValue> {
         // COSMolKit❗✔️: self.inner.has_substruct_match(&q.inner)
         let mut result = None;
-        let configured = (!params.is_undefined())
-            .then(|| SubstructMatchParams::from_configuration(&params))
-            .transpose()?;
+        let configured = SubstructMatchParams::from_js_configuration(&params)?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
-            result = Some(
-                configured
-                    .as_ref()
-                    .map_or_else(
-                        || self.inner.has_substruct_match(&q.inner),
-                        |params| {
-                            self.inner
-                                .has_substruct_match_with_params(&q.inner, &params.inner)
-                        },
-                    )
-                    .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
-            );
+            result = Some(configured.with_callbacks(&self.inner, |params| {
+                self.inner.has_substruct_match_with_params(&q.inner, params)
+            }));
         })?;
         result.ok_or_else(|| type_error("query"))?
     }
@@ -554,12 +698,10 @@ impl Molecule {
             let mut inner_result = None;
             let visited = visit_substructmatchparams(&params, &mut |p: &SubstructMatchParams| {
                 inner_result = Some(
-                    self.inner
-                        .substruct_matches_with_params(&q.inner, &p.inner)
-                        .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect())
-                        .map_err(|e| {
-                            crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
-                        }),
+                    p.with_callbacks(&self.inner, |params| {
+                        self.inner.substruct_matches_with_params(&q.inner, params)
+                    })
+                    .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect()),
                 );
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
@@ -577,12 +719,10 @@ impl Molecule {
             let mut inner_result = None;
             let visited = visit_substructmatchparams(&params, &mut |p: &SubstructMatchParams| {
                 inner_result = Some(
-                    self.inner
-                        .substruct_match_with_params(&q.inner, &p.inner)
-                        .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
-                        .map_err(|e| {
-                            crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
-                        }),
+                    p.with_callbacks(&self.inner, |params| {
+                        self.inner.substruct_match_with_params(&q.inner, params)
+                    })
+                    .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into())),
                 );
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
@@ -599,13 +739,9 @@ impl Molecule {
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             let mut inner_result = None;
             let visited = visit_substructmatchparams(&params, &mut |p: &SubstructMatchParams| {
-                inner_result = Some(
-                    self.inner
-                        .has_substruct_match_with_params(&q.inner, &p.inner)
-                        .map_err(|e| {
-                            crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
-                        }),
-                );
+                inner_result = Some(p.with_callbacks(&self.inner, |params| {
+                    self.inner.has_substruct_match_with_params(&q.inner, params)
+                }));
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
         })?;

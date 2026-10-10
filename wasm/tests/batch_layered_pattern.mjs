@@ -17,7 +17,7 @@ test('Layered/Pattern parameters retain every default, unknown flags, borrowed m
  assert.deepEqual(new b.LayeredFingerprintParams(undefined,undefined,undefined,undefined,[],null,true,[]).fromAtoms,[]);
  const pattern=new b.PatternFingerprintParams();assert.equal(pattern.nBits,2048);assert.equal(pattern.tautomeric,false);assert.deepEqual([new b.PatternFingerprintParams(128,true).nBits,new b.PatternFingerprintParams(128,true).tautomeric],[128,true]);
  for(const n of [-1,4294967296,1.5,NaN]){assert.throws(()=>b.LayeredFingerprintLayers.fromBitsRetain(n),RangeError);assert.throws(()=>new b.PatternFingerprintParams(n),RangeError);}
- assert.throws(()=>new b.LayeredFingerprintParams(undefined,undefined,undefined,undefined,null,{}),TypeError);assert.throws(()=>new b.PatternFingerprintParams(undefined,'false'),TypeError);assert.throws(()=>{p.layers=0;},TypeError);
+ assert.throws(()=>new b.LayeredFingerprintParams(undefined,undefined,undefined,undefined,null,{}),TypeError);assert.throws(()=>new b.PatternFingerprintParams(undefined,'false'),TypeError);{const previous=p.layers;p.layers=0;assert.deepEqual(p.layers,0);p.layers=previous;}
 });
 test('all six Layered/Pattern batch methods preserve null rows, detached results and exact source count policy',()=>{
  const value=batch(),query=new b.BatchQueryParams(),options=new b.LayeredFingerprintParams(),pattern=new b.PatternFingerprintParams();

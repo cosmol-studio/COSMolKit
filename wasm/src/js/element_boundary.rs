@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct Element {
-    inner: cosmolkit_wasm::Element,
+    pub(crate) inner: cosmolkit_wasm::Element,
 }
 
 #[wasm_bindgen]

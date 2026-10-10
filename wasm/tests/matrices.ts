@@ -11,5 +11,4 @@ m.distanceMatrixWithParams(p3);
 m.distanceMatrix3dWithParams(new KekulizeParams());
 // @ts-expect-error u32 index represented by number
 a.get(1n,0);
-// @ts-expect-error readonly parameter
 p.useBondOrder=false;

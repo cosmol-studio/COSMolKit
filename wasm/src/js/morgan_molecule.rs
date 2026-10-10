@@ -116,12 +116,19 @@ impl Molecule {
         })
     }
     #[wasm_bindgen(js_name=fingerprintMorganSparseCount)]
-    pub fn fingerprint_morgan_sparse_count(&self) -> Result<SparseCountFingerprint, JsValue> {
+    pub fn fingerprint_morgan_sparse_count(&self, #[wasm_bindgen(unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions")] params: JsValue) -> Result<SparseCountFingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint(
         self.inner
             .fingerprint_morgan_sparse_count()
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
+
+            };
+        }
+        let configuration_0 = crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_morgan_sparse_count_with_params(&configuration_0, JsValue::NULL)
     }
     #[wasm_bindgen(js_name=fingerprintMorganSparseCountWithParams)]
     pub fn fingerprint_morgan_sparse_count_with_params(
@@ -139,12 +146,19 @@ impl Molecule {
         })
     }
     #[wasm_bindgen(js_name=fingerprintMorganSparse)]
-    pub fn fingerprint_morgan_sparse(&self) -> Result<SparseBitFingerprint, JsValue> {
+    pub fn fingerprint_morgan_sparse(&self, #[wasm_bindgen(unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions")] params: JsValue) -> Result<SparseBitFingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint(
         self.inner
             .fingerprint_morgan_sparse()
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(error)
+
+            };
+        }
+        let configuration_0 = crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_morgan_sparse_with_params(&configuration_0, JsValue::NULL)
     }
     #[wasm_bindgen(js_name=fingerprintMorganSparseWithParams)]
     pub fn fingerprint_morgan_sparse_with_params(
@@ -162,12 +176,19 @@ impl Molecule {
         })
     }
     #[wasm_bindgen(js_name=fingerprintMorganCount)]
-    pub fn fingerprint_morgan_count(&self) -> Result<SparseCountFingerprint32, JsValue> {
+    pub fn fingerprint_morgan_count(&self, #[wasm_bindgen(unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions")] params: JsValue) -> Result<SparseCountFingerprint32, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: .morgan_count_fingerprint(
         self.inner
             .fingerprint_morgan_count()
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(error)
+
+            };
+        }
+        let configuration_0 = crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_morgan_count_with_params(&configuration_0, JsValue::NULL)
     }
     #[wasm_bindgen(js_name=fingerprintMorganCountWithParams)]
     pub fn fingerprint_morgan_count_with_params(
@@ -185,12 +206,19 @@ impl Molecule {
         })
     }
     #[wasm_bindgen(js_name=fingerprintMorgan)]
-    pub fn fingerprint_morgan(&self) -> Result<Fingerprint, JsValue> {
+    pub fn fingerprint_morgan(&self, #[wasm_bindgen(unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions")] params: JsValue) -> Result<Fingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: .morgan_fingerprint(
         self.inner
             .fingerprint_morgan()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
+
+            };
+        }
+        let configuration_0 = crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_morgan_with_params(&configuration_0, JsValue::NULL)
     }
     #[wasm_bindgen(js_name=fingerprintMorganWithParams)]
     pub fn fingerprint_morgan_with_params(

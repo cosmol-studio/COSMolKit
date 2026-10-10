@@ -83,12 +83,11 @@ jobs:
                   NPM_PACKAGE_ROOT: ${{ runner.temp }}/cosmolkit-npm
               run: |
                   set -euo pipefail
-                  # Temporary: test publication without blocking on incomplete registry projections.
-                  # Compilation and JavaScript/TypeScript tests remain mandatory.
+                  # Validate every preset against its compiled binding registry and JS/TS tests.
                   for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
                       echo "::group::Build and validate npm $preset"
                       package_dir="$NPM_PACKAGE_ROOT/npm-package-$preset"
-                      python -B wasm/tools/wasm_binding/run.py --preset "$preset" --skip-binding-contract --out-dir "$package_dir"
+                      python -B wasm/tools/wasm_binding/run.py --preset "$preset" --out-dir "$package_dir"
                       npm pack --dry-run --json "$package_dir"
                       echo "::endgroup::"
                   done

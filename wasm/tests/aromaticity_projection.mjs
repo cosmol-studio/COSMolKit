@@ -5,12 +5,12 @@ import { pathToFileURL } from "node:url";
 const b = await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
 b.initSync({ module: readFileSync(process.env.COSMOLKIT_WASM_BINARY) });
 
-test("aromaticity enum, frozen parameters and all four operations project canonical semantics", () => {
+test("aromaticity enum, editable parameters and all four operations project canonical semantics", () => {
     assert.equal(new b.AromaticityParams().model, b.AromaticityModel.Rdkit);
     for (const model of [b.AromaticityModel.Rdkit, b.AromaticityModel.Simple, b.AromaticityModel.Mdl, b.AromaticityModel.Mmff94]) {
         const p = new b.AromaticityParams(model);
         assert.equal(p.model, model);
-        assert.throws(() => { p.model = b.AromaticityModel.Custom; }, TypeError);
+        {const previous=p.model;p.model=b.AromaticityModel.Custom;assert.deepEqual(p.model,b.AromaticityModel.Custom);p.model=previous;}
         const source = b.Molecule.fromSmilesWithSanitize("C1=CC=CC=C1", false);
         const before = source.toSmiles();
         const value = source.withAssignedAromaticityWithParams(p);

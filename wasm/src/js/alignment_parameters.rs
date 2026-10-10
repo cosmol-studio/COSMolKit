@@ -150,6 +150,7 @@ pub struct AlignmentParameters {
     pub(crate) inner: ck::AlignmentParameters,
 }
 
+#[cosmolkit_wasm::javascript_options("AlignmentParametersOptions")]
 #[wasm_bindgen]
 impl AlignmentParameters {
     #[wasm_bindgen(constructor)]
@@ -298,6 +299,7 @@ pub struct BestAlignmentParameters {
     pub(crate) inner: ck::BestAlignmentParameters,
 }
 
+#[cosmolkit_wasm::javascript_options("BestAlignmentParametersOptions")]
 #[wasm_bindgen]
 impl BestAlignmentParameters {
     #[wasm_bindgen(constructor)]
@@ -538,6 +540,7 @@ pub struct CoordinateRmsdParameters {
     pub(crate) inner: ck::CoordinateRmsdParameters,
 }
 
+#[cosmolkit_wasm::javascript_options("CoordinateRmsdParametersOptions")]
 #[wasm_bindgen]
 impl CoordinateRmsdParameters {
     #[wasm_bindgen(constructor)]
@@ -698,6 +701,7 @@ pub struct AllConformerRmsdParameters {
     pub(crate) inner: ck::AllConformerRmsdParameters,
 }
 
+#[cosmolkit_wasm::javascript_options("AllConformerRmsdParametersOptions")]
 #[wasm_bindgen]
 impl AllConformerRmsdParameters {
     #[wasm_bindgen(constructor)]
@@ -855,6 +859,7 @@ pub struct ConformerAlignmentParameters {
     pub(crate) inner: ck::ConformerAlignmentParameters,
 }
 
+#[cosmolkit_wasm::javascript_options("ConformerAlignmentParametersOptions")]
 #[wasm_bindgen]
 impl ConformerAlignmentParameters {
     #[wasm_bindgen(constructor)]

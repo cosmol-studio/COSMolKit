@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import test from 'node:test';
+import {pathToFileURL} from 'node:url';
+const ck=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
+ck.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+
+test('CX and fragment writers forward mutable configuration without changing the molecule',()=>{
+ const mol=ck.Molecule.fromSmiles('CCOC'),before=mol.toSmiles();
+ const cx=new ck.CxSmilesWriteParams();cx.fields=ck.CxSmilesFields.NONE;
+ cx.smiles={allBondsExplicit:true};
+ assert.equal(mol.toCxSmiles(cx),mol.toSmiles({allBondsExplicit:true}));
+ assert.equal(mol.toCxSmiles({smiles:{allBondsExplicit:true},fields:ck.CxSmilesFields.NONE}),mol.toCxSmilesWithParams(cx));
+ const selection=ck.CxCoordinateSelection.twoD(12);
+ cx.coordinateSelection=selection;
+ assert.throws(()=>{cx.coordinateSelection='2d';},TypeError);
+ assert.throws(()=>ck.CxCoordinateSelection.threeD(-1),RangeError);
+ const fragment=new ck.FragmentSmilesWriteParams([0,1]);fragment.smiles={allBondsExplicit:true};
+ assert.equal(mol.toFragmentSmilesWithParams(fragment),'C-C');
+ assert.equal(mol.toFragmentSmiles([0,1],fragment),'C-C');
+ assert.equal(mol.toFragmentSmiles([0,1],{smiles:{allBondsExplicit:true}}),'C-C');
+ fragment.bonds=[];assert.equal(mol.toFragmentSmilesWithParams(fragment),'C.C');
+ const snapshot=fragment.atoms;snapshot.push(99);assert.deepEqual(fragment.atoms,[0,1]);
+ fragment.bonds=null;assert.equal(mol.toFragmentSmilesWithParams(fragment),'C-C');
+ const fragmentCx=new ck.FragmentCxSmilesWriteParams([0,1],{fields:ck.CxSmilesFields.NONE});
+ assert.equal(mol.toFragmentCxSmilesWithParams(fragmentCx),mol.toFragmentCxSmiles([0,1]));
+ assert.equal(mol.toFragmentCxSmiles([0,1],{cx:{fields:ck.CxSmilesFields.NONE}}),'CC');
+ assert.throws(()=>mol.toFragmentSmiles([99]),e=>e.name==='SmilesWriteError'&&e.kind==='Fragment');
+ assert.throws(()=>{fragment.atoms=[-1];},RangeError);assert.deepEqual(fragment.atoms,[0,1]);
+ assert.throws(()=>{fragment.atomSymbols=[3];},TypeError);assert.equal(fragment.atomSymbols,null);
+ assert.equal(mol.toSmiles(),before);
+});
+
+test('Random SMILES retain seeded ordering and duplicates; SMARTS writers preserve options',()=>{
+ const mol=ck.Molecule.fromSmiles('C[C@H](O)Cl'),before=mol.toSmiles();
+ const params=new ck.RandomSmilesWriteParams();params.allBondsExplicit=true;
+ const expected=mol.toRandomSmilesWithParams(8,42,params);
+ assert.equal(expected.length,8);
+ assert.deepEqual(mol.toRandomSmiles(8,42,params),expected);
+ assert.deepEqual(mol.toRandomSmiles(8,42,{allBondsExplicit:true}),expected);
+ assert.deepEqual(mol.toRandomSmiles(0,42),[]);
+ assert.throws(()=>mol.toRandomSmiles(-1,42),RangeError);
+ assert.throws(()=>mol.toRandomSmiles(1,1.5),RangeError);
+ const smarts=new ck.SmartsWriteParams();smarts.isomericSmiles=false;
+ assert.equal(mol.toSmarts(smarts),mol.toSmartsWithParams(smarts));
+ assert.equal(mol.toSmarts({isomericSmiles:false}),mol.toSmartsWithParams(smarts));
+ assert.equal(mol.toCxSmarts({isomericSmiles:false}),mol.toCxSmartsWithParams(smarts));
+ assert.ok(!mol.toSmarts(smarts).includes('@'));
+ assert.ok(mol.toSmarts().includes('@'));
+ assert.equal(mol.toSmiles(),before);
+});

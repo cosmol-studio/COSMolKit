@@ -189,6 +189,49 @@ pub(crate) fn alignment_error(source: &ck::AlignmentError) -> Result<JsValue, Js
 }
 
 pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue, JsValue> {
+    if let Some(e) = source.downcast_ref::<ck::SdfReadError>() {
+        return crate::io_errors::sdf_read_error(e);
+    }
+    if let Some(e) = source.downcast_ref::<ck::SmilesStereoError>() {
+        return crate::smiles_boundary::smiles_stereo_error(e);
+    }
+    #[cfg(feature = "cap-stereoisomers")]
+    if let Some(e) = source.downcast_ref::<ck::EnumerationRunError>() {
+        return crate::stereoisomers::run_source(e);
+    }
+    #[cfg(feature = "cap-stereoisomers")]
+    if let Some(e) = source.downcast_ref::<ck::EnumerationError>() {
+        return crate::stereoisomers::enumeration_source(e);
+    }
+    #[cfg(feature = "cap-tautomer")]
+    if let Some(e) = source.downcast_ref::<ck::TautomerRunError>() {
+        return crate::tautomer::run_source(e);
+    }
+    #[cfg(feature = "cap-tautomer")]
+    if let Some(e) = source.downcast_ref::<ck::TautomerCatalogError>() {
+        return crate::tautomer::catalog_source(e);
+    }
+    #[cfg(feature = "cap-stereo")]
+    if let Some(e) = source.downcast_ref::<ck::StereoError>() {
+        return crate::stereo_errors::stereo_error(e);
+    }
+    #[cfg(feature = "cap-stereo")]
+    if let Some(e) = source.downcast_ref::<ck::PotentialStereoError>() {
+        return crate::stereo_errors::potential_error(e);
+    }
+    #[cfg(feature = "cap-stereo")]
+    if let Some(e) = source.downcast_ref::<ck::CipLabelerError>() {
+        return crate::stereo_errors::cip_error(e);
+    }
+    if let Some(e) = source.downcast_ref::<ck::CoordinateInputError>() {
+        return crate::coordinate_errors::input_error(e);
+    }
+    if let Some(e) = source.downcast_ref::<ck::Coordinate3DReadError>() {
+        return crate::coordinate_errors::read_error(e);
+    }
+    if let Some(e) = source.downcast_ref::<ck::TransformError>() {
+        return crate::coordinate_errors::transform_error(e);
+    }
     #[cfg(feature = "cap-search")]
     if let Some(e) = source.downcast_ref::<ck::SmartsParseError>() {
         return crate::query_construction::parse_error(e);
@@ -605,11 +648,11 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
     set(&error, "kind", kind.into())?;
     match source {
         E::AtomPropertyIndex { atom, atom_count } => {
-            set(&error,"atomIndex",(atom.index() as f64).into())?;
-            set(&error,"atomCount",(*atom_count as f64).into())?;
+            set(&error, "atomIndex", (atom.index() as f64).into())?;
+            set(&error, "atomCount", (*atom_count as f64).into())?;
         }
-        E::ReservedAtomPropertyKey { key } => set(&error,"key",key.as_str().into())?,
-        _ => {},
+        E::ReservedAtomPropertyKey { key } => set(&error, "key", key.as_str().into())?,
+        _ => {}
     }
     match source {
         #[cfg(feature = "cap-reaction")]
@@ -624,5 +667,39 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
             }
         }
     }
+    set(
+        &error,
+        "detail",
+        OperationError {
+            inner: source.clone(),
+            kind: kind.into(),
+        }
+        .into(),
+    )?;
     Ok(error)
+}
+
+#[wasm_bindgen]
+pub struct OperationError {
+    inner: ck::OperationError,
+    kind: String,
+}
+#[wasm_bindgen]
+impl OperationError {
+    #[wasm_bindgen(getter)]
+    pub fn domain(&self) -> String {
+        "operation".into()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        self.kind.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+    #[wasm_bindgen(getter, unchecked_return_type = "Error | null")]
+    pub fn cause(&self) -> Result<JsValue, JsValue> {
+        self.inner.source().map_or(Ok(JsValue::NULL), source_error)
+    }
 }

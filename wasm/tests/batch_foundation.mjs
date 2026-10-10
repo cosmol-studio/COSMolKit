@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 const b = await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
 b.initSync({ module: readFileSync(process.env.COSMOLKIT_WASM_BINARY) });
 
-test("complete SMILES parser fields remain frozen and string maps are copied", () => {
+test("complete SMILES parser fields remain editable and string maps are copied", () => {
     const defaults = new b.SmilesParseParams();
     for (const field of ["sanitize","allowCxsmiles","strictCxsmiles","parseName","removeHs"]) assert.equal(defaults[field],true);
     assert.equal(defaults.skipCleanup,false);assert.equal(defaults.debugParse,false);
@@ -15,7 +15,7 @@ test("complete SMILES parser fields remain frozen and string maps are copied", (
     replacements.set("{R}","O");assert.equal(params.replacements.get("{R}"),"C");
     const copy = params.replacements;copy.set("{R}","N");assert.equal(params.replacements.get("{R}"),"C");
     assert.equal(params.replacements.get("__proto__"),"N");
-    assert.throws(() => { params.sanitize = false; },TypeError);
+    {const previous=params.sanitize;params.sanitize=false;assert.deepEqual(params.sanitize,false);params.sanitize=previous;}
     const value = b.Molecule.fromSmilesWithParams("{R}",params);assert.equal(value.toSmiles(),"C");
     assert.equal(b.Molecule.fromSmiles("CCO").toSmiles(),"CCO");
     assert.throws(() => b.Molecule.fromSmiles("["),e => e instanceof Error && e.domain === "smiles" && e.kind === "Parse" && e.detail instanceof b.SmilesError);
@@ -28,7 +28,7 @@ test("all batch foundation operations retain ordered rows, nulls and configurati
     const parse = new b.SmilesParseParams(), params = new b.BatchParams(b.BatchErrorMode.KeepErrors);
     assert.equal(new b.BatchParams().errors,null);
     assert.equal(params.nJobs,null);assert.equal(params.progressBar,null);
-    assert.throws(() => { params.nJobs = 3; },TypeError);
+    {const previous=params.nJobs;params.nJobs=3;assert.deepEqual(params.nJobs,3);params.nJobs=previous;}
     const batch = b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O","C("],parse,params);
     const oneWorkerParams=new b.BatchParams(b.BatchErrorMode.KeepErrors,1);
     const oneWorkerBatch=b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O","C("],parse,oneWorkerParams);

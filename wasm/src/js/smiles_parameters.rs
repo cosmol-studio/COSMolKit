@@ -10,6 +10,7 @@ pub struct SmilesParseParams {
     pub(crate) inner: ck::SmilesParseParams,
 }
 
+#[cosmolkit_wasm::javascript_options("SmilesParseParamsOptions")]
 #[wasm_bindgen]
 impl SmilesParseParams {
     #[wasm_bindgen(constructor)]
@@ -125,6 +126,7 @@ impl SmilesParseParams {
 pub struct SmilesWriteParams {
     pub(crate) inner: ck::SmilesWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("SmilesWriteParamsOptions")]
 #[wasm_bindgen]
 impl SmilesWriteParams {
     #[wasm_bindgen(constructor)]

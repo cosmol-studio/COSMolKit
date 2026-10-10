@@ -8,7 +8,6 @@ const results:(BatchFingerprintOutput|null)[][]=[value.fingerprintAtomPairWithOu
 declare const result:BatchFingerprintOutput;const fp:Fingerprint=result.fingerprint(),extra:BatchFingerprintAdditionalOutput=result.additionalOutput(),atoms:number[]|null=extra.atomCounts(),bits:bigint[][]|null=extra.atomToBits(),info:Map<bigint,[number,number][]>|null=extra.bitInfoMap(),paths:Map<bigint,number[][]>|null=extra.bitPaths(),per:Map<bigint,number[][]>|null=extra.atomsPerBit();
 declare const error:BatchFingerprintOutputError;const kind:string=error.kind;
 const clone:AtomPairParams=generator.withJson(generator.toJson()),from:number[]|null=options.fromAtoms;
-// @ts-expect-error frozen parameters
 generator.fpSize=3;
 // @ts-expect-error boolean collection flag
 value.fingerprintAtomPairWithOutputListWithParams(options,'false',query);

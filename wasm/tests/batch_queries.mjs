@@ -5,7 +5,7 @@ import {pathToFileURL} from "node:url";
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const batch=()=>b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O"],new b.SmilesParseParams(),new b.BatchParams(b.BatchErrorMode.KeepErrors));
 
-test("full SMILES writer and query parameters retain frozen source defaults and checked values",()=>{
+test("full SMILES writer and query parameters retain editable source defaults and checked values",()=>{
     const write=new b.SmilesWriteParams();
     const fields=["isomericSmiles","kekule","canonical","cleanStereo","allBondsExplicit","allHydrogensExplicit","includeDativeBonds","ignoreAtomMapNumbers"],defaults=[true,false,true,true,false,false,true,false];
     fields.forEach((key,i)=>assert.equal(write[key],defaults[i]));assert.equal(write.rootedAtAtom,null);
@@ -13,10 +13,10 @@ test("full SMILES writer and query parameters retain frozen source defaults and 
     assert.equal(new b.SmilesWriteParams(undefined,undefined,undefined,undefined,null).rootedAtAtom,null);
     assert.throws(()=>new b.SmilesWriteParams("true"),TypeError);
     for(const n of [-1,1.5,4294967296,NaN,Infinity])assert.throws(()=>new b.SmilesWriteParams(undefined,undefined,undefined,undefined,n),RangeError);
-    assert.throws(()=>{write.canonical=false;},TypeError);
+    {const previous=write.canonical;write.canonical=false;assert.deepEqual(write.canonical,false);write.canonical=previous;}
     const query=new b.BatchQueryParams();assert.equal(query.nJobs,null);assert.equal(query.progressBar,null);assert.equal(query.progressCallback,null);
     const callback=()=>{};const configured=new b.BatchQueryParams(2,true,callback);assert.equal(configured.nJobs,2);assert.equal(configured.progressBar,true);assert.equal(configured.progressCallback,callback);
-    assert.throws(()=>{configured.progressCallback=null;},TypeError);
+    {const previous=configured.progressCallback;configured.progressCallback=null;assert.deepEqual(configured.progressCallback,null);configured.progressCallback=previous;}
     assert.throws(()=>new b.BatchQueryParams(null,null,{}),TypeError);
     assert.throws(()=>new b.BatchQueryParams(null,"false"),TypeError);
     assert.throws(()=>new b.BatchQueryParams(-1),RangeError);

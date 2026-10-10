@@ -4,7 +4,7 @@ import test from "node:test";
 import {pathToFileURL} from "node:url";
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 
-test("image parameters preserve all defaults, copied filenames, frozen nested execution and checked dimensions",()=>{
+test("image parameters preserve all defaults, copied filenames, editable nested execution and checked dimensions",()=>{
     const defaults=new b.BatchImageParams();assert.equal(defaults.format,"png");assert.equal(defaults.width,300);assert.equal(defaults.height,300);assert.equal(defaults.filenames,null);assert.equal(defaults.reportPath,null);assert.equal(defaults.execution.errors,null);
     const execution=new b.BatchParams(b.BatchErrorMode.KeepErrors,2,false),filenames=["ethanol",null,"water.svg"];
     const custom=new b.BatchImageParams("svg",120,100,execution,filenames,"counts.json");filenames[0]="changed";
@@ -12,7 +12,7 @@ test("image parameters preserve all defaults, copied filenames, frozen nested ex
     assert.equal(custom.width,120);assert.equal(custom.height,100);assert.equal(custom.format,"svg");assert.equal(custom.reportPath,"counts.json");assert.deepEqual(custom.filenames,["ethanol",null,"water.svg"]);
     const copied=custom.filenames;copied[0]="changed";assert.deepEqual(custom.filenames,["ethanol",null,"water.svg"]);
     assert.deepEqual(new b.BatchImageParams(undefined,undefined,undefined,null,[]).filenames,[]);
-    assert.throws(()=>{custom.format="png";},TypeError);assert.throws(()=>new b.BatchImageParams(7),TypeError);assert.throws(()=>new b.BatchImageParams("svg",120,100,{}),TypeError);
+    {const previous=custom.format;custom.format="png";assert.deepEqual(custom.format,"png");custom.format=previous;}assert.throws(()=>new b.BatchImageParams(7),TypeError);assert.throws(()=>new b.BatchImageParams("svg",120,100,{}),TypeError);
     assert.throws(()=>new b.BatchImageParams("svg",120,100,null,[7]),TypeError);assert.throws(()=>new b.BatchImageParams("svg",120,100,null,null,7),TypeError);
     for(const n of [-1,1.5,4294967296,NaN,Infinity])assert.throws(()=>new b.BatchImageParams("png",n),RangeError);
 });

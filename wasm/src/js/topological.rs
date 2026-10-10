@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::*;
 pub struct TopologicalFingerprintParams {
     inner: ck::TopologicalFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("TopologicalFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl TopologicalFingerprintParams {
     #[wasm_bindgen(constructor)]
@@ -126,6 +127,7 @@ impl TopologicalFingerprintParams {
 pub struct TopologicalFingerprintOutputRequest {
     inner: ck::TopologicalFingerprintOutputRequest,
 }
+#[cosmolkit_wasm::javascript_options("TopologicalFingerprintOutputRequestOptions")]
 #[wasm_bindgen]
 impl TopologicalFingerprintOutputRequest {
     #[wasm_bindgen(constructor)]
@@ -308,12 +310,25 @@ fn error(e: ck::TopologicalFingerprintError) -> JsValue {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=fingerprintTopological)]
-    pub fn fingerprint_topological(&self) -> Result<Fingerprint, JsValue> {
-        // COSMolKit❗✔️: .topological_fingerprint(
-        self.inner
-            .fingerprint_topological()
-            .map(|inner| Fingerprint { inner })
-            .map_err(error)
+    pub fn fingerprint_topological(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "TopologicalFingerprintParams | TopologicalFingerprintParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Fingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: .topological_fingerprint(
+                self.inner
+                    .fingerprint_topological()
+                    .map(|inner| Fingerprint { inner })
+                    .map_err(error)
+            };
+        }
+        let configuration_0 =
+            crate::topological::TopologicalFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_topological_with_params(&configuration_0)
     }
 }
 #[wasm_bindgen]
@@ -335,12 +350,31 @@ impl Molecule {
     #[wasm_bindgen(js_name=fingerprintTopologicalWithOutput)]
     pub fn fingerprint_topological_with_output(
         &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "TopologicalFingerprintParams | TopologicalFingerprintParamsOptions"
+        )]
+        params: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "TopologicalFingerprintOutputRequest | TopologicalFingerprintOutputRequestOptions"
+        )]
+        request: JsValue,
     ) -> Result<TopologicalFingerprintResult, JsValue> {
-        // COSMolKit❗✔️: .topological_fingerprint_with_output(
-        self.inner
-            .fingerprint_topological_with_output()
-            .map(|inner| TopologicalFingerprintResult { inner })
-            .map_err(error)
+        if params.is_undefined() && request.is_undefined() {
+            return {
+                // COSMolKit❗✔️: .topological_fingerprint_with_output(
+                self.inner
+                    .fingerprint_topological_with_output()
+                    .map(|inner| TopologicalFingerprintResult { inner })
+                    .map_err(error)
+            };
+        }
+        let configuration_0 =
+            crate::topological::TopologicalFingerprintParams::from_js_configuration(&params)?;
+        let configuration_1 =
+            crate::topological::TopologicalFingerprintOutputRequest::from_js_configuration(
+                &request,
+            )?;
+        self.fingerprint_topological_with_output_with_params(&configuration_0, &configuration_1)
     }
 }
 #[wasm_bindgen]

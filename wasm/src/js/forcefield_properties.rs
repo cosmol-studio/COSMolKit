@@ -16,6 +16,7 @@ pub enum MmffVariant {
 pub struct MmffPropertiesParams {
     inner: ck::MmffPropertiesParams,
 }
+#[cosmolkit_wasm::javascript_options("MmffPropertiesParamsOptions")]
 #[wasm_bindgen]
 impl MmffPropertiesParams {
     #[wasm_bindgen(constructor)]
@@ -196,12 +197,25 @@ impl Molecule {
             .map_err(mmff_error)
     }
     #[wasm_bindgen(js_name=mmffProperties)]
-    pub fn mmff_properties(&self) -> Result<MmffProperties, JsValue> {
-        // COSMolKit❗✔️: fn mmff_properties(&self)
-        self.inner
-            .mmff_properties()
-            .map(|inner| MmffProperties { inner })
-            .map_err(mmff_error)
+    pub fn mmff_properties(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MmffPropertiesParams | MmffPropertiesParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<MmffProperties, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: fn mmff_properties(&self)
+                self.inner
+                    .mmff_properties()
+                    .map(|inner| MmffProperties { inner })
+                    .map_err(mmff_error)
+            };
+        }
+        let configuration_0 =
+            crate::forcefield_properties::MmffPropertiesParams::from_js_configuration(&params)?;
+        self.mmff_properties_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=mmffPropertiesWithParams)]
     pub fn mmff_properties_with_params(

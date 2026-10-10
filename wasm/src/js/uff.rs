@@ -18,6 +18,7 @@ pub(crate) fn source_conformer_id(value: &JsValue) -> Result<Option<usize>, JsVa
 pub struct UffEvaluationParams {
     inner: ck::UffEvaluationParams,
 }
+#[cosmolkit_wasm::javascript_options("UffEvaluationParamsOptions")]
 #[wasm_bindgen]
 impl UffEvaluationParams {
     #[wasm_bindgen(constructor)]
@@ -64,6 +65,7 @@ impl UffEvaluationParams {
 pub struct UffOptimizationParams {
     inner: ck::UffOptimizationParams,
 }
+#[cosmolkit_wasm::javascript_options("UffOptimizationParamsOptions")]
 #[wasm_bindgen]
 impl UffOptimizationParams {
     #[wasm_bindgen(constructor)]
@@ -118,6 +120,7 @@ impl UffOptimizationParams {
 pub struct UffConformerOptimizationParams {
     inner: ck::UffConformerOptimizationParams,
 }
+#[cosmolkit_wasm::javascript_options("UffConformerOptimizationParamsOptions")]
 #[wasm_bindgen]
 impl UffConformerOptimizationParams {
     #[wasm_bindgen(constructor)]
@@ -333,12 +336,24 @@ pub(crate) fn uff_optimization_error(
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=uffEnergyGradient)]
-    pub fn uff_energy_gradient(&self) -> Result<UffEnergyGradient, JsValue> {
-        // COSMolKit❗✔️: self.inner.uff_energy_gradient()
-        self.inner
-            .uff_energy_gradient()
-            .map(|inner| UffEnergyGradient { inner })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn uff_energy_gradient(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "UffEvaluationParams | UffEvaluationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<UffEnergyGradient, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.uff_energy_gradient()
+                self.inner
+                    .uff_energy_gradient()
+                    .map(|inner| UffEnergyGradient { inner })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::uff::UffEvaluationParams::from_js_configuration(&params)?;
+        self.uff_energy_gradient_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=uffEnergyGradientWithParams)]
     pub fn uff_energy_gradient_with_params(
@@ -352,12 +367,24 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withUffOptimized)]
-    pub fn with_uff_optimized(&self) -> Result<UffOptimizationResult, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_uff_optimized()
-        self.inner
-            .with_uff_optimized()
-            .map(|inner| UffOptimizationResult { inner })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_uff_optimized(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "UffOptimizationParams | UffOptimizationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<UffOptimizationResult, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.with_uff_optimized()
+                self.inner
+                    .with_uff_optimized()
+                    .map(|inner| UffOptimizationResult { inner })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::uff::UffOptimizationParams::from_js_configuration(&params)?;
+        self.with_uff_optimized_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=withUffOptimizedWithParams)]
     pub fn with_uff_optimized_with_params(
@@ -371,12 +398,25 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withUffOptimizedConformers)]
-    pub fn with_uff_optimized_conformers(&self) -> Result<UffConformerOptimizationResult, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_uff_optimized_confs()
-        self.inner
-            .with_uff_optimized_conformers()
-            .map(|inner| UffConformerOptimizationResult { inner })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_uff_optimized_conformers(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "UffConformerOptimizationParams | UffConformerOptimizationParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<UffConformerOptimizationResult, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.with_uff_optimized_confs()
+                self.inner
+                    .with_uff_optimized_conformers()
+                    .map(|inner| UffConformerOptimizationResult { inner })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::uff::UffConformerOptimizationParams::from_js_configuration(&params)?;
+        self.with_uff_optimized_conformers_with_params(&configuration_0)
     }
     #[wasm_bindgen(js_name=withUffOptimizedConformersWithParams)]
     pub fn with_uff_optimized_conformers_with_params(

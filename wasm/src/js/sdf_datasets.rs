@@ -20,11 +20,18 @@ pub struct SdfDataset {
 }
 #[wasm_bindgen]
 impl SdfDataset {
-    pub fn open(path: &str) -> Result<Self, JsValue> {
+    pub fn open(path: &str, #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: cosmolkit_wasm::SdfDataset::open(path)
         cosmolkit_wasm::SdfDataset::open(path)
             .map(|inner| Self { inner })
             .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::open_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=openWithParams)]
     pub fn open_with_params(
@@ -49,11 +56,18 @@ pub struct SdfRecordStream {
 }
 #[wasm_bindgen]
 impl SdfRecordStream {
-    pub fn open(path: &str) -> Result<Self, JsValue> {
+    pub fn open(path: &str, #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: cosmolkit_wasm::SdfRecordStream::open(path)
         cosmolkit_wasm::SdfRecordStream::open(path)
             .map(|inner| Self { inner })
             .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::open_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=openWithParams)]
     pub fn open_with_params(
@@ -78,11 +92,18 @@ pub struct SdfReader {
 }
 #[wasm_bindgen]
 impl SdfReader {
-    pub fn open(path: &str) -> Result<Self, JsValue> {
+    pub fn open(path: &str, #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: cosmolkit_wasm::SdfReader::open(path)
         cosmolkit_wasm::SdfReader::open(path)
             .map(|inner| Self { inner })
             .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::open_with_params(path, configuration_0.into())
     }
     #[wasm_bindgen(js_name=openWithParams)]
     pub fn open_with_params(
@@ -187,12 +208,18 @@ impl SdfDataset {
     }
     pub fn record(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number")] index: JsValue,
-    ) -> Result<SdfRecord, JsValue> {
+        #[wasm_bindgen(unchecked_param_type = "number")] index: JsValue, #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")] params: JsValue) -> Result<SdfRecord, JsValue> {
+        if params.is_undefined() {
+            return {
         self.inner
             .record(usize_value(&index, "index")?)
             .map(|inner| SdfRecord { inner })
             .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        self.record_with_params(index, configuration_0.into())
     }
     #[wasm_bindgen(js_name=recordWithParams)]
     pub fn record_with_params(

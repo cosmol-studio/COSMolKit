@@ -23,6 +23,6 @@ test('Six ring-cache and family operations retain all policies, reusable paramet
 test('Ring policy host boundaries reject coercion and incorrect parameter classes without changing cache',()=>{
  const m=b.Molecule.fromSmilesWithParams('C1CCCCC1',new b.SmilesParseParams(false,undefined,undefined,undefined,false)),before=m.toSmiles();
  for(const value of [{},undefined,null,new b.KekulizeParams()])for(const name of ['withAssignedRingFamiliesWithParams','assignRingFamiliesWithParams'])assert.throws(()=>m[name](value),TypeError);
- assert.throws(()=>new b.RingSearchParams('true'),TypeError);assert.throws(()=>new b.RingSearchParams(true,1),TypeError);assert.throws(()=>{new b.RingSearchParams().includeHydrogenBonds=true;},TypeError);
+ assert.throws(()=>new b.RingSearchParams('true'),TypeError);assert.throws(()=>new b.RingSearchParams(true,1),TypeError);{const options=new b.RingSearchParams();options.includeHydrogenBonds=true;assert.equal(options.includeHydrogenBonds,true);assert.throws(()=>{options.includeHydrogenBonds=1;},TypeError);options.free();}
  assert.equal(m.toSmiles(),before);assert.throws(()=>m.numRings(),e=>e.kind==='MissingInitializedRings');
 });

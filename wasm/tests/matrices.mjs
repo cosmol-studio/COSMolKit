@@ -36,6 +36,6 @@ test('Matrix host boundaries reject coercion and retain full canonical bond-orde
  for(const n of [-1,1.5,4294967296,NaN,Infinity]){assert.throws(()=>matrix.get(n,0),RangeError);assert.throws(()=>matrix.get(0,n),RangeError);assert.throws(()=>new b.DistanceMatrix3dParams(n),RangeError);}
  for(const value of [{},null,undefined,new b.KekulizeParams()]){assert.throws(()=>m.distanceMatrixWithParams(value),TypeError);assert.throws(()=>m.distanceMatrix3dWithParams(value),TypeError);}
  assert.throws(()=>new b.DistanceMatrixParams('false'),TypeError);assert.throws(()=>new b.DistanceMatrixParams(false,1),TypeError);assert.throws(()=>new b.DistanceMatrix3dParams(null,'true'),TypeError);
- assert.throws(()=>{new b.DistanceMatrixParams().useBondOrder=true;},TypeError);
+ {const options=new b.DistanceMatrixParams();options.useBondOrder=true;assert.equal(options.useBondOrder,true);assert.throws(()=>{options.useBondOrder=1;},TypeError);options.free();}
  const names=['Unspecified','Single','Double','Triple','Quadruple','Quintuple','Hextuple','OneAndHalf','TwoAndHalf','ThreeAndHalf','FourAndHalf','FiveAndHalf','Aromatic','Ionic','Hydrogen','ThreeCenter','DativeOne','Dative','DativeLeft','DativeRight','Other','Zero'];names.forEach((name,i)=>assert.equal(b.BondOrder[name],i));
 });

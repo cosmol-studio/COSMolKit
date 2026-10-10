@@ -20,10 +20,23 @@ mod inchi;
 mod mcs;
 #[cfg(feature = "cap-search")]
 pub use mcs::{maximum_common_substructure, maximum_common_substructure_with_params};
+#[cfg(feature = "cap-transforms")]
+mod coordinate_input;
+mod model_values;
+#[cfg(feature = "cap-stereo")]
+mod stereo;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer;
+#[cfg(feature = "cap-tautomer")]
+pub use tautomer::canonical_tautomer_from_molecules_with_params;
+#[cfg(feature = "cap-forcefields")]
+mod persistent_forcefields;
 #[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(feature = "cap-smiles")]
 mod smiles;
+#[cfg(feature = "cap-stereoisomers")]
+mod stereoisomers;
 #[cfg(feature = "cap-reaction")]
 pub use reaction::{ReactionApplyResult, reaction_run};
 
@@ -132,6 +145,20 @@ pub fn element_info(element: &Element) -> ElementInfo {
 #[derive(Clone)]
 pub struct Molecule {
     inner: std::cell::RefCell<cosmolkit::Molecule>,
+}
+
+impl From<cosmolkit::Molecule> for Molecule {
+    fn from(inner: cosmolkit::Molecule) -> Self {
+        Self {
+            inner: inner.into(),
+        }
+    }
+}
+
+impl From<Element> for cosmolkit::Element {
+    fn from(value: Element) -> Self {
+        value.inner
+    }
 }
 
 impl Molecule {
@@ -307,20 +334,21 @@ impl Molecule {
         self.inner.borrow().conformers_3d().len() as u32
     }
 
-    /// Returns a 3D conformer as a flattened `[x0, y0, z0, ...]` array.
-    pub fn coordinates_3d(&self, conformer_id: u32) -> Vec<f64> {
+    /// Returns the exact stored 3D conformer ID as flattened XYZ rows.
+    #[cfg(feature = "cap-transforms")]
+    pub fn coordinates_3d(
+        &self,
+        conformer_id: usize,
+    ) -> Result<Vec<f64>, cosmolkit::Coordinate3DReadError> {
         self.inner
             .borrow()
-            .conformers_3d()
-            .get(conformer_id as usize)
-            .map(|conformer| {
-                conformer
-                    .coordinates()
+            .coordinates_3d(conformer_id)
+            .map(|coordinates| {
+                coordinates
                     .iter()
                     .flat_map(|point| point.iter().copied())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// Returns a molecule with the default valence cache assigned.

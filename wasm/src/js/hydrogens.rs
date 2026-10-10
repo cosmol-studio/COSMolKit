@@ -22,10 +22,12 @@ extern "C" {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=withHydrogens)]
-    pub fn with_hydrogens(&self) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_hydrogens()
+    pub fn with_hydrogens(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "AddHsParams | AddHsParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        let params = AddHsParams::from_js_configuration(&params)?;
         self.inner
-            .with_hydrogens()
+            .with_hydrogens_with_params(&params.inner)
             .map(|inner| Self {
                 inner: Arc::new(inner),
             })
@@ -51,10 +53,12 @@ impl Molecule {
         result.ok_or_else(|| crate::host_values::type_error("params"))?
     }
     #[wasm_bindgen(js_name=withoutHydrogens)]
-    pub fn without_hydrogens(&self) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: self.inner.without_hydrogens()
+    pub fn without_hydrogens(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "RemoveHsParams | RemoveHsParamsOptions")] params: JsValue,
+    ) -> Result<Self, JsValue> {
+        let params = RemoveHsParams::from_js_configuration(&params)?;
         self.inner
-            .without_hydrogens()
+            .without_hydrogens_with_params(&params.inner)
             .map(|inner| Self {
                 inner: Arc::new(inner),
             })
@@ -80,10 +84,12 @@ impl Molecule {
         result.ok_or_else(|| crate::host_values::type_error("params"))?
     }
     #[wasm_bindgen(js_name=addHydrogens)]
-    pub fn add_hydrogens_(&self) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.add_hydrogens_()
+    pub fn add_hydrogens_(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "AddHsParams | AddHsParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = AddHsParams::from_js_configuration(&params)?;
         self.inner
-            .add_hydrogens_()
+            .add_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=addHydrogensWithParams)]
@@ -103,10 +109,12 @@ impl Molecule {
         result.ok_or_else(|| crate::host_values::type_error("params"))?
     }
     #[wasm_bindgen(js_name=removeHydrogens)]
-    pub fn remove_hydrogens_(&self) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.remove_hydrogens_()
+    pub fn remove_hydrogens_(&self,
+        #[wasm_bindgen(unchecked_optional_param_type = "RemoveHsParams | RemoveHsParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = RemoveHsParams::from_js_configuration(&params)?;
         self.inner
-            .remove_hydrogens_()
+            .remove_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=removeHydrogensWithParams)]

@@ -111,12 +111,19 @@ pub fn fingerprint_layered_query_with_output_with_params(
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=fingerprintPattern)]
-    pub fn fingerprint_pattern(&self) -> Result<Fingerprint, JsValue> {
+    pub fn fingerprint_pattern(&self, #[wasm_bindgen(unchecked_optional_param_type = "PatternFingerprintParams | PatternFingerprintParamsOptions")] params: JsValue) -> Result<Fingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: .pattern_fingerprint(
         self.inner
             .fingerprint_pattern()
             .map(|inner| Fingerprint { inner })
             .map_err(|e| pattern_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::layered_pattern_values::PatternFingerprintParams::from_js_configuration(&params)?;
+        self.fingerprint_pattern_with_params(&configuration_0)
     }
 }
 #[wasm_bindgen]
@@ -134,12 +141,19 @@ impl Molecule {
     }
 }
 #[wasm_bindgen(js_name=fingerprintPatternQuery)]
-pub fn fingerprint_pattern_query(query: &QueryGraph) -> Result<Fingerprint, JsValue> {
+pub fn fingerprint_pattern_query(query: &QueryGraph, #[wasm_bindgen(unchecked_optional_param_type = "PatternFingerprintParams | PatternFingerprintParamsOptions")] params: JsValue) -> Result<Fingerprint, JsValue> {
+        if params.is_undefined() {
+            return {
     // COSMolKit❗✔️: ck::pattern_query_fingerprint(&query.inner)
     ck::fingerprint_pattern_query(&query.inner)
         .map(|inner| Fingerprint { inner })
         .map_err(|e| pattern_error(&e).unwrap_or_else(|e| e))
-}
+
+            };
+        }
+        let configuration_0 = crate::layered_pattern_values::PatternFingerprintParams::from_js_configuration(&params)?;
+        fingerprint_pattern_query_with_params(query, &configuration_0)
+    }
 #[wasm_bindgen(js_name=fingerprintPatternQueryWithParams)]
 pub fn fingerprint_pattern_query_with_params(
     query: &QueryGraph,

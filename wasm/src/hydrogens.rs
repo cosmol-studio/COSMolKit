@@ -178,7 +178,7 @@ $$$$
             *out.inner.borrow(),
             core.with_hydrogens_with_params(&p).unwrap()
         );
-        assert_eq!(out.coordinates_3d(0).len(), 27);
-        assert_eq!(m.coordinates_3d(0).len(), 9);
+        assert_eq!(out.coordinates_3d(0).unwrap().len(), 27);
+        assert_eq!(m.coordinates_3d(0).unwrap().len(), 9);
     }
 }

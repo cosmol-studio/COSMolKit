@@ -7,6 +7,14 @@ ck.initSync({module: readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const identifier = "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3";
 const key = "LFQSCWFLJHTTHZ-UHFFFAOYSA-N";
 
+test('InChI setter methods preserve writable-property validation',()=>{
+ const read=new ck.InchiReadParams(),write=new ck.InchiWriteParams();
+ read.setSanitize(false);read.setRemoveHs(false);write.setOptions('-AuxNone');
+ assert.equal(read.sanitize,false);assert.equal(read.removeHs,false);assert.equal(write.options,'-AuxNone');
+ assert.throws(()=>read.setSanitize('false'),TypeError);assert.throws(()=>read.setRemoveHs(1),TypeError);assert.throws(()=>write.setOptions(3),TypeError);
+ assert.equal(read.sanitize,false);assert.equal(read.removeHs,false);assert.equal(write.options,'-AuxNone');
+});
+
 test("InChI defaults, configurable calls, typed errors and reusable parameters", () => {
     const molecule = ck.Molecule.fromSmiles("CCO");
     const read = new ck.InchiReadParams();
@@ -42,6 +50,10 @@ test("InChI defaults, configurable calls, typed errors and reusable parameters",
     assert.throws(() => ck.Molecule.fromInchi(identifier, {sanitize: "false"}), TypeError);
     assert.throws(() => { read.sanitize = "true"; }, TypeError);
     assert.throws(() => { write.options = 3; }, TypeError);
+    for(const params of [new Date(),new ck.SmilesWriteParams(),[]]){
+        assert.throws(()=>molecule.toInchi(params),TypeError);
+        assert.throws(()=>ck.Molecule.fromInchi(identifier,params),TypeError);
+    }
     assert.equal(write.options, "-AuxNone");
     assert.equal(molecule.toSmiles(), "CCO");
     write.free(); read.free(); molecule.free();

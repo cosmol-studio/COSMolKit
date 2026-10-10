@@ -81,8 +81,23 @@ fn error(source: ck::InchiError) -> JsValue {
 pub struct InchiReadParams {
     inner: ck::InchiReadParams,
 }
+#[cosmolkit_wasm::javascript_options("InchiReadParamsOptions")]
 #[wasm_bindgen]
 impl InchiReadParams {
+    #[wasm_bindgen(js_name=setSanitize)]
+    pub fn set_sanitize_method(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "boolean")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.set_sanitize(value)
+    }
+    #[wasm_bindgen(js_name=setRemoveHs)]
+    pub fn set_remove_hs_method(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "boolean")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.set_remove_hs(value)
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] sanitize: JsValue,
@@ -133,8 +148,16 @@ impl InchiReadParams {
 pub struct InchiWriteParams {
     inner: ck::InchiWriteParams,
 }
+#[cosmolkit_wasm::javascript_options("InchiWriteParamsOptions")]
 #[wasm_bindgen]
 impl InchiWriteParams {
+    #[wasm_bindgen(js_name=setOptions)]
+    pub fn set_options_method(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "string")] value: JsValue,
+    ) -> Result<(), JsValue> {
+        self.set_options(value)
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "string")] options: JsValue,
@@ -163,81 +186,12 @@ impl InchiWriteParams {
     }
 }
 
-// Borrow parameter instances without consuming or freeing reusable objects.
-#[wasm_bindgen(
-    inline_js = "export function visitInchiRead(v,f){f(v);} export function visitInchiWrite(v,f){f(v);}"
-)]
-extern "C" {
-    #[wasm_bindgen(catch, js_name=visitInchiRead)]
-    fn visit_read(
-        value: &JsValue,
-        callback: &mut dyn FnMut(&InchiReadParams),
-    ) -> Result<(), JsValue>;
-    #[wasm_bindgen(catch, js_name=visitInchiWrite)]
-    fn visit_write(
-        value: &JsValue,
-        callback: &mut dyn FnMut(&InchiWriteParams),
-    ) -> Result<(), JsValue>;
-}
-
-fn options(value: &JsValue, allowed: &[&str]) -> Result<(), JsValue> {
-    if !value.is_object() || value.is_null() || js_sys::Array::is_array(value) {
-        return Err(type_error("InChI options"));
-    }
-    for key in js_sys::Object::keys(&js_sys::Object::from(value.clone())) {
-        if !key
-            .as_string()
-            .is_some_and(|k| allowed.contains(&k.as_str()))
-        {
-            return Err(type_error("unknown InChI option"));
-        }
-    }
-    Ok(())
-}
+// Both call forms use the same constructor-derived configuration boundary.
 fn read_params(value: &JsValue) -> Result<ck::InchiReadParams, JsValue> {
-    if value.is_undefined() {
-        return Ok(Default::default());
-    }
-    let mut result = None;
-    if visit_read(value, &mut |p: &InchiReadParams| result = Some(p.inner)).is_ok()
-        && let Some(result) = result
-    {
-        return Ok(result);
-    }
-    options(value, &["sanitize", "removeHs"])?;
-    let mut result = ck::InchiReadParams::default();
-    let sanitize = js_sys::Reflect::get(value, &"sanitize".into())?;
-    let remove = js_sys::Reflect::get(value, &"removeHs".into())?;
-    if !sanitize.is_undefined() {
-        result.sanitize = bool_value(&sanitize, "sanitize")?;
-    }
-    if !remove.is_undefined() {
-        result.remove_hs = bool_value(&remove, "removeHs")?;
-    }
-    Ok(result)
+    Ok(InchiReadParams::from_js_configuration(value)?.inner)
 }
 fn write_params(value: &JsValue) -> Result<ck::InchiWriteParams, JsValue> {
-    if value.is_undefined() {
-        return Ok(Default::default());
-    }
-    let mut result = None;
-    if visit_write(value, &mut |p: &InchiWriteParams| {
-        result = Some(p.inner.clone())
-    })
-    .is_ok()
-        && let Some(result) = result
-    {
-        return Ok(result);
-    }
-    options(value, &["options"])?;
-    let text = js_sys::Reflect::get(value, &"options".into())?;
-    Ok(ck::InchiWriteParams {
-        options: if text.is_undefined() {
-            String::new()
-        } else {
-            text.as_string().ok_or_else(|| type_error("options"))?
-        },
-    })
+    Ok(InchiWriteParams::from_js_configuration(value)?.inner)
 }
 
 #[wasm_bindgen(js_name=inchiToKey)]
@@ -250,9 +204,7 @@ impl Molecule {
     #[wasm_bindgen(js_name=fromInchi)]
     pub fn from_inchi(
         text: &str,
-        #[wasm_bindgen(
-            unchecked_optional_param_type = "InchiReadParams | { sanitize?: boolean; removeHs?: boolean }"
-        )]
+        #[wasm_bindgen(unchecked_optional_param_type = "InchiReadParams | InchiReadParamsOptions")]
         params: JsValue,
     ) -> Result<Self, JsValue> {
         cosmolkit_wasm::Molecule::from_inchi_with_params(text, &read_params(&params)?)
@@ -272,7 +224,9 @@ impl Molecule {
     #[wasm_bindgen(js_name=toInchi)]
     pub fn to_inchi(
         &self,
-        #[wasm_bindgen(unchecked_optional_param_type = "InchiWriteParams | { options?: string }")]
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "InchiWriteParams | InchiWriteParamsOptions"
+        )]
         params: JsValue,
     ) -> Result<String, JsValue> {
         self.inner
@@ -288,7 +242,9 @@ impl Molecule {
     #[wasm_bindgen(js_name=toInchiKey)]
     pub fn to_inchi_key(
         &self,
-        #[wasm_bindgen(unchecked_optional_param_type = "InchiWriteParams | { options?: string }")]
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "InchiWriteParams | InchiWriteParamsOptions"
+        )]
         params: JsValue,
     ) -> Result<String, JsValue> {
         self.inner

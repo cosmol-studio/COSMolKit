@@ -4,6 +4,129 @@ use cosmolkit_wasm::rust as ck;
 use std::error::Error as RustError;
 use wasm_bindgen::prelude::*;
 
+/// Typed snapshot of the concrete SDF reader failure and its source chain.
+#[wasm_bindgen]
+pub struct SdfReadError {
+    kind: &'static str,
+    message: String,
+    cause: JsValue,
+    context: js_sys::Object,
+}
+#[wasm_bindgen]
+impl SdfReadError {
+    #[wasm_bindgen(getter)]
+    pub fn domain(&self) -> String {
+        "io".into()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        self.kind.into()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.message.clone()
+    }
+    #[wasm_bindgen(getter, unchecked_return_type = "Error | null")]
+    pub fn cause(&self) -> JsValue {
+        self.cause.clone()
+    }
+    #[wasm_bindgen(
+        getter,
+        unchecked_return_type = "Readonly<Record<string, string | number | bigint>>"
+    )]
+    pub fn context(&self) -> JsValue {
+        self.context.clone().into()
+    }
+}
+pub(crate) fn sdf_read_error(source: &ck::SdfReadError) -> Result<JsValue, JsValue> {
+    use ck::SdfReadError as E;
+    let fields = js_sys::Object::new();
+    let kind = match source {
+        E::StereoGroup(_) => "StereoGroup",
+        E::MissingCapability(value) => {
+            set(&fields, "capability", (*value).into())?;
+            "MissingCapability"
+        }
+        E::MolPost(_) => "MolPost",
+        E::QueryRecord => "QueryRecord",
+        E::Empty => "Empty",
+        E::Counts => "Counts",
+        E::Field { kind, line, value } => {
+            set(&fields, "fieldKind", (*kind).into())?;
+            set(&fields, "line", (*line as u32).into())?;
+            set(&fields, "value", value.as_str().into())?;
+            "Field"
+        }
+        E::Unsupported(value) => {
+            set(&fields, "format", (*value).into())?;
+            "Unsupported"
+        }
+        E::Parse(value) => {
+            set(&fields, "description", value.as_str().into())?;
+            "Parse"
+        }
+        E::Topology(_) => "Topology",
+        E::Coordinates(_) => "Coordinates",
+        E::QueryGraph(_) => "QueryGraph",
+        E::AtomProperty(_) => "AtomProperty",
+        E::BondValue(_) => "BondValue",
+        E::MoleculeProperty(_) => "MoleculeProperty",
+        E::PropertyListCount {
+            target,
+            name,
+            actual,
+            expected,
+        } => {
+            set(&fields, "target", (*target).into())?;
+            set(&fields, "name", name.as_str().into())?;
+            set(&fields, "actual", (*actual as u32).into())?;
+            set(&fields, "expected", (*expected as u32).into())?;
+            "PropertyListCount"
+        }
+        E::RecordIndexOutOfRange {
+            index,
+            record_count,
+        } => {
+            set(&fields, "index", (*index as u32).into())?;
+            set(&fields, "recordCount", (*record_count as u32).into())?;
+            "RecordIndexOutOfRange"
+        }
+        E::Record {
+            index,
+            byte_offset,
+            line_offset,
+            ..
+        } => {
+            set(&fields, "index", (*index as u32).into())?;
+            set(&fields, "byteOffset", JsValue::from(*byte_offset))?;
+            set(&fields, "lineOffset", (*line_offset as u32).into())?;
+            "Record"
+        }
+    };
+    let cause = source.source().map_or(Ok(JsValue::NULL), source_error)?;
+    let error = js_sys::Error::new(&source.to_string());
+    error.set_name("SdfReadError");
+    let error: JsValue = error.into();
+    set(&error, "domain", "io".into())?;
+    set(&error, "kind", kind.into())?;
+    set(&error, "context", fields.clone().into())?;
+    if !cause.is_null() {
+        set(&error, "cause", cause.clone())?;
+    }
+    set(
+        &error,
+        "detail",
+        SdfReadError {
+            kind,
+            message: source.to_string(),
+            cause,
+            context: fields,
+        }
+        .into(),
+    )?;
+    Ok(error)
+}
+
 pub(crate) fn filesystem_error(source: &std::io::Error) -> Result<JsValue, JsValue> {
     let error = js_sys::Error::new(&source.to_string());
     error.set_name("IoError");

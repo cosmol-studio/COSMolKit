@@ -1,9 +1,9 @@
 //! Complete query-preserving record and concrete molecule read boundaries.
+use crate::Molecule;
 use crate::group_values::SubstanceGroup;
 use crate::host_values::{bool_value, type_error, u32_value};
 use crate::io_errors::{io_error, sdf_error};
 use crate::property_values::{MoleculeProperties, fields};
-use crate::Molecule;
 use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use std::sync::Arc;
@@ -25,6 +25,7 @@ pub enum SdfCoordinateMode {
 pub struct SdfReadParams {
     pub(crate) inner: ck::SdfReadParams,
 }
+#[cosmolkit_wasm::javascript_options("SdfReadParamsOptions")]
 #[wasm_bindgen]
 impl SdfReadParams {
     #[wasm_bindgen(constructor)]
@@ -135,10 +136,20 @@ pub struct SdfRecord {
 #[wasm_bindgen]
 impl SdfRecord {
     #[wasm_bindgen(js_name=fromSdf)]
-    pub fn from_sdf(text: &str) -> Result<Self, JsValue> {
-        cosmolkit_wasm::SdfRecord::from_sdf(text)
-            .map(|inner| Self { inner })
-            .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+    pub fn from_sdf(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                cosmolkit_wasm::SdfRecord::from_sdf(text)
+                    .map(|inner| Self { inner })
+                    .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::from_sdf_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=fromSdfWithParams)]
     pub fn from_sdf_with_params(
@@ -220,13 +231,23 @@ impl SdfRecord {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=fromSdf)]
-    pub fn from_sdf(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_sdf(text)
-        cosmolkit_wasm::Molecule::from_sdf(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+    pub fn from_sdf(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_sdf(text)
+                cosmolkit_wasm::Molecule::from_sdf(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::from_sdf_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=fromSdfWithParams)]
     pub fn from_sdf_with_params(
@@ -247,13 +268,23 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=fromMol)]
-    pub fn from_mol(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_mol(text)
-        cosmolkit_wasm::Molecule::from_mol(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+    pub fn from_mol(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::from_mol(text)
+                cosmolkit_wasm::Molecule::from_mol(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| sdf_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::from_mol_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=fromMolWithParams)]
     pub fn from_mol_with_params(
@@ -274,13 +305,23 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=readMol)]
-    pub fn read_mol(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_mol(text)
-        cosmolkit_wasm::Molecule::read_mol(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn read_mol(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_mol(text)
+                cosmolkit_wasm::Molecule::read_mol(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::read_mol_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=readMolWithParams)]
     pub fn read_mol_with_params(
@@ -301,13 +342,23 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=readSdf)]
-    pub fn read_sdf(text: &str) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_sdf(text)
-        cosmolkit_wasm::Molecule::read_sdf(text)
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+    pub fn read_sdf(
+        text: &str,
+        #[wasm_bindgen(unchecked_optional_param_type = "SdfReadParams | SdfReadParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::Molecule::read_sdf(text)
+                cosmolkit_wasm::Molecule::read_sdf(text)
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| io_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::sdf_reading::SdfReadParams::from_js_configuration(&params)?;
+        Self::read_sdf_with_params(text, configuration_0.into())
     }
     #[wasm_bindgen(js_name=readSdfWithParams)]
     pub fn read_sdf_with_params(

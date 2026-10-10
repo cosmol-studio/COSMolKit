@@ -15,7 +15,9 @@ extern "C" {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=withKekulizedBonds)]
-    pub fn with_kekulized_bonds(&self) -> Result<Self, JsValue> {
+    pub fn with_kekulized_bonds(&self, #[wasm_bindgen(unchecked_optional_param_type = "KekulizeParams | KekulizeParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: self.inner.with_kekulized_bonds()
         self.inner
             .with_kekulized_bonds()
@@ -23,6 +25,11 @@ impl Molecule {
                 inner: Arc::new(inner),
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::transform_parameters::KekulizeParams::from_js_configuration(&params)?;
+        self.with_kekulized_bonds_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=withKekulizedBondsWithParams)]
     pub fn with_kekulized_bonds_with_params(
@@ -44,11 +51,18 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=kekulizeBonds)]
-    pub fn kekulize_bonds_(&self) -> Result<(), JsValue> {
+    pub fn kekulize_bonds_(&self, #[wasm_bindgen(unchecked_optional_param_type = "KekulizeParams | KekulizeParamsOptions")] params: JsValue) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: self.inner.kekulize_bonds_()
         self.inner
             .kekulize_bonds_()
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::transform_parameters::KekulizeParams::from_js_configuration(&params)?;
+        self.kekulize_bonds_with_params_(configuration_0.into())
     }
     #[wasm_bindgen(js_name=kekulizeBondsWithParams)]
     pub fn kekulize_bonds_with_params_(

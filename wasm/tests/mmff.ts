@@ -3,7 +3,6 @@ import {Molecule,MmffEvaluationParams,MmffOptimizationParams,MmffConformerOptimi
 a.energy();
 // @ts-expect-error typed parameter
 m.mmffEnergyGradientWithParams('bad');
-// @ts-expect-error immutable
 sp.maxIterations=1;
 // @ts-expect-error strict scalar
 new MmffEvaluationParams(94);

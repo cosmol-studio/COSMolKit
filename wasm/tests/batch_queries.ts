@@ -5,7 +5,6 @@ const value=MoleculeBatch.fromSmilesList(["C"]);
 const texts:(string|null)[][]=[value.toSmilesList(),value.toSmilesListWithParams(write,query),value.toSvgList(120,100),value.toSvgListWithParams(120,100,query)];
 const matrices:(number[][]|null)[][]=[value.dgBoundsMatrixList(),value.dgBoundsMatrixListWithParams(query)];
 declare const error:DrawingError;const domain:string=error.domain,kind:string=error.kind,message:string=error.message,cause:Error|null=error.cause;
-// @ts-expect-error frozen writer value
 write.canonical=false;
 // @ts-expect-error callbacks must be callable
 new BatchQueryParams(null,null,{});

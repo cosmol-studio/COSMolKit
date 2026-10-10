@@ -29,6 +29,7 @@ fn default_i32(value: &JsValue, default: i32, name: &str) -> Result<i32, JsValue
 pub struct RemoveHsParams {
     pub(crate) inner: ck::RemoveHsParams,
 }
+#[cosmolkit_wasm::javascript_options("RemoveHsParamsOptions")]
 #[wasm_bindgen]
 impl RemoveHsParams {
     #[wasm_bindgen(constructor)]
@@ -213,6 +214,7 @@ impl RemoveHsParams {
 pub struct KekulizeParams {
     pub(crate) inner: ck::KekulizeParams,
 }
+#[cosmolkit_wasm::javascript_options("KekulizeParamsOptions")]
 #[wasm_bindgen]
 impl KekulizeParams {
     #[wasm_bindgen(constructor)]
@@ -255,6 +257,7 @@ impl KekulizeParams {
 pub struct AddHsParams {
     pub(crate) inner: ck::AddHsParams,
 }
+#[cosmolkit_wasm::javascript_options("AddHsParamsOptions")]
 #[wasm_bindgen]
 impl AddHsParams {
     #[wasm_bindgen(constructor)]
@@ -329,6 +332,7 @@ pub struct Coordinate2DParams {
     pub(crate) inner: ck::Coordinate2DParams,
 }
 #[cfg(feature = "cap-depict")]
+#[cosmolkit_wasm::javascript_options("Coordinate2DParamsOptions")]
 #[wasm_bindgen]
 impl Coordinate2DParams {
     #[wasm_bindgen(constructor)]
@@ -573,6 +577,7 @@ impl SanitizeOperations {
 pub struct SanitizeParams {
     pub(crate) inner: ck::SanitizeParams,
 }
+#[cosmolkit_wasm::javascript_options("SanitizeParamsOptions")]
 #[wasm_bindgen]
 impl SanitizeParams {
     #[wasm_bindgen(constructor)]

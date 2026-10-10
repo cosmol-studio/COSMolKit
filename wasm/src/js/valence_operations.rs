@@ -17,6 +17,7 @@ pub struct ValenceParams {
     inner: ck::ValenceParams,
 }
 
+#[cosmolkit_wasm::javascript_options("ValenceParamsOptions")]
 #[wasm_bindgen]
 impl ValenceParams {
     #[wasm_bindgen(constructor)]
@@ -51,13 +52,24 @@ impl ValenceParams {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name = withAssignedValence)]
-    pub fn with_assigned_valence(&self) -> Result<Self, JsValue> {
-        self.inner
-            .with_assigned_valence()
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_assigned_valence(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "ValenceParams | ValenceParamsOptions")]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                self.inner
+                    .with_assigned_valence()
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::valence_operations::ValenceParams::from_js_configuration(&params)?;
+        self.with_assigned_valence_with_params(&configuration_0)
     }
 
     #[wasm_bindgen(js_name = withAssignedValenceWithParams)]
@@ -74,10 +86,21 @@ impl Molecule {
     }
 
     #[wasm_bindgen(js_name = assignValence)]
-    pub fn assign_valence_(&self) -> Result<(), JsValue> {
-        self.inner
-            .assign_valence_()
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn assign_valence_(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type = "ValenceParams | ValenceParamsOptions")]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                self.inner
+                    .assign_valence_()
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::valence_operations::ValenceParams::from_js_configuration(&params)?;
+        self.assign_valence_with_params_(&configuration_0)
     }
 
     #[wasm_bindgen(js_name = assignValenceWithParams)]

@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 pub struct BioMoleculeParams {
     inner: ck::BioMoleculeParams,
 }
+#[cosmolkit_wasm::javascript_options("BioMoleculeParamsOptions")]
 #[wasm_bindgen]
 impl BioMoleculeParams {
     #[wasm_bindgen(constructor)]
@@ -176,13 +177,26 @@ pub(crate) fn conversion_error(
 #[wasm_bindgen]
 impl BioStructure {
     #[wasm_bindgen(js_name=toMolecule)]
-    pub fn to_molecule(&self) -> Result<Molecule, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::bio_structure_to_molecule(&self.inner)
-        cosmolkit_wasm::bio_structure_to_molecule(&self.inner)
-            .map(|inner| Molecule {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| molecule_error(&e).unwrap_or_else(|e| e))
+    pub fn to_molecule(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioMoleculeParams | BioMoleculeParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Molecule, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::bio_structure_to_molecule(&self.inner)
+                cosmolkit_wasm::bio_structure_to_molecule(&self.inner)
+                    .map(|inner| Molecule {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| molecule_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_conversion::BioMoleculeParams::from_js_configuration(&params)?;
+        self.to_molecule_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toMoleculeWithParams)]
     pub fn to_molecule_with_params(
@@ -206,13 +220,26 @@ impl BioStructure {
 #[wasm_bindgen]
 impl Protein {
     #[wasm_bindgen(js_name=toMolecule)]
-    pub fn to_molecule(&self) -> Result<Molecule, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::protein_to_molecule(&self.inner)
-        cosmolkit_wasm::protein_to_molecule(&self.inner)
-            .map(|inner| Molecule {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| molecule_error(&e).unwrap_or_else(|e| e))
+    pub fn to_molecule(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BioMoleculeParams | BioMoleculeParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Molecule, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: cosmolkit_wasm::protein_to_molecule(&self.inner)
+                cosmolkit_wasm::protein_to_molecule(&self.inner)
+                    .map(|inner| Molecule {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| molecule_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 =
+            crate::bio_conversion::BioMoleculeParams::from_js_configuration(&params)?;
+        self.to_molecule_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=toMoleculeWithParams)]
     pub fn to_molecule_with_params(

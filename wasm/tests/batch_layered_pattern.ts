@@ -4,7 +4,6 @@ const dense:(Fingerprint|null)[][]=[batch.fingerprintLayeredList(),batch.fingerp
 const outputs:(LayeredFingerprintResult|null)[][]=[batch.fingerprintLayeredWithOutputList(),batch.fingerprintLayeredWithOutputListWithParams(options,query)];
 declare const result:LayeredFingerprintResult;const counts:number[]|null=result.atomCounts(),fp:Fingerprint=result.fingerprint(),flags:number=LayeredFingerprintLayers.fromBitsRetain(0xffffffff).bits(),borrowed:Fingerprint|null=options.setOnlyBits;
 declare const e:LayeredFingerprintError;declare const pe:PatternFingerprintError;const kinds:string[]=[e.kind,pe.kind];
-// @ts-expect-error readonly parameters
 options.atomCounts=[];
 // @ts-expect-error result nullable collection
 const wrong:number[]=result.atomCounts();

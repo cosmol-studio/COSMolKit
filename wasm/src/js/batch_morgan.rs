@@ -11,17 +11,71 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl MoleculeBatch {
-    #[wasm_bindgen(js_name=fingerprintMorganList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_morgan_list(&self) -> Result<Array, JsValue> {
-        self.inner
-            .fingerprint_morgan_list()
-            .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionList,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_topological_torsion_list(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "TopologicalTorsionFingerprintParams | TopologicalTorsionFingerprintParamsOptions"
+        )]
+        options: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Array, JsValue> {
+        self.fingerprint_topological_torsion_list_with_params(
+            &crate::topological_torsion_parameters::TopologicalTorsionFingerprintParams::from_js_configuration(&options)?,
+            &BatchQueryParams::from_js_configuration(&params)?,
+        )
+    }
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_topological_torsion_list_with_params(
+        &self,
+        options: &crate::topological_torsion_parameters::TopologicalTorsionFingerprintParams,
+        params: &BatchQueryParams,
+    ) -> Result<Array, JsValue> {
+        params
+            .execute(|p| {
+                self.inner
+                    .fingerprint_topological_torsion_list_with_params(&options.inner, p)
+            })
             .map(|values| {
                 values
                     .into_iter()
                     .map(|v| v.map_or(JsValue::NULL, |inner| Fingerprint { inner }.into()))
                     .collect()
             })
+    }
+    #[wasm_bindgen(js_name=fingerprintMorganList,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_morgan_list(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions"
+        )]
+        options: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Array, JsValue> {
+        if options.is_undefined() && params.is_undefined() {
+            return {
+                self.inner
+                    .fingerprint_morgan_list()
+                    .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
+                    .map(|values| {
+                        values
+                            .into_iter()
+                            .map(|v| v.map_or(JsValue::NULL, |inner| Fingerprint { inner }.into()))
+                            .collect()
+                    })
+            };
+        }
+        let configuration_0 =
+            crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&options)?;
+        let configuration_1 =
+            crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
+        self.fingerprint_morgan_list_with_params(&configuration_0, &configuration_1)
     }
     #[wasm_bindgen(js_name=fingerprintMorganListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
     pub fn fingerprint_morgan_list_with_params(
@@ -42,7 +96,26 @@ impl MoleculeBatch {
             })
     }
     #[wasm_bindgen(js_name=fingerprintMorganWithOutputList,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
-    pub fn fingerprint_morgan_with_output_list(&self) -> Result<Array, JsValue> {
+    pub fn fingerprint_morgan_with_output_list(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions"
+        )]
+        options: JsValue,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Array, JsValue> {
+        if !options.is_undefined() || !params.is_undefined() {
+            let options = MorganFingerprintParams::from_js_configuration(&options)?;
+            let params = BatchQueryParams::from_js_configuration(&params)?;
+            return self.fingerprint_morgan_with_output_list_with_params(
+                &options,
+                true.into(),
+                &params,
+            );
+        }
         self.inner
             .fingerprint_morgan_with_output_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))

@@ -17,7 +17,9 @@ extern "C" {
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=sanitize)]
-    pub fn sanitize(&self) -> Result<Self, JsValue> {
+    pub fn sanitize(&self, #[wasm_bindgen(unchecked_optional_param_type = "SanitizeParams | SanitizeParamsOptions")] params: JsValue) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: self.inner.sanitize()
         self.inner
             .sanitize()
@@ -25,6 +27,11 @@ impl Molecule {
                 inner: Arc::new(inner),
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::transform_parameters::SanitizeParams::from_js_configuration(&params)?;
+        self.sanitize_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=sanitizeWithParams)]
     pub fn sanitize_with_params(
@@ -46,11 +53,18 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=sanitize_)]
-    pub fn sanitize_(&self) -> Result<(), JsValue> {
+    pub fn sanitize_(&self, #[wasm_bindgen(unchecked_optional_param_type = "SanitizeParams | SanitizeParamsOptions")] params: JsValue) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: self.inner.sanitize_()
         self.inner
             .sanitize_()
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::transform_parameters::SanitizeParams::from_js_configuration(&params)?;
+        self.sanitize_with_params_(configuration_0.into())
     }
     #[wasm_bindgen(js_name=sanitizeWithParams_)]
     pub fn sanitize_with_params_(
@@ -69,12 +83,19 @@ impl Molecule {
         result.ok_or_else(|| type_error("params"))?
     }
     #[wasm_bindgen(js_name=detectChemistryProblems)]
-    pub fn detect_chemistry_problems(&self) -> Result<ChemistryProblemReport, JsValue> {
+    pub fn detect_chemistry_problems(&self, #[wasm_bindgen(unchecked_optional_param_type = "SanitizeParams | SanitizeParamsOptions")] params: JsValue) -> Result<ChemistryProblemReport, JsValue> {
+        if params.is_undefined() {
+            return {
         // COSMolKit❗✔️: self.inner.detect_chemistry_problems()
         self.inner
             .detect_chemistry_problems()
             .map(|inner| ChemistryProblemReport { inner })
             .map_err(|e| sanitize_error(&e).unwrap_or_else(|e| e))
+
+            };
+        }
+        let configuration_0 = crate::transform_parameters::SanitizeParams::from_js_configuration(&params)?;
+        self.detect_chemistry_problems_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=detectChemistryProblemsWithParams)]
     pub fn detect_chemistry_problems_with_params(

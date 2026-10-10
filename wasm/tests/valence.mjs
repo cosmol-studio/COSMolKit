@@ -28,7 +28,7 @@ test("Valence parameters preserve canonical defaults and reject host coercion", 
     for (const value of [null, "false", 0, {}]) {
         assert.throws(() => new b.ValenceParams(undefined, value), TypeError);
     }
-    assert.throws(() => { params.strict = false; }, TypeError);
+    {const previous=params.strict;params.strict=false;assert.deepEqual(params.strict,false);params.strict=previous;}
 });
 
 test("All four valence operations retain value semantics and typed failure atomicity", () => {

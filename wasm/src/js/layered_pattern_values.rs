@@ -124,6 +124,7 @@ impl LayeredFingerprintParams {
 pub struct PatternFingerprintParams {
     pub(crate) inner: ck::PatternFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("PatternFingerprintParamsOptions")]
 #[wasm_bindgen]
 impl PatternFingerprintParams {
     #[wasm_bindgen(constructor)]

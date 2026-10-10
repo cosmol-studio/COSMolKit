@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 pub struct RingSearchParams {
     inner: ck::RingSearchParams,
 }
+#[cosmolkit_wasm::javascript_options("RingSearchParamsOptions")]
 #[wasm_bindgen]
 impl RingSearchParams {
     #[wasm_bindgen(constructor)]
@@ -62,21 +63,45 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
     #[wasm_bindgen(js_name=withAssignedRingFamilies)]
-    pub fn with_assigned_ring_families(&self) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: self.inner.with_assigned_ring_families()
-        self.inner
-            .with_assigned_ring_families()
-            .map(|inner| Self {
-                inner: Arc::new(inner),
-            })
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn with_assigned_ring_families(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "RingSearchParams | RingSearchParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<Self, JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.with_assigned_ring_families()
+                self.inner
+                    .with_assigned_ring_families()
+                    .map(|inner| Self {
+                        inner: Arc::new(inner),
+                    })
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::rings::RingSearchParams::from_js_configuration(&params)?;
+        self.with_assigned_ring_families_with_params(configuration_0.into())
     }
     #[wasm_bindgen(js_name=assignRingFamilies)]
-    pub fn assign_ring_families_(&self) -> Result<(), JsValue> {
-        // COSMolKit❗✔️: self.inner.assign_ring_families_()
-        self.inner
-            .assign_ring_families_()
-            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    pub fn assign_ring_families_(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "RingSearchParams | RingSearchParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<(), JsValue> {
+        if params.is_undefined() {
+            return {
+                // COSMolKit❗✔️: self.inner.assign_ring_families_()
+                self.inner
+                    .assign_ring_families_()
+                    .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+            };
+        }
+        let configuration_0 = crate::rings::RingSearchParams::from_js_configuration(&params)?;
+        self.assign_ring_families_with_params_(configuration_0.into())
     }
     #[wasm_bindgen(js_name=withAssignedRingFamiliesWithParams)]
     pub fn with_assigned_ring_families_with_params(

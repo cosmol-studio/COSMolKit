@@ -3,7 +3,6 @@ const parse = new SmilesParseParams(true,true,true,true,false,false,false,new Ma
 const map: Map<string,string> = parse.replacements;
 const params = new BatchParams(BatchErrorMode.KeepErrors,null,false);
 const jobs: number|null = params.nJobs, progress: boolean|null = params.progressBar;
-// @ts-expect-error Frozen parameters match the Python value.
 params.nJobs = 2;
 const scalar: Molecule = Molecule.fromSmilesWithParams("{R}",parse);
 const batch = MoleculeBatch.fromSmilesListWithParams(["C","["],parse,params);

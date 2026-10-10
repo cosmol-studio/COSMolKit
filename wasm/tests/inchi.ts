@@ -1,8 +1,12 @@
 import {Molecule, InchiReadParams, InchiWriteParams, inchiToKey} from "cosmolkit-generated";
 const read = new InchiReadParams();
+read.setSanitize(false);read.setRemoveHs(true);
+// @ts-expect-error explicit setters require boolean
+read.setSanitize('false');
 read.sanitize = false;
 read.removeHs = true;
 const write = new InchiWriteParams("-AuxNone");
+write.setOptions('-AuxNone');
 write.options = "";
 const mol = Molecule.fromInchi("InChI=1S/CH4/h1H4", read);
 const identifier: string = mol.toInchi(write);
