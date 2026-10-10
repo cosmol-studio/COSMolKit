@@ -209,6 +209,24 @@ fn known_upstream_crash(record: &Record) -> bool {
     )
 }
 
+fn known_upstream_undefined(record: &Record) -> bool {
+    use crate::fingerprints::{FingerprintInput, Observation, Params, Roots};
+    matches!(
+        (&record.input, &record.output),
+        (
+            Input::Fingerprint(FingerprintInput {
+                params: Params::Layered {
+                    branched: false,
+                    roots: Roots::All,
+                    ..
+                },
+                ..
+            }),
+            registry::Value::Fingerprint(Observation::LayeredAtomPathAsBondUndefined { .. })
+        )
+    )
+}
+
 #[derive(serde::Serialize)]
 #[serde(untagged)]
 enum ReportActual<'a> {
@@ -241,6 +259,7 @@ struct CorpusReport {
     failed: usize,
     timed_out: usize,
     upstream_crashed: usize,
+    upstream_undefined: usize,
 }
 impl CorpusReport {
     fn new() -> Result<Self> {
@@ -256,6 +275,7 @@ impl CorpusReport {
             failed: 0,
             timed_out: 0,
             upstream_crashed: 0,
+            upstream_undefined: 0,
         })
     }
     fn push<T: serde::Serialize + ?Sized>(
@@ -275,11 +295,17 @@ impl CorpusReport {
         self.upstream_crashed += usize::from(upstream_crashed);
         Ok(())
     }
+    fn push_upstream_undefined<T: serde::Serialize + ?Sized>(&mut self, row: &T) -> Result<()> {
+        self.push(row, None, false, false)?;
+        self.upstream_undefined += 1;
+        Ok(())
+    }
     fn finish(mut self, key: &str, report: &std::path::Path) -> Result<()> {
         self.writer.write_all(b"]").map_err(|e| e.to_string())?;
         self.writer.flush().map_err(|e| e.to_string())?;
         drop(self.writer);
-        let compared = self.total - self.timed_out - self.upstream_crashed;
+        let compared =
+            self.total - self.timed_out - self.upstream_crashed - self.upstream_undefined;
         let mut output =
             std::io::BufWriter::new(std::fs::File::create(report).map_err(|e| e.to_string())?);
         write!(
@@ -297,27 +323,29 @@ impl CorpusReport {
         serde_json::to_writer(&mut output, key).map_err(|e| e.to_string())?;
         write!(
             output,
-            ",\"timed_out\":{},\"upstream_crashed\":{},\"total\":{}}}",
-            self.timed_out, self.upstream_crashed, self.total
+            ",\"timed_out\":{},\"upstream_crashed\":{},\"upstream_undefined\":{},\"total\":{}}}",
+            self.timed_out, self.upstream_crashed, self.upstream_undefined, self.total
         )
         .map_err(|e| e.to_string())?;
         output.flush().map_err(|e| e.to_string())?;
         drop(output);
         println!(
-            "{key}: {}/{} matched; {} timed out; {} upstream crashes (not compared); {}",
+            "{key}: {}/{} matched; {} timed out; {} upstream crashes; {} upstream undefined (not compared); {}",
             compared - self.failed,
             compared,
             self.timed_out,
             self.upstream_crashed,
+            self.upstream_undefined,
             report.display()
         );
         // A report I/O error has already returned. Keep complete diagnostics
         // for empty/all-timeout/mismatching cases before rejecting them.
         if compared == 0 {
             return Err(format!(
-                "{key}: zero comparisons; {} timed out; {} upstream crashes; {}",
+                "{key}: zero comparisons; {} timed out; {} upstream crashes; {} upstream undefined; {}",
                 self.timed_out,
                 self.upstream_crashed,
+                self.upstream_undefined,
                 report.display()
             ));
         }
@@ -337,6 +365,10 @@ impl CorpusReport {
 fn write_corpus_report(key: &str, results: &[Value], report: &std::path::Path) -> Result<()> {
     let mut writer = CorpusReport::new()?;
     for row in results {
+        if row["stage"] == "UpstreamUndefinedBehavior" {
+            writer.push_upstream_undefined(row)?;
+            continue;
+        }
         writer.push(
             row,
             row["matches"].as_bool(),
@@ -404,6 +436,18 @@ pub fn run_corpus(key: &str) -> Result<()> {
                 }
                 match crate::execute::run(&expected.input) {
                     Ok(actual) => {
+                        if known_upstream_undefined(&actual) {
+                            report.push_upstream_undefined(&ReportRow {
+                                actual: Some(ReportActual::Record { record: &actual }),
+                                expected: &row,
+                                index,
+                                matches: None,
+                                skipped: Some(true),
+                                stage: Some("UpstreamUndefinedBehavior"),
+                                timeout: None,
+                            })?;
+                            continue;
+                        }
                         let matches = equal(&expected, &actual);
                         report.push(
                             &ReportRow {
@@ -535,7 +579,15 @@ mod tests {
             *exit_code = code;
             assert!(!known_upstream_crash(&other));
         }
-        let error = crate::execute::run(&expected.input).unwrap_err();
+        let undefined = crate::execute::run(&expected.input).unwrap();
+        assert!(known_upstream_undefined(&undefined));
+        assert!(!equal(&undefined, &undefined));
+        let registry::Value::Fingerprint(Observation::LayeredAtomPathAsBondUndefined {
+            checked_error: error,
+        }) = undefined.output
+        else {
+            unreachable!()
+        };
         assert_eq!(error, "enumerated path contains invalid bond index");
         // Also retain the returned-value comparison guard: a native process
         // failure must never match a CK result, whether it is a value or error.
@@ -681,6 +733,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn upstream_undefined_reports_retain_native_value_without_claiming_a_match() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("undefined.json");
+        let rows = [
+            json!({"index":0,"matches":null,"skipped":true,
+                "stage":"UpstreamUndefinedBehavior",
+                "expected":{"on_bits":[34]},
+                "actual":{"error":"enumerated path contains invalid bond index"}}),
+            json!({"index":1,"matches":true}),
+        ];
+        write_corpus_report("mixed", &rows, &path).unwrap();
+        let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["compared"], 1);
+        assert_eq!(saved["upstream_undefined"], 1);
+        assert_eq!(saved["failed"], 0);
+        assert_eq!(saved["timed_out"], 0);
+        assert_eq!(saved["upstream_crashed"], 0);
+        assert_eq!(saved["rows"], json!(rows));
+        assert!(
+            write_corpus_report("undefined-only", &rows[..1], &path)
+                .unwrap_err()
+                .contains("zero comparisons")
+        );
+        let mut errors = rows.to_vec();
+        errors.push(json!({"index":2,"matches":false,"actual":{"error":"ordinary error"}}));
+        assert!(
+            write_corpus_report("mixed-errors", &errors, &path)
+                .unwrap_err()
+                .contains("1/2 mismatches")
+        );
     }
 
     #[test]
@@ -894,7 +979,7 @@ mod tests {
         assert_eq!(
             saved,
             json!({"task":"full-task","total":3,"compared":2,
-            "failed":1,"timed_out":1,"upstream_crashed":0,"rows":[
+            "failed":1,"timed_out":1,"upstream_crashed":0,"upstream_undefined":0,"rows":[
                 {"index":0,"matches":true,"expected":expected,"actual":{"output":actual}},
                 {"index":1,"matches":false,"expected":expected,"actual":{"error":error}},
                 {"index":2,"matches":null,"expected":expected,"actual":null,
@@ -935,7 +1020,7 @@ mod tests {
         assert_eq!(
             saved,
             json!({"task":"empty","total":0,"compared":0,
-                "failed":0,"timed_out":0,"upstream_crashed":0,"rows":[]})
+                "failed":0,"timed_out":0,"upstream_crashed":0,"upstream_undefined":0,"rows":[]})
         );
     }
 

@@ -3,9 +3,10 @@ use crate::canonical_batch_fingerprint_values::BatchFingerprintOutput;
 use crate::canonical_layered::LayeredFingerprintResult;
 use crate::canonical_sdf::{SdfRecord, sdf_pyerr as sdf_error};
 use crate::canonical_values::{
-    Fingerprint, SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
+    SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
 };
 use crate::drawing_binding::Molecule;
+use crate::fingerprint_numpy::FingerprintBatch;
 use crate::text_path::TextPath;
 use ::cosmolkit as ck;
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValueError};
@@ -514,55 +515,37 @@ impl MoleculeBatch {
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
-    fn fingerprint_topological_torsion_list(
-        &self,
-        py: Python<'_>,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    fn fingerprint_topological_torsion_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_topological_torsion_list()
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|e| batch_error(py, e))
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     fn fingerprint_topological_torsion_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::TopologicalTorsionFingerprintParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         params
             .execute(py, |execution| {
                 self.inner
                     .fingerprint_topological_torsion_list_with_params(&options.inner, execution)
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
-    fn fingerprint_atom_pair_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
+    fn fingerprint_atom_pair_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_atom_pair_list()
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|source| batch_error(py, source))
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     fn fingerprint_atom_pair_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
         //     fn fingerprint_atom_pair_list(
@@ -616,12 +599,7 @@ impl MoleculeBatch {
                 self.inner
                     .fingerprint_atom_pair_list_with_params(&options.inner, execution)
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     fn fingerprint_atom_pair_sparse_count_list(
@@ -956,23 +934,18 @@ impl MoleculeBatch {
             })
     }
 
-    fn fingerprint_layered_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
+    fn fingerprint_layered_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_layered_list()
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|source| batch_error(py, source))
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     fn fingerprint_layered_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_layered::LayeredFingerprintParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
         //     fn fingerprint_layered_list(
@@ -1013,12 +986,7 @@ impl MoleculeBatch {
                 self.inner
                     .fingerprint_layered_list_with_params(&options.inner, execution)
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     fn fingerprint_layered_with_output_list(
@@ -1093,23 +1061,18 @@ impl MoleculeBatch {
             })
     }
 
-    fn fingerprint_pattern_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
+    fn fingerprint_pattern_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_pattern_list()
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|source| batch_error(py, source))
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     fn fingerprint_pattern_list_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_pattern::PatternFingerprintParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
         //     fn pattern_fingerprint_list(
@@ -1135,12 +1098,7 @@ impl MoleculeBatch {
                 self.inner
                     .fingerprint_pattern_list_with_params(&options.inner, execution)
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     /// Return Morgan fingerprints in input order (default radius 3, 2048 bits).
@@ -1151,16 +1109,11 @@ impl MoleculeBatch {
     /// or their fields as keywords. For example:
     /// batch.fingerprint_morgan_list(generator=ck.MorganParams(radius=2), n_jobs=1).
     /// Omitted n_jobs uses the batch setting, or one worker if unset.
-    fn fingerprint_morgan_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
+    fn fingerprint_morgan_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_morgan_list()
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|source| batch_error(py, source))
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Return ordered Morgan fingerprints using explicit options and execution params.
     /// Existing failed records produce None; new calculation errors raise
@@ -1170,7 +1123,7 @@ impl MoleculeBatch {
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganFingerprintParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
         //     fn fingerprint_morgan_list(
@@ -1232,12 +1185,7 @@ impl MoleculeBatch {
                 self.inner
                     .fingerprint_morgan_list_with_params(&options.inner, execution)
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     fn fingerprint_morgan_with_output_list(
@@ -1404,7 +1352,7 @@ impl MoleculeBatch {
         >,
         call: &crate::canonical_fingerprint_values::MorganCallParams,
         params: &crate::canonical_batch_params::BatchQueryParams,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<FingerprintBatch> {
         params
             .execute(py, |execution| {
                 self.inner.fingerprint_morgan_list_with_generator_params(
@@ -1415,12 +1363,7 @@ impl MoleculeBatch {
                     execution,
                 )
             })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,

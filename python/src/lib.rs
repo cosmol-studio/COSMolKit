@@ -37,6 +37,7 @@ mod canonical_valence;
 mod canonical_values;
 mod configuration_projection;
 mod drawing_binding;
+mod fingerprint_numpy;
 mod native_property;
 mod text_input;
 mod text_path;
@@ -78,6 +79,46 @@ pub fn binding_contract_module(
 ) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::types::PyModule>> {
     use pyo3::prelude::*;
 
+    // Embedded CPython does not automatically activate the project's venv.
+    // Exercise NumPy adapters against the same dependencies as normal Python
+    // tests, without requiring callers to configure PYTHONPATH.
+    if py.import("numpy").is_err() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap();
+        let executable = root.join(if cfg!(windows) {
+            ".venv/Scripts/python.exe"
+        } else {
+            ".venv/bin/python"
+        });
+        let output = std::process::Command::new(executable)
+            .args(["-c", "import json, site, sys; print(json.dumps([list(sys.version_info[:2]), site.getsitepackages()]))"])
+            .output()?;
+        if !output.status.success() {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+            ));
+        }
+        let environment = py
+            .import("json")?
+            .getattr("loads")?
+            .call1((String::from_utf8_lossy(&output.stdout).as_ref(),))?;
+        let expected: Vec<u32> = environment.get_item(0)?.extract()?;
+        let version = py.import("sys")?.getattr("version_info")?;
+        let actual = vec![
+            version.get_item(0)?.extract::<u32>()?,
+            version.get_item(1)?.extract::<u32>()?,
+        ];
+        if expected != actual {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "stub checks require the project venv and embedded CPython to use the same Python version",
+            ));
+        }
+        py.import("sys")?
+            .getattr("path")?
+            .call_method1("extend", (environment.get_item(1)?,))?;
+        py.import("numpy")?;
+    }
     let module = pyo3::types::PyModule::new(py, "cosmolkit")?;
     drawing_binding::cosmolkit(&module)?;
     // Match normal extension loading: recursive imports in getters/setters must

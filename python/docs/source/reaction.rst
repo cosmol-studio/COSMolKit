@@ -1,6 +1,9 @@
 Reactions
 =========
 
+.. meta::
+   :description: Parse reaction templates, generate product sets, and track atom properties with COSMolKit.
+
 The experimental reaction API projects the existing Rust implementation.
 Python and JavaScript do not implement separate reaction chemistry.
 

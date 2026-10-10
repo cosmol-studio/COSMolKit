@@ -848,26 +848,25 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                     "keyword target must be callable",
                 ));
             };
-            if target.parameters.len() != 1 {
-                return Err(syn::Error::new_spanned(
-                    &projection.target,
-                    "keyword target must take one immutable parameter object",
-                ));
-            }
-            let syn::Type::Reference(reference) = &target.parameters[0].ty else {
-                return Err(syn::Error::new_spanned(
-                    &projection.target,
-                    "keyword target must borrow parameters",
-                ));
-            };
-            let element = &reference.elem;
             let output = &constructor.output;
-            if reference.mutability.is_some()
-                || quote!(#element).to_string() != quote!(#output).to_string()
-            {
+            // Data inputs (reactants, filenames, etc.) are independent of the
+            // single configuration object constructed by this projection.
+            let configurations = target
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    let syn::Type::Reference(reference) = &parameter.ty else {
+                        return false;
+                    };
+                    let element = &reference.elem;
+                    reference.mutability.is_none()
+                        && quote!(#element).to_string() == quote!(#output).to_string()
+                })
+                .count();
+            if configurations != 1 {
                 return Err(syn::Error::new_spanned(
                     &projection.target,
-                    "keyword constructor output must match borrowed target parameter",
+                    "keyword constructor output must match exactly one immutably borrowed target parameter",
                 ));
             }
         }

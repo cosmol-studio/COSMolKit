@@ -800,7 +800,9 @@ fn constraint_semantics_ring_template_threshold_and_fixed_seed_coordinates() {
         embedded_frag::embed_fused_systems(&graph, &rings, Some(&two), true, &mut templates)
             .unwrap();
     assert!(disabled[0].atoms.values().all(|atom| !atom.fixed));
-    seeded.merge_frags_with_common(&mut disabled).unwrap();
+    seeded
+        .merge_frags_with_common(&mut disabled, &mut 0)
+        .unwrap();
     assert!(disabled.is_empty());
     assert_eq!(seeded.atoms[&0].loc[0].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(seeded.atoms[&0].loc[1], 5.0);
@@ -1508,7 +1510,7 @@ fn cis_trans_conjugated_seed_order_and_no_common_merge() {
     );
     let mut first = fragments.remove(0);
     first
-        .expand_fragment(&mut vec![0, 5], &mut fragments)
+        .expand_fragment(&mut vec![0, 5], &mut fragments, &mut 0)
         .unwrap();
     assert!(fragments.is_empty());
     assert!(first.atoms.contains_key(&3));
@@ -2601,7 +2603,9 @@ fn fragment_seed_expand_isolated_seed_has_no_attachment_work() {
     let mut fragment = embedded_frag::EmbeddedFrag::from_single(0, &graph, &rings).unwrap();
     let mut nonring = Vec::new();
     let mut other = Vec::new();
-    fragment.expand_fragment(&mut nonring, &mut other).unwrap();
+    fragment
+        .expand_fragment(&mut nonring, &mut other, &mut 0)
+        .unwrap();
     assert_eq!(fragment.atoms[&0].loc, [0.0, 0.0]);
     assert_eq!(fragment.atoms.len(), 1);
     assert!(fragment.attachment_points.is_empty());
@@ -2614,7 +2618,7 @@ fn fragment_seed_expand_chain_consumes_nonring_rows_in_source_order() {
     let mut fragment = embedded_frag::EmbeddedFrag::from_single(0, &graph, &rings).unwrap();
     let mut nonring = vec![2, 1];
     fragment
-        .expand_fragment(&mut nonring, &mut Vec::new())
+        .expand_fragment(&mut nonring, &mut Vec::new(), &mut 0)
         .unwrap();
     assert!(nonring.is_empty());
     assert!(fragment.attachment_points.is_empty());
@@ -2635,7 +2639,7 @@ fn fragment_seed_expand_branch_drains_attachment_and_preserves_bond_lengths() {
     let mut fragment = embedded_frag::EmbeddedFrag::from_single(0, &graph, &rings).unwrap();
     let mut nonring = vec![3, 1, 2];
     fragment
-        .expand_fragment(&mut nonring, &mut Vec::new())
+        .expand_fragment(&mut nonring, &mut Vec::new(), &mut 0)
         .unwrap();
     assert!(nonring.is_empty());
     assert!(fragment.attachment_points.is_empty());
@@ -2654,7 +2658,7 @@ fn fragment_seed_expand_bridge_searches_remaining_fragments() {
     let mut fragments = vec![embedded_frag::EmbeddedFrag::from_single(1, &graph, &rings).unwrap()];
     let mut nonring = vec![2];
     fragment
-        .expand_fragment(&mut nonring, &mut fragments)
+        .expand_fragment(&mut nonring, &mut fragments, &mut 0)
         .unwrap();
     assert!(fragments.is_empty());
     assert!(nonring.is_empty());
@@ -2683,7 +2687,7 @@ fn fragment_seed_expand_shared_fragment_merges_before_queue_walk() {
     .unwrap();
     let mut fragments = vec![other];
     fragment
-        .expand_fragment(&mut Vec::new(), &mut fragments)
+        .expand_fragment(&mut Vec::new(), &mut fragments, &mut 0)
         .unwrap();
     assert!(fragments.is_empty());
     assert_eq!(fragment.atoms.len(), 4);
@@ -2699,7 +2703,7 @@ fn fragment_seed_expand_disconnected_fragment_is_left_for_component_handoff() {
     let mut nonring = vec![3, 1];
     let mut fragments = vec![embedded_frag::EmbeddedFrag::from_single(2, &graph, &rings).unwrap()];
     fragment
-        .expand_fragment(&mut nonring, &mut fragments)
+        .expand_fragment(&mut nonring, &mut fragments, &mut 0)
         .unwrap();
     assert_eq!(fragment.atoms.len(), 2);
     assert_eq!(nonring, vec![3]);
@@ -2715,7 +2719,7 @@ fn fragment_seed_expand_reports_empty_attachment_invariant() {
     let mut fragment = embedded_frag::EmbeddedFrag::from_single(0, &graph, &rings).unwrap();
     fragment.attachment_points.push(0);
     assert_eq!(
-        fragment.expand_fragment(&mut Vec::new(), &mut Vec::new()),
+        fragment.expand_fragment(&mut Vec::new(), &mut Vec::new(), &mut 0),
         Err(embedded_frag::FragmentError::EmptyAttachment { atom: 0 })
     );
 }

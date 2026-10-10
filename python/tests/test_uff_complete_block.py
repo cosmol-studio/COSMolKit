@@ -11,7 +11,7 @@ def make_molecule():
 
 
 def coordinates(molecule):
-    return [row.coordinates() for row in molecule.conformers_3d()]
+    return [row.coordinates().tolist() for row in molecule.conformers_3d()]
 
 
 BASELINE_ROWS = [

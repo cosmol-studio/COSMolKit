@@ -358,6 +358,80 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
 }
 
 #[test]
+fn sanitize_organometallic_bond_direction_preserves_identity_and_cow() {
+    // RDKit MolOps.cpp::metalBondCleanup keeps the bond ID and directs the
+    // dative bond from Cl to Co, for both [Co+2]ClC and CCl[Co+2].
+    for metal_first in [true, false] {
+        let (atoms, metal, carbon, metal_bond) = if metal_first {
+            (
+                vec![
+                    atom_spec(27).with_formal_charge(2),
+                    atom_spec(17),
+                    atom_spec(6),
+                ],
+                0,
+                2,
+                0,
+            )
+        } else {
+            (
+                vec![
+                    atom_spec(6),
+                    atom_spec(17),
+                    atom_spec(27).with_formal_charge(2),
+                ],
+                2,
+                0,
+                1,
+            )
+        };
+        let source = molecule(topology_from_specs(
+            atoms,
+            vec![
+                bond_spec(0, 1, BondOrder::Single),
+                bond_spec(1, 2, BondOrder::Single),
+            ],
+        ));
+        let observer = source.clone();
+        let output = source.sanitize().unwrap();
+        let mut in_place = source.clone();
+        in_place.sanitize_().unwrap();
+        assert_eq!(in_place, output);
+        assert_eq!(source, observer);
+        assert!(std::ptr::eq(source.topology(), observer.topology()));
+        coordinate_views::assert_shared_coordinates(&source, &output);
+        coordinate_views::assert_shared_coordinates(&source, &in_place);
+        assert_eq!(output.num_atoms(), 3);
+        assert_eq!(output.num_bonds(), 2);
+        for (before, after) in source.atoms().iter().zip(output.atoms()) {
+            assert_eq!(before.id(), after.id());
+            assert_eq!(before.atomic_number(), after.atomic_number());
+            assert_eq!(before.formal_charge(), after.formal_charge());
+        }
+        for (before, after) in source.bonds().iter().zip(output.bonds()) {
+            assert_eq!(before.id(), after.id());
+            assert_eq!(before.order(), BondOrder::Single);
+        }
+        let dative = &output.bonds()[metal_bond];
+        assert_eq!(dative.order(), BondOrder::Dative);
+        assert_eq!(dative.begin(), AtomId::new(1));
+        assert_eq!(dative.end(), AtomId::new(metal));
+        let ordinary = &output.bonds()[1 - metal_bond];
+        assert_eq!(ordinary.order(), BondOrder::Single);
+        assert_eq!(
+            (ordinary.begin(), ordinary.end()),
+            (
+                source.bonds()[1 - metal_bond].begin(),
+                source.bonds()[1 - metal_bond].end()
+            )
+        );
+        assert_eq!(output.topology().adjacency, source.topology().adjacency);
+        assert_eq!(output.atoms()[carbon].atomic_number(), 6);
+        assert_eq!(output.property("source"), source.property("source"));
+    }
+}
+
+#[test]
 fn none_selection_still_clears_only_computed_topology_and_cip_properties() {
     let source = molecule(alternating_benzene());
     let output = source
@@ -437,6 +511,9 @@ fn sanitize_failure_is_structured_and_atomic() {
     assert!(std::ptr::eq(source.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
+    let mut in_place = source.clone();
+    assert_eq!(in_place.sanitize_().unwrap_err(), error);
+    assert_eq!(in_place, observer);
 }
 
 #[test]

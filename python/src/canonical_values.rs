@@ -483,6 +483,7 @@ pub(crate) struct Fingerprint {
     pub(crate) inner: ck::Fingerprint,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Fingerprint {
     #[staticmethod]
@@ -501,6 +502,11 @@ impl Fingerprint {
     }
     fn on_bits(&self) -> Vec<u32> {
         self.inner.on_bits()
+    }
+    /// Return an independent uint8 NumPy vector in logical bit order.
+    #[gen_stub(override_return_type(type_repr = "numpy.typing.NDArray[numpy.uint8]", imports = ("numpy", "numpy.typing")))]
+    fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray1<u8>> {
+        crate::fingerprint_numpy::to_numpy(py, &self.inner)
     }
     fn __len__(&self) -> usize {
         self.inner.n_bits() as usize
@@ -731,6 +737,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<SmilesParseParams>()?;
     module.add_class::<SmilesWriteParams>()?;
     module.add_class::<Fingerprint>()?;
+    module.add_class::<crate::fingerprint_numpy::FingerprintBatch>()?;
     module.add_class::<SparseBitFingerprint>()?;
     module.add_class::<SparseCountFingerprint>()?;
     module.add_class::<SparseCountFingerprint32>()?;

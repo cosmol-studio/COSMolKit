@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use cosmolkit_search::{
     MatchResult, QueryGraph, QueryMatchContext, SearchTarget, SmartsParseParams,
-    SubstructMatchParams, build_prepared_query_match_context, build_topology_query_match_context,
+    SubstructMatchParams, build_ring_query_match_context, build_topology_query_match_context,
     build_valence_query_match_context, parse_smarts,
     try_get_substruct_matches_with_params_and_context,
 };
@@ -56,7 +56,11 @@ pub(crate) fn prepared_context<'a>(
 ) -> DescriptorResult<QueryMatchContext<'a>> {
     #[cfg(test)]
     CONTEXT_BUILDS.with(|count| count.set(count.get() + 1));
-    build_prepared_query_match_context(input.topology(), input.ring_info(), input.valence())
+    // AddHs preserves authoritative ring memberships without appending empty
+    // rows for new leaf hydrogens. Reuse the source-semantic sparse adapter;
+    // Some(valence) keeps the supplied final assignment borrowed, never rebuilt.
+    // Exact-size detached validation remains unchanged in the search owner.
+    build_ring_query_match_context(input.topology(), input.ring_info(), Some(input.valence()))
         .map_err(|source| DescriptorError::Search {
             function,
             source: DescriptorSearchCause::Context(source),
@@ -325,4 +329,71 @@ pub(crate) fn count_pattern_matches(
 ) -> DescriptorResult<u32> {
     let context = prepared_context(input, function)?;
     count_pattern_matches_with_context(input, function, pattern, &context)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmolkit_core::{RingFindType, RingInfo, ValenceModel};
+    use cosmolkit_model::{CoordinateBlock, MoleculeProperties};
+    use cosmolkit_search::QueryMatchContextError;
+
+    #[test]
+    fn descriptor_sparse_ring_context_retains_invalid_state_errors() {
+        let topology = cosmolkit_smiles::parse_smiles("CCO", &Default::default())
+            .unwrap()
+            .topology;
+        let valence =
+            cosmolkit_core::assign_valence_for_topology(&topology, ValenceModel::RdkitLike)
+                .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let properties = MoleculeProperties::default();
+        let count = |rings: &RingInfo, valence: &cosmolkit_core::ValenceAssignment| {
+            crate::num_hba_prepared(&DescriptorInput::new(
+                &topology,
+                &coordinates,
+                &properties,
+                valence,
+                rings,
+            ))
+        };
+        let mut sparse = RingInfo::new(RingFindType::Sssr, 0, 0);
+        assert_eq!(count(&sparse, &valence).unwrap(), 1);
+        sparse.reset();
+        assert!(matches!(
+            count(&sparse, &valence),
+            Err(DescriptorError::Search {
+                source: DescriptorSearchCause::Context(QueryMatchContextError::UninitializedRings),
+                ..
+            })
+        ));
+        let too_long = RingInfo::new(RingFindType::Sssr, 4, 2);
+        assert!(matches!(
+            count(&too_long, &valence),
+            Err(DescriptorError::Search {
+                source: DescriptorSearchCause::Context(
+                    QueryMatchContextError::RingMembershipRows {
+                        field: "atoms",
+                        expected: 3,
+                        actual: 4,
+                    }
+                ),
+                ..
+            })
+        ));
+        let sparse = RingInfo::new(RingFindType::Sssr, 0, 0);
+        let mut incomplete = valence;
+        incomplete.implicit_hydrogens.pop();
+        assert!(matches!(
+            count(&sparse, &incomplete),
+            Err(DescriptorError::Search {
+                source: DescriptorSearchCause::Context(QueryMatchContextError::ValenceRows {
+                    field: "implicit_hydrogens",
+                    expected: 3,
+                    actual: 2,
+                }),
+                ..
+            })
+        ));
+    }
 }

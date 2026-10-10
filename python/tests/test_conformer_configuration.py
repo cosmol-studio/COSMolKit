@@ -30,5 +30,6 @@ def test_all_generation_forms_borrow_configuration_without_failure_progress_writ
     result = getattr(mol, method)(*([] if count is None else [count]), params=params)
     assert (params.to_json(), list(params.failures)) == before
     if "result" in method:
-        assert len(result.params().failures) == 12
+        # RDKit 2026.03.6 Embedder.h: EmbedFailureCauses::END_OF_ENUM.
+        assert len(result.params().failures) == 15
         assert result.params().random_seed == 42

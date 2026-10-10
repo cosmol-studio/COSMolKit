@@ -74,7 +74,7 @@ def _execute(profile, path, digest, count):
                 if actual["embed_ok"]:
                     conformers = result.molecule().conformers_3d()
                     actual["conformer_ids"] = [conformer.id() for conformer in conformers]
-                    actual["coords"] = conformers[0].coordinates()
+                    actual["coords"] = conformers[0].coordinates().tolist()
                 else:
                     actual["error_stage"] = "embed"
                     actual["error"] = "EmbedMolecule returned " + str(actual["status"])
@@ -119,13 +119,15 @@ def _execute(profile, path, digest, count):
             if (index + 1) % 100 == 0:
                 print(profile, "actual rows", index + 1, "mismatches", len(failures), flush=True)
     native = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(ck.__file__).parent.glob("*.so")}
-    summary = {"profile": profile, "rows_executed": count, "matched": count - len(failures), "failed": len(failures), "actual_stage_counts": stages, "failures": failures, "original_reference": str(path), "original_reference_sha256": digest, "actual_sha256": hashlib.sha256(actual_path.read_bytes()).hexdigest(), "native_sha256": native, "interpreter": sys.version, "source_pin": "351f8f378f8ad6bbd517980c38896e66bf907af8", "tolerance": COORD_TOLERANCE, "whole_block_ACCEPTED": False, "independent_review_required": True}
+    summary = {"profile": profile, "rows_executed": count, "matched": count - len(failures), "failed": len(failures), "actual_stage_counts": stages, "failures": failures, "original_reference": str(path), "original_reference_sha256": digest, "actual_sha256": hashlib.sha256(actual_path.read_bytes()).hexdigest(), "native_sha256": native, "interpreter": sys.version, "source_pin": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985", "tolerance": COORD_TOLERANCE, "whole_block_ACCEPTED": False, "independent_review_required": True}
     (output / (profile + "-summary.json")).write_text(json.dumps(summary, indent=2) + "\n")
     assert not failures, f"{profile}: {len(failures)}/{count} native mismatches; all actual outcomes retained at {actual_path}"
 
 
 def test_original_library_native_152():
-    _execute("original152", _oracle(152, "smiles_small"), "536fe7d81cfcf913ad3901645bcf52ba1078f2e1faac7f897e861e3cdffcc7b3", 152)
+    # RDKit 2026.03.6 manifest.json, unchanged original152 generation recipe;
+    # also frozen by crates/cosmolkit/tests/conformer_original_library.rs.
+    _execute("original152", _oracle(152, "smiles_small"), "7948eff11e2a078e88a4526b3e00d2618e515df7d292ae43883454565f84376a", 152)
 
 
 def configured(params, **changes):

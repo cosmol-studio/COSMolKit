@@ -1394,7 +1394,7 @@ fn write_smiles_output_with_random_stream<'record>(
             &components,
         )?;
     }
-    let ring_bonds = find_ring_bonds(&topology);
+    let ring_bonds = writer_ring_bonds(&topology, record.rings, components.len());
     let mut colors = vec![AtomColor::White; topology.atoms.len()];
     let mut fragments = Vec::new();
 
@@ -4221,6 +4221,7 @@ fn canonicalize_fragment_impl(
     }
     if properties.prop("_StereochemDone").is_none() {
         let mut update = None;
+        let mut atom_valence_updates = Vec::new();
         let result = cosmolkit_core::assign_legacy_stereochemistry_source(
             topology,
             valence,
@@ -4229,7 +4230,10 @@ fn canonicalize_fragment_impl(
             false,
             false,
             &mut update,
+            &mut atom_valence_updates,
         );
+        // cleanIt=false cannot enter the explicit-H removal branch.
+        debug_assert!(atom_valence_updates.is_empty());
         if let Some(update) = update {
             *rings = update;
         }
@@ -5757,6 +5761,70 @@ fn boost_hash_range(value: impl AsRef<[u8]>) -> u32 {
             .wrapping_add(seed >> 2);
     }
     seed
+}
+
+fn writer_ring_bonds(
+    topology: &TopologyBlock,
+    source_rings: Option<&cosmolkit_core::RingInfo>,
+    component_count: usize,
+) -> Vec<bool> {
+    // RDKit✔️✔️:   if (nFrags == 1) {
+    // RDKit✔️✔️:     res.emplace_back(new RWMol(mol));
+    // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment ring-cache selection
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit✔️✔️:     MolOps::findSSSR(mol);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION Canon::canonicalizeFragment ring-cache selection
+    // Behavior: the sole fragment is an RWMol copy retaining SymmSSSR. Changing
+    // DATIVE to SINGLE does not reset that cache; freshly searching the changed
+    // graph would incorrectly mark new metal cycles as existing source rings.
+    // Complexity: O(E) membership projection, avoiding an O(V+E) bridge search.
+    if let Some(rings) = source_rings.filter(|rings| component_count == 1 && rings.is_symm_sssr()) {
+        return topology
+            .bonds
+            .iter()
+            .map(|bond| rings.num_bond_rings(bond.id()) != 0)
+            .collect();
+    }
+    find_ring_bonds(topology)
+}
+
+#[cfg(test)]
+mod dative_ring_cache_tests {
+    use super::*;
+
+    #[test]
+    fn converting_dative_bonds_preserves_symm_sssr_membership_on_the_writer_copy() {
+        let mut record =
+            crate::parse_smiles("C1CN->[Cu+2]1", &crate::SmilesParseParams::default()).unwrap();
+        let source_rings = cosmolkit_core::symmetrized_sssr(
+            &record.topology,
+            &cosmolkit_core::RingSearchParams::default(),
+        )
+        .unwrap();
+        assert!(source_rings.is_symm_sssr());
+        assert!(source_rings.bond_rings().is_empty());
+        for bond in &mut record.topology.bonds {
+            if bond.order() == BondOrder::Dative {
+                bond.set_order(BondOrder::Single);
+            }
+        }
+        assert!(
+            find_ring_bonds(&record.topology)
+                .iter()
+                .all(|in_ring| *in_ring)
+        );
+        assert!(
+            writer_ring_bonds(&record.topology, Some(&source_rings), 1)
+                .iter()
+                .all(|in_ring| !*in_ring)
+        );
+        assert!(
+            writer_ring_bonds(&record.topology, Some(&source_rings), 2)
+                .iter()
+                .all(|in_ring| *in_ring)
+        );
+    }
 }
 
 fn find_ring_bonds(topology: &TopologyBlock) -> Vec<bool> {

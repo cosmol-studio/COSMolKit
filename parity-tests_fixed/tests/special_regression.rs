@@ -92,3 +92,12 @@ fn mmff_builtin() {
     .unwrap();
     cosmolkit_parity_tests_fixed::forcefield_regression::compare_builtin(&snapshot);
 }
+#[cfg(parity_special_conformer_fixed19)]
+#[path = "support/conformer_fixed19.rs"]
+mod conformer_fixed19;
+#[cfg(parity_special_conformer_library)]
+#[path = "support/conformer_library.rs"]
+mod conformer_library;
+#[cfg(parity_special_forcefield_properties)]
+#[path = "support/forcefield_properties.rs"]
+mod forcefield_properties;

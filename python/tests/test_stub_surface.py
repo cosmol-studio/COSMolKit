@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 import cosmolkit
+import pytest
 
 
 def _stub_module() -> ast.Module:
@@ -16,21 +17,26 @@ def _stub_module() -> ast.Module:
 
 
 def _stub_exports(module: ast.Module) -> set[str]:
+    names: set[str] = set()
+    declared = False
     for node in module.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if any(
+        if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "__all__"
             for target in node.targets
         ):
-            value = cast(object, ast.literal_eval(node.value))
-            assert isinstance(value, list)
-            names: set[str] = set()
-            for name in cast(list[object], value):
-                assert isinstance(name, str)
-                names.add(name)
-            return names
-    raise AssertionError("generated cosmolkit.pyi has no __all__ declaration")
+            assert not declared, "duplicate __all__ declaration"
+            declared = True
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            assert declared and isinstance(node.op, ast.Add)
+        else:
+            continue
+        value = cast(object, ast.literal_eval(node.value))
+        assert isinstance(value, list)
+        for name in cast(list[object], value):
+            assert isinstance(name, str)
+            names.add(name)
+    assert declared, "generated cosmolkit.pyi has no __all__ declaration"
+    return names
 
 
 def _stub_class(module: ast.Module, name: str) -> ast.ClassDef:
@@ -41,6 +47,39 @@ def _stub_class(module: ast.Module, name: str) -> ast.ClassDef:
     ]
     assert len(matches) == 1
     return matches[0]
+
+
+def _stub_function_aliases(module: ast.Module) -> set[str]:
+    aliases: set[str] = set()
+    for node in module.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Attribute):
+            continue
+        assert len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+        name = node.targets[0].id
+        assert name not in aliases, f"duplicate callable alias: {name}"
+        assert isinstance(node.value.value, ast.Name)
+        owner_name, method_name = node.value.value.id, node.value.attr
+        owner = _stub_class(module, owner_name)
+        assert any(isinstance(member, ast.FunctionDef) and member.name == method_name for member in owner.body)
+        original = getattr(getattr(cosmolkit, owner_name), method_name)
+        assert inspect.isroutine(original)
+        assert getattr(cosmolkit, name) == original
+        aliases.add(name)
+    return aliases
+
+
+def test_stub_export_collection_includes_additions() -> None:
+    module = ast.parse('__all__ = ["Molecule"]\n__all__ += ["mol_from_smiles"]\n')
+    assert _stub_exports(module) == {"Molecule", "mol_from_smiles"}
+
+
+def test_stub_alias_collection_rejects_duplicate_declarations() -> None:
+    declaration = "mol_from_smiles = Molecule.from_smiles\n"
+    module = ast.parse("class Molecule:\n    def from_smiles(text: str): ...\n" + declaration)
+    assert _stub_function_aliases(module) == {"mol_from_smiles"}
+    module.body.extend(ast.parse(declaration).body)
+    with pytest.raises(AssertionError, match="duplicate callable alias"):
+        _stub_function_aliases(module)
 
 
 def test_generated_stub_covers_every_public_runtime_function_once() -> None:
@@ -63,7 +102,9 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
         for name, value in cast(Mapping[str, object], vars(cosmolkit)).items()
         if not name.startswith("_") and inspect.isroutine(value)
     }
-    stub_functions = set(declarations)
+    aliases = _stub_function_aliases(module)
+    assert aliases.isdisjoint(declarations), "alias duplicates a function declaration"
+    stub_functions = set(declarations) | aliases
     exports = _stub_exports(module)
 
     assert runtime_functions == stub_functions
@@ -115,8 +156,8 @@ def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() 
         ("Molecule", "fingerprint_layered_with_params", ["self", "params"], "Fingerprint"),
         ("Molecule", "fingerprint_layered_with_output", ["self"], "LayeredFingerprintResult"),
         ("Molecule", "fingerprint_layered_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
-        ("MoleculeBatch", "fingerprint_layered_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
-        ("MoleculeBatch", "fingerprint_layered_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "fingerprint_layered_list", ["self"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_layered_list_with_params", ["self", "options", "params"], "FingerprintBatch"),
         ("MoleculeBatch", "fingerprint_layered_with_output_list", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
         ("MoleculeBatch", "fingerprint_layered_with_output_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
     ]:
@@ -131,8 +172,8 @@ def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() 
     for class_name, name, arguments, result in [
         ("Molecule", "fingerprint_pattern", ["self"], "Fingerprint"),
         ("Molecule", "fingerprint_pattern_with_params", ["self", "params"], "Fingerprint"),
-        ("MoleculeBatch", "fingerprint_pattern_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
-        ("MoleculeBatch", "fingerprint_pattern_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "fingerprint_pattern_list", ["self"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_pattern_list_with_params", ["self", "options", "params"], "FingerprintBatch"),
     ]:
         _assert_registered_method_surface(module, class_name, name, arguments, result)
 

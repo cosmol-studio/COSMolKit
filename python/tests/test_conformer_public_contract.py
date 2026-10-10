@@ -40,15 +40,15 @@ def test_manual_coordinate_forms_ids_flags_and_atomic_errors():
     assert not source.conformers_3d()[1].is_3d()
     changed = [[2.0, 3.0, 4.0]] * 3
     value = source.with_3d_coordinates_with_params(changed, replacement(1))
-    assert source.conformers_3d()[1].coordinates() == coords
-    assert value.conformers_3d()[1].coordinates() == changed
+    np.testing.assert_array_equal(source.conformers_3d()[1].coordinates(), coords)
+    np.testing.assert_array_equal(value.conformers_3d()[1].coordinates(), changed)
     assert not value.conformers_3d()[1].is_3d()
     source.set_3d_coordinates_with_params_(changed, replacement(1))
-    snapshot = [(c.id(), c.coordinates(), c.is_3d()) for c in source.conformers_3d()]
+    snapshot = [(c.id(), c.coordinates().tolist(), c.is_3d()) for c in source.conformers_3d()]
     for coords, identifier in [([[0.0, 0.0, 0.0]], 1), ([[math.nan, 0.0, 0.0]] * 3, 1), ([[0.0, 0.0, 0.0]] * 3, 99)]:
         with pytest.raises(ValueError):
             source.set_3d_coordinates_with_params_(coords, replacement(identifier))
-        assert [(c.id(), c.coordinates(), c.is_3d()) for c in source.conformers_3d()] == snapshot
+        assert [(c.id(), c.coordinates().tolist(), c.is_3d()) for c in source.conformers_3d()] == snapshot
     only = source.with_only_3d_conformer(changed)
     assert [c.id() for c in only.conformers_3d()] == [0]
     assert source.num_3d_conformers() == 2
@@ -70,7 +70,8 @@ def test_results_snapshots_all_generation_forms_and_atomic_typed_error():
     assert original.num_3d_conformers() == 0
     assert result.params().random_seed == 42
     assert params.failures == []
-    assert len(result.params().failures) == 12
+    # RDKit 2026.03.6 Embedder.h: EmbedFailureCauses::END_OF_ENUM.
+    assert len(result.params().failures) == 15
     snapshot = result.params().to_json()
     params = configured(params, random_seed=123)
     assert result.params().to_json() == snapshot
@@ -78,7 +79,7 @@ def test_results_snapshots_all_generation_forms_and_atomic_typed_error():
     inplace = water()
     committed = inplace.embed_3d_conformer_result_(params)
     assert committed.conf_id() == 0 and committed.molecule().num_3d_conformers() == 1
-    assert inplace.conformers_3d()[0].coordinates() == result.molecule().conformers_3d()[0].coordinates()
+    np.testing.assert_array_equal(inplace.conformers_3d()[0].coordinates(), result.molecule().conformers_3d()[0].coordinates())
     params = configured(params, clear_conformers=False)
     multiple = inplace.with_3d_conformers_result(3, params)
     assert multiple.conf_ids() == [1, 2, 3]
@@ -88,12 +89,12 @@ def test_results_snapshots_all_generation_forms_and_atomic_typed_error():
     assert committed.conf_ids() == [1, 2, 3]
     assert inplace.num_3d_conformers() == 4
     assert params.failures == []
-    assert len(committed.params().failures) == 12
+    assert len(committed.params().failures) == 15
     before = [c.coordinates() for c in inplace.conformers_3d()]
     params = configured(params, et_version=99)
     with pytest.raises(ValueError, match="Only version 1 and 2"):
         inplace.embed_3d_conformer_result_(params)
-    assert [c.coordinates() for c in inplace.conformers_3d()] == before
+    np.testing.assert_array_equal([c.coordinates() for c in inplace.conformers_3d()], before)
     for value, inplace_name, count in [("with_3d_conformer", "embed_3d_conformer_", 1), ("with_3d_conformers", "embed_3d_conformers_", 2)]:
         arguments = [] if count == 1 else [count]
         assert getattr(original, value)(*arguments).num_3d_conformers() == count

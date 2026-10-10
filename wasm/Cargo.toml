@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version = "0.5.0-rc.21"
+version = "0.5.0-rc.22"
 edition.workspace = true
 publish = false
 
@@ -63,8 +63,8 @@ cap-aromaticity = ["cosmolkit/cap-aromaticity"]
 cap-sanitize = ["cosmolkit/cap-sanitize"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.21", path = "../crates/cosmolkit", default-features = false }
-cosmolkit-macros = { version = "0.5.0-rc.21", path = "../crates/cosmolkit-macros" }
+cosmolkit = { version = "0.5.0-rc.22", path = "../crates/cosmolkit", default-features = false }
+cosmolkit-macros = { version = "0.5.0-rc.22", path = "../crates/cosmolkit-macros" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3"

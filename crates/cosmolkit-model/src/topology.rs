@@ -547,27 +547,13 @@ impl TopologyBlock {
             }
             group.validate_members()?;
         }
-        let expected =
-            AdjacencyList::try_from_topology(self.atoms.len(), &self.bonds).map_err(|error| {
-                match error {
-                    crate::AdjacencyError::BondAtomOutOfRange {
-                        bond,
-                        endpoint,
-                        atom,
-                        atom_count,
-                    } => TopologyValidationError::BondEndpointOutOfRange {
-                        bond,
-                        endpoint,
-                        atom,
-                        atom_count,
-                    },
-                    crate::AdjacencyError::DuplicateBondId { .. }
-                    | crate::AdjacencyError::DuplicateEdge { .. } => {
-                        TopologyValidationError::AdjacencyMismatch
-                    }
-                }
-            })?;
-        if self.adjacency != expected {
+        // Earlier checks preserve the original error precedence and establish
+        // dense IDs, valid endpoints and no self-loops. Only the final CSR
+        // comparison (including duplicate edges) is replaced, not skipped.
+        if !self
+            .adjacency
+            .matches_validated_topology(self.atoms.len(), &self.bonds)
+        {
             return Err(TopologyValidationError::AdjacencyMismatch);
         }
         Ok(())
@@ -1991,6 +1977,42 @@ mod tests {
         assert_eq!(
             block.validate(),
             Err(TopologyValidationError::AdjacencyMismatch)
+        );
+    }
+
+    #[test]
+    fn direct_adjacency_validation_preserves_topology_error_precedence() {
+        let mut block = f12_topology(
+            3,
+            vec![
+                f12_bond(0, 0, 1, BondOrder::Single, BondStereo::None, None),
+                f12_bond(1, 1, 2, BondOrder::Single, BondStereo::None, None),
+            ],
+        );
+        // Duplicate edges are still an adjacency error, including reversed
+        // endpoints. Earlier ID/endpoint failures must not be masked by it.
+        block.bonds[1] = f12_bond(1, 1, 0, BondOrder::Single, BondStereo::None, None);
+        assert_eq!(
+            block.validate(),
+            Err(TopologyValidationError::AdjacencyMismatch)
+        );
+        block.bonds[1] = f12_bond(0, 1, 0, BondOrder::Single, BondStereo::None, None);
+        assert_eq!(
+            block.validate(),
+            Err(TopologyValidationError::BondIdMismatch {
+                position: 1,
+                id: BondId::new(0)
+            })
+        );
+        block.bonds[1] = f12_bond(1, 1, 3, BondOrder::Single, BondStereo::None, None);
+        assert_eq!(
+            block.validate(),
+            Err(TopologyValidationError::BondEndpointOutOfRange {
+                bond: BondId::new(1),
+                endpoint: "end",
+                atom: AtomId::new(3),
+                atom_count: 3,
+            })
         );
     }
 

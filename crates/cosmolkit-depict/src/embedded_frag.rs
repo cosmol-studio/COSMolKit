@@ -5543,6 +5543,7 @@ impl<'a> EmbeddedFrag<'a> {
     pub(crate) fn merge_frags_with_common(
         &mut self,
         fragments: &mut Vec<Self>,
+        insertion_index: &mut usize,
     ) -> Result<(), FragmentError> {
         // RDKit❗✔️: void EmbeddedFrag::mergeFragsWithComm(std::list<EmbeddedFrag> &efrags) {
         // RDKit❗✔️:   PRECONDITION(dp_mol, "");
@@ -5598,6 +5599,9 @@ impl<'a> EmbeddedFrag<'a> {
                     self.attachment_points.retain(|&entry| entry != aid);
                 }
             }
+            // RDKit✔️❌:     efrags.erase(nfri);
+            // Preserve the selected list node's position across Vec erasure.
+            *insertion_index -= usize::from(index < *insertion_index);
             fragments.remove(index);
         }
         Ok(())
@@ -5607,6 +5611,7 @@ impl<'a> EmbeddedFrag<'a> {
         &mut self,
         nonring_atoms: &mut Vec<usize>,
         fragments: &mut Vec<Self>,
+        insertion_index: &mut usize,
     ) -> Result<(), FragmentError> {
         // RDKit❗✔️: void EmbeddedFrag::expandEfrag(RDKit::INT_LIST &nratms,
         // RDKit❗✔️:                                std::list<EmbeddedFrag> &efrags) {
@@ -5649,7 +5654,7 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:     this->mergeFragsWithComm(efrags);
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
-        self.merge_frags_with_common(fragments)?;
+        self.merge_frags_with_common(fragments, insertion_index)?;
 
         while let Some(&aid) = self.attachment_points.first() {
             let neighbors = self
@@ -5681,6 +5686,8 @@ impl<'a> EmbeddedFrag<'a> {
                     {
                         self.attachment_points.retain(|&entry| entry != neighbor);
                     }
+                    // RDKit✔️❌:           efrags.erase(nfri);
+                    *insertion_index -= usize::from(index < *insertion_index);
                     fragments.remove(index);
                 }
             }
@@ -5691,7 +5698,7 @@ impl<'a> EmbeddedFrag<'a> {
                 .neighs
                 .clear();
 
-            self.merge_frags_with_common(fragments)?;
+            self.merge_frags_with_common(fragments, insertion_index)?;
         }
         Ok(())
     }

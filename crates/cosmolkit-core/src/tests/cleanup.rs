@@ -1,6 +1,6 @@
 use crate::{
     CanonicalRankError, ValenceError,
-    cleanup::{CleanupError, CleanupParams, cleanup},
+    cleanup::{CleanupError, CleanupParams, cleanup, cleanup_in_place},
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind,
@@ -72,6 +72,81 @@ fn converted_bond_count(topology: &TopologyBlock) -> usize {
         .iter()
         .filter(|bond| bond.order() == BondOrder::Dative)
         .count()
+}
+
+#[test]
+fn owned_cleanup_matches_value_api_and_reuses_atom_bond_and_adjacency_buffers() {
+    for input in [
+        TopologyBlock::default(),
+        nitro(),
+        nitrogen_metal(26),
+        nitrogen_metal(6),
+    ] {
+        let snapshot = input.clone();
+        for (charges, metals) in [(false, false), (true, false), (false, true), (true, true)] {
+            let selected = params(charges, metals);
+            let expected = cleanup(&input, &selected).unwrap();
+            let mut working = input.clone();
+            let atoms = working.atoms.as_ptr();
+            let bonds = working.bonds.as_ptr();
+            let neighbors = working
+                .adjacency
+                .try_neighbors_of(0)
+                .map(|row| row.as_ptr());
+            cleanup_in_place(&mut working, &selected).unwrap();
+            assert_eq!(working, expected);
+            assert_eq!(working.atoms.as_ptr(), atoms);
+            assert_eq!(working.bonds.as_ptr(), bonds);
+            assert_eq!(
+                working
+                    .adjacency
+                    .try_neighbors_of(0)
+                    .map(|row| row.as_ptr()),
+                neighbors
+            );
+            assert_eq!(input, snapshot);
+        }
+    }
+}
+
+#[test]
+fn owned_cleanup_preserves_exact_errors_and_sanitize_discards_failed_attempts() {
+    let mut malformed = nitro();
+    malformed.adjacency = AdjacencyList::default();
+    let bad_bond = topology(vec![atom(6), atom(6)], vec![bond(0, 1, BondOrder::Other)]);
+    for input in [malformed, bad_bond.clone()] {
+        let snapshot = input.clone();
+        let mut working = input.clone();
+        let selected = CleanupParams::default();
+        assert_eq!(
+            cleanup_in_place(&mut working, &selected).unwrap_err(),
+            cleanup(&input, &selected).unwrap_err()
+        );
+        assert_eq!(input, snapshot);
+    }
+    // Charge cleanup changes the nitro group successfully before the later
+    // organometallic stage encounters the independent invalid bond order.
+    let late_failure = topology(
+        vec![atom(6), atom(7), atom(8), atom(8), atom(6), atom(6)],
+        vec![
+            bond(0, 1, BondOrder::Single),
+            bond(1, 2, BondOrder::Double),
+            bond(1, 3, BondOrder::Double),
+            bond(4, 5, BondOrder::Other),
+        ],
+    );
+    let snapshot = late_failure.clone();
+    assert_eq!(
+        crate::sanitize_topology(&late_failure, &crate::SanitizeParams::default()).unwrap_err(),
+        crate::SanitizeError::Cleanup {
+            stage: crate::SanitizeStage::CleanupOrganometallics,
+            source: CleanupError::Valence(ValenceError::BadBondType {
+                bond: Some(BondId::new(3)),
+                order: BondOrder::Other,
+            }),
+        }
+    );
+    assert_eq!(late_failure, snapshot);
 }
 
 #[test]

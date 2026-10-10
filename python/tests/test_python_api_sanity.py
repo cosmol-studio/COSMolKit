@@ -45,7 +45,7 @@ def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
     if mol.has_2d_coordinates():
         coords2d = np.asarray(mol.coordinates_2d())
-        assert coords2d.shape == (atom_count, 3), coords2d.shape
+        assert coords2d.shape == (atom_count, 2), coords2d.shape
     for conformer_index in range(mol.num_3d_conformers()):
         coords3d = np.asarray(mol.coordinates_3d(conformer_index))
         assert coords3d.shape == (atom_count, 3), coords3d.shape
@@ -205,7 +205,7 @@ $$$$
     assert len(removed) == 1
     assert removed.has_2d_coordinates()
     assert removed.num_3d_conformers() == 1
-    assert np.asarray(removed.coordinates_2d()).shape == (1, 3)
+    assert np.asarray(removed.coordinates_2d()).shape == (1, 2)
     assert np.asarray(removed.coordinates_3d()).shape == (1, 3)
 
 

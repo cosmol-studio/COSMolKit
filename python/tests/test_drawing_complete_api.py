@@ -25,7 +25,7 @@ def test_empty_coordinate_presence_distinguishes_absence():
     assert molecule.compute_2d_coordinates_() is None
     assert molecule.has_2d_coordinates()
     output = molecule.coordinates_2d()
-    assert isinstance(output, np.ndarray) and output.shape == (0, 3)
+    assert isinstance(output, np.ndarray) and output.shape == (0, 2)
 
 
 @pytest.mark.parametrize("suffix", ["svg", "png"])

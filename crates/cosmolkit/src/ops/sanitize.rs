@@ -8,6 +8,22 @@ use crate::{
     SanitizeParams, TopologyEditKind,
 };
 
+fn preserves_sanitize_bond_identity(source: &crate::Bond, candidate: &crate::Bond) -> bool {
+    let same_direction = candidate.begin() == source.begin() && candidate.end() == source.end();
+    // RDKit✔️✔️:         bond->setBondType(RDKit::Bond::BondType::DATIVE);
+    // RDKit✔️✔️:         bond->setBeginAtom(atom);
+    // RDKit✔️✔️:         bond->setEndAtom(metals.front());
+    // MolOps.cpp::metalBondCleanup directs the existing single bond from
+    // ligand to metal. This can reverse its endpoints, but cannot change its
+    // identity or either incident atom. The core owner performs the chemistry;
+    // this constant-space check validates only the permitted result shape.
+    let dative_reorientation = source.order() == crate::BondOrder::Single
+        && candidate.order() == crate::BondOrder::Dative
+        && candidate.begin() == source.end()
+        && candidate.end() == source.begin();
+    candidate.id() == source.id() && (same_direction || dative_reorientation)
+}
+
 #[mol_op_body(sanitize, parts)]
 pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationError> {
     let topology = parts.checkout_topology()?;
@@ -63,11 +79,7 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
         .bonds
         .iter()
         .zip(&topology.bonds)
-        .any(|(candidate, source)| {
-            candidate.id() != source.id()
-                || candidate.begin() != source.begin()
-                || candidate.end() != source.end()
-        })
+        .any(|(candidate, source)| !preserves_sanitize_bond_identity(source, candidate))
     {
         parts.install_topology(topology)?;
         return Err(OperationError::InvalidAlgorithmResult {
@@ -158,6 +170,44 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
         write?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod bond_identity_tests {
+    use super::*;
+    use crate::{AtomId, Bond, BondId, BondOrder, BondSpec};
+
+    #[test]
+    fn sanitize_bond_identity_allows_only_source_dative_reorientation() {
+        let source = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        );
+        for (id, begin, end, order, allowed) in [
+            (0, 0, 1, BondOrder::Single, true),
+            (0, 0, 1, BondOrder::Dative, true),
+            (0, 1, 0, BondOrder::Dative, true),
+            (0, 1, 0, BondOrder::Single, false),
+            (0, 1, 0, BondOrder::Double, false),
+            (0, 1, 2, BondOrder::Dative, false),
+            (1, 1, 0, BondOrder::Dative, false),
+        ] {
+            let candidate = Bond::from_spec(
+                BondId::new(id),
+                BondSpec::new(AtomId::new(begin), AtomId::new(end), order),
+            );
+            assert_eq!(
+                preserves_sanitize_bond_identity(&source, &candidate),
+                allowed
+            );
+        }
+        let mut double = source.clone();
+        double.set_order(BondOrder::Double);
+        let mut reversed = source.clone();
+        reversed.set_endpoints(source.end(), source.begin());
+        reversed.set_order(BondOrder::Dative);
+        assert!(!preserves_sanitize_bond_identity(&double, &reversed));
+    }
 }
 
 impl Molecule {

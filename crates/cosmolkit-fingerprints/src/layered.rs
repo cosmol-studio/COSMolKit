@@ -1487,6 +1487,45 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn disconnected_linear_atom_path_cannot_index_the_shorter_bond_table() {
+        // Pinned findAllPathsOfLengthN(useBonds=false) includes atom path [5,6]
+        // here, but LayeredFingerprintMol later reads bondCache[6] (6 bonds).
+        // Native UB has produced both SIGSEGV and spurious successful results;
+        // neither is a defined fingerprint to reproduce. Keep the checked error.
+        let topology =
+            cosmolkit_smiles::parse_smiles("O=S(=O)([O-])CCS.[Na+]", &Default::default())
+                .unwrap()
+                .topology;
+        let paths = all_paths_in_range(
+            &topology,
+            2,
+            7,
+            &PathSearchParams {
+                representation: PathRepresentation::Atoms,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(paths[&2].contains(&GraphPath::Atoms(vec![AtomId::new(5), AtomId::new(6)])));
+        assert_eq!(topology.bonds.len(), 6);
+        let params = LayeredFingerprintParams {
+            min_path: 2,
+            max_path: 7,
+            branched_paths: false,
+            layers: LayeredFingerprintLayers::from_bits_retain(32),
+            atom_counts: Some((10..18).collect()),
+            set_only_bits: Some(Fingerprint::from_on_bits(2048, (0..2048).step_by(3)).unwrap()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            layered_fingerprint_with_output(&topology, None, &params),
+            Err(LayeredFingerprintError::InvalidArguments {
+                reason: "enumerated path contains invalid bond index"
+            })
+        ));
+    }
     #[test]
     fn counts_wrap_once_per_path_and_keep_extra_seed_entries() {
         let topology = cco();

@@ -401,6 +401,34 @@ fn bio_projection_keeps_all_four_permission_vocabularies_distinct() {
 }
 
 #[test]
+fn mapped_prepared_emission_requires_both_declared_cache_recomputations() {
+    for (recompute, prepared) in [
+        ("valence, rings", true),
+        ("valence", false),
+        ("rings", false),
+        ("", false),
+    ] {
+        let source = molecule_operation("split", "split", "multiple", "topology", "derived_cache")
+            .replace(
+                "output: multiple,",
+                "output: multiple, requires_mapping: required,",
+            )
+            .replace("recompute: []", &format!("recompute: [{recompute}]"));
+        let tokens = compact(&expand_molecule_access_markers(&parse_molecule(&source)).unwrap());
+        assert_eq!(
+            tokens.contains("self.emit_mapped_prepared_runtime(candidates)"),
+            prepared,
+            "recompute=[{recompute}]"
+        );
+        assert_eq!(
+            tokens.contains("self.emit_mapped_runtime(candidates)"),
+            !prepared,
+            "recompute=[{recompute}]"
+        );
+    }
+}
+
+#[test]
 fn malformed_attributes_fail_closed() {
     let malformed = [
         quote!(),

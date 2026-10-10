@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 
 import cosmolkit as ck
+import numpy as np
 import pytest
 
 
@@ -96,10 +97,10 @@ def test_empty_atom_indices_select_all_like_pinned_source_wrapper(count):
     aligned, report = source.with_aligned_conformers(params)
     assert report.rmsds() == [0.] * (count - 1)
     expected = [[[0., 0., 0.], [1., 0., 0.]]] * count
-    assert [c.coordinates() for c in aligned.conformers_3d()] == expected
+    np.testing.assert_array_equal([c.coordinates() for c in aligned.conformers_3d()], expected)
     assert source.to_binary() == before
     assert source.align_conformers_with_params_(params).rmsds() == report.rmsds()
-    assert [c.coordinates() for c in source.conformers_3d()] == expected
+    np.testing.assert_array_equal([c.coordinates() for c in source.conformers_3d()], expected)
     with pytest.raises(ck.OperationError) as error:
         source.align_conformers_(ck.ConformerAlignmentParameters(atom_indices=[2]))
     assert isinstance(error.value.__cause__, ck.AlignmentError)

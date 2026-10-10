@@ -77,7 +77,7 @@ pub(crate) struct AvalonFingerprintParams {
 #[pymethods]
 impl AvalonFingerprintParams {
     #[new]
-    #[pyo3(signature = (*, n_bits=512, is_query=false, bit_flags=32767))]
+    #[pyo3(signature = (*, n_bits=512, is_query=false, bit_flags=15761407))]
     fn new(n_bits: u32, is_query: bool, bit_flags: u32) -> Self {
         Self {
             inner: ck::AvalonFingerprintParams {

@@ -337,8 +337,10 @@ impl Conformer3D {
     fn is_3d(&self) -> bool {
         self.inner.is_3d()
     }
-    fn coordinates(&self) -> Vec<[f64; 3]> {
-        self.inner.coordinates().to_vec()
+    /// Return an independent float64 NumPy array (N, 3).
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]", imports = ("numpy", "typing")))]
+    fn coordinates<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
+        crate::canonical_coordinate_input::coordinate_array(py, self.inner.coordinates())
     }
     fn props(&self, py: Python<'_>) -> PyResult<std::collections::BTreeMap<String, String>> {
         self.inner

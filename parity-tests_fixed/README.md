@@ -55,9 +55,13 @@ UFF retains its exact-bit comparison. Parameter-availability queries are include
 evaluators separately: fixed-seed arbitrary initial coordinates, at most two
 minimization iterations, and bitexact initial/final energy, gradient and positions.
 Their common coordinate bits are saved in prepared inputs; no embedding or
-tolerance comparison is used. Filter preparation and Cargo by either task name.
+tolerance comparison is used. Both sides parse the original SMILES and add
+explicit hydrogens in source order; MOL serialization is not part of these
+evaluator tests. Filter preparation and Cargo by either task name.
 MMFF parameter unavailability and UFF's source-defined missing TBP center
 parameter error are compared separately, not counted as successful minimizations.
+Rejected SMILES compare at the parsing boundary without coordinates; missing
+geometry for an accepted molecule remains an error.
 Tautomer enumeration and canonicalization are ordinary registered corpus tasks;
 the long-conjugated tautomer case is a special regression below.
 
@@ -78,6 +82,8 @@ MACCS compares raw 167-bit and public 166-bit results; Layered also compares
 seeded atom counts. Fuzzy operations pair each molecule with the next (wrapping
 at the end), use Morgan counts, and sample signed counts and 32-/64-bit indices.
 No separate fingerprint-pairs corpus is needed. Results compare exactly.
+Invalid SMILES compare as parsing rejections, including which operand failed
+for fuzzy operations; they are not empty fingerprints or preparation failures.
 Avalon samples bit-vector sizes (including non-byte-aligned sizes), query mode
 and native feature masks; both sides receive the recorded explicit flags.
 `fragments_smiles` compares source-ordered sanitized fragment SMILES;
@@ -110,6 +116,14 @@ and all 136 valid enumeration branches; it is not part of ordinary crate tests.
 MolAlign retains its 14 fixed boundary calls, including typed errors, through
 the same preparation and comparison workflow; no external oracle directory
 environment variable is needed.
+
+`conformer_fixed19`, `conformer_library` and `forcefield_properties` retain
+the 19 fixed embedding cases, 152 seeded library rows and 152 UFF/MMFF
+parameter rows previously dependent on owner-crate oracle caches. Inputs,
+parameters and comparison assertions are unchanged: embedding coordinates
+use 1e-6, MMFF formal/partial charges use 1e-12, and discrete results are exact.
+They use the same prepare/Cargo entrypoints, with no reference-directory
+environment variable. Ordinary crate tests need no generated reference files.
 
 `forcefield_optimizers` retains 20 fixed MMFF and four fixed UFF counterexamples.
 It compares parameter availability, initial energy/gradient and zero-step status,

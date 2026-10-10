@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SubstanceGroupId {
     pub(crate) inner: ck::SubstanceGroupId,
@@ -25,7 +25,7 @@ impl SubstanceGroupId {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SubstanceGroupKind {
     pub(crate) inner: ck::SubstanceGroupKind,
@@ -165,7 +165,7 @@ impl SubstanceGroupKind {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SGroupBracket {
     pub(crate) inner: ck::SGroupBracket,
@@ -185,7 +185,7 @@ impl SGroupBracket {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SGroupCState {
     pub(crate) inner: ck::SGroupCState,
@@ -208,7 +208,7 @@ impl SGroupCState {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SGroupDisplay {
     pub(crate) inner: ck::SGroupDisplay,
@@ -227,7 +227,7 @@ impl SGroupDisplay {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct SubstanceGroup {
     pub(crate) inner: ck::SubstanceGroup,
@@ -282,7 +282,7 @@ impl SubstanceGroup {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct TemplateAttachment {
     pub(crate) inner: ck::TemplateAttachment,
@@ -299,7 +299,7 @@ impl TemplateAttachment {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct TemplateAttachmentOrder {
     pub(crate) inner: ck::TemplateAttachmentOrder,
@@ -318,7 +318,7 @@ impl TemplateAttachmentOrder {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct StereoGroup {
     pub(crate) inner: ck::StereoGroup,

@@ -2118,8 +2118,8 @@ mod tests {
         {
             let reported = std::error::Error::source(parent)
                 .expect("the outer error exposes its concrete stored child");
-            let stored_error: &(dyn std::error::Error + 'static) = stored;
-            assert!(std::ptr::eq(reported, stored_error));
+            // Compare the concrete child, not dyn Error metadata: identical
+            // objects may have duplicated vtables across codegen units.
             assert!(std::ptr::eq(
                 reported
                     .downcast_ref::<Child>()
@@ -3516,8 +3516,8 @@ mod tests {
         {
             let source = std::error::Error::source(parent)
                 .expect("the source-bearing error exposes its stored child");
-            let stored_error: &(dyn std::error::Error + 'static) = stored;
-            assert!(std::ptr::eq(source, stored_error));
+            // Downcasting verifies the type; concrete pointer identity verifies
+            // that source() borrows the stored child instead of a replacement.
             assert!(std::ptr::eq(
                 source
                     .downcast_ref::<Child>()
@@ -13126,8 +13126,12 @@ mod tests {
             };
             let parameter_source =
                 std::error::Error::source(error).expect("prepared error keeps its parameter error");
-            let stored_parameter: &(dyn std::error::Error + 'static) = parameter;
-            assert!(std::ptr::eq(parameter_source, stored_parameter));
+            assert!(std::ptr::eq(
+                parameter_source
+                    .downcast_ref::<super::super::api::UffParameterError>()
+                    .expect("the stored parameter error keeps its concrete type"),
+                parameter
+            ));
             assert_eq!(
                 parameter.kind(),
                 super::super::api::UffParameterErrorKind::Preparation
@@ -13138,10 +13142,7 @@ mod tests {
             let builder = builder_source
                 .downcast_ref::<UffBuilderError>()
                 .expect("the concrete cache/topology cause remains UffBuilderError");
-            assert!(std::ptr::eq(
-                builder_source,
-                builder as &(dyn std::error::Error + 'static)
-            ));
+            assert!(std::ptr::addr_eq(builder_source, builder));
             assert_eq!(builder, expected);
 
             match expected {
@@ -13151,10 +13152,7 @@ mod tests {
                     let topology_error = topology_source
                         .downcast_ref::<cosmolkit_model::TopologyValidationError>()
                         .expect("the stored topology error keeps its concrete type");
-                    assert!(std::ptr::eq(
-                        topology_source,
-                        topology_error as &(dyn std::error::Error + 'static)
-                    ));
+                    assert!(std::ptr::addr_eq(topology_source, topology_error));
                     assert_eq!(topology_error, expected_topology);
                     assert!(std::error::Error::source(topology_error).is_none());
                 }

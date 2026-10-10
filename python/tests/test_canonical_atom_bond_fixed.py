@@ -112,9 +112,9 @@ def test_read_values_are_immutable_and_cip_options_are_writable():
     options=ck.CipLabelOptions(atoms=[],bonds=[1,0,1],max_recursive_iterations=3)
     assert options.atoms==[] and options.bonds==[1,0,1]
     assert options.max_recursive_iterations==3
-    copy=options.bonds
-    copy.append(2)
-    assert options.bonds==[1,0,1]
+    live=options.bonds
+    live.append(2)
+    assert options.bonds==[1,0,1,2]
     options.atoms=[0]
     assert options.atoms == [0]
     with pytest.raises(OverflowError):ck.CipLabelOptions(atoms=[-1])

@@ -243,7 +243,7 @@ fn finish_hash(
             crate::valence::update_source_atom_cache(&mut value.topology, AtomId::new(i), false)?;
         }
     }
-    let valence = ValenceAssignment {
+    let mut valence = ValenceAssignment {
         explicit_valence: value
             .topology
             .atoms
@@ -277,6 +277,7 @@ fn finish_hash(
         .or(source_rings)
         .expect("initialized source or newly found rings");
     let mut ring_update = None;
+    let mut atom_valence_updates = Vec::new();
     crate::assign_legacy_stereochemistry_source(
         &mut value.topology,
         &valence,
@@ -285,7 +286,12 @@ fn finish_hash(
         true,
         false,
         &mut ring_update,
+        &mut atom_valence_updates,
     )?;
+    for (atom, facts) in atom_valence_updates {
+        valence.explicit_valence[atom.index()] = i32::from(facts.explicit_valence);
+        valence.implicit_hydrogens[atom.index()] = i32::from(facts.implicit_valence);
+    }
     value
         .properties
         .set_computed_prop("_StereochemDone", 1_i32)?;

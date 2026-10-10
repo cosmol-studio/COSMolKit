@@ -264,12 +264,25 @@ pub enum Outcome {
         topology: Topology,
         xy_bits: Vec<[u64; 2]>,
     },
+    ParseRejected {
+        detail: String,
+    },
+    SanitizeRejected {
+        reason: SanitizeRejection,
+        detail: String,
+    },
     // Retained diagnostics, never counted as parity passes until source-backed
     // cross-language error categories are registered. Equal strings are not proof.
     Error {
         stage: Stage,
         detail: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SanitizeRejection {
+    ExplicitValence { atom: usize, message: String },
+    Kekulize { atoms: Vec<usize> },
 }
 
 pub fn read_corpus(path: &Path) -> Result<Vec<SmilesCase>, String> {
@@ -393,6 +406,8 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
                 && strictly_increasing_keys(&value.entries)
                 && valid_morgan_additional_output(&value.additional_output)
         }
+        (_, Outcome::ParseRejected { detail }) => !detail.is_empty(),
+        (SanitizeAll, Outcome::SanitizeRejected { detail, .. }) => !detail.is_empty(),
         (_, Outcome::Error { detail, .. }) => !detail.is_empty(),
         (MolecularWeight { .. } | ExactMolecularWeight { .. }, Outcome::Float64Bits(bits)) => {
             f64::from_bits(*bits).is_finite()
@@ -670,7 +685,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
             | Profile::NumSaturatedCarbocycles { remove_hs } => (true, *remove_hs),
             _ => (true, true),
         };
-        let mol = Molecule::from_smiles_with_params(
+        let parsed = Molecule::from_smiles_with_params(
             &case.smiles,
             &SmilesParseParams {
                 sanitize,
@@ -682,8 +697,16 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 debug_parse: false,
                 replacements: Default::default(),
             },
-        )
-        .map_err(|e| e.to_string())?;
+        );
+        let mol = match parsed {
+            Ok(mol) => mol,
+            Err(error @ cosmolkit::SmilesError::Construction(_)) => return Err(error.to_string()),
+            Err(error) => {
+                return Ok(Outcome::ParseRejected {
+                    detail: error.to_string(),
+                });
+            }
+        };
         stage = Stage::Operation;
         use Profile::*;
         let transformed = match profile {
@@ -1402,11 +1425,20 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     .map_err(|e| e.to_string());
             }
             SmilesRead { .. } => mol,
-            SanitizeAll => mol
-                .sanitize_with_params(&SanitizeParams {
-                    operations: SanitizeOperations::ALL,
-                })
-                .map_err(|e| e.to_string())?,
+            SanitizeAll => match mol.sanitize_with_params(&SanitizeParams {
+                operations: SanitizeOperations::ALL,
+            }) {
+                Ok(mol) => mol,
+                Err(error) => {
+                    if let Some(reason) = sanitize_rejection(&error) {
+                        return Ok(Outcome::SanitizeRejected {
+                            reason,
+                            detail: error.to_string(),
+                        });
+                    }
+                    return Err(error.to_string());
+                }
+            },
             Kekulize {
                 clear_aromatic_flags,
             } => mol
@@ -1609,8 +1641,164 @@ fn add_hydrogens_params(explicit_only: bool) -> AddHsParams {
     }
 }
 
+#[cfg(test)]
+mod rejection_tests {
+    use super::*;
+
+    #[test]
+    fn parse_rejection_is_not_a_success_or_an_operation_error() {
+        let rejection = Outcome::ParseRejected {
+            detail: "native None".into(),
+        };
+        assert!(matches(
+            &rejection,
+            &Outcome::ParseRejected {
+                detail: "Rust syntax error".into()
+            }
+        ));
+        assert!(!matches(&rejection, &Outcome::Unsigned(0)));
+        // Existing descriptor references encode native None as a Parse-stage
+        // error. Its representation does not change the rejection itself.
+        let native_none = Outcome::Error {
+            stage: Stage::Parse,
+            detail: "MolFromSmiles returned None".into(),
+        };
+        assert!(matches(&native_none, &rejection));
+        assert!(svg_matches(&native_none, &rejection));
+        assert!(svg_matches(&rejection, &rejection));
+        assert!(!matches(&native_none, &Outcome::Unsigned(0)));
+        assert!(!svg_matches(
+            &native_none,
+            &Outcome::Text("<svg></svg>".into())
+        ));
+        assert!(!matches(
+            &Outcome::Error {
+                stage: Stage::Parse,
+                detail: "unexpected construction failure".into(),
+            },
+            &rejection
+        ));
+        assert!(!matches(
+            &rejection,
+            &Outcome::Error {
+                stage: Stage::Operation,
+                detail: "error".into()
+            }
+        ));
+        let input = Input::Molecular {
+            case: SmilesCase {
+                id: "invalid".into(),
+                smiles: "C==C".into(),
+            },
+            profile: Profile::NumSpiroAtoms,
+        };
+        let actual = run(&input).unwrap();
+        assert!(matches!(
+            actual.output,
+            Value::Molecular(Outcome::ParseRejected { .. })
+        ));
+    }
+
+    #[test]
+    fn sanitize_rejection_retains_exact_source_cause_and_atom_payload() {
+        for (smiles, reason) in [
+            (
+                "C(C)(C)(C)(C)C",
+                SanitizeRejection::ExplicitValence {
+                    atom: 0,
+                    message: "Explicit valence for atom # 0 C, 5, is greater than permitted".into(),
+                },
+            ),
+            (
+                "c1cccc1",
+                SanitizeRejection::Kekulize {
+                    atoms: vec![0, 1, 2, 3, 4],
+                },
+            ),
+        ] {
+            let input = Input::Molecular {
+                case: SmilesCase {
+                    id: "invalid chemistry".into(),
+                    smiles: smiles.into(),
+                },
+                profile: Profile::SanitizeAll,
+            };
+            let actual = run(&input).unwrap();
+            let Value::Molecular(actual) = actual.output else {
+                panic!("wrong output");
+            };
+            assert!(
+                matches(
+                    &Outcome::SanitizeRejected {
+                        reason,
+                        detail: "native diagnostic".into()
+                    },
+                    &actual
+                ),
+                "{actual:?}"
+            );
+            assert!(!matches(
+                &Outcome::SanitizeRejected {
+                    reason: SanitizeRejection::Kekulize { atoms: vec![42] },
+                    detail: "other".into()
+                },
+                &actual
+            ));
+        }
+    }
+}
+
+fn sanitize_rejection(error: &cosmolkit::OperationError) -> Option<SanitizeRejection> {
+    use std::error::Error;
+    let cosmolkit::OperationError::Sanitize(error) = error else {
+        return None;
+    };
+    match error {
+        cosmolkit::SanitizeError::Properties { source, .. } => {
+            let cosmolkit::ValenceError::InvalidValence { atom, message, .. } =
+                source.source()?.downcast_ref::<cosmolkit::ValenceError>()?
+            else {
+                return None;
+            };
+            Some(SanitizeRejection::ExplicitValence {
+                atom: atom.index(),
+                message: message.clone(),
+            })
+        }
+        cosmolkit::SanitizeError::Kekulize {
+            source: cosmolkit::KekulizeError::NotKekulizable { problem_atoms },
+            ..
+        } => Some(SanitizeRejection::Kekulize {
+            atoms: problem_atoms.iter().map(|atom| atom.index()).collect(),
+        }),
+        _ => None,
+    }
+}
+
+fn is_parse_rejection(outcome: &Outcome) -> bool {
+    match outcome {
+        Outcome::ParseRejected { .. } => true,
+        Outcome::Error {
+            stage: Stage::Parse,
+            detail,
+        } => matches!(
+            detail.as_str(),
+            "MolFromSmiles returned None" | "ValueError: RDKit MolFromSmiles returned None"
+        ),
+        _ => false,
+    }
+}
+
 pub fn matches(expected: &Outcome, actual: &Outcome) -> bool {
+    if is_parse_rejection(expected) && is_parse_rejection(actual) {
+        return true;
+    }
     match (expected, actual) {
+        (Outcome::ParseRejected { .. }, Outcome::ParseRejected { .. }) => true,
+        (
+            Outcome::SanitizeRejected { reason: a, .. },
+            Outcome::SanitizeRejected { reason: b, .. },
+        ) => a == b,
         (Outcome::Error { .. }, _) | (_, Outcome::Error { .. }) => false,
         (
             Outcome::Coordinates2d {
@@ -1635,6 +1823,9 @@ pub fn matches(expected: &Outcome, actual: &Outcome) -> bool {
 
 /// Preserve the four original substitutions and the approved canonical identity.
 pub fn svg_matches(expected: &Outcome, actual: &Outcome) -> bool {
+    if is_parse_rejection(expected) && is_parse_rejection(actual) {
+        return true;
+    }
     let (Outcome::Text(expected), Outcome::Text(actual)) = (expected, actual) else {
         return false;
     };

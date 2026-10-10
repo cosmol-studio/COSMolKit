@@ -67,7 +67,7 @@ def _fingerprint_case(input_row):
     row = input_row["Fingerprint"]
     mol = Chem.MolFromSmiles(row["case"]["smiles"])
     if mol is None:
-        raise ValueError(f"invalid SMILES: {row['case']['id']}")
+        return {"input": input_row, "output": {"Fingerprint": {"ParseRejected": {"right": False}}}}
     profile = row["params"]
     if profile == "Maccs":
         raw = bits(MACCSkeys.GenMACCSKeys(mol))
@@ -77,8 +77,20 @@ def _fingerprint_case(input_row):
         kind, p = next(iter(profile.items()))
         if kind == "Avalon":
             from rdkit.Avalon import pyAvalonTools
-            fp = pyAvalonTools.GetAvalonFP(mol, nBits=p["n_bits"],
-                                         isQuery=p["is_query"], bitFlags=p["bit_flags"])
+            try:
+                fp = pyAvalonTools.GetAvalonFP(mol, nBits=p["n_bits"],
+                                             isQuery=p["is_query"], bitFlags=p["bit_flags"])
+            except RuntimeError as error:
+                # AvalonTools::molToReaccs calls MolToMolBlock. Its organic
+                # hasNonDefaultValence lookup can reject an effective atomic
+                # number outside the periodic table; this is not an empty FP.
+                lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+                if lines != ["Pre-condition Violation", "Atomic number not found",
+                             "Violation occurred on line 159 in file Code/GraphMol/PeriodicTable.h",
+                             "Failed Expression: atomicNumber < byanum.size()",
+                             "RDKIT: 2026.03.6", "BOOST: 1_85"]:
+                    raise
+                return {"input": input_row, "output": {"Fingerprint": "AvalonInputAtomicNumberNotFound"}}
             output = {"Bits": {"fingerprint": bits(fp), "atom_counts": None}}
         elif kind == "Topological":
             kwargs = dict(minPath=p["min_path"], maxPath=p["max_path"],
@@ -122,7 +134,7 @@ def _fingerprint_case(input_row):
         elif kind == "Fuzzy":
             other = Chem.MolFromSmiles(row["right"]["smiles"])
             if other is None:
-                raise ValueError(f"invalid right SMILES: {row['right']['id']}")
+                return {"input": input_row, "output": {"Fingerprint": {"ParseRejected": {"right": True}}}}
             generator = rdFingerprintGenerator.GetMorganGenerator(
                 radius=p["radius"], fpSize=p["fp_size"])
             offset = (1 << 32) if p["wide"] else 0

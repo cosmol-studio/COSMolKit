@@ -362,7 +362,7 @@ impl ic::InchiToMolToolkit for Toolkit {
             return Err(error("neutral InChI stereo callback requires force=true"));
         }
         let (topology, _) = model(graph)?;
-        let valence = assignment(graph)?;
+        let mut valence = assignment(graph)?;
         let rings = match self.rings.take() {
             Some(rings) => rings,
             None => {
@@ -373,6 +373,10 @@ impl ic::InchiToMolToolkit for Toolkit {
             topology, &valence, &rings, clean_it, false,
         )
         .map_err(error)?;
+        for (atom, facts) in value.atom_valence_updates {
+            valence.explicit_valence[atom.index()] = i32::from(facts.explicit_valence);
+            valence.implicit_hydrogens[atom.index()] = i32::from(facts.implicit_valence);
+        }
         install(graph, &value.topology, Some(&valence))?;
         self.rings = value.ring_update.or(Some(rings));
         self.final_topology = Some(value.topology);

@@ -90,28 +90,35 @@ def test_topological_torsion_options_are_live_and_mutate_the_generator():
     assert (baseline.n_bits(), baseline.on_bits()) != (changed.n_bits(), changed.on_bits())
 
 
-def test_empty_python_lists_are_converted_to_absent_optional_arguments():
+def test_none_and_empty_atom_selections_remain_distinct():
     molecule = cosmolkit.Molecule.from_smiles("CCCCO")
     generator = cosmolkit.TopologicalTorsionFingerprintGenerator()
 
     default = molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator).nonzero_elements()
-    empty = molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator, params=cosmolkit.TopologicalTorsionCallParams(from_atoms=[],
-        ignore_atoms=[],
-        custom_atom_invariants=[],
-        custom_bond_invariants=[],
-    )).nonzero_elements()
-    assert empty == default
+    assert default
+    absent = molecule.fingerprint_topological_torsion_sparse_count_with_generator(
+        generator, params=cosmolkit.TopologicalTorsionCallParams(from_atoms=None)
+    ).nonzero_elements()
+    empty = molecule.fingerprint_topological_torsion_sparse_count_with_generator(
+        generator, params=cosmolkit.TopologicalTorsionCallParams(from_atoms=[])
+    ).nonzero_elements()
+    assert absent == default
+    assert empty == {}
+    unfiltered = molecule.fingerprint_topological_torsion_sparse_count_with_generator(
+        generator, params=cosmolkit.TopologicalTorsionCallParams(ignore_atoms=[])
+    ).nonzero_elements()
+    assert unfiltered == default
+    with pytest.raises(cosmolkit.TopologicalTorsionReadError, match="bad atom invariants size"):
+        molecule.fingerprint_topological_torsion_sparse_count_with_generator(
+            generator, params=cosmolkit.TopologicalTorsionCallParams(custom_atom_invariants=[])
+        )
 
-    legacy_default = cosmolkit.get_topological_torsion_fingerprint(
-        molecule
+    legacy_default = molecule.fingerprint_topological_torsion_sparse_count_legacy().nonzero_elements()
+    legacy_empty = molecule.fingerprint_topological_torsion_sparse_count_legacy_with_params(
+        cosmolkit.LegacyTopologicalTorsionParams(from_atoms=[])
     ).nonzero_elements()
-    legacy_empty = cosmolkit.get_topological_torsion_fingerprint(
-        molecule,
-        from_atoms=[],
-        ignore_atoms=[],
-        atom_invariants=[],
-    ).nonzero_elements()
-    assert legacy_empty == legacy_default
+    assert legacy_default == default
+    assert legacy_empty == {}
 
 
 def test_custom_atom_invariants_and_selection_route_through_the_shared_core():
@@ -239,8 +246,13 @@ def test_python_surface_returns_typed_errors_for_invalid_inputs():
     molecule = cosmolkit.Molecule.from_smiles("CCCCO")
     generator = cosmolkit.TopologicalTorsionFingerprintGenerator()
 
-    with pytest.raises(ValueError, match="topological torsion"):
-        _ = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(torsion_atom_count=8))
+    # RDKit's factory accepts 8; construction does not calculate the
+    # unfolded size (whose shift would be undefined for this setting).
+    eight = cosmolkit.TopologicalTorsionFingerprintGenerator(
+        params=cosmolkit.TopologicalTorsionParams(torsion_atom_count=8)
+    )
+    assert eight.settings().torsion_atom_count == 8
+    assert molecule.fingerprint_topological_torsion_count_with_generator(eight).nonzero_elements() == {}
     zero_size = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(fp_size=0))
     with pytest.raises(ValueError, match="fingerprint size"):
         _ = molecule.fingerprint_topological_torsion_with_generator(zero_size)
@@ -249,9 +261,10 @@ def test_python_surface_returns_typed_errors_for_invalid_inputs():
     with pytest.raises(ValueError):
         _ = cosmolkit.TopologicalTorsionFingerprintGenerator.from_json("not json")
     with pytest.raises(IndexError, match="out of range"):
-        _ = cosmolkit.py_score_path(molecule, [0, 1, 2, 99], 4)
-    with pytest.raises(ValueError, match="size must be greater than zero"):
-        _ = cosmolkit.py_score_path(molecule, [], 0)
+        _ = molecule.topological_torsion_path_score([0, 1, 2, 99], 4)
+    with pytest.raises(cosmolkit.TopologicalTorsionPathScoreError, match="size must be greater than zero") as caught:
+        _ = molecule.topological_torsion_path_score([], 0)
+    assert caught.value.kind == "ZeroSize"
 
 
 def test_live_invalid_options_never_panic_or_return_out_of_range_vectors():
@@ -261,8 +274,11 @@ def test_live_invalid_options_never_panic_or_return_out_of_range_vectors():
 
     options.set_count_bounds([])
     assert molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator).nonzero_elements()
-    with pytest.raises(ValueError, match="Count bounds are empty"):
+    with pytest.raises(cosmolkit.TopologicalTorsionReadError, match="effectiveSize / countBounds.size") as caught:
         _ = molecule.fingerprint_topological_torsion_sparse_with_generator(generator)
+    assert caught.value.domain == "fingerprints" and caught.value.kind == "Generator"
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert "C++-undefined operation" in str(caught.value.__cause__)
     with pytest.raises(ValueError, match="Count bounds are empty"):
         _ = molecule.fingerprint_topological_torsion_with_generator(generator)
 
@@ -270,10 +286,14 @@ def test_live_invalid_options_never_panic_or_return_out_of_range_vectors():
     options.fp_size = 0
     assert molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator).nonzero_elements()
     assert molecule.fingerprint_topological_torsion_sparse_with_generator(generator).on_bits()
-    with pytest.raises(ValueError, match="fingerprint size"):
+    with pytest.raises(cosmolkit.TopologicalTorsionReadError, match="outside vector length 0") as caught:
         _ = molecule.fingerprint_topological_torsion_count_with_generator(generator)
-    with pytest.raises(ValueError, match="fingerprint size"):
+    assert caught.value.kind == "Generator"
+    assert isinstance(caught.value.__cause__, ValueError)
+    with pytest.raises(cosmolkit.TopologicalTorsionReadError, match="outside vector length 0") as caught:
         _ = molecule.fingerprint_topological_torsion_with_generator(generator)
+    assert caught.value.kind == "Generator"
+    assert isinstance(caught.value.__cause__, ValueError)
 
     options.fp_size = 2048
     options.bits_per_feature = 0

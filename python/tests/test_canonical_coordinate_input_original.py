@@ -1,5 +1,5 @@
 """Pinned original manual input conditions projected onto canonical parameter APIs.
-Python returns owned NumPy XYZ rows; the runtime still stores dimension-specific XY.
+Python returns owned NumPy rows with the runtime's dimension: XY or XYZ.
 """
 import cosmolkit
 import numpy as np
@@ -7,6 +7,20 @@ import pytest
 
 def xyz(mol, index=0):
     return np.asarray(mol.coordinates_3d(index))
+
+def test_empty_coordinate_arrays_keep_their_dimension():
+    mol = cosmolkit.Molecule.from_smiles("")
+    assert mol.coordinates_2d() is None
+    two_d = mol.with_2d_coordinate_block(np.empty((0, 2)))
+    three_d = two_d.with_only_3d_conformer(np.empty((0, 3)))
+    for output, dimension in [
+        (three_d.coordinates_2d(), 2),
+        (three_d.coordinates_3d(), 3),
+        (three_d.conformers_3d()[0].coordinates(), 3),
+    ]:
+        assert isinstance(output, np.ndarray)
+        assert output.shape == (0, dimension)
+        assert output.dtype == np.float64
 
 def test_setting_2d_coordinates_is_value_style_and_validates_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
@@ -19,11 +33,10 @@ def test_setting_2d_coordinates_is_value_style_and_validates_input():
     assert with_coords.has_2d_coordinates()
     output = with_coords.coordinates_2d()
     assert isinstance(output, np.ndarray)
-    assert output.shape == (3, 3) and output.dtype == np.float64
-    np.testing.assert_array_equal(output[:, :2], coords)
-    np.testing.assert_array_equal(output[:, 2], np.zeros(3))
+    assert output.shape == (3, 2) and output.dtype == np.float64
+    np.testing.assert_array_equal(output, coords)
     output[:] = 123
-    np.testing.assert_array_equal(with_coords.coordinates_2d()[:, :2], coords)
+    np.testing.assert_array_equal(with_coords.coordinates_2d(), coords)
 
     with pytest.raises(ValueError, match="row count mismatch"):
         mol.with_2d_coordinate_block([[0.0, 0.0]])
@@ -36,7 +49,7 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
     coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
 
     strict = mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.RequireZero))
-    assert np.allclose(np.asarray(strict.coordinates_2d())[:, :2], np.asarray(coords3)[:, :2])
+    np.testing.assert_array_equal(strict.coordinates_2d(), np.asarray(coords3)[:, :2])
 
     with pytest.raises(ValueError, match="z_policy='error'"):
         mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.Error))
@@ -49,8 +62,8 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
 
     assert mol.set_2d_coordinates_(coords3) is None
     assert mol.has_2d_coordinates()
-    assert mol.coordinates_2d().shape == (3, 3)
-    np.testing.assert_array_equal(mol.coordinates_2d()[:, 2], np.zeros(3))
+    assert mol.coordinates_2d().shape == (3, 2)
+    np.testing.assert_array_equal(mol.coordinates_2d(), np.asarray(coords3)[:, :2])
 
 def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     mol = cosmolkit.Molecule.from_smiles("CCO")

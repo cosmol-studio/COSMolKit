@@ -40,6 +40,9 @@ fn main() {
             assert!(
                 [
                     "all",
+                    "conformer_fixed19",
+                    "conformer_library",
+                    "forcefield_properties",
                     "mcs_upstream",
                     "mcs_jnk1",
                     "forcefield_optimizers",
@@ -54,6 +57,9 @@ fn main() {
                 "unknown special regression: {name}"
             );
             for key in [
+                "conformer_fixed19",
+                "conformer_library",
+                "forcefield_properties",
                 "mcs_upstream",
                 "mcs_jnk1",
                 "forcefield_optimizers",

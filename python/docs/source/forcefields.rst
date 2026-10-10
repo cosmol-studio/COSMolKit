@@ -1,6 +1,9 @@
 Force Fields: Current Usage and Persistent API Design
 =====================================================
 
+.. meta::
+   :description: Evaluate molecular energies and gradients, optimize coordinates, and use MMFF and UFF force-field APIs in COSMolKit.
+
 This page separates the current Python API from the proposed persistent
 ``MolecularForceField`` API. Both MMFF and UFF use coordinates in angstroms,
 energies in kcal/mol, and energy gradients in kcal/mol/angstrom.

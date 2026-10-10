@@ -96,7 +96,7 @@ def fingerprint_family_snapshot(molecule: cosmolkit.Molecule) -> dict[str, list[
     torsion = cosmolkit.TopologicalTorsionFingerprintGenerator()
     return {
         "smiles": molecule.to_smiles(),
-        "avalon": molecule.avalon_fingerprint().on_bits(),
+        "avalon": molecule.fingerprint_avalon().on_bits(),
         "morgan": molecule.fingerprint_morgan().on_bits(),
         "atom_pair": molecule.fingerprint_atom_pair().on_bits(),
         "pattern": molecule.fingerprint_pattern().on_bits(),
@@ -121,7 +121,7 @@ def test_pattern_composes_with_every_fingerprint_family_on_one_shared_molecule()
         assert molecule.fingerprint_maccs().on_bits() == expected["maccs"]
         assert molecule.fingerprint_morgan().on_bits() == expected["morgan"]
         assert molecule.fingerprint_topological().on_bits() == expected["topological"]
-        assert molecule.avalon_fingerprint().on_bits() == expected["avalon"]
+        assert molecule.fingerprint_avalon().on_bits() == expected["avalon"]
         assert (
             molecule.fingerprint_topological_torsion_with_generator(cosmolkit.TopologicalTorsionFingerprintGenerator())
             .on_bits()

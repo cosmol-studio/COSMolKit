@@ -2257,10 +2257,12 @@ enum MoleculeFragmentsFailure {
 pub struct MoleculeFragment {
     component_atoms: Vec<AtomId>,
     copy: FullCopyComponent,
+    prepared: Option<(crate::ValenceAssignment, crate::RingInfo)>,
 }
 
 impl MoleculeFragment {
-    /// Move the detached component and its mapping into the operation runtime.
+    /// Move the detached component, mapping and actual final sanitizer facts.
+    /// The facts are absent when fragment sanitation was not requested.
     pub fn into_mapped_parts(
         self,
     ) -> (
@@ -2268,12 +2270,14 @@ impl MoleculeFragment {
         CoordinateBlock,
         MoleculeProperties,
         TopologyMapping,
+        Option<(crate::ValenceAssignment, crate::RingInfo)>,
     ) {
         (
             self.copy.topology,
             self.copy.coordinates,
             self.copy.molecule_properties,
             self.copy.mapping,
+            self.prepared,
         )
     }
 
@@ -2986,6 +2990,7 @@ fn get_molecule_fragments_impl(
         }
     }
 
+    let mut prepared = Vec::with_capacity(fragments.len());
     if sanitize_fragments {
         for (component_index, fragment) in fragments.iter_mut().enumerate() {
             fragment
@@ -3007,19 +3012,35 @@ fn get_molecule_fragments_impl(
                 })?;
             fragment.copy.topology = sanitized.topology;
             if fragment.copy.source_metadata.rings.is_some() {
-                fragment.copy.source_metadata.rings = Some(match sanitized.final_rings {
-                    Some(rings) => rings,
+                fragment.copy.source_metadata.rings = Some(match &sanitized.final_rings {
+                    Some(rings) => rings.clone(),
                     None => source_uninitialized_ring_info(),
                 });
             }
+            // RDKit✔️❌:   if (sanitizeFrags) {
+            // RDKit✔️❌:     for (auto &frag : res) {
+            // RDKit✔️❌:       sanitizeMol(*frag);
+            // RDKit✔️❌:     }
+            // RDKit✔️❌:   }
+            // sanitizeMol leaves its final property cache and SymmSSSR on the
+            // fragment. Move those detached facts to the caller; dropping them
+            // changes subsequent stereo assignment to FastFindRings. No extra
+            // ring search or valence calculation is performed. The optional
+            // source-metadata carrier above needs a separate owned RingInfo
+            // clone; ordinary callers without that carrier only move the facts.
+            prepared.push(sanitized.final_valence.zip(sanitized.final_rings));
         }
+    } else {
+        prepared.resize_with(fragments.len(), || None);
     }
 
     Ok(fragments
         .into_iter()
-        .map(|fragment| MoleculeFragment {
+        .zip(prepared)
+        .map(|(fragment, prepared)| MoleculeFragment {
             component_atoms: fragment.component_atoms,
             copy: fragment.copy,
+            prepared,
         })
         .collect())
 }
@@ -7293,6 +7314,47 @@ mod source566_shared_fragment_tests {
     use super::*;
     use cosmolkit_model::AtomSpec;
     use cosmolkit_types::Element;
+
+    #[test]
+    fn sanitized_fragment_exports_final_valence_and_symm_sssr_without_source_metadata() {
+        use cosmolkit_model::{BondOrder, BondSpec};
+        let graph = TopologyBlock::try_from_parts(
+            (0..7)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            (0..6)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(i), AtomId::new((i + 1) % 6), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        for sanitize in [false, true] {
+            let fragments = get_molecule_fragments(
+                &graph,
+                &CoordinateBlock::default(),
+                &MoleculeProperties::default(),
+                sanitize,
+                true,
+            )
+            .unwrap();
+            assert_eq!(fragments.len(), 2);
+            for fragment in fragments {
+                let (topology, _, _, _, prepared) = fragment.into_mapped_parts();
+                assert_eq!(prepared.is_some(), sanitize);
+                if let Some((valence, rings)) = prepared {
+                    assert_eq!(valence.explicit_valence.len(), topology.atoms.len());
+                    assert!(rings.is_symm_sssr());
+                    assert_eq!(rings.num_rings(), usize::from(topology.atoms.len() == 6));
+                }
+            }
+        }
+    }
 
     #[test]
     fn source566_shared_fragment_clone_retains_identical_owned_value() {

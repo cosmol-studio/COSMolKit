@@ -40,6 +40,17 @@ class SearchIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "absent from routes.toml"):
             generate_index(self.root, self.output)
 
+    def test_forcefields_document_has_a_declared_destination(self):
+        self.index = {"docnames": ["forcefields"], "titles": ["Force Fields"],
+                      "objects": {}, "objnames": {}, "alltitles": {}}
+        (self.root / "forcefields.html").write_text(
+            '<article id="furo-main-content">MMFF and UFF</article>', encoding="utf-8")
+        self.write_index()
+        self.assertEqual(generate_index(self.root, self.output), 1)
+        record, = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(record["url"], "/python/forcefields")
+        self.assertEqual(record["text"], "MMFF and UFF")
+
     def test_missing_source_and_invalid_index_fail(self):
         (self.root / "api.html").unlink()
         with self.assertRaises(FileNotFoundError):

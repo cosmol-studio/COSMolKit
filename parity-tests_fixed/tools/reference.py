@@ -55,6 +55,38 @@ def descriptor_case(case):
     return build_record(case["smiles"])
 
 
+def conformer_fixed_case(case):
+    from rdkit import Chem
+    import _generate_conformer_generation_golden as original
+    presets = {
+        "DG": original.preset_default, "KDG": original.preset_kdg,
+        "ETDG": original.preset_etdg, "ETDGv2": original.preset_etdg_v2,
+        "ETKDG": original.preset_etkdg, "ETKDGv2": original.preset_etkdg_v2,
+        "ETKDGv3": original.preset_etkdg_v3,
+        "srETKDGv3": original.preset_sr_etkdg_v3,
+    }
+    if case["source_kind"] == "fixture_mol":
+        def loader(_source):
+            molecule = Chem.MolFromMolBlock(case["mol_block"], sanitize=True, removeHs=False)
+            if molecule is None:
+                raise ValueError(f"RDKit failed to parse fixture {case['source']}")
+            return molecule
+    else:
+        loader = {"smiles": original.load_smiles_mol,
+                  "smiles_with_hydrogens": original.load_smiles_mol_with_hydrogens}[case["source_kind"]]
+    return original.case_record(dict(case, preset=presets[case["preset_name"]], loader=loader))
+
+
+def conformer_library_case(smiles):
+    from _generate_conformer_generation_library_golden import build_record
+    return build_record(smiles)
+
+
+def forcefield_properties_case(smiles):
+    from _generate_forcefield_coverage_golden import build_record
+    return build_record(smiles)
+
+
 def molalign_corpus_case(wrapped):
     from _generate_molalign_golden import corpus_case, record_for_call
     recipe = wrapped["MolAlign"]
@@ -91,7 +123,7 @@ def persistent_forcefield_case(wrapped):
     rng = random.Random(int.from_bytes(seed, "little"))
     molecule = Chem.MolFromSmiles(case["smiles"])
     if molecule is None:
-        raise ValueError(f"{case['id']}: cannot prepare force-field molecule")
+        return {"input": wrapped, "output": {"PersistentForceField": "ParseRejected"}}
     molecule = Chem.AddHs(molecule)
     count = molecule.GetNumAtoms()
     if not count:
@@ -102,16 +134,12 @@ def persistent_forcefield_case(wrapped):
     for index, position in enumerate(xyz):
         conformer.SetAtomPosition(index, position)
     molecule.AddConformer(conformer, assignId=True)
-    molblock = Chem.MolToMolBlock(molecule)
-    # Use the same transported chemistry on both sides, but never its rounded
-    # MolBlock coordinates: reinstall the original binary64 positions.
-    molecule = Chem.MolFromMolBlock(molblock, sanitize=True, removeHs=False)
-    if molecule is None or molecule.GetNumAtoms() != count:
-        raise ValueError(f"{case['id']}: force-field MolBlock transport failed")
-    for index, position in enumerate(xyz):
-        molecule.GetConformer(0).SetAtomPosition(index, position)
+    # Both sides parse the recorded SMILES and add hydrogens in source order.
+    # Transport coordinates as binary64 bits, not through an unrelated MOL
+    # writer: pinned hasNonDefaultValence() cannot write e.g. carbon charge +9
+    # even though SMILES parsing and UFF evaluation accept that molecule.
     prepared = dict(recipe, preparation={
-        "molblock": molblock, "atom_count": count,
+        "atom_count": count,
         "coordinate_rows": [{"conformer_id": 0, "xyz_bits": [[bits(v) for v in p] for p in xyz]}],
     })
     if recipe["kind"] == "Mmff":
@@ -137,8 +165,11 @@ def persistent_forcefield_case(wrapped):
                        if atom.GetHybridization() == Chem.HybridizationType.SP3D
                        and atom.GetDegree() == 5
                        and AllChem.GetUFFVdWParams(molecule, atom.GetIdx(), atom.GetIdx()) is None]
-            if len(centers) != 1:
+            if not centers:
                 raise
+            # addAngleSpecialCases visits atom indices in ascending order and
+            # throws at the first missing center, even if later centers also
+            # lack parameters (e.g. both carbons of C~C).
             return {"input": {"PersistentForceField": prepared}, "output": {
                 "PersistentForceField": {"SourceTbpCenterParamsMissing": {"center_atom_index": centers[0]}}}}
     else:
@@ -185,7 +216,7 @@ def tautomer_case(payload):
     options = parameters["parameters"]
     molecule = parse_molecule({"smiles":original["Molecular"]["case"]["smiles"]})
     if molecule is None:
-        observation = {"Error":{"stage":"Parse","detail":"MolFromSmiles returned None"}}
+        observation = {"ParseRejected":{"detail":"MolFromSmiles returned None"}}
     else:
         branch = {**options, "catalog":"v1" if options["catalog"] == "v1" else "default"}
         result = (enumerate_branch if operation == "TautomerEnumeration" else canonicalize_branch)(molecule, branch)
@@ -218,7 +249,9 @@ def mmff_case(payload):
             if name == "Coverage":
                 mol = Chem.MolFromSmiles(case["smiles"])
                 if mol is None:
-                    raise ValueError("RDKit MolFromSmiles returned None")
+                    rows.append({"input": {"Mmff": row}, "output": {"Mmff": {
+                        "ParseRejected": {"detail": "RDKit MolFromSmiles returned None"}}}})
+                    continue
                 stage = "Preparation"
                 if options["add_hydrogens"]:
                     mol = Chem.AddHs(mol)
@@ -232,7 +265,7 @@ def mmff_case(payload):
                     rows.append({"input": {"Mmff": row}, "output": {"Mmff": row["preparation"]}})
                     continue
                 if "Rejected" in row["preparation"]:
-                    rows.append({"input": {"Mmff": row}, "output": {"Mmff": {"Error": row["preparation"]["Rejected"]}}})
+                    rows.append({"input": {"Mmff": row}, "output": {"Mmff": preparation_rejection(row["preparation"])}})
                     continue
                 stage = "Preparation"
                 geometry = row["preparation"]["Ready"]
@@ -370,6 +403,19 @@ def bio_mmcif_switch_case(payload):
             "flag": flag, "value": value, "text": text}
 
 
+def preparation_rejection(preparation):
+    rejected = preparation["Rejected"]
+    if rejected["stage"] == "Parse":
+        return {"PreparationRejected": {"reason": "Parse", "detail": rejected["detail"]}}
+    if rejected["stage"] == "Preparation" and [line.strip() for line in rejected["detail"].splitlines()] == [
+        "RuntimeError: Pre-condition Violation", "Atomic number not found",
+        "Violation occurred on line 159 in file Code/GraphMol/PeriodicTable.h",
+        "Failed Expression: atomicNumber < byanum.size()", "RDKIT: 2026.03.6", "BOOST: 1_85"
+    ]:
+        return {"PreparationRejected": {"reason": "MolWriterAtomicNumberNotFound", "detail": rejected["detail"]}}
+    return {"Error": rejected}
+
+
 def uff_case(payload):
     from fingerprint_values_pilot import uff
     from forcefield_preparation import prepare_geometry
@@ -378,7 +424,12 @@ def uff_case(payload):
     for profile in profiles:
         row = {"case": case, "profile": profile, "preparation": None}
         preparation = prepare_geometry(row, first_case_id=first_case_id)
-        output = preparation if preparation is not None and "TimedOut" in preparation else uff(row, first_case_id=first_case_id)
+        if preparation is not None and "TimedOut" in preparation:
+            output = preparation
+        elif preparation is not None and "Rejected" in preparation:
+            output = preparation_rejection(preparation)
+        else:
+            output = uff(row, first_case_id=first_case_id)
         rows.append({"input": {"Uff": row}, "output": {"Uff": output}})
     return rows
 
@@ -405,6 +456,11 @@ def generate(request):
     pin = json.loads((PACKAGE / "testdata/reference/rdkit.json").read_text())
     if rdBase.rdkitVersion != pin["version"]:
         raise RuntimeError(f"RDKit version {rdBase.rdkitVersion} != {pin['version']}")
+    if kind in ("conformer_fixed19", "conformer_library", "forcefield_properties"):
+        function = {"conformer_fixed19": conformer_fixed_case,
+                    "conformer_library": conformer_library_case,
+                    "forcefield_properties": forcefield_properties_case}[kind]
+        return parallel(function, request["input"]["cases"], threads, progress)
     if kind in ("mcs_upstream", "mcs_jnk1"):
         from mcs import mcs_case
         fixture = request["input"]
@@ -469,7 +525,17 @@ def generate(request):
     if generator in ("generate_tautomer_enumeration", "generate_tautomer_canonicalization"):
         return parallel(tautomer_case, request["input"], threads, progress)
     from fingerprint_values_pilot import GENERATORS
-    return GENERATORS[generator](request["corpus"], request["parameters"], threads, progress=progress)
+    rows = GENERATORS[generator](request["corpus"], request["parameters"], threads, progress=progress)
+    # Descriptor adapters also expose native MolFromSmiles(None). Preserve its
+    # diagnostic, but compare this source-defined rejection, not Python wording.
+    for row in rows:
+        output = row["output"].get("Molecular", {})
+        error = output.get("Error", {})
+        if error.get("stage") == "Parse" and error.get("detail") in (
+            "MolFromSmiles returned None", "ValueError: RDKit MolFromSmiles returned None"
+        ):
+            row["output"]["Molecular"] = {"ParseRejected": {"detail": error["detail"]}}
+    return rows
 
 
 if __name__ == "__main__":

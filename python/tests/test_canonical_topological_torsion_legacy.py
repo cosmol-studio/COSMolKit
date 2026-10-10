@@ -48,7 +48,8 @@ def test_legacy_owned_inputs_conversion_and_generated_constructor_protocol():
     p = ck.LegacyTopologicalTorsionParams(from_atoms=roots, ignore_atoms=ignored, custom_atom_invariants=inv)
     roots.append(2); ignored.clear(); inv.clear()
     assert p.from_atoms == [0] and p.ignore_atoms == [1] and p.custom_atom_invariants == [17, 18, 19, 20, 21]
-    copy = p.from_atoms; copy.clear(); assert p.from_atoms == [0]
+    live = p.from_atoms; live.clear(); assert p.from_atoms == []
+    assert roots == [0, 2]
     p.fp_size = 10
     assert p.fp_size == 10
     for keyword, value, error in [("fp_size", -1, OverflowError), ("torsion_atom_count", 4294967296, OverflowError), ("bits_per_entry", 1.5, TypeError), ("from_atoms", [-1], OverflowError)]:

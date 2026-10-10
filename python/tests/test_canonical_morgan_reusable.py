@@ -67,11 +67,13 @@ def test_source_native_full_scalar_ao_metadata_restore_and_bulk(record, form, si
     same_value(getattr(molecule, single)(restored), record["outputs"][form])
     for threads in (1, 3, 7):
         values = getattr(generator, bulk)([molecule, None, molecule, None], num_threads=threads)
+        if form == "bits":
+            assert isinstance(values, ck.FingerprintBatch)
         assert len(values) == 4 and values[1] is None and values[3] is None
         same_value(values[0], record["outputs"][form])
         same_value(values[2], record["outputs"][form])
-        assert getattr(generator, bulk)([], num_threads=threads) == []
-        assert getattr(generator, bulk)([None, None], num_threads=threads) == [None, None]
+        assert list(getattr(generator, bulk)([], num_threads=threads)) == []
+        assert list(getattr(generator, bulk)([None, None], num_threads=threads)) == [None, None]
     assert molecule.to_smiles() == before
 
 def test_live_settings_all_fields_alias_snapshot_copy_and_lifetime():

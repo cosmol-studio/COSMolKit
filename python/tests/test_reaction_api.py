@@ -20,6 +20,57 @@ def test_reaction_run_without_molecule_receiver():
             duplicate.run([carbon, carbon], ck.ReactionRunParams())] == [["C", "C"]]
 
 
+@pytest.mark.parametrize("form", ["default", "none", "positional", "named", "keywords"])
+def test_reaction_run_configuration_forms_preserve_inputs(form):
+    carbon = ck.Molecule.from_smiles("C").with_atom_property(0, "tracking_id", 42)
+    oxygen = ck.Molecule.from_smiles("O")
+    before = [carbon.to_binary(), oxygen.to_binary()]
+    reaction = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
+    params = ck.ReactionRunParams(copy_atom_properties=True)
+    args, kwargs = {
+        "default": ((), {}),
+        "none": ((), {"params": None}),
+        "positional": ((params,), {}),
+        "named": ((), {"params": params}),
+        "keywords": ((), {"copy_atom_properties": True, "max_products": 1000,
+                            "coordinate_selections": [ck.ReactionCoordinateSelection.auto()] * 2}),
+    }[form]
+    groups = reaction.run([carbon, oxygen], *args, **kwargs)
+    assert [[mol.to_smiles() for mol in group] for group in groups] == [["CO"]]
+    assert groups[0][0].atom_property(0, "tracking_id") == (
+        42 if form in ("positional", "named", "keywords") else None
+    )
+    assert [carbon.to_binary(), oxygen.to_binary()] == before
+    assert params.copy_atom_properties is True and params.max_products == 1000
+
+
+def test_reaction_run_keywords_limit_products_and_reject_conflicts_before_execution():
+    source = ck.Molecule.from_smiles("CC")
+    before = source.to_binary()
+    params = ck.ReactionRunParams(max_products=1)
+    for args, kwargs in [((params,), {}), ((), {"max_products": 1}),
+                         ((), {"params": None, "max_products": 1})]:
+        reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+        groups = reaction.run([source], *args, **kwargs)
+        assert [[mol.to_smiles() for mol in group] for group in groups] == [["CN"]]
+        assert reaction.is_initialized()
+    reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+    assert len(reaction.run([source])) == 2
+    for args, kwargs, error in [
+        ((params,), {"max_products": 1}, TypeError),
+        ((), {"params": params, "copy_atom_properties": False}, TypeError),
+        ((), {"unknown_option": True}, TypeError),
+        ((), {"params": {}}, TypeError),
+        ((), {"max_products": -1}, OverflowError),
+    ]:
+        fresh = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+        with pytest.raises(error):
+            fresh.run([source], *args, **kwargs)
+        assert not fresh.is_initialized()
+    assert source.to_binary() == before
+    assert params.max_products == 1
+
+
 def test_sanitized_products_do_not_gain_nitrogen_stereo():
     # Fixed RDKit 2026.03.1 outputs; no external oracle or corpus dependency.
     source = ck.Molecule.from_smiles("C1C[C@H]2CC[C@H]2C1")

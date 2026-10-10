@@ -275,6 +275,98 @@ fn molecule() -> Molecule {
     .expect("test molecule is valid")
 }
 
+#[test]
+fn conditional_cow_source_borrows_keep_shared_blocks() {
+    let source = molecule();
+    let operation = spec(
+        "conditional-source-borrow",
+        MoleculeOpOutput::Single,
+        BlockAccess::new(
+            BlockSet::NONE,
+            BlockSet::TOPOLOGY
+                .union(BlockSet::PROPERTIES)
+                .union(BlockSet::DERIVED_CACHE),
+        ),
+    );
+    let mut parts = OpParts::<TestAccess>::new(&source, operation).unwrap();
+    let (value, changed) = parts
+        .stage_topology_properties_cow_runtime(|topology, properties, _| {
+            Ok((17, Some((topology, properties))))
+        })
+        .unwrap();
+    assert_eq!(value, 17);
+    assert!(changed);
+    assert!(matches!(parts.topology, WorkingBlock::Shared));
+    assert!(matches!(parts.properties, WorkingBlock::Shared));
+    assert!(std::ptr::eq(
+        parts.current_topology_candidate().unwrap(),
+        source.topology()
+    ));
+    assert!(std::ptr::eq(
+        parts.current_properties_candidate().unwrap(),
+        source.properties()
+    ));
+}
+
+#[test]
+fn conditional_cow_still_validates_owned_and_foreign_candidates() {
+    let source = molecule();
+    let operation = spec(
+        "conditional-untrusted-candidate",
+        MoleculeOpOutput::Single,
+        BlockAccess::new(
+            BlockSet::NONE,
+            BlockSet::TOPOLOGY
+                .union(BlockSet::PROPERTIES)
+                .union(BlockSet::DERIVED_CACHE),
+        ),
+    );
+    for owned in [false, true] {
+        for malformed in [false, true] {
+            let mut candidate = topology(1);
+            if malformed {
+                // Keep the old adjacency, breaking only its row alignment.
+                candidate.atoms.push(atom(1));
+            }
+            let mut parts = OpParts::<TestAccess>::new(&source, operation).unwrap();
+            let candidate = if owned {
+                Cow::Owned(candidate)
+            } else {
+                // A static foreign borrow satisfies the callback's HRTB but
+                // must still be rejected as unrelated to its source borrow.
+                Cow::Borrowed(&*Box::leak(Box::new(candidate)))
+            };
+            let result = parts.stage_topology_properties_cow_runtime(|_, properties, _| {
+                Ok(((), Some((candidate, properties))))
+            });
+            if malformed {
+                // Structural errors retain priority over foreign-borrow errors.
+                assert!(matches!(
+                    result,
+                    Err(OperationError::InvalidTopology(
+                        TopologyValidationError::AdjacencyMismatch
+                    ))
+                ));
+            } else if owned {
+                assert_eq!(result.unwrap(), ((), true));
+                assert!(matches!(parts.topology, WorkingBlock::Installed(_)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(OperationError::IncompleteCommit {
+                        block: "foreign borrowed topology candidate",
+                        ..
+                    })
+                ));
+            }
+            if malformed || !owned {
+                assert!(matches!(parts.topology, WorkingBlock::Shared));
+                assert!(matches!(parts.properties, WorkingBlock::Shared));
+            }
+        }
+    }
+}
+
 fn denied(operation: &'static str, block: &'static str) -> OperationError {
     OperationError::AccessDenied { operation, block }
 }

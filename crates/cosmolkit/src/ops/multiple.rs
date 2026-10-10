@@ -14,6 +14,7 @@ enum DetachedCandidate {
         CoordinateBlock,
         MoleculeProperties,
         cosmolkit_model::TopologyMapping,
+        Option<PreparedCacheValues>,
     ),
     Blocks(TopologyBlock, CoordinateBlock, MoleculeProperties),
     SharedCoordinates(TopologyBlock, MoleculeProperties),
@@ -38,15 +39,17 @@ enum DetachedCandidate {
 /// Typed detached facts; construction and cache authority stay in runtime.
 pub(super) struct PreparedCacheValues {
     #[cfg(any(
+        feature = "cap-transforms",
         feature = "cap-tautomer",
-        feature = "cap-reaction",
-        feature = "cap-stereoisomers"
+        feature = "cap-stereoisomers",
+        feature = "cap-reaction"
     ))]
     pub(super) valence: cosmolkit_core::ValenceAssignment,
     #[cfg(any(
+        feature = "cap-transforms",
         feature = "cap-tautomer",
-        feature = "cap-reaction",
-        feature = "cap-stereoisomers"
+        feature = "cap-stereoisomers",
+        feature = "cap-reaction"
     ))]
     pub(super) rings: Option<cosmolkit_core::RingInfo>,
 }
@@ -208,6 +211,9 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
             let coordinates = input.coordinate_block_runtime();
             let properties = input.properties();
             let cache = input.derived_cache_runtime();
+            // These borrows come only from live Molecules, whose construction
+            // already checked the blocks. Detached products remain validated.
+            #[cfg(feature = "runtime-invariants")]
             validate_reconstruction_input(topology, coordinates, properties, cache)?;
             counts.push((topology.atoms.len(), topology.bonds.len()));
             detached.push(cosmolkit_reaction::ReactionInput {
@@ -385,6 +391,37 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
             cosmolkit_model::TopologyMapping,
         )>,
     ) -> Result<(), OperationError> {
+        self.emit_mapped_candidates_runtime(
+            candidates
+                .into_iter()
+                .map(|(t, c, p, m)| DetachedCandidate::Mapped(t, c, p, m, None)),
+        )
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    pub(super) fn emit_mapped_prepared_runtime(
+        &mut self,
+        candidates: Vec<(
+            TopologyBlock,
+            CoordinateBlock,
+            MoleculeProperties,
+            cosmolkit_model::TopologyMapping,
+            Option<(cosmolkit_core::ValenceAssignment, cosmolkit_core::RingInfo)>,
+        )>,
+    ) -> Result<(), OperationError> {
+        self.emit_mapped_candidates_runtime(candidates.into_iter().map(|(t, c, p, m, prepared)| {
+            let prepared = prepared.map(|(valence, rings)| PreparedCacheValues {
+                valence,
+                rings: Some(rings),
+            });
+            DetachedCandidate::Mapped(t, c, p, m, prepared)
+        }))
+    }
+
+    fn emit_mapped_candidates_runtime(
+        &mut self,
+        candidates: impl Iterator<Item = DetachedCandidate>,
+    ) -> Result<(), OperationError> {
         self.require_output(MoleculeOpOutput::Multiple)?;
         if self.spec.requires_mapping != super::MappingRequirement::Required {
             return Err(OperationError::MappingContract {
@@ -402,12 +439,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                 actual: 1,
             });
         }
-        self.emitted = Some(
-            candidates
-                .into_iter()
-                .map(|(t, c, p, m)| DetachedCandidate::Mapped(t, c, p, m))
-                .collect(),
-        );
+        self.emitted = Some(candidates.collect());
         Ok(())
     }
 
@@ -496,18 +528,20 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         let validated = candidates
             .into_iter()
             .map(|candidate| {
-                let (candidate, mapping) = match candidate {
-                    DetachedCandidate::Mapped(t, c, p, m) => {
-                        (DetachedCandidate::Blocks(t, c, p), Some(m))
+                let (candidate, mapping, mapped_prepared) = match candidate {
+                    DetachedCandidate::Mapped(t, c, p, m, prepared) => {
+                        (DetachedCandidate::Blocks(t, c, p), Some(m), prepared)
                     }
-                    other => (other, None),
+                    other => (other, None, None),
                 };
                 let (topology, coordinates, properties, prepared, reconstruction_validated) =
                     match candidate {
                         DetachedCandidate::Mapped(..) => {
                             unreachable!("unwrapped immediately above")
                         }
-                        DetachedCandidate::Blocks(t, c, p) => (t, Some(c), p, None, false),
+                        DetachedCandidate::Blocks(t, c, p) => {
+                            (t, Some(c), p, mapped_prepared, false)
+                        }
                         DetachedCandidate::SharedCoordinates(t, p) => (t, None, p, None, false),
                         #[cfg(feature = "cap-stereoisomers")]
                         DetachedCandidate::StereoPrepared(t, c, p, facts) => {
@@ -819,7 +853,7 @@ mod mapped_tests {
         values[1].3.atoms.new_to_old[0] = Some(cosmolkit_model::AtomId::new(0));
         let spec = crate::operation_spec("fragments").unwrap();
         let mut transaction = MultiOutputOpParts::<()>::new(&source, spec).unwrap();
-        transaction.emit_mapped_runtime(values).unwrap();
+        transaction.emit_mapped_prepared_runtime(values).unwrap();
         assert!(matches!(
             transaction.finish(),
             Err(OperationError::InvalidTopologyMapping { .. })

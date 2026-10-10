@@ -274,9 +274,12 @@ Coordinate Arrays
 -----------------
 
 ``coordinates_2d()``, ``coordinates_3d()``, and ``dg_bounds_matrix()`` return NumPy
-arrays. ``coordinates_2d()`` has shape ``(num_atoms, 3)`` with a zero-filled z
-column; ``coordinates_3d()`` has shape ``(num_atoms, 3)`` for the selected 3D
-conformer:
+arrays. ``coordinates_2d()`` has shape ``(num_atoms, 2)`` with x and y columns;
+``coordinates_3d()`` and ``Conformer3D.coordinates()`` have shape
+``(num_atoms, 3)`` with x, y and z columns. Coordinate arrays are independent
+float64 snapshots: editing them does not modify the molecule or conformer.
+
+For example:
 
 .. code-block:: python
 

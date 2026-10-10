@@ -187,7 +187,117 @@ def check_contract(stub: str, contract_json: str) -> list[str]:
             owner = next(row for row in entries if row["semantic_id"] == adapter["type_semantic_id"])
             if adapter["name"] not in classes.get(owner["python_name"], set()):
                 missing.append(f"{owner['python_name']}.{adapter['name']}: registered object adapter missing")
+        missing.extend(check_alias_declarations(module, document))
+        missing.extend(check_collection_declarations(module, document))
     return missing
+
+
+def check_collection_declarations(tree, document):
+    """Enforce registered Python collection projections on every producer."""
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    entries = document["entries"]
+    types = {row["semantic_id"].removeprefix("types."): row["python_name"]
+             for row in entries if row["item"] == "type"}
+    errors = []
+    for collection in document.get("python_collections", []):
+        name = collection["name"]
+        cls = classes.get(name)
+        if cls is None:
+            errors.append(f"{name}: registered Rust-backed collection missing")
+            continue
+        for method in ("__new__", "__len__", "__getitem__", "__iter__", "__repr__", "to_numpy"):
+            if not _functions(cls.body, method):
+                errors.append(f"{name}.{method}: collection method missing")
+        for method in _functions(cls.body, "to_numpy"):
+            if _annotation(method.returns) != "numpy.NDArray[numpy.uint8]":
+                errors.append(f"{name}.to_numpy: expected uint8 NumPy matrix annotation")
+        indexed = {_annotation(method.returns) for method in _functions(cls.body, "__getitem__")}
+        if indexed != {"Fingerprint|None", name}:
+            errors.append(f"{name}.__getitem__: scalar/slice overloads must preserve their types")
+        for row in entries:
+            if row["item"] != "callable" or compact(row.get("output") or "") != compact(collection["rust_output"]):
+                continue
+            owner = row["semantic_id"].rsplit(".", 1)[0]
+            owner = classes.get(types.get(owner, owner))
+            methods = [] if owner is None else _functions(owner.body, row["python_name"])
+            if not methods or any(_annotation(method.returns) != name for method in methods):
+                errors.append(f"{row['semantic_id']}: expected registered {name} return type")
+    return errors
+
+
+def check_collection_runtime(module, document):
+    errors = []
+    for collection in document.get("python_collections", []):
+        name = collection["name"]
+        cls = getattr(module, name, None)
+        if not isinstance(cls, type) or not callable(getattr(cls, "to_numpy", None)):
+            errors.append(f"{name}: actual Rust-backed NumPy collection missing")
+            continue
+        try:
+            import numpy as np
+            fp = module.Fingerprint.from_on_bits(8, [1, 4])
+            expected = np.array([0, 1, 0, 0, 1, 0, 0, 0], dtype=np.uint8)
+            np.testing.assert_array_equal(fp.to_numpy(), expected)
+            batch = cls([fp])
+            array = batch.to_numpy()
+            np.testing.assert_array_equal(array, expected.reshape(1, 8))
+            if array.dtype != np.uint8 or not array.flags.c_contiguous or not array.flags.writeable:
+                errors.append(f"{name}.to_numpy: expected independent C-contiguous uint8 storage")
+            array[:] = 0
+            np.testing.assert_array_equal(batch.to_numpy(), expected.reshape(1, 8))
+            if batch[0] is not fp or not isinstance(batch[:], cls) or list(batch) != [fp]:
+                errors.append(f"{name}: index, slice or iteration changed collection semantics")
+        except Exception as error:
+            errors.append(f"{name}: actual NumPy projection failed: {error}")
+    return errors
+
+
+def check_alias_declarations(tree, document):
+    """Aliases inherit the original overloads; separate signatures are forbidden."""
+    entries = document["entries"]
+    types = {row["semantic_id"].removeprefix("types."): row["python_name"]
+             for row in entries if row["item"] == "type"}
+    registered = set()
+    for row in entries:
+        if row["item"] == "callable" and row["owner"] != "module" and row.get("receiver") is None and row.get("python_property") is None:
+            owner = "Molecule" if row["owner"] == "molecule" else row["semantic_id"].rsplit(".", 1)[0]
+            registered.add(f"{types.get(owner, owner)}.{row['python_name']}")
+    for adapter in document.get("python_adapters", []):
+        owner = next(row for row in entries if row["semantic_id"] == adapter["type_semantic_id"])
+        registered.add(f"{owner['python_name']}.{adapter['name']}")
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    errors = []
+    seen = set()
+    for alias in document.get("python_aliases", []):
+        name, target = alias["name"], alias["target"]
+        if not name.isidentifier() or name.startswith("_") or name in seen:
+            errors.append(f"{name}: invalid or duplicate public alias")
+        seen.add(name)
+        owner, _, method = target.partition(".")
+        if target not in registered or owner not in classes or not _functions(classes[owner].body, method):
+            errors.append(f"{name}: alias target {target} is not a registered class callable")
+        bindings = [node for node in tree.body if
+                    isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == name
+                    or isinstance(node, ast.Assign) and any(isinstance(value, ast.Name) and value.id == name for value in node.targets)
+                    or isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name]
+        if len(bindings) != 1 or not isinstance(bindings[0], ast.Assign) or len(bindings[0].targets) != 1 or ast.unparse(bindings[0].value) != target:
+            errors.append(f"{name}: expected direct assignment to {target}, not a separate signature or wrapper")
+    return errors
+
+
+def check_alias_runtime(module, document):
+    errors = []
+    for alias in document.get("python_aliases", []):
+        owner, method = alias["target"].split(".")
+        target = getattr(getattr(module, owner, None), method, None)
+        actual = getattr(module, alias["name"], None)
+        # Native classmethods may produce a fresh bound-method object on each
+        # lookup; their equality compares the same function and bound class.
+        if not callable(target) or not callable(actual) or actual != target:
+            errors.append(f"{alias['name']}: actual export must be the existing {alias['target']} callable")
+        if hasattr(module, "__all__") and alias["name"] not in module.__all__:
+            errors.append(f"{alias['name']}: package export list must include the constructor alias")
+    return errors
 
 
 def sdf_path_calls(document):
@@ -323,9 +433,10 @@ def check_path_runtime(module, document):
     return errors
 
 
-def configuration_calls(entries):
+def configuration_calls(entries, keywords=()):
     """Resolve canonical configured/default pairs, never a handwritten list."""
     by_id = {row["semantic_id"]: row for row in entries}
+    explicit_bases = {row["target"]: row["semantic_id"] for row in keywords}
     types = {compact(row["rust_path"]): row for row in entries if row.get("role") == "parameter"}
     for row in entries:
         if row["item"] != "callable":
@@ -336,7 +447,9 @@ def configuration_calls(entries):
             if identifier.endswith(suffix):
                 base = identifier[:-len(suffix)] + ("_" if suffix.endswith("_") else "")
                 break
-        if base == identifier or base not in by_id:
+        if base == identifier:
+            base = explicit_bases.get(identifier)
+        if base not in by_id:
             continue
         configurations = [(field, types[compact(field["type"])]) for field in row.get("parameters") or [] if compact(field["type"]) in types]
         if configurations:
@@ -531,7 +644,7 @@ def check_configuration(module, document):
                 if len(aliases) != 1 or _annotation(aliases[0]) != _annotation(annotation.annotation):
                     errors.append(f"{name}.{alias}: registered configuration alias declaration missing or mistyped")
 
-    for base, target, configurations in configuration_calls(entries):
+    for base, target, configurations in configuration_calls(entries, document.get("keywords", ())):
         owner = "Molecule" if base["owner"] == "molecule" else types.get(base["semantic_id"].rsplit(".", 1)[0], base["semantic_id"].rsplit(".", 1)[0])
         body = module.body if base["owner"] == "module" else classes.get(owner, ast.ClassDef(name=owner, bases=[], keywords=[], body=[], decorator_list=[])).body
         forms = _functions(body, base["python_name"])
@@ -623,7 +736,7 @@ def check_callback_runtime(module, document):
     contract probe, not a reference/corpus test or a new chemistry oracle.
     """
     errors = []
-    for base, target, configurations in configuration_calls(document["entries"]):
+    for base, target, configurations in configuration_calls(document["entries"], document.get("keywords", ())):
         if base["owner"] != "molecule":
             continue
         for parameter, row in configurations:
@@ -846,4 +959,6 @@ def check_runtime(module, document):
                 errors.append(f"{row['python_name']}.{field['name']}: actual assignment failed: {error}")
     errors.extend(check_path_runtime(module, document))
     errors.extend(check_callback_runtime(module, document))
+    errors.extend(check_alias_runtime(module, document))
+    errors.extend(check_collection_runtime(module, document))
     return errors

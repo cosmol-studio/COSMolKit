@@ -12,7 +12,7 @@ def make_molecule(smiles="CC", coords=((0.0, 0.0, 0.0), (2.0, 0.0, 0.0))):
 
 
 def coordinates(molecule):
-    return [row.coordinates() for row in molecule.conformers_3d()]
+    return [row.coordinates().tolist() for row in molecule.conformers_3d()]
 
 
 def test_mmff_source_default_parameters():

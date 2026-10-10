@@ -31,6 +31,9 @@ mod nontetrahedral;
 mod raster;
 mod templates;
 
+#[cfg(test)]
+mod disconnected_stereo_tests;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DepictError {
     InvalidTopology(TopologyValidationError),
@@ -810,9 +813,17 @@ fn compute_initial_coordinates<'a>(
 
         fragment.done = true;
 
-        fragment.expand_fragment(&mut nonembedded, &mut fragments)?;
+        // RDKit✔️❌: mri->markDone();
+        // RDKit✔️❌: mri->expandEfrag(nratms, efrags);
+        // A list iterator retains its position when preceding fragments are
+        // erased. Track that position while the selected Vec element is moved
+        // out for exclusive access; reinserting at its old index changes the
+        // disconnected-component packing order. Vec erasure still shifts rows,
+        // unlike the source list's constant-time erasure.
+        let mut insertion_index = index;
+        fragment.expand_fragment(&mut nonembedded, &mut fragments, &mut insertion_index)?;
 
-        fragments.insert(index.min(fragments.len()), fragment);
+        fragments.insert(insertion_index, fragment);
         selected = largest_unfinished_fragment(&fragments);
     }
 

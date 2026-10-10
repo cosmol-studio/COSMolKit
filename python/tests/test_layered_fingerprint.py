@@ -22,7 +22,7 @@ def every_fingerprint_family_key(molecule, torsion_generator):
     return {
         "morgan": fingerprint_key(molecule.fingerprint_morgan()),
         "maccs": fingerprint_key(molecule.fingerprint_maccs()),
-        "avalon": fingerprint_key(molecule.avalon_fingerprint()),
+        "avalon": fingerprint_key(molecule.fingerprint_avalon()),
         "rdk": fingerprint_key(molecule.fingerprint_topological()),
         "atom_pair": fingerprint_key(molecule.fingerprint_atom_pair()),
         "topological_torsion": fingerprint_key(

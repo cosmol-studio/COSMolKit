@@ -239,7 +239,12 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         ("cap-serialization", &["cap-io", "cosmolkit-io/binary"][..]),
         (
             "cap-fingerprints",
-            &["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io"][..],
+            &[
+                "dep:cosmolkit-fingerprints",
+                "dep:cosmolkit-core",
+                "cap-io",
+                "cosmolkit-io/depict",
+            ][..],
         ),
     ] {
         let actual: BTreeSet<_> = manifest["features"][feature]

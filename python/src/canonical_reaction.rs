@@ -394,15 +394,25 @@ pub(crate) struct Reaction {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Reaction {
+    /// Run with default settings, a parameter object, or configuration keywords.
+    #[pyo3(signature = (reactants, params=None))]
     fn run(
         &mut self,
         py: Python<'_>,
         reactants: Vec<PyRef<'_, Molecule>>,
-        params: &ReactionRunParams,
+        params: Option<&ReactionRunParams>,
     ) -> PyResult<Vec<Vec<Molecule>>> {
+        let defaults;
+        let params = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::ReactionRunParams::default();
+                &defaults
+            }
+        };
         let inputs: Vec<_> = reactants.iter().map(|value| &value.inner).collect();
         self.inner
-            .run(&inputs, &params.inner)
+            .run(&inputs, params)
             .map(product_sets)
             .map_err(|error| crate::drawing_binding::operation_pyerr(py, &error))
     }

@@ -6,7 +6,7 @@ use crate::{
 };
 use cosmolkit::{
     Conformer3D, CoordinateBlock, CoordinateDimension, MmffConformerOptimizationParams,
-    MmffEvaluationParams, MmffOptimizationParams, Molecule, SdfCoordinateMode, SdfReadParams,
+    MmffEvaluationParams, MmffOptimizationParams, Molecule,
 };
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +79,13 @@ pub struct MmffInput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
     Coverage(bool),
+    PreparationRejected {
+        reason: crate::uff::PreparationRejection,
+        detail: String,
+    },
+    ParseRejected {
+        detail: String,
+    },
     TimedOut(crate::uff::PreparationTimeout),
     Optimized {
         status: i32,
@@ -117,11 +124,34 @@ pub fn validate_reference(
     }
     match (&prepared.preparation, prepared.profile, output) {
         (
+            Some(GeometryPreparation::Rejected {
+                stage,
+                detail: source_detail,
+            }),
+            _,
+            Observation::PreparationRejected { reason, detail },
+        ) if !detail.is_empty()
+            && detail == source_detail
+            && match reason {
+                crate::uff::PreparationRejection::Parse => *stage == Stage::Parse,
+                crate::uff::PreparationRejection::MolWriterAtomicNumberNotFound => {
+                    *stage == Stage::Preparation && crate::uff::atomic_number_diagnostic(detail)
+                }
+            } =>
+        {
+            return Ok(());
+        }
+        (
             Some(GeometryPreparation::TimedOut(preparation)),
             Profile::Optimization { .. } | Profile::ConformerOptimization { .. },
             Observation::TimedOut(observation),
         ) if preparation.limit_seconds == 60 && preparation == observation => return Ok(()),
         (None, Profile::Coverage { .. }, Observation::Coverage(_)) => return Ok(()),
+        (None, Profile::Coverage { .. }, Observation::ParseRejected { detail })
+            if !detail.is_empty() =>
+        {
+            return Ok(());
+        }
         (None, Profile::Coverage { .. }, Observation::Error { detail, .. })
             if !detail.is_empty() =>
         {
@@ -215,6 +245,11 @@ fn coordinates_match(a: &[[u64; 3]], b: &[[u64; 3]]) -> bool {
 pub fn matches(expected: &Observation, actual: &Observation) -> bool {
     match (expected, actual) {
         (
+            Observation::PreparationRejected { reason: a, .. },
+            Observation::PreparationRejected { reason: b, .. },
+        ) => a == b,
+        (Observation::ParseRejected { .. }, Observation::ParseRejected { .. }) => true,
+        (
             Observation::Optimized {
                 status: a,
                 energy_bits: ae,
@@ -250,17 +285,8 @@ pub fn matches(expected: &Observation, actual: &Observation) -> bool {
     }
 }
 
-fn molecule(geometry: &Geometry) -> Result<Molecule, String> {
-    let base = Molecule::from_sdf_with_params(
-        &geometry.molblock,
-        &SdfReadParams {
-            sanitize: true,
-            remove_hs: false,
-            coordinate_mode: SdfCoordinateMode::Require3D,
-            ..Default::default()
-        },
-    )
-    .map_err(|e| e.to_string())?;
+fn molecule(case: &SmilesCase, geometry: &Geometry) -> Result<Molecule, String> {
+    let base = crate::uff::read_geometry(case, geometry, true)?;
     if base.num_atoms() != geometry.atom_count {
         return Err("MMFF common geometry atom count changed".into());
     }
@@ -296,8 +322,25 @@ fn molecule(geometry: &Geometry) -> Result<Molecule, String> {
 pub fn run(row: &MmffInput) -> Result<Record, String> {
     let mut stage = Stage::Parse;
     let result = (|| -> Result<Observation, String> {
+        if let Some(preparation) = &row.preparation {
+            if let Some((reason, detail)) =
+                crate::uff::reproduce_preparation_rejection(&row.case, preparation)?
+            {
+                return Ok(Observation::PreparationRejected { reason, detail });
+            }
+        }
         if let Profile::Coverage { add_hydrogens } = row.profile {
-            let base = Molecule::from_smiles(&row.case.smiles).map_err(|e| e.to_string())?;
+            let base = match Molecule::from_smiles(&row.case.smiles) {
+                Ok(mol) => mol,
+                Err(error @ cosmolkit::SmilesError::Construction(_)) => {
+                    return Err(error.to_string());
+                }
+                Err(error) => {
+                    return Ok(Observation::ParseRejected {
+                        detail: error.to_string(),
+                    });
+                }
+            };
             stage = Stage::Preparation;
             let mol = if add_hydrogens {
                 base.with_hydrogens()
@@ -331,7 +374,7 @@ pub fn run(row: &MmffInput) -> Result<Record, String> {
                 return Err(detail.clone());
             }
         };
-        let mol = molecule(geometry)?;
+        let mol = molecule(&row.case, geometry)?;
         stage = Stage::Operation;
         match row.profile {
             Profile::Optimization {

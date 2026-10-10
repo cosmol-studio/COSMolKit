@@ -26,6 +26,30 @@ def process(exit_code, output=b"", diagnostics=b""):
 
 
 class IsolationTests(unittest.TestCase):
+    def test_avalon_input_lookup_rejection_is_not_an_empty_fingerprint(self):
+        row = recipe()
+        row["Fingerprint"]["params"] = {"Avalon": {
+            "n_bits": 512, "is_query": False, "bit_flags": 0x7fff}}
+        row["Fingerprint"]["case"]["smiles"] = "[C+9]" + "(F)" * 12 + "F"
+        self.assertEqual(fingerprints.fingerprint_case(row), {
+            "input": row, "output": {"Fingerprint": "AvalonInputAtomicNumberNotFound"}})
+        with patch("rdkit.Avalon.pyAvalonTools.GetAvalonFP", side_effect=RuntimeError("different failure")):
+            with self.assertRaisesRegex(RuntimeError, "different failure"):
+                fingerprints.fingerprint_case(row)
+
+    def test_parse_rejection_records_left_or_right_without_dropping_case(self):
+        row = recipe()
+        row["Fingerprint"]["params"] = "Maccs"
+        row["Fingerprint"]["case"]["smiles"] = "CC("
+        self.assertEqual(fingerprints.fingerprint_case(row), {
+            "input": row, "output": {"Fingerprint": {"ParseRejected": {"right": False}}}})
+        row["Fingerprint"]["case"]["smiles"] = "CCO"
+        row["Fingerprint"]["right"] = {"id": "right", "smiles": "CC("}
+        row["Fingerprint"]["params"] = {"Fuzzy": {"union": False, "wide": False,
+            "signed": False, "fp_size": 64, "radius": 2}}
+        self.assertEqual(fingerprints.fingerprint_case(row), {
+            "input": row, "output": {"Fingerprint": {"ParseRejected": {"right": True}}}})
+
     def test_success_preserves_complete_record_and_original_input(self):
         row = recipe()
         before = copy.deepcopy(row)

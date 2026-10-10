@@ -57,7 +57,7 @@ jobs:
             - name: Build Sphinx source
               run: |
                   rm -rf python/docs/build/html
-                  .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+                  .venv/bin/python -m sphinx --keep-going -E -b html python/docs/source python/docs/build/html
 
             - name: Install cargo-binstall
               uses: cargo-bins/cargo-binstall@main

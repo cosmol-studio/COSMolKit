@@ -197,8 +197,9 @@ def _compact(value):
     return re.sub(r"&\s*(?:'\w+\s+)?(?:mut\s+)?", "", value).replace(" ", "")
 
 
-def pairs(entries):
+def pairs(entries, keywords=()):
     by_id = {row["semantic_id"]: row for row in entries}
+    explicit_bases = {row["target"]: row["semantic_id"] for row in keywords}
     types = {_compact(row["rust_path"]): row for row in entries if row.get("role") == "parameter"}
     for target in entries:
         if target["item"] != "callable":
@@ -209,7 +210,11 @@ def pairs(entries):
                 base = identifier[:-len(suffix)] + ("_" if suffix.endswith("_") else "")
                 break
         else:
-            continue
+            # Some canonical methods already take configuration, with no
+            # separate short/_with_params pair. Their registry opts them in.
+            base = explicit_bases.get(identifier)
+            if base is None:
+                continue
         if base not in by_id:
             continue
         configurations = [(field, types[_compact(field["type"])]) for field in target["parameters"] or [] if _compact(field["type"]) in types]
@@ -367,7 +372,7 @@ def install(module, document):
         if row.get("role") == "parameter" and (row["feature"] == "cap-batch" or "cap-batch" in row.get("required_capabilities", [])):
             fields = tuple(field["name"] for field in row["python_fields"])
             setattr(getattr(module, row["python_name"]), "_configuration_repr", _configuration_repr(fields))
-    for base, target, configurations in pairs(entries):
+    for base, target, configurations in pairs(entries, document.get("keywords", ())):
         owner = _owner(module, base, names)
         original = getattr(owner, base["python_name"])
         configured = getattr(owner, target["python_name"])
@@ -375,6 +380,13 @@ def install(module, document):
         if owner is not module and "self" not in inspect.signature(original).parameters:
             call = staticmethod(call)
         setattr(owner, base["python_name"], call)
+    # Install only after all configuration forms have been normalized. Each
+    # export is the actual existing callable, never another dispatch wrapper.
+    for alias in document.get("python_aliases", []):
+        owner, method = alias["target"].split(".")
+        setattr(module, alias["name"], getattr(getattr(module, owner), method))
+        if hasattr(module, "__all__") and alias["name"] not in module.__all__:
+            module.__all__ = [*module.__all__, alias["name"]]
 
 
 def _configuration_repr(fields):
@@ -403,7 +415,7 @@ def declarations(module, stub, document):
                 alias_declarations.append((cls.end_lineno, f"    {alias}: {field['type']}\n"))
     names = {row["semantic_id"].removeprefix("types."): row["python_name"] for row in document["entries"] if row["item"] == "type"}
     replacements = []
-    for base, target, configurations in pairs(document["entries"]):
+    for base, target, configurations in pairs(document["entries"], document.get("keywords", ())):
         options, _ = _keyword_options(configurations, document["entries"])
         owner = _owner(module, base, names)
         function = getattr(owner, base["python_name"])
@@ -508,7 +520,12 @@ def declarations(module, stub, document):
     replacements.extend((line, line, text) for line, text in alias_declarations)
     for start, end, text in sorted(replacements, reverse=True):
         lines[start:end] = [text]
-    return "".join(lines)
+    stub = "".join(lines)
+    for alias in document.get("python_aliases", []):
+        stub += f"\n{alias['name']} = {alias['target']}\n"
+    if document.get("python_aliases"):
+        stub += f"\n__all__ += {[alias['name'] for alias in document['python_aliases']]!r}\n"
+    return stub
 
 
 def enum_input_declarations(module, stub, document):

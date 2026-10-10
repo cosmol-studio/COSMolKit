@@ -7,6 +7,24 @@ Quick Start
 Value-Style Molecule Values
 ---------------------------
 
+Top-level constructor shortcuts reference the existing class methods directly:
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   mol = ck.mol_from_smiles("CCO")
+   batch = ck.mols_from_smiles_list(["CCO", "CCN"], n_jobs=1)
+
+Both forms accept exactly the same parameters, defaults and errors as
+``Molecule.from_smiles`` and ``MoleculeBatch.from_smiles_list``. The class
+methods remain available. Other molecule shortcuts are ``mol_from_mol``,
+``mol_from_sdf``, ``mol_from_mol2``, ``mol_from_xyz_block``, ``mol_from_inchi``,
+``mol_from_binary`` and ``mol_from_rdkit``. Batch constructors also provide
+``mols_from_sdf_records`` and ``mols_from_records``. Reaction and BIO shortcuts
+are ``reaction_from_smirks``, ``bio_from_pdb``, ``bio_from_mmcif``,
+``protein_from_pdb`` and ``protein_from_mmcif``.
+
 COSMolKit molecules use value semantics. Transform methods return a new
 ``Molecule`` and leave the original object unchanged. Internally the library
 uses copy-on-write (COW) storage to share unchanged data efficiently:

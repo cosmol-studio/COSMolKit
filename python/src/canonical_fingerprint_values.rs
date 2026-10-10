@@ -764,7 +764,7 @@ impl TopologicalTorsionFingerprintGenerator {
         py: Python<'_>,
         molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
         num_threads: i32,
-    ) -> PyResult<Vec<Option<crate::canonical_values::Fingerprint>>> {
+    ) -> PyResult<crate::fingerprint_numpy::FingerprintBatch> {
         let borrowed = molecules
             .iter()
             .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
@@ -775,13 +775,8 @@ impl TopologicalTorsionFingerprintGenerator {
             .collect::<Vec<_>>();
         self.inner
             .fingerprints(&rows, num_threads)
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| crate::canonical_values::Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|e| crate::canonical_values::topological_torsion_pyerr(py, e))
+            .and_then(|values| crate::fingerprint_numpy::FingerprintBatch::from_values(py, values))
     }
     #[pyo3(signature=(molecules,*,num_threads=1))]
     fn sparse_fingerprints(
@@ -1374,7 +1369,7 @@ impl MorganFingerprintGenerator {
         py: Python<'_>,
         molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
         num_threads: i32,
-    ) -> PyResult<Vec<Option<crate::canonical_values::Fingerprint>>> {
+    ) -> PyResult<crate::fingerprint_numpy::FingerprintBatch> {
         let borrowed = molecules
             .iter()
             .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
@@ -1390,13 +1385,8 @@ impl MorganFingerprintGenerator {
         // Borrow guards live until all source workers join; detach invokes only
         // Rust facade types and keeps every None slot in its original position.
         py.detach(|| self.inner.fingerprints(&rows, num_threads))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| crate::canonical_values::Fingerprint { inner }))
-                    .collect()
-            })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+            .and_then(|values| crate::fingerprint_numpy::FingerprintBatch::from_values(py, values))
     }
     #[pyo3(signature=(molecules,*,num_threads=1))]
     fn counts(

@@ -103,7 +103,9 @@ pub(crate) fn mol_write_error(source: &ck::MolWriteError) -> Result<JsValue, JsV
         E::Kekulize(_) => "Kekulize",
         E::Atropisomer(_) => "Atropisomer",
         E::Wedge(_) => "Wedge",
-        #[cfg(feature = "cap-depict")]
+        // Avalon enables the writer's internal coordinate generator even when
+        // public depiction APIs are disabled; its concrete errors still exist.
+        #[cfg(any(feature = "cap-depict", feature = "cap-fingerprints"))]
         E::Depict(_) => "Depict",
         E::MissingCapability(capability) => {
             set(&fields, "capability", (*capability).into())?;

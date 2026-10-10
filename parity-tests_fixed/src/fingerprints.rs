@@ -249,6 +249,16 @@ pub struct CountVector {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
+    /// Source-proven out-of-bounds access, not a defined reference value.
+    LayeredAtomPathAsBondUndefined {
+        checked_error: String,
+    },
+    /// Rejection at SMILES parsing, before the fingerprint calculation.
+    ParseRejected {
+        right: bool,
+    },
+    /// Source molToReaccs/MOL valence lookup rejects the effective atomic number.
+    AvalonInputAtomicNumberNotFound,
     /// Actual isolated reference process failure; never a chemical value or match.
     ReferenceProcessFailure {
         exit_code: i64,
@@ -282,6 +292,9 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
             && fp.entries.windows(2).all(|pair| pair[0].0 < pair[1].0)
     };
     let valid = match (&row.params, output) {
+        (_, Observation::ParseRejected { right: false }) => true,
+        (Params::Fuzzy { .. }, Observation::ParseRejected { right: true }) => row.right.is_some(),
+        (Params::Avalon { .. }, Observation::AvalonInputAtomicNumberNotFound) => true,
         (
             Params::Layered {
                 branched: false,
@@ -355,11 +368,24 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
 }
 
 pub fn matches(expected: &Observation, actual: &Observation) -> bool {
-    !matches!(expected, Observation::ReferenceProcessFailure { .. }) && expected == actual
+    !matches!(
+        expected,
+        Observation::ReferenceProcessFailure { .. }
+            | Observation::LayeredAtomPathAsBondUndefined { .. }
+    ) && expected == actual
 }
 
 pub fn run(row: &FingerprintInput) -> Result<Record, String> {
-    let mol = Molecule::from_smiles(&row.case.smiles).map_err(|e| e.to_string())?;
+    let rejected = |right| Record {
+        input: Input::Fingerprint(row.clone()),
+        output: Value::Fingerprint(Observation::ParseRejected { right }),
+    };
+    let mol = match Molecule::from_smiles(&row.case.smiles) {
+        Ok(mol) => mol,
+        // Runtime commit/contract failures are not source parsing rejections.
+        Err(cosmolkit::SmilesError::Construction(error)) => return Err(error.to_string()),
+        Err(_) => return Ok(rejected(false)),
+    };
     let n = mol.num_atoms();
     let observed = match row.params {
         Params::Maccs => Observation::Maccs {
@@ -373,16 +399,21 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
             n_bits,
             is_query,
             bit_flags,
-        } => Observation::Bits {
-            fingerprint: mol
-                .fingerprint_avalon_with_params(&AvalonFingerprintParams {
-                    n_bits,
-                    is_query,
-                    bit_flags: AvalonFingerprintFlags::from_bits_retain(bit_flags),
-                })
-                .map_err(|e| e.to_string())?
-                .into(),
-            atom_counts: None,
+        } => match mol.fingerprint_avalon_with_params(&AvalonFingerprintParams {
+            n_bits,
+            is_query,
+            bit_flags: AvalonFingerprintFlags::from_bits_retain(bit_flags),
+        }) {
+            Ok(fp) => Observation::Bits {
+                fingerprint: fp.into(),
+                atom_counts: None,
+            },
+            Err(cosmolkit::AvalonFingerprintError::Input(
+                cosmolkit::MolecularIoError::MolWrite(cosmolkit::MolWriteError::Value(message)),
+            )) if message == "Atomic number not found" => {
+                Observation::AvalonInputAtomicNumberNotFound
+            }
+            Err(error) => return Err(error.to_string()),
         },
         Params::Topological {
             min_path,
@@ -459,15 +490,29 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
                 set_only_bits,
             };
             let before = params.clone();
-            let result = mol
-                .fingerprint_layered_with_output_with_params(&params)
-                .map_err(|e| e.to_string())?;
+            let result = mol.fingerprint_layered_with_output_with_params(&params);
             if params != before {
                 return Err("Layered mutated input parameters".into());
             }
-            Observation::Bits {
-                fingerprint: result.fingerprint.into(),
-                atom_counts: result.atom_counts,
+            match result {
+                // Fingerprints.cpp:310 passes useBonds=false (Subgraphs.h:141),
+                // then :353/:364 indexes bond-sized vectors with atom IDs.
+                // Only an actual checked invalid index on this exact branch
+                // proves the access is out of bounds; other errors still fail.
+                Err(
+                    error @ cosmolkit::LayeredFingerprintError::InvalidArguments {
+                        reason: "enumerated path contains invalid bond index",
+                    },
+                ) if !branched && matches!(roots, Roots::All) => {
+                    Observation::LayeredAtomPathAsBondUndefined {
+                        checked_error: error.to_string(),
+                    }
+                }
+                Err(error) => return Err(error.to_string()),
+                Ok(result) => Observation::Bits {
+                    fingerprint: result.fingerprint.into(),
+                    atom_counts: result.atom_counts,
+                },
             }
         }
         Params::Pattern {
@@ -491,7 +536,11 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
             radius,
         } => {
             let right = row.right.as_ref().ok_or("missing fuzzy right operand")?;
-            let other = Molecule::from_smiles(&right.smiles).map_err(|e| e.to_string())?;
+            let other = match Molecule::from_smiles(&right.smiles) {
+                Ok(mol) => mol,
+                Err(cosmolkit::SmilesError::Construction(error)) => return Err(error.to_string()),
+                Err(_) => return Ok(rejected(true)),
+            };
             let params = MorganFingerprintParams {
                 generator: MorganParams {
                     fp_size,
@@ -591,6 +640,108 @@ fn fuzzy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn layered_undefined_access_is_not_a_fingerprint_or_matching_error() {
+        let cases = vec![SmilesCase {
+            id: "deuterated-water".into(),
+            smiles: "[2H]O[2H]".into(),
+        }];
+        let Input::Fingerprint(mut row) = inputs(&cases, Kind::Layered).remove(0) else {
+            unreachable!()
+        };
+        row.params = Params::Layered {
+            layers: 1,
+            min_path: 1,
+            max_path: 7,
+            fp_size: 64,
+            branched: false,
+            roots: Roots::All,
+            counts: Counts::Seeded,
+            mask: Mask::Even,
+        };
+        let output = Observation::LayeredAtomPathAsBondUndefined {
+            checked_error: "enumerated path contains invalid bond index".into(),
+        };
+        assert_eq!(
+            run(&row).unwrap().output,
+            Value::Fingerprint(output.clone())
+        );
+        assert!(!matches(&output, &output));
+        // This diagnostic is actual-only, never a valid prepared expectation.
+        assert!(validate_output(&row, &output).is_err());
+        let Params::Layered { branched, .. } = &mut row.params else {
+            unreachable!()
+        };
+        *branched = true;
+        assert!(matches!(
+            run(&row).unwrap().output,
+            Value::Fingerprint(Observation::Bits { .. })
+        ));
+    }
+    #[test]
+    fn avalon_mol_writer_rejection_is_a_distinct_exact_error() {
+        let cases = vec![SmilesCase {
+            id: "high-charge".into(),
+            smiles: format!("[C+9]{}F", "(F)".repeat(12)),
+        }];
+        let Input::Fingerprint(mut row) = inputs(&cases, Kind::Avalon).remove(0) else {
+            unreachable!()
+        };
+        let expected = Observation::AvalonInputAtomicNumberNotFound;
+        assert_eq!(
+            run(&row).unwrap().output,
+            Value::Fingerprint(expected.clone())
+        );
+        validate_output(&row, &expected).unwrap();
+        assert!(!matches(
+            &expected,
+            &Observation::ParseRejected { right: false }
+        ));
+        row.params = Params::Maccs;
+        assert!(validate_output(&row, &expected).is_err());
+    }
+    #[test]
+    fn parse_rejections_compare_the_operand_and_do_not_cover_fingerprint_values() {
+        let cases = vec![SmilesCase {
+            id: "syntax".into(),
+            smiles: "CC(".into(),
+        }];
+        for kind in [
+            Kind::Maccs,
+            Kind::Avalon,
+            Kind::Topological,
+            Kind::Layered,
+            Kind::Pattern,
+            Kind::FuzzyAnd,
+            Kind::FuzzyOr,
+        ] {
+            let Input::Fingerprint(mut row) = inputs(&cases, kind).remove(0) else {
+                unreachable!()
+            };
+            let left = Observation::ParseRejected { right: false };
+            assert_eq!(run(&row).unwrap().output, Value::Fingerprint(left.clone()));
+            validate_output(&row, &left).unwrap();
+            let right = Observation::ParseRejected { right: true };
+            assert!(!matches(&left, &right));
+            assert!(!matches(
+                &left,
+                &Observation::Bits {
+                    fingerprint: Bits {
+                        length: 64,
+                        on_bits: vec![]
+                    },
+                    atom_counts: None,
+                }
+            ));
+            row.case.smiles = "CCO".into();
+            if matches!(row.params, Params::Fuzzy { .. }) {
+                assert_eq!(run(&row).unwrap().output, Value::Fingerprint(right.clone()));
+                validate_output(&row, &right).unwrap();
+                row.right = None;
+            }
+            assert!(validate_output(&row, &right).is_err());
+        }
+    }
     #[test]
     fn reference_process_failure_requires_the_isolated_branch_and_real_exit() {
         let cases = vec![SmilesCase {

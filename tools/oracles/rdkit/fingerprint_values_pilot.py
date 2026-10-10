@@ -133,7 +133,7 @@ def molecular(row):
         # its C++ conversion leaves that field at the default false.
         mol = Chem.MolFromSmiles(row["case"]["smiles"], params)
         if mol is None:
-            raise ValueError("RDKit MolFromSmiles returned None")
+            return {"ParseRejected": {"detail": "RDKit MolFromSmiles returned None"}}
         stage = "Operation"
         if name in ("MurckoScaffold", "NetScaffold"):
             from rdkit.Chem import rdMolHash
@@ -253,6 +253,19 @@ def molecular(row):
             raise RuntimeError(f"unregistered molecular profile: {name}")
         return {"Topology": topology(mol)}
     except (ValueError, RuntimeError) as error:
+        if name == "SanitizeAll" and stage == "Operation":
+            # Wrap/rdchem.cpp::sanitExceptionTranslator stores the concrete C++
+            # exception in cause before raising. Read its actual payload; a new
+            # problem search on the input would miss post-kekulization failures.
+            problem = error.cause
+            if problem.GetType() != type(error).__name__ or problem.Message() != str(error):
+                raise
+            if isinstance(error, Chem.AtomValenceException):
+                return {"SanitizeRejected": {"reason": {"ExplicitValence": {
+                    "atom": problem.GetAtomIdx(), "message": str(error)}}, "detail": str(error)}}
+            if isinstance(error, Chem.KekulizeException):
+                return {"SanitizeRejected": {"reason": {"Kekulize": {
+                    "atoms": list(problem.GetAtomIndices())}}, "detail": str(error)}}
         return {"Error": {"stage": stage, "detail": f"{type(error).__name__}: {error}"}}
 
 
@@ -354,7 +367,7 @@ def uff(row, first_case_id=None):
         if name == "Coverage":
             mol = Chem.MolFromSmiles(row["case"]["smiles"])
             if mol is None:
-                raise ValueError("RDKit MolFromSmiles returned None")
+                return {"ParseRejected": {"detail": "RDKit MolFromSmiles returned None"}}
             stage = "Preparation"
             if options["add_hydrogens"]:
                 mol = Chem.AddHs(mol)
@@ -425,6 +438,18 @@ def uff(row, first_case_id=None):
         return {"Optimized": {"status": status, "energy_bits": bits(energy), "xyz_bits": [
             [bits(value) for value in conf.GetAtomPosition(i)] for i in range(mol.GetNumAtoms())]}}
     except (ValueError, RuntimeError) as error:
+        if stage == "Operation" and [line.strip() for line in str(error).splitlines() if line.strip()] == [
+            "Pre-condition Violation", "bad params pointer",
+            "Violation occurred on line 78 in file Code/ForceField/UFF/AngleBend.cpp",
+            "Failed Expression: at2Params", "RDKIT: 2026.03.6", "BOOST: 1_85"
+        ]:
+            centers = [atom.GetIdx() for atom in mol.GetAtoms()
+                       if atom.GetHybridization() == Chem.HybridizationType.SP3D
+                       and atom.GetDegree() == 5
+                       and AllChem.GetUFFVdWParams(mol, atom.GetIdx(), atom.GetIdx()) is None]
+            if not centers:
+                raise
+            return {"SourceTbpCenterParamsMissing": {"center_atom_index": centers[0]}}
         return {"Error": {"stage": stage, "detail": f"{type(error).__name__}: {error}"}}
 
 

@@ -21,6 +21,7 @@ pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -41,6 +42,7 @@ pub(crate) struct DerivedCacheBlock {
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -77,6 +79,7 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-inchi",
+                    feature = "cap-transforms",
                     feature = "cap-valence",
                     feature = "cap-kekulize",
                     feature = "cap-stereo",
@@ -99,6 +102,7 @@ impl DerivedCacheBlock {
                 }
                 #[cfg(not(any(
                     feature = "cap-inchi",
+                    feature = "cap-transforms",
                     feature = "cap-valence",
                     feature = "cap-kekulize",
                     feature = "cap-stereo",
@@ -123,6 +127,7 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-inchi",
+                    feature = "cap-transforms",
                     feature = "cap-rings",
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
@@ -167,6 +172,7 @@ impl DerivedCacheBlock {
                 }
                 #[cfg(not(any(
                     feature = "cap-inchi",
+                    feature = "cap-transforms",
                     feature = "cap-rings",
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
@@ -203,6 +209,7 @@ impl DerivedCacheBlock {
         self.valid = self.valid.difference(states);
         #[cfg(any(
             feature = "cap-inchi",
+            feature = "cap-transforms",
             feature = "cap-valence",
             feature = "cap-kekulize",
             feature = "cap-stereo",
@@ -225,6 +232,7 @@ impl DerivedCacheBlock {
         }
         #[cfg(any(
             feature = "cap-inchi",
+            feature = "cap-transforms",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-descriptors",
@@ -261,6 +269,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -287,6 +296,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -315,6 +325,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -339,6 +350,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -366,6 +378,7 @@ impl DerivedCacheBlock {
     /// rejected by construction/commit validation instead of being served.
     #[cfg(any(
         feature = "cap-inchi",
+        feature = "cap-transforms",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",

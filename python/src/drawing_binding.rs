@@ -972,10 +972,16 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
     }
-    /// Avalon C++ defaults; accepts configuration objects or keyword options.
+    /// RDKit Python defaults; accepts configuration objects or keyword options.
     fn fingerprint_avalon(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
+        // RDKit External/AvalonTools/Wrap/pyAvalonTools.cpp:
+        // python::arg("bitFlags") = AvalonTools::avalonSimilarityBits
+        let params = ck::AvalonFingerprintParams {
+            bit_flags: ck::AvalonFingerprintFlags::SIMILARITY,
+            ..Default::default()
+        };
         self.inner
-            .fingerprint_avalon()
+            .fingerprint_avalon_with_params(&params)
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_avalon::error(py, e))
     }
@@ -3449,7 +3455,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_coordinate_input::read_pyerr(py, &error))
     }
 
-    /// Return a detached float64 NumPy array (N, 3), with zero z, or None.
+    /// Return a detached float64 NumPy array (N, 2), or None.
     #[gen_stub(override_return_type(type_repr = "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]", imports = ("numpy", "typing")))]
     fn coordinates_2d<'py>(&self, py: Python<'py>) -> Option<Bound<'py, numpy::PyArray2<f64>>> {
         self.inner

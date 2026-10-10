@@ -3510,6 +3510,50 @@ mod descriptor_query_lifecycle_tests {
 mod original_runtime_descriptor_conditions {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn added_hydrogens_remain_ready_for_descriptor_queries_without_sanitizing() {
+        // RDKit 2026.03.6 CalcNumHBA/CalcNumHBD(Chem.AddHs(MolFromSmiles(s))).
+        // AddHs.cpp preserves ring info via clearComputedProps(false): appended
+        // leaf hydrogens have zero membership beyond the retained sparse rows.
+        for (smiles, hba, hbd) in [
+            ("CCO", 1, 1),
+            ("c1ccncc1", 1, 0),
+            ("c1cc[nH]c1", 0, 1),
+            ("CC(=O)N", 1, 1),
+            ("C[NH3+]", 0, 1),
+            ("[O-]C(=O)C", 2, 0),
+            ("[H]OC", 1, 1),
+            ("", 0, 0),
+        ] {
+            let source = Molecule::from_smiles(smiles).unwrap();
+            let before = source.clone();
+            let value = source.with_hydrogens().unwrap();
+            assert_eq!(source, before, "{smiles}: value transform source");
+            let mut inplace = source.clone();
+            inplace.add_hydrogens_().unwrap();
+            assert_eq!(source, before, "{smiles}: COW peer");
+            for result in [&value, &inplace] {
+                let snapshot = result.clone();
+                let rings = result.derived_cache_runtime().valid_ring_info().unwrap();
+                assert_eq!(
+                    rings,
+                    before.derived_cache_runtime().valid_ring_info().unwrap()
+                );
+                if result.num_atoms() > source.num_atoms() {
+                    assert!(rings.atom_row_count() < result.num_atoms());
+                }
+                assert_eq!(result.num_hba().unwrap(), hba, "{smiles}: HBA");
+                assert_eq!(result.num_hbd().unwrap(), hbd, "{smiles}: HBD");
+                assert_eq!(*result, snapshot, "{smiles}: descriptor read");
+                assert!(Arc::ptr_eq(
+                    &result.derived_cache_arc_runtime(),
+                    &snapshot.derived_cache_arc_runtime(),
+                ));
+            }
+        }
+    }
+
     fn bits(rows: &[f64]) -> Vec<u64> {
         rows.iter().map(|value| value.to_bits()).collect()
     }

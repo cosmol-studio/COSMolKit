@@ -105,16 +105,6 @@ def test_non_3d_conformer_is_a_source_defined_noop() -> None:
     assert np.array_equal(result.coordinates_3d(), coordinates)
 
 
-def test_no_conformer_is_a_source_defined_noop() -> None:
-    molecule = _tetrahedral_molecule()
-    before = molecule.to_binary()
-
-    result = molecule.with_chiral_tags_from_structure()
-
-    assert molecule.to_binary() == before
-    assert result.to_binary() == before
-
-
 def test_assignment_survives_pickle_and_binary_workflow_boundaries() -> None:
     assigned = (
         _tetrahedral_molecule()

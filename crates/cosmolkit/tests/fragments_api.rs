@@ -3,6 +3,33 @@ use cosmolkit::{
 };
 
 #[test]
+fn sanitized_fragment_retains_the_ring_cache_used_by_writer_stereo() {
+    // RDKit 2026.03.6 MolOps::getTheFrags -> sanitizeMol retains SymmSSSR.
+    // Replacing it with FastFindRings changes macrocycle cis/trans writing.
+    let input = r"OCCOCCOCCOCCO[Si]1(OCCOCCOCCOCCO)n2c3c4ccccc4c2/N=C2\N=C(/N=c4/c5ccccc5/c(n41)=N/C1=N/C(=N\3)c3ccccc31)c1ccccc12";
+    let expected = r"OCCOCCOCCOCCO[Si]1(OCCOCCOCCOCCO)n2c3c4ccccc4c2/N=C2N=C(/N=c4/c5ccccc5/c(n41)=N/C1=NC(=N\3)/c3ccccc31)c1ccccc1\2";
+    for suffix in ["", ".[Na+]"] {
+        let source = Molecule::from_smiles(&format!("{input}{suffix}")).unwrap();
+        let before = source.clone();
+        let fragment = source.fragments().unwrap().remove(0);
+        assert_eq!(
+            fragment.to_smiles().unwrap().as_bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            source
+                .largest_fragment()
+                .unwrap()
+                .to_smiles()
+                .unwrap()
+                .as_bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
 fn fragments_preserve_component_order_and_source_value() {
     let source = Molecule::from_smiles("CC.O.[Na+]").unwrap();
     let peer = source.clone();

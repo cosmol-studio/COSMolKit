@@ -104,6 +104,47 @@ fn bonded_topology() -> TopologyBlock {
     .unwrap()
 }
 
+#[test]
+fn remap_trusts_shared_source_but_still_rejects_invalid_installed_topology() {
+    let source = Molecule::from_parts(
+        bonded_topology(),
+        CoordinateBlock::default(),
+        MoleculeProperties::default(),
+    )
+    .unwrap();
+    let operation = spec(
+        "remap-source-audit",
+        TopologyEditKind::None,
+        MappingRequirement::None,
+        all_write(),
+        BlockSet::NONE,
+    );
+    let mut shared = OpParts::<MappingAccess>::new(&source, operation).unwrap();
+    shared.apply_runtime_remap_runtime().unwrap();
+    assert!(matches!(shared.topology, WorkingBlock::Shared));
+    assert!(std::ptr::eq(
+        shared.current_topology_candidate().unwrap(),
+        source.topology()
+    ));
+
+    let mut installed = OpParts::<MappingAccess>::new(&source, operation).unwrap();
+    let mut malformed = source.topology().clone();
+    malformed.bonds.clear();
+    // Bypass the installer only inside this private runtime test, so remap's
+    // own candidate guard must catch the stale adjacency in either build.
+    installed.topology = WorkingBlock::Installed(malformed);
+    assert!(matches!(
+        installed.apply_runtime_remap_runtime(),
+        Err(OperationError::InvalidTopology(
+            cosmolkit_model::TopologyValidationError::AdjacencyMismatch
+        ))
+    ));
+    assert_eq!(installed.remapped_blocks, BlockSet::NONE);
+    assert!(matches!(installed.coordinates, WorkingBlock::Shared));
+    assert!(matches!(installed.properties, WorkingBlock::Shared));
+    source.topology().validate().unwrap();
+}
+
 fn mapping(
     atom_old_to_new: Vec<Option<usize>>,
     atom_new_to_old: Vec<Option<usize>>,

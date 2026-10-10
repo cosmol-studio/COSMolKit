@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, eq, hash)]
+#[pyclass(module = "cosmolkit", frozen, eq, hash, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Element {
     pub(crate) inner: ck::Element,

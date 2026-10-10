@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_model::{
-    AtomId, AtomPropertyError, BondValueError, QueryStateRef, TopologyBlock,
-    TopologyValidationError,
+    AtomId, AtomPropertyError, BondValueError, QueryStateRef, SourceAtomValenceFacts,
+    TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
@@ -721,9 +721,11 @@ pub struct LegacyStereoAssignment {
     pub topology: TopologyBlock,
     /// Source-required ring preparation, absent when the input cache is reused.
     pub ring_update: Option<RingInfo>,
+    /// Only atoms whose source cleanup recalculated explicit/implicit valence.
+    pub atom_valence_updates: Vec<(AtomId, SourceAtomValenceFacts)>,
 }
 
-/// Run legacy stereochemistry and retain its detached ring-state effects.
+/// Run legacy stereochemistry and retain detached ring and atom-cache effects.
 #[doc(hidden)]
 pub fn assign_legacy_stereochemistry_with_assignments(
     topology: TopologyBlock,
@@ -733,8 +735,8 @@ pub fn assign_legacy_stereochemistry_with_assignments(
     flag_possible_stereo_centers: bool,
 ) -> Result<LegacyStereoAssignment, LegacyStereoError> {
     // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
-    // One owner returns both the topology and its source ring preparation;
-    // this adapter neither copies a cache nor executes a second algorithm.
+    // One owner returns topology, ring preparation and sparse atom-cache
+    // updates; this adapter neither copies a cache nor runs another algorithm.
     assign_legacy_stereochemistry_impl(
         topology,
         valence,
@@ -754,6 +756,7 @@ fn assign_legacy_stereochemistry_impl(
     flag_possible_stereo_centers: bool,
 ) -> Result<LegacyStereoAssignment, LegacyStereoError> {
     let mut ring_update = None;
+    let mut atom_valence_updates = Vec::new();
     assign_legacy_stereochemistry_source(
         &mut topology,
         valence,
@@ -762,18 +765,20 @@ fn assign_legacy_stereochemistry_impl(
         clean_it,
         flag_possible_stereo_centers,
         &mut ring_update,
+        &mut atom_valence_updates,
     )?;
     Ok(LegacyStereoAssignment {
         topology,
         ring_update,
+        atom_valence_updates,
     })
 }
 
 /// Borrow the actual detached graph for reached native source operations.
 /// Property/stereo mutations preceding an error remain observable to the caller;
 /// no empty replacement graph or copied working graph stands in for that state.
-/// The output ring preparation is retained even on a later property/stereo
-/// failure; a source caller moves that effect to its actual cache before
+/// Ring preparation and completed atom-cache effects survive a later failure;
+/// a source caller moves those effects to its actual cache before
 /// propagating the error, while old owning APIs expose effects on success.
 #[doc(hidden)]
 pub fn assign_legacy_stereochemistry_source(
@@ -784,6 +789,7 @@ pub fn assign_legacy_stereochemistry_source(
     clean_it: bool,
     flag_possible_stereo_centers: bool,
     ring_update: &mut Option<RingInfo>,
+    atom_valence_updates: &mut Vec<(AtomId, SourceAtomValenceFacts)>,
 ) -> Result<(), LegacyStereoError> {
     if let Some(state) = query_state {
         state
@@ -1121,7 +1127,8 @@ pub fn assign_legacy_stereochemistry_source(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    for atom in &mut topology.atoms {
+    for index in 0..topology.atoms.len() {
+        let atom = &mut topology.atoms[index];
         if matches!(
             atom.chiral_tag(),
             ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
@@ -1132,6 +1139,14 @@ pub fn assign_legacy_stereochemistry_source(
             if atom.explicit_hydrogens() == 1 && atom.formal_charge() == 0 && !atom.is_aromatic() {
                 atom.set_explicit_hydrogens(0);
                 atom.set_no_implicit(false);
+                // RDKit✔️✔️: atom->calcExplicitValence(false);
+                // RDKit✔️✔️: atom->calcImplicitValence(false);
+                // The existing scalar owner updates exactly this atom, not
+                // every cache row. Return sparse effects to detached callers.
+                let id = atom.id();
+                let outcome = crate::valence::update_source_atom_cache(topology, id, false);
+                atom_valence_updates.push((id, topology.atoms[index].source_valence_facts()));
+                outcome?;
             }
         }
     }
@@ -1692,6 +1707,64 @@ mod state_owner_tests {
 mod source590_borrow_tests {
     use super::*;
     use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec, Element, PropertyValue};
+    #[test]
+    fn clearing_duplicate_ligand_chirality_recalculates_only_that_atom_valence() {
+        // Chirality.cpp: legacyStereoPerception, Issue 194 cleanup.
+        // Native C[C@H](C)O: (explicit H, implicit H, noImplicit) changes
+        // (1, 0, true) -> (0, 1, false), with cached explicit valence 4 -> 3.
+        let atoms = [Element::C, Element::C, Element::C, Element::O]
+            .into_iter()
+            .enumerate()
+            .map(|(i, element)| {
+                let mut atom = Atom::from_spec(AtomId::new(i), AtomSpec::new(element));
+                atom.set_hybridization(Hybridization::Sp3);
+                if i == 1 {
+                    atom.set_explicit_hydrogens(1);
+                    atom.set_no_implicit(true);
+                    atom.set_chiral_tag(ChiralTag::TetrahedralCcw);
+                }
+                atom
+            })
+            .collect();
+        let bonds = [(0, 1), (1, 2), (1, 3)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        let graph = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let valence = crate::assign_valence(&graph, &Default::default()).unwrap();
+        let rings = crate::symmetrized_sssr(&graph, &Default::default()).unwrap();
+        assert_eq!(
+            (valence.explicit_valence[1], valence.implicit_hydrogens[1]),
+            (4, 0)
+        );
+        let result = assign_legacy_stereochemistry_with_assignments(
+            graph.clone(),
+            &valence,
+            &rings,
+            true,
+            false,
+        )
+        .unwrap();
+        let atom = &result.topology.atoms[1];
+        assert_eq!(atom.chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!((atom.explicit_hydrogens(), atom.no_implicit()), (0, false));
+        assert_eq!(result.atom_valence_updates.len(), 1);
+        let (id, facts) = result.atom_valence_updates[0];
+        assert_eq!(id, AtomId::new(1));
+        assert_eq!((facts.explicit_valence, facts.implicit_valence), (3, 1));
+        assert_eq!(atom.source_valence_facts(), facts);
+        let unchanged =
+            assign_legacy_stereochemistry_with_assignments(graph, &valence, &rings, false, false)
+                .unwrap();
+        assert!(unchanged.atom_valence_updates.is_empty());
+        assert_eq!(unchanged.topology.atoms[1].explicit_hydrogens(), 1);
+    }
     fn graph() -> TopologyBlock {
         TopologyBlock::try_from_parts(
             (0..2)
@@ -1725,6 +1798,7 @@ mod source590_borrow_tests {
                 let atoms = actual.atoms.as_ptr();
                 let bonds = actual.bonds.as_ptr();
                 let mut update = None;
+                let mut atom_valence_updates = Vec::new();
                 assign_legacy_stereochemistry_source(
                     &mut actual,
                     &v,
@@ -1733,10 +1807,12 @@ mod source590_borrow_tests {
                     clean,
                     flag,
                     &mut update,
+                    &mut atom_valence_updates,
                 )
                 .unwrap();
                 assert_eq!(actual, expected.topology);
                 assert_eq!(update, expected.ring_update);
+                assert_eq!(atom_valence_updates, expected.atom_valence_updates);
                 assert_eq!(actual.atoms.as_ptr(), atoms);
                 assert_eq!(actual.bonds.as_ptr(), bonds);
             }
@@ -1758,8 +1834,17 @@ mod source590_borrow_tests {
         let r = RingInfo::new(crate::RingFindType::OtherOrUnknown, 2, 1);
         let mut update = None;
         assert!(
-            assign_legacy_stereochemistry_source(&mut g, &v, &r, None, true, false, &mut update)
-                .is_err()
+            assign_legacy_stereochemistry_source(
+                &mut g,
+                &v,
+                &r,
+                None,
+                true,
+                false,
+                &mut update,
+                &mut Vec::new()
+            )
+            .is_err()
         );
         assert_eq!(g.atoms[0].prop("_CIPCode"), None);
         assert_eq!(

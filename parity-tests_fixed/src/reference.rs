@@ -27,6 +27,22 @@ pub(crate) fn source_digest_at(spec: &Spec, checkout: &std::path::Path) -> Resul
         directory().join("tools/forcefield_preparation.py"),
         directory().join("Cargo.toml"),
     ];
+    if let Spec::Special(s) = spec {
+        let generators: &[&str] = match s.schema {
+            registry::SpecialRegressionSchema::ConformerFixed19 => {
+                &["tools/testdata/rdkit/_generate_conformer_generation_golden.py"]
+            }
+            registry::SpecialRegressionSchema::ConformerLibrary => {
+                &["tools/testdata/rdkit/_generate_conformer_generation_library_golden.py"]
+            }
+            registry::SpecialRegressionSchema::ForcefieldProperties => &[
+                "tools/testdata/rdkit/_generate_forcefield_coverage_golden.py",
+                "tools/testdata/rdkit/_generate_forcefield_params_golden.py",
+            ],
+            _ => &[],
+        };
+        paths.extend(generators.iter().map(|p| root().join(p)));
+    }
     if matches!(*spec, Spec::Special(s) if matches!(s.schema, registry::SpecialRegressionSchema::Mcs))
     {
         paths.push(directory().join("tools/mcs.py"));

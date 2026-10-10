@@ -25,7 +25,7 @@ def test_all_forms_fill_original_output_and_preserve_input(method):
     assert output.atom_counts()[0] == 3
 
 
-def test_empty_roots_optional_values_and_frozen_parameters():
+def test_empty_roots_optional_values_and_live_parameters():
     molecule = ck.Molecule.from_smiles("CCO")
     empty = ck.AtomPairFingerprintParams(from_atoms=[])
     assert empty.from_atoms == [] and empty.ignore_atoms is None
@@ -34,8 +34,9 @@ def test_empty_roots_optional_values_and_frozen_parameters():
     assert molecule.fingerprint_atom_pair_sparse_count().nonzero_elements()
     empty.conformer_id = 4
     assert empty.conformer_id == 4
-    copy = empty.from_atoms; copy.append(0)
-    assert empty.from_atoms == []
+    live = empty.from_atoms; live.append(0)
+    assert empty.from_atoms == [0]
+    assert molecule.fingerprint_atom_pair_sparse_count_with_params(empty, None).nonzero_elements()
     assert ck.AtomPairParams(count_bounds=[]).count_bounds == []
 
 

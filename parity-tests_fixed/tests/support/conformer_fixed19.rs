@@ -1,40 +1,8 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-
 use std::collections::BTreeMap;
 
 use cosmolkit::{EmbedParams as EmbedParameters, Molecule, SdfReadParams};
 use serde::Deserialize;
 
-mod parity_data {
-    use std::path::PathBuf;
-    pub fn repo_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-    pub fn golden_path(name: &str) -> PathBuf {
-        let directory = std::env::var_os("COSMOLKIT_CONFORMER_REFERENCE_ROOT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| repo_root().join("testdata/conformer/expected/rdkit/smiles_small"));
-        let path = directory.join(name);
-        use sha2::{Digest, Sha256};
-        let bytes = std::fs::read(&path).unwrap();
-        assert_eq!(
-            Sha256::digest(&bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>(),
-            // Independently regenerated with pinned RDKit 2026.03.6;
-            // all original inputs, seeds and parameters are unchanged.
-            "8f8bf520cebd626cc9308bcaa4079a89c3a93f20f178bfe7d3f61c0bf354eda2",
-            "RDKit 2026.03.6 fixed19 golden bytes changed"
-        );
-        path
-    }
-    pub fn regenerate_command() -> &'static str {
-        "use pinned RDKit 2026.03.6 with unchanged original fixed19 inputs and parameters; never generate expectations from CK"
-    }
-}
 fn embed_molecule(
     molecule: &Molecule,
     params: &mut EmbedParameters,
@@ -70,82 +38,33 @@ struct ConformerGenerationGoldenRecord {
     error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ConformerGenerationFixtureRecord {
-    fixture: Option<String>,
-    source: String,
-}
-
-fn repo_root() -> PathBuf {
-    parity_data::repo_root()
-}
-
-fn inventory_path() -> PathBuf {
-    repo_root().join("testdata/conformer/fixtures/rdkit_inventory.jsonl")
-}
-
-fn fixture_root() -> PathBuf {
-    repo_root().join("testdata/conformer/fixtures")
-}
-
-fn load_inventory() -> Vec<ConformerGenerationFixtureRecord> {
-    let path = inventory_path();
-    let file =
-        File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
-    BufReader::new(file)
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
-        })
-        .collect()
-}
-
-fn vendored_fixture_path(source: &str) -> PathBuf {
-    let record = load_inventory()
-        .into_iter()
-        .find(|record| record.source == source)
-        .unwrap_or_else(|| panic!("fixture inventory missing source {source}"));
-    let fixture = record.fixture.unwrap_or_else(|| {
-        panic!("fixture inventory source {source} does not have a vendored fixture path")
-    });
-    fixture_root().join(fixture)
-}
-
 fn load_golden() -> Vec<ConformerGenerationGoldenRecord> {
-    let path = parity_data::golden_path("conformer_generation.jsonl");
-    let file = File::open(&path).unwrap_or_else(|err| {
-        panic!(
-            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
-            path.display(),
-            parity_data::regenerate_command()
-        )
-    });
-    BufReader::new(file)
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
-        })
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "conformer_fixed19",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    snapshot
+        .rows
+        .into_iter()
+        .map(|row| serde_json::from_value(row).unwrap())
         .collect()
 }
 
 fn read_rdkit_mol_fixture(source: &str) -> Molecule {
-    let path = vendored_fixture_path(source);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed to read RDKit mol fixture {}: {err}", path.display()));
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "conformer_fixed19",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    let case = snapshot.fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["source"] == source)
+        .unwrap();
     Molecule::from_sdf_with_params(
-        &text,
+        case["mol_block"].as_str().unwrap(),
         &SdfReadParams {
             sanitize: true,
             remove_hs: false,
@@ -153,12 +72,7 @@ fn read_rdkit_mol_fixture(source: &str) -> Molecule {
             ..Default::default()
         },
     )
-    .unwrap_or_else(|err| {
-        panic!(
-            "failed to parse RDKit mol fixture {}: {err}",
-            path.display()
-        )
-    })
+    .unwrap()
 }
 
 fn load_case_molecule(source_kind: &str, source: &str) -> Molecule {

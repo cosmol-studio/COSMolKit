@@ -1,5 +1,8 @@
 import {Molecule,CrippenTotals,LabuteAsaContributions,RotatableBondsOptions,DescriptorReadError,DescriptorError} from "cosmolkit-generated";
 const m=Molecule.fromSmiles("CCO");
+const hydrogenatedHba:number=m.withHydrogens().numHba();
+m.addHydrogens();
+const inplaceHydrogenatedHba:number=m.numHba();
 const v0:number=m.chi0();
 const v1:number=m.chi1();
 const v2:number=m.hallKierAlpha();

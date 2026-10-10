@@ -1,12 +1,5 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-
 use cosmolkit::Molecule;
 use serde::Deserialize;
-
-#[path = "mmff_test_support.rs"]
-mod parity_data;
 
 const CHARGE_TOLERANCE: f64 = 1.0e-12;
 
@@ -35,27 +28,15 @@ struct ForcefieldCoverageRecord {
 }
 
 fn load_golden() -> Vec<ForcefieldCoverageRecord> {
-    let path = std::env::var_os("COSMOLKIT_FORCEFIELD_COVERAGE_GOLDEN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| parity_data::golden_path("forcefield_coverage.jsonl"));
-    let file = File::open(&path).unwrap_or_else(|err| {
-        panic!(
-            "failed to open {}; prepare it with `{}`: {err}",
-            path.display(),
-            parity_data::rdkit_prepare_command("forcefield_coverage")
-        )
-    });
-    BufReader::new(file)
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
-        })
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "forcefield_properties",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    snapshot
+        .rows
+        .into_iter()
+        .map(|row| serde_json::from_value(row).unwrap())
         .collect()
 }
 
@@ -160,49 +141,14 @@ fn assert_mmff_coverage(
 #[test]
 fn forcefield_coverage_matches_rdkit_for_every_active_profile_row() {
     let records = load_golden();
-    let start_row = std::env::var("COSMOLKIT_FORCEFIELD_COVERAGE_START_ROW")
-        .ok()
-        .map(|value| {
-            value.parse::<usize>().unwrap_or_else(|err| {
-                panic!("COSMOLKIT_FORCEFIELD_COVERAGE_START_ROW must be a positive integer: {err}")
-            })
-        })
-        .unwrap_or(1);
-    let shard_count = std::env::var("COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_COUNT")
-        .ok()
-        .map(|value| {
-            value.parse::<usize>().unwrap_or_else(|err| {
-                panic!(
-                    "COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_COUNT must be a positive integer: {err}"
-                )
-            })
-        })
-        .unwrap_or(1);
-    let shard_index = std::env::var("COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_INDEX")
-        .ok()
-        .map(|value| {
-            value.parse::<usize>().unwrap_or_else(|err| {
-                panic!("COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_INDEX must be a non-negative integer: {err}")
-            })
-        })
-        .unwrap_or(0);
-    assert!(start_row > 0, "coverage start row must be one-based");
-    assert!(shard_count > 0, "coverage shard count must be positive");
-    assert!(
-        shard_index < shard_count,
-        "coverage shard index must be less than shard count"
-    );
     assert_eq!(
         records.len(),
-        parity_data::count_smiles_rows(),
+        152,
         "force-field coverage golden row count must match the active corpus"
     );
 
     for (row_idx, record) in records.iter().enumerate() {
         let row = row_idx + 1;
-        if row < start_row || row_idx % shard_count != shard_index {
-            continue;
-        }
         if !record.rdkit_ok {
             assert!(
                 record.error.is_some(),

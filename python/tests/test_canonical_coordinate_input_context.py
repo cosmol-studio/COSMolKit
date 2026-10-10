@@ -17,7 +17,7 @@ def test_parameter_objects_keep_original_defaults_and_are_writable():
 def test_original_inclusive_zero_z_threshold(z):
     source = ck.Molecule.from_smiles('CCO')
     result = source.with_2d_coordinate_block_with_params([[0., 0., z], [1., 2., z], [3., 4., z]], ck.Coordinate2DInputParams(ck.CoordinateZPolicy.RequireZero))
-    np.testing.assert_array_equal(result.coordinates_2d(), [[0., 0., 0.], [1., 2., 0.], [3., 4., 0.]])
+    np.testing.assert_array_equal(result.coordinates_2d(), [[0., 0.], [1., 2.], [3., 4.]])
 
 @pytest.mark.parametrize('value', [float('inf'), float('-inf'), float('nan')])
 def test_ignored_z_is_still_finite_checked_and_typed_failure_is_atomic(value):
@@ -37,15 +37,20 @@ def test_numeric_noncontiguous_protocol_does_not_alias_input_or_read_output():
     result = source.with_only_3d_conformer(rows)
     rows[:] = -99
     assert np.array_equal(result.conformers_3d()[0].coordinates(), expected)
-    projected = result.conformers_3d()[0].coordinates()
+    conformer = result.conformers_3d()[0]
+    projected = conformer.coordinates()
+    assert isinstance(projected, np.ndarray)
+    assert projected.shape == (3, 3) and projected.dtype == np.float64
+    np.testing.assert_array_equal(projected, result.coordinates_3d())
     projected[0][0] = -100
     assert np.array_equal(result.conformers_3d()[0].coordinates(), expected)
+    np.testing.assert_array_equal(conformer.coordinates(), expected)
     assert source.conformers_3d() == []
 
 def test_builder_existing_two_dimensional_projections_are_checked():
     builder = ck.Molecule.from_smiles('CCO').to_builder()
     assert builder.set_2d_coordinates([[0., 0.], [1., 2.], [3., 4.]]) is None
-    np.testing.assert_array_equal(builder.build().coordinates_2d(), [[0., 0., 0.], [1., 2., 0.], [3., 4., 0.]])
+    np.testing.assert_array_equal(builder.build().coordinates_2d(), [[0., 0.], [1., 2.], [3., 4.]])
     with pytest.raises(ValueError, match='row count'): builder.set_2d_coordinates([[0., 0.]])
     with pytest.raises(ValueError, match='non-finite'): builder.set_2d_coordinates([[0., 0.], [1., float('nan')], [3., 4.]])
     with pytest.raises(ValueError, match='shape'): builder.set_2d_coordinates([[0., 0., 0.]] * 3)

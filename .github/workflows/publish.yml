@@ -29,6 +29,9 @@ jobs:
               with:
                   python-version: "3.12"
 
+            - name: Install stub dependencies
+              run: python -m pip install "numpy>=1.23"
+
             - name: Check release policy
               id: release_policy
               env:

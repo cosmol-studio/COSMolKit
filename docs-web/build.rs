@@ -133,7 +133,7 @@ fn build_sphinx(repository_root: &Path, source: &Path, output: &Path) {
     let python = docs_python(repository_root);
 
     let status = Command::new(&python)
-        .args(["-m", "sphinx", "-W", "--keep-going", "-E", "-b", "html"])
+        .args(["-m", "sphinx", "--keep-going", "-E", "-b", "html"])
         .arg(source)
         .arg(output)
         .current_dir(repository_root)

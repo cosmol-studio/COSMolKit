@@ -1,6 +1,7 @@
 //! Frozen source-first legacy String-note regression; no fixture generation.
+#[path = "support/annotation_references.rs"]
+mod annotation_references;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use cosmolkit_core::{RingFindType, RingInfo, ValenceAssignment};
 use cosmolkit_depict::{DepictOptions, DrawingInput, render_svg};
@@ -96,17 +97,7 @@ fn coordinate_identity(coordinates: &CoordinateBlock) -> Vec<(usize, Vec<[u64; 2
 
 #[test]
 fn drawing_annotation_legacy_product() {
-    let reference_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/depiction/expected/source_351f8f3/annotations");
-    // Only reads the already frozen source bytes. Missing references are fatal.
-    let references: Vec<_> = CASES
-        .iter()
-        .map(|case| {
-            let path = reference_dir.join(format!("{}.svg", case.label));
-            std::fs::read(&path)
-                .unwrap_or_else(|error| panic!("missing reference {}: {error}", path.display()))
-        })
-        .collect();
+    let references = annotation_references::references();
     assert_eq!(references.len(), 8);
     for index in [1, 3, 5] {
         assert_eq!(

@@ -631,6 +631,82 @@ fn preservation_requires_an_objective_supported_proof() {
 }
 
 #[test]
+fn sanitize_coordinate_proof_accepts_orientation_but_rejects_rewiring_and_new_identity() {
+    let topology = TopologyBlock::try_from_parts(
+        vec![atom(0), atom(1), atom(2)],
+        vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        )],
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let source = Molecule::from_parts(
+        topology,
+        CoordinateBlock::default(),
+        MoleculeProperties::default(),
+    )
+    .unwrap();
+    let operation = spec(
+        "sanitize-coordinate-proof",
+        MoleculeOpOutput::Single,
+        all_effect_access(),
+        all_effect_access().write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::COORDINATES,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    for (id, begin, end, allowed) in [(0, 1, 0, true), (0, 2, 0, false), (1, 1, 0, false)] {
+        let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+        let mut candidate = parts.checkout_topology_runtime().unwrap();
+        candidate.bonds[0] = Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Dative),
+        );
+        // Rebuild adjacency so the rewiring control is internally consistent;
+        // rejection must come from changed identity, not malformed adjacency.
+        candidate.adjacency =
+            cosmolkit_model::AdjacencyList::from_topology(candidate.atoms.len(), &candidate.bonds);
+        let installation = parts.install_topology_runtime(candidate);
+        if id != 0 {
+            // Row identity is rejected by structural validation even before
+            // a preservation proof can inspect the candidate.
+            assert_eq!(
+                installation,
+                Err(OperationError::InvalidTopology(
+                    cosmolkit_model::TopologyValidationError::BondIdMismatch {
+                        position: 0,
+                        id: BondId::new(id),
+                    }
+                ))
+            );
+            continue;
+        }
+        installation.unwrap();
+        let result = parts.prove_preserved_runtime(
+            DerivedState::COORDINATES,
+            PreservationProof::SanitizeTopologyState,
+        );
+        if allowed {
+            assert_eq!(result, Ok(()));
+        } else {
+            assert!(matches!(
+                result,
+                Err(OperationError::DerivedEffectContract {
+                    issue: "sanitize topology-identity and coordinate-preservation proof failed",
+                    ..
+                })
+            ));
+        }
+    }
+}
+
+#[test]
 fn completion_reports_each_missing_category_then_accepts_all() {
     let operation = spec(
         "complete",

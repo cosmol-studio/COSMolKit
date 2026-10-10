@@ -420,9 +420,21 @@ impl<'a, Access> OpParts<'a, Access> {
         )?;
         let changed = pair.is_some();
         if let Some((topology, properties)) = pair {
-            topology
-                .validate()
-                .map_err(OperationError::InvalidTopology)?;
+            // Only the unchanged source borrow carries the live molecule's
+            // existing validity. Owned and foreign borrowed values still need
+            // validation, preserving their errors before borrow rejection.
+            #[cfg(feature = "runtime-invariants")]
+            let audit_topology = true;
+            #[cfg(not(feature = "runtime-invariants"))]
+            let audit_topology = !matches!(
+                &topology,
+                Cow::Borrowed(value) if std::ptr::eq(*value, self.source.topology())
+            );
+            if audit_topology {
+                topology
+                    .validate()
+                    .map_err(OperationError::InvalidTopology)?;
+            }
             // A borrow must be the supplied source block, not an unrelated
             // detached value. Check both before installing either candidate.
             if let Cow::Borrowed(value) = &topology
@@ -887,18 +899,23 @@ impl<'a, Access> OpParts<'a, Access> {
 
     pub(super) fn apply_runtime_remap_runtime(&mut self) -> Result<(), OperationError> {
         let source_topology = self.source.topology();
-        source_topology
-            .validate()
-            .map_err(OperationError::InvalidTopology)?;
-        self.source
-            .coordinate_block_runtime()
-            .validate_for_atom_count(source_topology.atoms.len())
-            .map_err(OperationError::InvalidCoordinates)?;
-        Self::validate_property_lists(
-            self.source.properties(),
-            source_topology.atoms.len(),
-            source_topology.bonds.len(),
-        )?;
+        // Source blocks belong to an already constructed immutable Molecule;
+        // only strict builds repeat their boundary checks during remapping.
+        #[cfg(feature = "runtime-invariants")]
+        {
+            source_topology
+                .validate()
+                .map_err(OperationError::InvalidTopology)?;
+            self.source
+                .coordinate_block_runtime()
+                .validate_for_atom_count(source_topology.atoms.len())
+                .map_err(OperationError::InvalidCoordinates)?;
+            Self::validate_property_lists(
+                self.source.properties(),
+                source_topology.atoms.len(),
+                source_topology.bonds.len(),
+            )?;
+        }
 
         let candidate_topology = match &self.topology {
             WorkingBlock::Shared => source_topology,
@@ -910,9 +927,13 @@ impl<'a, Access> OpParts<'a, Access> {
                 });
             }
         };
-        candidate_topology
-            .validate()
-            .map_err(OperationError::InvalidTopology)?;
+        // A shared candidate is that same source, not a new detached result.
+        // Installed candidates retain their mandatory structural check.
+        if RUNTIME_INVARIANTS_ENABLED || !matches!(&self.topology, WorkingBlock::Shared) {
+            candidate_topology
+                .validate()
+                .map_err(OperationError::InvalidTopology)?;
+        }
         Self::validate_mapping_obligation(
             self.spec,
             source_topology,
@@ -2335,8 +2356,14 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.bonds.iter().zip(&source.bonds).all(
                         |(candidate_bond, source_bond)| {
                             candidate_bond.id() == source_bond.id()
-                                && candidate_bond.begin() == source_bond.begin()
-                                && candidate_bond.end() == source_bond.end()
+                                // Coordinate identity depends on the incident
+                                // atoms, not the direction of an existing bond.
+                                // Chemistry-specific result validation belongs
+                                // to the operation body, not this runtime proof.
+                                && ((candidate_bond.begin() == source_bond.begin()
+                                    && candidate_bond.end() == source_bond.end())
+                                    || (candidate_bond.begin() == source_bond.end()
+                                        && candidate_bond.end() == source_bond.begin()))
                         },
                     );
                 let topology_identity_is_stable = atom_identity_is_stable
@@ -3027,9 +3054,10 @@ pub(super) fn validate_multiple_candidate(
     OpParts::<()>::validate_effect_contract(spec)?;
     let mut prepared_states = DerivedState::NONE;
     #[cfg(any(
+        feature = "cap-transforms",
         feature = "cap-tautomer",
-        feature = "cap-reaction",
-        feature = "cap-stereoisomers"
+        feature = "cap-stereoisomers",
+        feature = "cap-reaction"
     ))]
     if let Some(values) = &prepared_cache {
         prepared_states = DerivedState::VALENCE;
@@ -3047,9 +3075,10 @@ pub(super) fn validate_multiple_candidate(
         candidate.clear_cache_runtime(clear)?;
     }
     #[cfg(any(
+        feature = "cap-transforms",
         feature = "cap-tautomer",
-        feature = "cap-reaction",
-        feature = "cap-stereoisomers"
+        feature = "cap-stereoisomers",
+        feature = "cap-reaction"
     ))]
     if let Some(values) = prepared_cache {
         let mut cache = candidate.checkout_derived_cache_runtime()?;
@@ -3060,12 +3089,6 @@ pub(super) fn validate_multiple_candidate(
         candidate.install_derived_cache_runtime(cache)?;
         candidate.mark_cache_updated_runtime(prepared_states)?;
     }
-    #[cfg(not(any(
-        feature = "cap-tautomer",
-        feature = "cap-reaction",
-        feature = "cap-stereoisomers"
-    )))]
-    debug_assert!(prepared_cache.is_none());
     candidate.apply_cip_policy_runtime()?;
     if !spec.derived_effects.preserve.is_empty() {
         candidate.prove_preserved_runtime(

@@ -1,4 +1,4 @@
-"""Full immutable constructor/value protocol proposal under ROOT decision001."""
+"""Constructor input ownership, live configuration and report snapshots."""
 import inspect
 import json
 import cosmolkit as ck
@@ -60,7 +60,7 @@ def test_each_constructor_field_preserves_other_defaults(field):
             assert getattr(params, other) == expected, other
 
 
-def test_constructor_maps_and_value_replacement_are_detached():
+def test_constructor_maps_are_detached_and_configuration_views_are_live():
     maps={0:[1.,2.,3.]};cpci={(0,1):0.125}
     params=ck.EmbedParams(coord_map=maps,cpci=cpci)
     maps[0][0]=9.;cpci[(0,1)]=9.
@@ -72,6 +72,7 @@ def test_constructor_maps_and_value_replacement_are_detached():
     restored=changed.with_json(changed.to_json())
     assert json.loads(restored.to_json()) == json.loads(changed.to_json())
     returned=restored.coord_map;returned[0][0]=99.
-    assert restored.coord_map == {0:[1.,2.,3.]}
+    assert restored.coord_map == {0:[99.,2.,3.]}
+    assert changed.coord_map == params.coord_map == {0:[1.,2.,3.]}
     failures=restored.failures;failures.append(1)
     assert restored.failures == []

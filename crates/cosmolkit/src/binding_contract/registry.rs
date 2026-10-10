@@ -2,6 +2,50 @@
 
 use cosmolkit_macros::binding_contract;
 
+/// Python-only, Rust-backed collection projections of canonical Rust results.
+/// Rust and JavaScript retain their existing collection representations.
+pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[
+    #[cfg(feature = "cap-fingerprints")]
+    ("FingerprintBatch", "Vec<Option<crate::Fingerprint>>"),
+];
+
+/// Explicitly approved Python conveniences, not additional Rust callables.
+/// Both runtime publication and stub generation reference the existing method;
+/// signatures, configuration, defaults and errors remain owned by that method.
+pub static BINDING_CONTRACT_PYTHON_ALIASES: &[(&str, &str)] = &[
+    #[cfg(feature = "cap-smiles")]
+    ("mol_from_smiles", "Molecule.from_smiles"),
+    #[cfg(feature = "cap-io")]
+    ("mol_from_mol", "Molecule.from_mol"),
+    #[cfg(feature = "cap-io")]
+    ("mol_from_sdf", "Molecule.from_sdf"),
+    #[cfg(feature = "cap-io")]
+    ("mol_from_mol2", "Molecule.from_mol2"),
+    #[cfg(feature = "cap-io")]
+    ("mol_from_xyz_block", "Molecule.from_xyz_block"),
+    #[cfg(feature = "cap-inchi")]
+    ("mol_from_inchi", "Molecule.from_inchi"),
+    #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
+    ("mol_from_binary", "Molecule.from_binary"),
+    ("mol_from_rdkit", "Molecule.from_rdkit"),
+    #[cfg(feature = "cap-batch")]
+    ("mols_from_smiles_list", "MoleculeBatch.from_smiles_list"),
+    #[cfg(feature = "cap-io")]
+    ("mols_from_sdf_records", "MoleculeBatch.from_sdf_records"),
+    #[cfg(feature = "cap-batch")]
+    ("mols_from_records", "MoleculeBatch.from_records"),
+    #[cfg(feature = "cap-reaction")]
+    ("reaction_from_smirks", "Reaction.from_smirks"),
+    #[cfg(feature = "cap-bio")]
+    ("bio_from_pdb", "BioStructure.from_pdb"),
+    #[cfg(feature = "cap-bio")]
+    ("bio_from_mmcif", "BioStructure.from_mmcif"),
+    #[cfg(feature = "cap-bio")]
+    ("protein_from_pdb", "Protein.from_pdb"),
+    #[cfg(feature = "cap-bio")]
+    ("protein_from_mmcif", "Protein.from_mmcif"),
+];
+
 binding_contract! {
     pub static BINDING_CONTRACT = [
         {
@@ -2098,6 +2142,7 @@ binding_contract! {
             semantic_id: "types.Fingerprint", item: type, owner: type_,
             rust: crate::Fingerprint, python: "Fingerprint", javascript: "Fingerprint",
             feature: "cap-fingerprints", status: experimental, role: value,
+            python_adapters: [{ name: to_numpy, targets: ["Fingerprint.n_bits", "Fingerprint.on_bits"] }],
         },
         #[cfg(feature = "cap-fingerprints")]
         {
@@ -10318,7 +10363,7 @@ binding_contract! {
         { semantic_id: "types.AvalonFingerprintParams", item: type, owner: type_, rust: crate::AvalonFingerprintParams, python: "AvalonFingerprintParams", javascript: "AvalonFingerprintParams", feature: "cap-fingerprints", status: experimental, python_configuration: [
  { name: n_bits, python_type: "builtins.int", default: "512" },
  { name: is_query, python_type: "builtins.bool", default: "False" },
- { name: bit_flags, python_type: "builtins.int", default: "32767" },
+ { name: bit_flags, python_type: "builtins.int", default: "15761407" },
  ], role: parameter, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "types.AvalonFingerprintFlags", item: type, owner: type_, rust: crate::AvalonFingerprintFlags, python: "AvalonFingerprintFlags", javascript: "AvalonFingerprintFlags", feature: "cap-fingerprints", status: experimental,  role: value, },
@@ -11405,7 +11450,7 @@ binding_contract! {
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Molecule.reaction_products_from_inputs",item:callable,owner:molecule,rust:crate::Molecule::reaction_products_from_inputs,python:"reaction_products_from_inputs",javascript:"reactionProductsFromInputs",feature:"cap-reaction",kind:instance,receiver:shared,parameters:[{name:reaction,type:&mut crate::Reaction,default:required},{name:reactants,type:&[&crate::Molecule],default:required},{name:params,type:&crate::ReactionRunParams,default:required}],output:Vec<Vec<crate::Molecule>>,error:crate::OperationError,state:value_returning,operation:"reaction_products_from_inputs",signature:for<'a,'b> fn(&'a crate::Molecule,&'b mut crate::Reaction,&'b [&'b crate::Molecule],&'b crate::ReactionRunParams)->Result<Vec<Vec<crate::Molecule>>,crate::OperationError>,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.run",item:callable,owner:type_,rust:crate::Reaction::run,python:"run",javascript:"run",feature:"cap-reaction",status:experimental,kind:instance,receiver:mutable,parameters:[{name:reactants,type:&[&crate::Molecule],default:required},{name:params,type:&crate::ReactionRunParams,default:required}],output:Vec<Vec<crate::Molecule>>,error:crate::OperationError,state:in_place,operation:"run",signature:for<'a,'b> fn(&'a mut crate::Reaction,&'b [&'b crate::Molecule],&'b crate::ReactionRunParams)->Result<Vec<Vec<crate::Molecule>>,crate::OperationError>,},
+{semantic_id:"Reaction.run",item:callable,owner:type_,rust:crate::Reaction::run,python:"run",javascript:"run",feature:"cap-reaction",status:experimental,kind:instance,receiver:mutable,parameters:[{name:reactants,type:&[&crate::Molecule],default:required},{name:params,type:&crate::ReactionRunParams,default:required}],output:Vec<Vec<crate::Molecule>>,error:crate::OperationError,state:in_place,operation:"run",signature:for<'a,'b> fn(&'a mut crate::Reaction,&'b [&'b crate::Molecule],&'b crate::ReactionRunParams)->Result<Vec<Vec<crate::Molecule>>,crate::OperationError>,python_keywords:{parameters:"ReactionRunParams.new",target:"Reaction.run"}},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Molecule.apply_reaction",item:callable,owner:molecule,rust:crate::Molecule::apply_reaction,python:"apply_reaction",javascript:"applyReaction",feature:"cap-reaction",kind:instance,receiver:shared,parameters:[{name:reaction,type:&mut crate::Reaction,default:required}],output:crate::ReactionApplyResult,error:crate::OperationError,state:value_returning,operation:"apply_reaction",signature:for<'a,'b> fn(&'a crate::Molecule,&'b mut crate::Reaction)->Result<crate::ReactionApplyResult,crate::OperationError>,},
 #[cfg(feature="cap-reaction")]

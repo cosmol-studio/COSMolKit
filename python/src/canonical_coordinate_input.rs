@@ -11,13 +11,13 @@ pyo3::create_exception!(cosmolkit, CoordinateInputError, PyValueError);
 pyo3::create_exception!(cosmolkit, Coordinate3DReadError, PyValueError);
 
 /// Python owns this XYZ snapshot; it never aliases a molecule's COW block.
-/// The runtime keeps XY storage for 2D; only the Python projection pads z.
+/// Preserve the runtime dimension: XY for 2D, XYZ for 3D.
 pub(crate) fn coordinate_array<'py, const D: usize>(
     py: Python<'py>,
     rows: &[[f64; D]],
 ) -> Bound<'py, numpy::PyArray2<f64>> {
     use numpy::IntoPyArray;
-    let mut array = numpy::ndarray::Array2::zeros((rows.len(), 3));
+    let mut array = numpy::ndarray::Array2::zeros((rows.len(), D));
     for (i, row) in rows.iter().enumerate() {
         for j in 0..D {
             array[[i, j]] = row[j];

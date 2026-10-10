@@ -1,4 +1,28 @@
 use super::*;
+#[test]
+fn stereo_cleanup_retains_recalculated_hydrogens_for_subsequent_query_matching() {
+    let mut record = fixture_from_smiles("CC(C)O").unwrap();
+    record.topology.atoms[1].set_chiral_tag(ChiralTag::TetrahedralCcw);
+    record.topology.atoms[1].set_explicit_hydrogens(1);
+    record.topology.atoms[1].set_no_implicit(true);
+    record.valence = assign_valence(&record.topology, &Default::default()).unwrap();
+    assert_eq!(record.valence.implicit_hydrogens[1], 0);
+    assign_stereo(&mut record).unwrap();
+    assert_eq!(
+        record.topology.atoms[1].chiral_tag(),
+        ChiralTag::Unspecified
+    );
+    assert_eq!(record.valence.explicit_valence[1], 3);
+    assert_eq!(record.valence.implicit_hydrogens[1], 1);
+    let coordinates = CoordinateBlock::default();
+    let query = cosmolkit_search::parse_smarts("[CX4!H0]", &Default::default()).unwrap();
+    let compiled = CompiledQuery::compile(query).unwrap();
+    let matches = query_matches(record.view(&coordinates), &compiled).unwrap();
+    assert!(
+        matches.contains(&vec![1]),
+        "cleaned carbon must still match the transform's hydrogen predicate"
+    );
+}
 pub(crate) fn fixture_from_smiles(
     text: &str,
 ) -> Result<TautomerRecord, Box<dyn std::error::Error>> {

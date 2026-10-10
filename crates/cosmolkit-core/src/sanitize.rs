@@ -13,6 +13,7 @@ use cosmolkit_model::{
 use cosmolkit_types::Hybridization;
 
 use crate::aromaticity::assign_default_aromaticity_with_cached_valence;
+use crate::cleanup::cleanup_in_place;
 use crate::{
     AromaticityError, AtropisomerError, CleanupError, CleanupParams, ConjugationError,
     HybridizationAssignment, HybridizationError, KekulizeError, KekulizeParams, RadicalError,
@@ -710,17 +711,18 @@ pub fn sanitize_topology_with_query_state(
     // RDKit✔️❌:   operationThatFailed = 0;
     // RDKit✔️❌: }
     // The source mutates one `RWMol`. This detached boundary clones the full
-    // topology and several owner stages return further owned clones, which is
-    // materially more allocation despite preserving the source stage order
-    // and each owner's asymptotic traversal shape.
+    // topology to isolate the borrowed input. Cleanup stages now mutate that
+    // one detached attempt, retaining their input/output validation and stage
+    // order without cloning the topology again. Other owner-stage overhead
+    // remains; this does not promote the full sanitizer's complexity markers.
 
     let operations = params.operations;
     let mut working = topology.clone();
     clear_topology_computed_properties(&mut working)?;
 
     if operations.contains(SanitizeOperations::CLEANUP) {
-        working = cleanup(
-            &working,
+        cleanup_in_place(
+            &mut working,
             &CleanupParams {
                 charge_normalization: true,
                 organometallics: false,
@@ -733,8 +735,8 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::CLEANUP_ORGANOMETALLICS) {
-        working = cleanup(
-            &working,
+        cleanup_in_place(
+            &mut working,
             &CleanupParams {
                 charge_normalization: false,
                 organometallics: true,

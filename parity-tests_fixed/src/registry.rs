@@ -19,8 +19,29 @@ pub enum SpecialRegressionSchema {
     TautomerFocused,
     MolAlign,
     Mcs,
+    ConformerFixed19,
+    ConformerLibrary,
+    ForcefieldProperties,
 }
 pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
+    SpecialRegression {
+        key: "conformer_fixed19",
+        fixture: "special/conformer_fixed19.json",
+        rows: 19,
+        schema: SpecialRegressionSchema::ConformerFixed19,
+    },
+    SpecialRegression {
+        key: "conformer_library",
+        fixture: "special/conformer_library.json",
+        rows: 152,
+        schema: SpecialRegressionSchema::ConformerLibrary,
+    },
+    SpecialRegression {
+        key: "forcefield_properties",
+        fixture: "special/forcefield_properties.json",
+        rows: 152,
+        schema: SpecialRegressionSchema::ForcefieldProperties,
+    },
     SpecialRegression {
         key: "forcefield_optimizers",
         fixture: "special/forcefield_optimizers.json",

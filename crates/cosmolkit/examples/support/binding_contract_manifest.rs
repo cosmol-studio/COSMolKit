@@ -3,7 +3,8 @@
 //! text or maintain another list of API names here.
 use cosmolkit::{
     BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
-    BINDING_CONTRACT_PYTHON_ADAPTERS, BindingDefault, BindingItem, BindingOwner,
+    BINDING_CONTRACT_PYTHON_ADAPTERS, BINDING_CONTRACT_PYTHON_ALIASES,
+    BINDING_CONTRACT_PYTHON_COLLECTIONS, BindingDefault, BindingItem, BindingOwner,
     BindingPropertyAccess, BindingTypeRole,
 };
 use serde_json::{Value, json};
@@ -96,6 +97,9 @@ pub fn manifest() -> Value {
         })
     }).collect::<Vec<_>>();
     json!({
+        "python_collections": BINDING_CONTRACT_PYTHON_COLLECTIONS.iter().map(|(name, output)| json!({
+            "name": name, "rust_output": output,
+        })).collect::<Vec<_>>(),
         "entries": entries,
         "keywords": BINDING_CONTRACT_KEYWORDS.iter().map(|row| json!({
             "semantic_id": row.semantic_id,
@@ -106,6 +110,9 @@ pub fn manifest() -> Value {
             "type_semantic_id": row.type_semantic_id,
             "name": row.name,
             "targets": row.targets,
+        })).collect::<Vec<_>>(),
+        "python_aliases": BINDING_CONTRACT_PYTHON_ALIASES.iter().map(|(name, target)| json!({
+            "name": name, "target": target,
         })).collect::<Vec<_>>(),
     })
 }

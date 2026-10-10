@@ -42,14 +42,34 @@ pub fn cleanup(
 ) -> Result<TopologyBlock, CleanupError> {
     topology.validate()?;
     let mut result = topology.clone();
-    if params.charge_normalization {
-        cleanup_charges(&mut result)?;
-    }
-    if params.organometallics {
-        cleanup_organometallics(&mut result)?;
-    }
+    cleanup_stages(&mut result, params)?;
     result.validate()?;
     Ok(result)
+}
+
+/// Internal path for an already-owned detached sanitize attempt. A failure
+/// discards that attempt; this never grants access to live molecule storage.
+pub(crate) fn cleanup_in_place(
+    topology: &mut TopologyBlock,
+    params: &CleanupParams,
+) -> Result<(), CleanupError> {
+    topology.validate()?;
+    cleanup_stages(topology, params)?;
+    topology.validate()?;
+    Ok(())
+}
+
+fn cleanup_stages(
+    topology: &mut TopologyBlock,
+    params: &CleanupParams,
+) -> Result<(), CleanupError> {
+    if params.charge_normalization {
+        cleanup_charges(topology)?;
+    }
+    if params.organometallics {
+        cleanup_organometallics(topology)?;
+    }
+    Ok(())
 }
 
 fn cleanup_nitrogens(topology: &mut TopologyBlock) -> Result<(), CleanupError> {

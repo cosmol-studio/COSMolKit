@@ -1,61 +1,6 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-
 use cosmolkit::{EmbedParams as EmbedParameters, Molecule};
 use serde::Deserialize;
 
-mod parity_data {
-    use std::path::PathBuf;
-    pub fn count_smiles_rows() -> usize {
-        profile().2
-    }
-    fn profile() -> (PathBuf, &'static str, usize) {
-        let profile = std::env::var("COSMOLKIT_CONFORMER_LIBRARY_PROFILE")
-            .unwrap_or_else(|_| "original152".to_owned());
-        let (key, corpus, digest, count) = match profile.as_str() {
-            "original152" => (
-                "COSMOLKIT_CONFORMER_ORACLE_152",
-                "smiles_small",
-                // Pinned native 2026.03.6, unchanged original152 recipe.
-                "7948eff11e2a078e88a4526b3e00d2618e515df7d292ae43883454565f84376a",
-                152,
-            ),
-            "original5000" => (
-                "COSMOLKIT_CONFORMER_ORACLE_5000",
-                "smiles_5000",
-                // Pinned native 2026.03.6, unchanged original5000 recipe.
-                "653bbd4801ea037fe6b8d3018991ae378b53ece1775faea2a41ff45ae059dc72",
-                5000,
-            ),
-            other => panic!("explicit frozen original library profile required: {other:?}"),
-        };
-        let path = std::env::var_os(key).map(PathBuf::from).unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../testdata/conformer/expected/rdkit")
-                .join(corpus)
-                .join("conformer_generation_library.jsonl")
-        });
-        assert!(
-            path.is_file(),
-            "Missing {profile} oracle: {}; set {key} to the pinned native JSONL with unchanged original inputs and parameters. Never generate expectations from CK.",
-            path.display()
-        );
-        (path, digest, count)
-    }
-    pub fn golden_path(_: &str) -> PathBuf {
-        use sha2::{Digest, Sha256};
-        let (path, digest, _) = profile();
-        let actual = Sha256::digest(std::fs::read(&path).unwrap())
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
-        assert_eq!(actual, digest, "frozen pinned-native library bytes changed");
-        path
-    }
-    pub fn regenerate_command() -> &'static str {
-        "pinned RDKit 2026.03.6 with unchanged original library inputs and parameters; never generate expectations from CK"
-    }
-}
 fn embed_molecule(
     molecule: &Molecule,
     params: &mut EmbedParameters,
@@ -89,31 +34,21 @@ struct ConformerGenerationLibraryRecord {
 }
 
 fn load_golden() -> Vec<ConformerGenerationLibraryRecord> {
-    let path = parity_data::golden_path("conformer_generation_library.jsonl");
-    let file = File::open(&path).unwrap_or_else(|err| {
-        panic!(
-            "failed to open {}; required reference policy: `{}`: {err}",
-            path.display(),
-            parity_data::regenerate_command()
-        )
-    });
-    BufReader::new(file)
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| {
-                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
-            });
-            serde_json::from_str(&line).unwrap_or_else(|err| {
-                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
-            })
-        })
+    let snapshot = cosmolkit_parity_tests_fixed::special_regression::preflight(
+        "conformer_library",
+        &cosmolkit_parity_tests_fixed::expected(),
+    )
+    .unwrap();
+    snapshot
+        .rows
+        .into_iter()
+        .map(|row| serde_json::from_value(row).unwrap())
         .collect()
 }
 
 #[test]
 fn conformer_generation_library_golden_has_one_record_per_smiles() {
-    let expected = parity_data::count_smiles_rows();
+    let expected = 152;
     let records = load_golden();
     assert_eq!(
         records.len(),

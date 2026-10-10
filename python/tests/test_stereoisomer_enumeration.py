@@ -3,6 +3,7 @@ from collections.abc import Iterable, Iterator
 from typing import override
 
 import cosmolkit
+import numpy as np
 import pytest
 
 
@@ -229,6 +230,9 @@ def test_enumeration_composes_with_hydrogen_conformer_and_descriptor_apis():
     before_smiles = source.to_smiles()
     before_mass = source.molecular_weight()
     before_coordinates = source.coordinates_3d().copy()
+    assert isinstance(before_coordinates, np.ndarray)
+    assert before_coordinates.dtype == np.float64
+    assert before_coordinates.shape == (source.num_atoms(), 3)
 
     outputs = list(source.enumerate_stereoisomers())
     assert [molecule.to_smiles() for molecule in outputs] == [
@@ -241,4 +245,6 @@ def test_enumeration_composes_with_hydrogen_conformer_and_descriptor_apis():
 
     assert source.to_smiles() == before_smiles
     assert source.num_3d_conformers() == 1
-    assert source.coordinates_3d() == before_coordinates
+    coordinates = source.coordinates_3d()
+    assert isinstance(coordinates, np.ndarray) and coordinates.dtype == np.float64
+    np.testing.assert_array_equal(coordinates, before_coordinates)

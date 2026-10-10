@@ -1,11 +1,11 @@
 //! Owned force-field corpus parity: common arbitrary coordinates, two iterations,
 //! and binary64 bits throughout. No embedding, rounded input, or tolerance path.
 use crate::registry::{Operation, Record, SmilesCase, Value};
-use crate::uff::Geometry;
+use crate::uff::CoordinateRow;
 use cosmolkit::{
     Conformer3D, CoordinateBlock, CoordinateDimension, ForceFieldMinimizeParams,
     MmffForceFieldParams, MolecularForceField, MolecularForceFieldErrorKind, Molecule,
-    SdfCoordinateMode, SdfReadParams, UffForceFieldParams,
+    UffForceFieldParams,
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,16 @@ pub struct Input {
     pub max_iterations: u32,
     pub force_tolerance_bits: u64,
     pub energy_tolerance_bits: u64,
-    pub preparation: Option<Geometry>,
+    pub preparation: Option<Preparation>,
+}
+
+/// Original SMILES plus source-ordered explicit hydrogens on both sides;
+/// coordinates are transported directly, without a MOL writer/parser roundtrip.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Preparation {
+    pub atom_count: usize,
+    pub coordinate_rows: Vec<CoordinateRow>,
 }
 impl Input {
     pub fn new(case: SmilesCase, kind: Kind) -> Self {
@@ -64,6 +73,8 @@ pub struct Snapshot {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
+    /// The source MolFromSmiles boundary rejected the original input.
+    ParseRejected,
     /// RDKit MMFF's factory returns None for invalid MMFF properties.
     Unavailable,
     SourceTbpCenterParamsMissing {
@@ -76,7 +87,7 @@ pub enum Observation {
     },
 }
 
-fn valid_geometry(geometry: &Geometry) -> bool {
+fn valid_geometry(geometry: &Preparation) -> bool {
     geometry.atom_count > 0
         && geometry.coordinate_rows.len() == 1
         && geometry.coordinate_rows[0].conformer_id == 0
@@ -102,6 +113,13 @@ pub fn validate_reference(
         || prepared.energy_tolerance_bits != recipe.energy_tolerance_bits
     {
         return Err("owned force-field case/parameters changed".into());
+    }
+    if *output == Observation::ParseRejected {
+        return if prepared.preparation.is_none() {
+            Ok(())
+        } else {
+            Err("parse rejection unexpectedly contains force-field geometry".into())
+        };
     }
     let geometry = prepared
         .preparation
@@ -163,20 +181,25 @@ fn snapshot(field: &MolecularForceField) -> crate::Result<Snapshot> {
 }
 
 pub fn run(input: &Input) -> crate::Result<Record> {
+    if input.preparation.is_none() {
+        return match Molecule::from_smiles(&input.case.smiles) {
+            // A live-runtime contract/commit failure is not a source parse rejection.
+            Err(cosmolkit::SmilesError::Construction(error)) => Err(error.to_string()),
+            Err(_) => Ok(Record {
+                input: crate::Input::PersistentForceField(input.clone()),
+                output: Value::PersistentForceField(Observation::ParseRejected),
+            }),
+            Ok(_) => Err("accepted SMILES has no prepared force-field geometry".into()),
+        };
+    }
     let geometry = input
         .preparation
         .as_ref()
         .ok_or("force-field input not prepared")?;
-    let base = Molecule::from_sdf_with_params(
-        &geometry.molblock,
-        &SdfReadParams {
-            sanitize: true,
-            remove_hs: false,
-            coordinate_mode: SdfCoordinateMode::Require3D,
-            ..Default::default()
-        },
-    )
-    .map_err(|e| e.to_string())?;
+    let base = Molecule::from_smiles(&input.case.smiles)
+        .map_err(|e| e.to_string())?
+        .with_hydrogens()
+        .map_err(|e| e.to_string())?;
     if base.num_atoms() != geometry.atom_count || !valid_geometry(geometry) {
         return Err("force-field geometry changed".into());
     }
@@ -280,4 +303,49 @@ pub fn run(input: &Input) -> crate::Result<Record> {
         input: crate::Input::PersistentForceField(input.clone()),
         output: Value::PersistentForceField(output),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rejection_is_not_missing_geometry_or_parameter_unavailability() {
+        for kind in [Kind::Mmff, Kind::Uff] {
+            let rejected = Input::new(
+                SmilesCase {
+                    id: "syntax".into(),
+                    smiles: "CC(".into(),
+                },
+                kind,
+            );
+            assert_eq!(
+                run(&rejected).unwrap().output,
+                Value::PersistentForceField(Observation::ParseRejected)
+            );
+            assert!(validate_reference(&rejected, &rejected, &Observation::ParseRejected).is_ok());
+            assert!(validate_reference(&rejected, &rejected, &Observation::Unavailable).is_err());
+            let mut with_geometry = rejected.clone();
+            with_geometry.preparation = Some(Preparation {
+                atom_count: 0,
+                coordinate_rows: vec![],
+            });
+            assert!(
+                validate_reference(&rejected, &with_geometry, &Observation::ParseRejected).is_err()
+            );
+            let accepted = Input::new(
+                SmilesCase {
+                    id: "valid".into(),
+                    smiles: "CCO".into(),
+                },
+                kind,
+            );
+            assert!(
+                run(&accepted)
+                    .unwrap_err()
+                    .contains("no prepared force-field geometry")
+            );
+            assert!(validate_reference(&rejected, &accepted, &Observation::ParseRejected).is_err());
+        }
+    }
 }

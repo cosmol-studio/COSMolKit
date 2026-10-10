@@ -33,7 +33,9 @@ def test_all_original_parameter_fields_defaults_and_mutable_state(typ,defaults):
         assert scalar(getattr(p,k))==scalar(getattr(q,k))==scalar(v)
     for k in ["weights","atom_indices","conformer_ids"]:
         if k in edits:
-            detached=getattr(p,k);detached.append(999);assert getattr(p,k)==edits[k]
+            live=getattr(p,k);live.append(999)
+            assert getattr(p,k)==[*edits[k],999]
+            assert getattr(q,k)==edits[k]
 
 def molecule():
     b=ck.Molecule.from_smiles("CC").to_builder();b.add_3d_conformer([[0.,0.,0.],[1.,0.,0.]]);b.add_3d_conformer([[2.,1.,0.],[3.,1.,0.]]);return b.build()

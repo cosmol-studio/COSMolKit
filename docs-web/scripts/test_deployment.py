@@ -76,8 +76,8 @@ class DeploymentTests(unittest.TestCase):
         self.page("index.html", "", runtime=True)
         for route in ROUTES:
             self.page(f"{route}/index.html", route, runtime=True)
-        self.assertEqual(flatten_html_routes(self.public), 17)
-        self.assertEqual(strip_client_runtime(self.public), 18)
+        self.assertEqual(flatten_html_routes(self.public), len(ROUTES))
+        self.assertEqual(strip_client_runtime(self.public), len(ROUTES) + 1)
         docs_web = Path(__file__).resolve().parents[1]
         (self.public / "social-card.png").write_bytes(PNG_HEADER)
         for name in ("404.html",):
@@ -94,11 +94,11 @@ class DeploymentTests(unittest.TestCase):
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"\x00asm\x01\x00\x00\x00" if path.suffix == ".wasm" else b"// Generated binding fixture")
-        self.assertEqual(write_sitemap(self.public), 13)
+        self.assertEqual(write_sitemap(self.public), len(ROUTES) + 1 - len(EXCLUDED_ROUTES))
 
     def test_full_preparation_and_idempotence(self):
         self.prepare()
-        self.assertEqual(check_output(self.public), 18)
+        self.assertEqual(check_output(self.public), len(ROUTES) + 1)
         self.assertEqual(flatten_html_routes(self.public), 0)
         self.assertEqual(strip_client_runtime(self.public), 0)
         for route in ROUTES:
@@ -109,7 +109,7 @@ class DeploymentTests(unittest.TestCase):
         self.prepare()
         for route in ("index.html", "python/api.html", "python/search.html"):
             self.assertIn('id="docs-version-loader"', (self.public / route).read_text())
-        self.assertEqual(check_output(self.public), 18)
+        self.assertEqual(check_output(self.public), len(ROUTES) + 1)
         path = self.public / "index.html"
         path.write_text(path.read_text().replace('id="docs-version-loader"', 'id="removed-loader"'))
         with self.assertRaisesRegex(ValueError, "version loader"):
@@ -321,7 +321,7 @@ class DeploymentTests(unittest.TestCase):
     def test_output_requires_project_links_on_copied_module_pages(self):
         self.prepare()
         module = self.page("python/_modules/index.html", "python/_modules/")
-        self.assertEqual(check_output(self.public), 18)
+        self.assertEqual(check_output(self.public), len(ROUTES) + 1)
         module.write_text(module.read_text().replace("cosmolkit-project-links", "other-links"), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Project and Rust crates"):
             check_output(self.public)

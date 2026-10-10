@@ -149,6 +149,20 @@ order = 6
 summary = "Calculate descriptors and composition properties."
 
 [[pages]]
+component = "Forcefields"
+path = "/python/forcefields"
+binding = "python"
+topic = "forcefields"
+status = "ready"
+indexable = true
+docname = "forcefields"
+source = "sphinx"
+title = "Force Fields | COSMolKit"
+label = "Force Fields"
+order = 13
+summary = "Evaluate and optimize molecules with MMFF and UFF force fields."
+
+[[pages]]
 component = "Protein"
 path = "/python/protein"
 binding = "python"
@@ -162,6 +176,34 @@ legacy_paths = ["/protein"]
 label = "Protein Structures"
 order = 7
 summary = "Read and inspect structural-biology values."
+
+[[pages]]
+component = "Mcs"
+path = "/python/mcs"
+binding = "python"
+topic = "mcs"
+status = "ready"
+indexable = true
+docname = "mcs"
+source = "sphinx"
+title = "Maximum Common Substructure | COSMolKit"
+label = "Maximum Common Substructure"
+order = 14
+summary = "Find common molecular substructures."
+
+[[pages]]
+component = "Reaction"
+path = "/python/reaction"
+binding = "python"
+topic = "reaction"
+status = "ready"
+indexable = true
+docname = "reaction"
+source = "sphinx"
+title = "Reactions | COSMolKit"
+label = "Reactions"
+order = 15
+summary = "Parse reaction templates and generate products."
 
 [[pages]]
 component = "Io"

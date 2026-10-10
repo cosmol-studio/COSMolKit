@@ -1249,3 +1249,38 @@ fn persistent_keyword_projection_rejects_unregistered_parameter_constructor() {
     let error = expand_binding_contract(tokens.parse().unwrap()).unwrap_err();
     assert!(error.to_string().contains("constructor is not registered"));
 }
+
+#[test]
+fn standalone_keyword_projection_keeps_data_inputs_and_one_typed_configuration() {
+    let entries = |configuration: proc_macro2::TokenStream| {
+        quote! {
+            static KEYWORDS = [
+                { semantic_id:"Params.new",item:callable,owner:type_,rust:crate::Params::new,python:"__new__",javascript:"new",feature:"runtime",kind:constructor,parameters:[{name:count,type:u32,default:1000}],output:crate::Params,error:none,state:value_returning,operation:none,signature:fn(u32)->crate::Params },
+                { semantic_id:"Runner.run",item:callable,owner:type_,rust:crate::Runner::run,python:"run",javascript:"run",feature:"runtime",kind:instance,receiver:mutable,parameters:[{name:inputs,type:&[u32],default:required},{name:params,type:#configuration,default:required}],output:crate::Result,error:none,state:in_place,operation:none,signature:fn(&mut crate::Runner,&[u32],#configuration)->crate::Result,python_keywords:{parameters:"Params.new",target:"Runner.run"} }
+            ];
+        }
+    };
+    assert!(expand_binding_contract(entries(quote! {&crate::Params})).is_ok());
+    for invalid in [
+        quote! {&mut crate::Params},
+        quote! {&crate::Other},
+        quote! {crate::Params},
+    ] {
+        assert!(
+            expand_binding_contract(entries(invalid))
+                .unwrap_err()
+                .to_string()
+                .contains("constructor output")
+        );
+    }
+    let duplicate = entries(quote! {&crate::Params})
+        .to_string()
+        .replace("type : & [u32]", "type : & crate :: Params")
+        .replace("& [u32]", "& crate :: Params");
+    assert!(
+        expand_binding_contract(duplicate.parse().unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("exactly one")
+    );
+}

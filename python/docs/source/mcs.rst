@@ -1,6 +1,9 @@
 Maximum common substructure
 ==========================
 
+.. meta::
+   :description: Find maximum common molecular substructures and inspect query graphs with COSMolKit.
+
 This experimental search finds a common **query graph**, not a concrete
 molecule. It requires at least two molecules and never changes its inputs.
 Full RDKit FMCS parity and comparable performance have not been established.

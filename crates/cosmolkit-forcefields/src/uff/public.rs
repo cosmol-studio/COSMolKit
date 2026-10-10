@@ -573,9 +573,15 @@ mod tests {
         {
             let reported = std::error::Error::source(parent)
                 .expect("the error exposes its concrete stored child");
-            let stored_error: &(dyn std::error::Error + 'static) = stored;
+            // Trait-object vtable addresses are not stable across codegen
+            // units. Verify both the concrete child type and its data address.
             assert!(
-                std::ptr::eq(reported, stored_error),
+                std::ptr::eq(
+                    reported
+                        .downcast_ref::<Child>()
+                        .expect("the child keeps its type"),
+                    stored
+                ),
                 "source is not the stored child: {} -> {}",
                 std::any::type_name::<Parent>(),
                 std::any::type_name::<Child>()

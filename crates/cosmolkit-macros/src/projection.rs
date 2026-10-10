@@ -10,8 +10,9 @@ use quote::{format_ident, quote};
 use syn::{FnArg, Ident, ItemFn, Pat, Token, Type, parse::Parse, parse::ParseStream, parse_quote};
 
 use crate::declaration::{
-    BioBlock, BioDerivedState, BioOperation, BioRegistry, BioState, MappingRequirement,
-    MoleculeBlock, MoleculeOperation, MoleculeOutput, MoleculeRegistry, TopologyEditKind,
+    BioBlock, BioDerivedState, BioOperation, BioRegistry, BioState, DerivedState,
+    MappingRequirement, MoleculeBlock, MoleculeOperation, MoleculeOutput, MoleculeRegistry,
+    TopologyEditKind,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -619,9 +620,32 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             let mapped_emission = if operation.fields.output == MoleculeOutput::Multiple
                 && operation.fields.requires_mapping == MappingRequirement::Required
             {
-                quote! {
-                    pub(crate) fn emit_mapped(&mut self, candidates: Vec<(cosmolkit_model::TopologyBlock, cosmolkit_model::CoordinateBlock, cosmolkit_model::MoleculeProperties, cosmolkit_model::TopologyMapping)>) -> Result<(), crate::OperationError> {
-                        self.emit_mapped_runtime(candidates)
+                if operation
+                    .fields
+                    .access
+                    .write
+                    .contains(&MoleculeBlock::DerivedCache)
+                    && operation
+                        .fields
+                        .derived_effects
+                        .recompute
+                        .contains(&DerivedState::Valence)
+                    && operation
+                        .fields
+                        .derived_effects
+                        .recompute
+                        .contains(&DerivedState::Rings)
+                {
+                    quote! {
+                        pub(crate) fn emit_mapped(&mut self, candidates: Vec<(cosmolkit_model::TopologyBlock, cosmolkit_model::CoordinateBlock, cosmolkit_model::MoleculeProperties, cosmolkit_model::TopologyMapping, Option<(cosmolkit_core::ValenceAssignment, cosmolkit_core::RingInfo)>)>) -> Result<(), crate::OperationError> {
+                            self.emit_mapped_prepared_runtime(candidates)
+                        }
+                    }
+                } else {
+                    quote! {
+                        pub(crate) fn emit_mapped(&mut self, candidates: Vec<(cosmolkit_model::TopologyBlock, cosmolkit_model::CoordinateBlock, cosmolkit_model::MoleculeProperties, cosmolkit_model::TopologyMapping)>) -> Result<(), crate::OperationError> {
+                            self.emit_mapped_runtime(candidates)
+                        }
                     }
                 }
             } else {

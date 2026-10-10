@@ -27,7 +27,7 @@ def invalid_ffi_call(operation: object) -> Callable[..., object]:
     return operation
 
 
-def test_all_parameter_defaults_and_immutable_fields():
+def test_all_parameter_defaults_and_writable_fields():
     params = cosmolkit.Coordinate2DParams()
     empty_map: dict[int, list[float]] = {}
     expected: dict[str, object] = dict(coordinate_map=empty_map, canonical_orientation=False,
@@ -40,7 +40,7 @@ def test_all_parameter_defaults_and_immutable_fields():
         assert getattr(params, key) == expected[key]
 
 
-def test_explicit_parameter_values_and_map_copy_bits():
+def test_explicit_parameter_values_and_live_map_preserve_constructor_ownership():
     mapping = {0: [-0.0, 1.5]}
     params = cosmolkit.Coordinate2DParams(
         mapping, canonical_orientation=True, clear_existing_2d=False,
@@ -51,8 +51,10 @@ def test_explicit_parameter_values_and_map_copy_bits():
     assert coordinate_bits([returned[0]]) == coordinate_bits([[-0.0, 1.5]])
     returned[0][0] = 23.0
     returned[1] = [4.0, 5.0]
-    assert params.coordinate_map.keys() == {0}
-    assert coordinate_bits([params.coordinate_map[0]]) == coordinate_bits([[-0.0, 1.5]])
+    assert params.coordinate_map.keys() == {0, 1}
+    assert coordinate_bits([params.coordinate_map[0]]) == coordinate_bits([[23.0, 1.5]])
+    assert params.coordinate_map[1] == [4.0, 5.0]
+    assert mapping == {0: [42.0, 1.5]}
     assert (params.canonical_orientation, params.clear_existing_2d,
             params.flips_per_sample, params.samples, params.sample_seed,
             params.permute_degree_four, params.force_rdkit,

@@ -21,6 +21,52 @@ check_contract = cast(Callable[[str, str], list[str]], _checker.check_contract)
 check_runtime = _checker.check_runtime
 
 
+def _alias_document():
+    return {
+        "entries": [_entry("types.Molecule", "Molecule", "type", "type"),
+                    _entry("Molecule.from_smiles", "from_smiles")],
+        "python_adapters": [],
+        "python_aliases": [{"name": "mol_from_smiles", "target": "Molecule.from_smiles"}],
+    }
+
+
+@pytest.mark.parametrize("export", [
+    "", "def mol_from_smiles(text: str) -> Molecule: ...",
+    "mol_from_smiles = lambda text: Molecule.from_smiles(text)",
+    "mol_from_smiles = Molecule.other",
+    "mol_from_smiles = Molecule.from_smiles\nmol_from_smiles = Molecule.from_smiles",
+])
+def test_constructor_alias_gate_rejects_missing_wrapped_or_duplicate_declarations(export):
+    stub = "class Molecule:\n    @staticmethod\n    def from_smiles(text: str) -> Molecule: ...\n" + export
+    assert any("direct assignment" in error for error in check_contract(stub, json.dumps(_alias_document())))
+
+
+def test_constructor_alias_gate_accepts_reference_and_rejects_unregistered_target():
+    stub = "class Molecule:\n    @staticmethod\n    def from_smiles(text: str) -> Molecule: ...\nmol_from_smiles = Molecule.from_smiles\n"
+    document = _alias_document()
+    assert check_contract(stub, json.dumps(document)) == []
+    document["python_aliases"][0]["target"] = "Molecule.other"
+    assert any("not a registered" in error for error in check_contract(stub, json.dumps(document)))
+
+
+def test_constructor_alias_runtime_gate_requires_actual_callable_identity():
+    from types import SimpleNamespace
+
+    class Molecule:
+        @classmethod
+        def from_smiles(cls, text):
+            return cls()
+
+    module = SimpleNamespace(Molecule=Molecule, mol_from_smiles=Molecule.from_smiles)
+    assert _checker.check_alias_runtime(module, _alias_document()) == []
+    module.__all__ = ["Molecule"]
+    assert any("export list" in error for error in _checker.check_alias_runtime(module, _alias_document()))
+    module.__all__.append("mol_from_smiles")
+    assert _checker.check_alias_runtime(module, _alias_document()) == []
+    module.mol_from_smiles = lambda text: Molecule.from_smiles(text)
+    assert _checker.check_alias_runtime(module, _alias_document())
+
+
 @pytest.mark.parametrize("method", ["", "def __repr__(self): ...", "def __repr__(self) -> int: ...", "def __repr__(self, extra) -> str: ...", "def __repr__(self, *args) -> str: ...", "def __repr__(self, **kwargs) -> str: ..."])
 def test_batch_configuration_gate_requires_typed_repr_declaration(method: str):
     row = dict(_entry("types.Settings", "Settings", "type", "type"), rust_path="crate::Settings", feature="cap-batch", role="parameter", fields=[])

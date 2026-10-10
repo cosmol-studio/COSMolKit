@@ -138,7 +138,7 @@ impl From<ck::BioAssemblySpecialKind> for BioAssemblySpecialKind {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioConnection {
     pub(crate) inner: ck::BioConnection,
@@ -186,7 +186,7 @@ impl BioConnection {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioCisPep {
     pub(crate) inner: ck::BioCisPep,
@@ -222,7 +222,7 @@ impl BioCisPep {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioModRes {
     pub(crate) inner: ck::BioModRes,
@@ -256,7 +256,7 @@ impl BioModRes {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioHelix {
     pub(crate) inner: ck::BioHelix,
@@ -288,7 +288,7 @@ impl BioHelix {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioSheet {
     pub(crate) inner: ck::BioSheet,
@@ -313,7 +313,7 @@ impl BioSheet {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioMetadata {
     pub(crate) inner: ck::BioMetadata,
@@ -377,7 +377,7 @@ impl BioMetadata {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioStructureSourceState {
     pub(crate) inner: ck::BioStructureSourceState,
@@ -431,7 +431,7 @@ impl BioStructureSourceState {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioNcsOperator {
     pub(crate) inner: ck::BioNcsOperator,
@@ -457,7 +457,7 @@ impl BioNcsOperator {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioAssembly {
     pub(crate) inner: ck::BioAssembly,
@@ -518,7 +518,7 @@ impl BioAssembly {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioAssemblyGenerator {
     pub(crate) inner: ck::BioAssemblyGenerator,
@@ -547,7 +547,7 @@ impl BioAssemblyGenerator {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioAssemblyOperator {
     pub(crate) inner: ck::BioAssemblyOperator,
@@ -573,7 +573,7 @@ impl BioAssemblyOperator {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioStrand {
     pub(crate) inner: ck::BioStrand,
@@ -617,7 +617,7 @@ impl BioStrand {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioSoftwareItem {
     pub(crate) inner: ck::BioSoftwareItem,
@@ -657,7 +657,7 @@ impl BioSoftwareItem {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioReflectionsInfo {
     pub(crate) inner: ck::BioReflectionsInfo,
@@ -697,7 +697,7 @@ impl BioReflectionsInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioBasicRefinementInfo {
     pub(crate) inner: ck::BioBasicRefinementInfo,
@@ -769,7 +769,7 @@ impl BioBasicRefinementInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioRefinementRestraint {
     pub(crate) inner: ck::BioRefinementRestraint,
@@ -801,7 +801,7 @@ impl BioRefinementRestraint {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioExperimentInfo {
     pub(crate) inner: ck::BioExperimentInfo,
@@ -848,7 +848,7 @@ impl BioExperimentInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioDiffractionInfo {
     pub(crate) inner: ck::BioDiffractionInfo,
@@ -916,7 +916,7 @@ impl BioDiffractionInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioExperimentalCrystalInfo {
     pub(crate) inner: ck::BioExperimentalCrystalInfo,
@@ -953,7 +953,7 @@ impl BioExperimentalCrystalInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioTlsSelection {
     pub(crate) inner: ck::BioTlsSelection,
@@ -985,7 +985,7 @@ impl BioTlsSelection {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioTlsGroup {
     pub(crate) inner: ck::BioTlsGroup,
@@ -1030,7 +1030,7 @@ impl BioTlsGroup {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct BioRefinementInfo {
     pub(crate) inner: ck::BioRefinementInfo,
@@ -1123,7 +1123,7 @@ impl BioRefinementInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct AtomAddress {
     pub(crate) inner: ck::AtomAddress,
@@ -1153,7 +1153,7 @@ impl AtomAddress {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct ResidueAddress {
     pub(crate) inner: ck::ResidueAddress,

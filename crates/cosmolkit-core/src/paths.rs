@@ -1512,6 +1512,14 @@ fn path_finder_helper(
     };
     let mut result = BTreeMap::new();
     for length in 1..maximum_length {
+        // RDKit✔️🔝: paths = extendPaths(adjMat, dim, paths, maxLen, distMat, ignoreAtoms);
+        // For an exact-length request, an empty candidate list stays empty:
+        // extendPaths only visits existing paths. No intermediate result keys
+        // are requested, so skip empty extensions and retain res[maxLen] below.
+        // This avoids billions of empty iterations for source-width lengths.
+        if minimum_length == maximum_length && paths.is_empty() {
+            break;
+        }
         if length >= minimum_length {
             result.insert(length, paths.clone());
         }
@@ -2090,6 +2098,68 @@ fn remap_selected_stereo_groups(
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|rows| rows.into_iter().flatten().collect())
+}
+
+#[cfg(test)]
+mod exact_path_tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_exact_paths_keep_the_requested_empty_row_and_root_rules() {
+        let adjacency = [false, true, false, true, false, true, false, true, false];
+        let length = u32::MAX as usize;
+        for root in [None, Some(AtomId::new(1))] {
+            assert_eq!(
+                path_finder_helper(&adjacency, 3, length, length, root, None, None),
+                BTreeMap::from([(length, vec![])])
+            );
+        }
+        assert_eq!(
+            path_finder_helper(&adjacency, 3, length, length, None, None, Some(&[true; 3])),
+            BTreeMap::from([(length, vec![])])
+        );
+        assert!(
+            path_finder_helper(
+                &adjacency,
+                3,
+                length,
+                length,
+                Some(AtomId::new(3)),
+                None,
+                None
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            path_finder_helper(&adjacency, 3, 1, 5, None, None, None),
+            BTreeMap::from([
+                (1, vec![vec![0], vec![1], vec![2]]),
+                (2, vec![vec![0, 1], vec![1, 0], vec![1, 2], vec![2, 1]]),
+                (3, vec![vec![0, 1, 2], vec![2, 1, 0]]),
+                (4, vec![]),
+                (5, vec![]),
+            ])
+        );
+    }
+
+    #[test]
+    fn exact_paths_still_include_source_final_ring_closures() {
+        let adjacency = [false, true, true, true, false, true, true, true, false];
+        assert_eq!(
+            path_finder_helper(&adjacency, 3, 4, 4, None, None, None),
+            BTreeMap::from([(
+                4,
+                vec![
+                    vec![0, 1, 2, 0],
+                    vec![0, 2, 1, 0],
+                    vec![1, 0, 2, 1],
+                    vec![1, 2, 0, 1],
+                    vec![2, 0, 1, 2],
+                    vec![2, 1, 0, 2],
+                ],
+            )])
+        );
+    }
 }
 
 #[cfg(test)]

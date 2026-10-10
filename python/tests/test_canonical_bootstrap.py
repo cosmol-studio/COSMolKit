@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import cast
 
 import cosmolkit as ck
+import numpy as np
 import pytest
 
 
@@ -21,7 +22,7 @@ def call(value: object) -> Callable[..., object]:
     return value
 
 
-def state(mol: ck.Molecule) -> tuple[str, int, int, list[list[float]] | None]:
+def state(mol: ck.Molecule) -> tuple[str, int, int, np.ndarray | None]:
     return mol.to_smiles(), mol.num_atoms(), mol.num_bonds(), mol.coordinates_2d()
 
 
@@ -79,11 +80,13 @@ def test_replacements_are_copied_and_forwarded():
     mapping = {"{X}": "O"}
     params = ck.SmilesParseParams(replacements=mapping)
     mapping["{X}"] = "N"
+    assert params.replacements == {"{X}": "O"}
     returned = params.replacements
     returned["{X}"] = "F"
-    assert params.replacements == {"{X}": "O"}
+    assert params.replacements == {"{X}": "F"}
     mol = ck.Molecule.from_smiles_with_params("CC{X}", params)
-    assert mol.to_smiles() == "CCO"
+    assert mol.to_smiles() == "CCF"
+    assert mapping == {"{X}": "N"}
 
 
 @pytest.mark.parametrize("remove_hs,expected_atoms", [(True, 1), (False, 5)])
@@ -170,6 +173,8 @@ def test_root_usize_conversion(value: int):
 def test_four_morgan_results_and_owned_containers(method: str, result_type: type, width: int, values: object):
     mol = ck.Molecule.from_smiles("CCO").with_2d_coordinates()
     before = state(mol)
+    assert isinstance(before[3], np.ndarray)
+    assert before[3].dtype == np.float64 and before[3].shape == (3, 2)
     result = call(cast(object, getattr(mol, method)))()
     assert type(result) is result_type
     is_bits = method in ("fingerprint_morgan", "fingerprint_morgan_sparse")
@@ -186,7 +191,10 @@ def test_four_morgan_results_and_owned_containers(method: str, result_type: type
         cast(dict[int, int], returned).clear()
         assert call(cast(object, getattr(result, "total_value")))() == 6
     assert call(cast(object, getattr(result, accessor)))() == values
-    assert state(mol) == before
+    after = state(mol)
+    assert after[:3] == before[:3]
+    assert isinstance(after[3], np.ndarray) and after[3].dtype == np.float64
+    np.testing.assert_array_equal(after[3], before[3])
     empty = call(cast(object, getattr(ck.Molecule.from_smiles(""), method)))()
     assert call(cast(object, getattr(empty, accessor)))() == ([] if is_bits else {})
 

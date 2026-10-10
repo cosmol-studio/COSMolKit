@@ -17,6 +17,8 @@ def test_reusable_scalar_source_values_and_bulk_none_order(single,bulk):
     expected=[getattr(m,single)(g) for m in [a,b,c]]
     for threads in [1,2,7]:
         values=getattr(g,bulk)([a,None,b,c,None],num_threads=threads)
+        if bulk == "fingerprints":
+            assert isinstance(values, ck.FingerprintBatch)
         assert len(values)==5 and values[1] is None and values[4] is None
         assert [record(values[i]) for i in [0,2,3]]==[record(v) for v in expected]
     if bulk=="sparse_counts":
@@ -24,8 +26,8 @@ def test_reusable_scalar_source_values_and_bulk_none_order(single,bulk):
         assert all(v.length()==68719476736 for v in expected)
     if bulk=="counts":assert [v.nonzero_elements() for v in expected]==[{0:2},{15:1},{71:1}]
     if bulk=="fingerprints":assert [v.on_bits() for v in expected]==[[0,1],[60],[284]]
-    assert getattr(g,bulk)([],num_threads=2)==[]
-    assert getattr(g,bulk)([None,None],num_threads=7)==[None,None]
+    assert list(getattr(g,bulk)([],num_threads=2))==[]
+    assert list(getattr(g,bulk)([None,None],num_threads=7))==[None,None]
 
 
 def test_shared_settings_snapshot_lifetime_and_independent_atom_generator():

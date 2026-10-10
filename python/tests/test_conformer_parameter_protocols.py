@@ -1,4 +1,4 @@
-"""Proposal covering distinct constructor fields and immutable report snapshots."""
+"""Writable configuration fields and independent result snapshots."""
 import cosmolkit as ck
 import pytest
 
@@ -34,10 +34,10 @@ def test_all_parameter_fields_construct_distinct_values_and_preserve_source_snap
     params = configured(params, cpci={(0, 1): 0.125})
     mapping = params.coord_map
     mapping[0] = [9.0, 9.0, 9.0]
-    assert params.coord_map == {0: [1.0, 2.0, 3.0]}
+    assert params.coord_map == {0: [9.0, 9.0, 9.0]}
     cpci = params.cpci
     cpci[(0, 1)] = -8.0
-    assert params.cpci == {(0, 1): 0.125}
+    assert params.cpci == {(0, 1): -8.0}
     assert ck.EmbedParams().to_json() == snapshot
     assert repr(params) == "EmbedParams(random_seed=123, num_threads=4, prune_rms_thresh=0.25, clear_conformers=false)"
     assert params.failures == []

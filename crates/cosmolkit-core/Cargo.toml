@@ -17,9 +17,9 @@ path = "src/lib.rs"
 
 [dependencies]
 libc = "0.2"
-cosmolkit-model = { version = "0.5.0-rc.21", path = "../cosmolkit-model" }
-cosmolkit-ringdecomposer = { version = "0.5.0-rc.21", path = "../cosmolkit-ringdecomposer" }
-cosmolkit-types = { version = "0.5.0-rc.21", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.5.0-rc.22", path = "../cosmolkit-model" }
+cosmolkit-ringdecomposer = { version = "0.5.0-rc.22", path = "../cosmolkit-ringdecomposer" }
+cosmolkit-types = { version = "0.5.0-rc.22", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 
 [dev-dependencies]

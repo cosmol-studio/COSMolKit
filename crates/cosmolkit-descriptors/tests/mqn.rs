@@ -434,6 +434,31 @@ fn mqn_invalid_prepared_shapes_and_topology() {
     for (atoms, bonds, field, actual, expected) in [(1, 1, "atoms", 1, 2), (2, 0, "bonds", 0, 1)] {
         f = valid.clone();
         f.rings = RingInfo::new(RingFindType::OtherOrUnknown, atoms, bonds);
+        // The exact-size detached constructor retains its original rejection.
+        // MQN uses the source RingInfo getters instead: RingInfo.cpp
+        // numAtomRings()/numBondRings() return zero beyond a retained table.
+        // MQN.cpp reads those getters at each atom/bond, including after AddHs.
+        assert_eq!(
+            cosmolkit_search::build_prepared_query_match_context(
+                &f.topology, &f.rings, &f.valence,
+            ).err().expect("exact-size context rejects short ring tables"),
+            QueryMatchContextError::RingMembershipRows { field, actual, expected }
+        );
+        let before = f.clone();
+        // Two C atoms, two heavy atoms, one acyclic single bond, two
+        // degree-one acyclic carbons; all other source MQN bins are zero.
+        let literal = [
+            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        for force in [false, true] {
+            assert_eq!(mqns(&f.input(), force).unwrap(), literal);
+        }
+        assert_eq!(f, before);
+    }
+    for (atoms, bonds, field, actual, expected) in [(3, 1, "atoms", 3, 2), (2, 2, "bonds", 2, 1)] {
+        f = valid.clone();
+        f.rings = RingInfo::new(RingFindType::OtherOrUnknown, atoms, bonds);
         assert_eq!(
             error(&f),
             DescriptorError::Search {

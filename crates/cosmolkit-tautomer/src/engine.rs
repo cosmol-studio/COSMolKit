@@ -310,6 +310,10 @@ pub(crate) fn assign_stereo(candidate: &mut TautomerRecord) -> Result<(), Tautom
         false,
     )?;
     candidate.topology = assignment.topology;
+    for (atom, facts) in assignment.atom_valence_updates {
+        candidate.valence.explicit_valence[atom.index()] = i32::from(facts.explicit_valence);
+        candidate.valence.implicit_hydrogens[atom.index()] = i32::from(facts.implicit_valence);
+    }
     if let Some(rings) = assignment.ring_update {
         candidate.rings = rings;
     }

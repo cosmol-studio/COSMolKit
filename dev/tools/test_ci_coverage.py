@@ -1,6 +1,7 @@
 """Check coverage-stage shell syntax and the shared instrumentation boundary."""
 
 from pathlib import Path
+import json
 import subprocess
 import tomllib
 import unittest
@@ -31,6 +32,15 @@ def shell_steps():
 
 
 class CoverageWorkflowTests(unittest.TestCase):
+    def test_documentation_build_reports_warnings_without_failing_on_them(self):
+        workflow = (ROOT / ".github/workflows/docs-web.yml").read_text()
+        command = next(line for line in workflow.splitlines() if " -m sphinx " in line)
+        self.assertIn("--keep-going -E -b html", command)
+        self.assertNotIn(" -W", command)
+        self.assertNotIn("||", command)
+        fallback = (ROOT / "docs-web/build.rs").read_text()
+        self.assertNotIn('"sphinx", "-W"', fallback)
+
     def test_core_has_no_runtime_features_or_forwarders(self):
         core = tomllib.loads((ROOT / "crates/cosmolkit-core/Cargo.toml").read_text())
         self.assertEqual(core.get("features", {}), {})
@@ -65,6 +75,7 @@ class CoverageWorkflowTests(unittest.TestCase):
                 values[key] = value.strip()
         self.assertEqual(values["CARGO_TARGET_DIR"], values["CARGO_LLVM_COV_TARGET_DIR"])
         self.assertEqual(values["CARGO_TARGET_DIR"], "target/coverage-build")
+        self.assertEqual(values["RUSTFLAGS"], '"-C link-dead-code"')
 
     def test_every_multiline_shell_step_parses(self):
         steps = shell_steps()
@@ -79,8 +90,8 @@ class CoverageWorkflowTests(unittest.TestCase):
         stages = {
             "Build libraries before fetching third-party test sources": "cargo build",
             "Run all default crate regression suites with coverage": "cargo test",
-            "Prepare and validate all reference values": "cargo build",
-            "Run all parity integration targets with coverage": "cargo test",
+            "Prepare and validate small-corpus reference values": "cargo build",
+            "Run small-corpus parity with coverage": "cargo test",
         }
         for name, command in stages.items():
             with self.subTest(step=name):
@@ -94,14 +105,21 @@ class CoverageWorkflowTests(unittest.TestCase):
                 self.assertNotIn("--no-clean", script)
                 self.assertNotIn("--no-report", script)
         self.assertNotIn("--test reference_parity", steps["Run all default crate regression suites with coverage"])
-        parity = steps["Run all parity integration targets with coverage"]
+        parity = steps["Run small-corpus parity with coverage"]
         self.assertIn("cargo test -p cosmolkit-parity-tests-fixed", parity)
         self.assertIn("--test corpus --no-fail-fast", parity)
-        self.assertIn("--test special_regression --no-fail-fast", parity)
-        self.assertIn("for corpus in smiles_5000 bio_small", parity)
-        prepare = steps["Prepare and validate all reference values"]
+        self.assertNotIn("--test special_regression", parity)
+        self.assertIn("PARITY_CORPUS=smiles_small cargo test", parity)
+        prepare = steps["Prepare and validate small-corpus reference values"]
         self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests-fixed', prepare)
-        self.assertIn('"--corpus smiles_5000" "--corpus bio_small" "--special all"', prepare)
+        self.assertIn('--corpus smiles_small --threads "$(nproc)"', prepare)
+        for command in (prepare, parity):
+            self.assertNotIn("smiles_5000", command)
+            self.assertNotIn("bio_small", command)
+            self.assertNotIn("--special", command)
+        corpus = json.loads((ROOT / "parity-tests_fixed/testdata/corpora/smiles_small.json").read_text())
+        self.assertEqual(corpus["format"], "smiles")
+        self.assertEqual(corpus["input"], "smiles_small.smi")
         self.assertNotIn(" preflight ", prepare)
         self.assertNotIn('$CARGO_TARGET_DIR/release/', prepare)
 
@@ -112,16 +130,21 @@ class CoverageWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/coverage.yml").read_text()
         self.assertNotIn("parity-tests/", workflow)
         self.assertNotIn("PARITY_DATA", workflow)
-        self.assertIn("parity-tests_fixed/expected/corpus", workflow)
-        self.assertIn("parity-tests_fixed/expected/special", workflow)
+        self.assertEqual(workflow.count("path: parity-tests_fixed/expected/corpus/smiles_small"), 2)
+        self.assertNotIn("parity-tests_fixed/expected/special", workflow)
         self.assertIn("parity-tests_fixed/reports/**/*.json", workflow)
 
     def test_report_is_separate_and_test_failures_remain_failures(self):
         steps = shell_steps()
+        build = steps["Build libraries before fetching third-party test sources"]
+        self.assertIn("cargo llvm-cov clean --workspace\n", build)
+        self.assertNotIn("--profraw-only", build)
+        self.assertIn('cargo clean "${packages[@]}" --profile dev-test', build)
+        self.assertLess(build.index('export CARGO_TARGET_DIR='), build.index('cargo clean '))
         self.assertIn("cargo llvm-cov report", steps["Generate coverage reports"])
         self.assertIn("--profile dev-test", steps["Generate coverage reports"])
         self.assertIn('exit "$status"', steps["Run all default crate regression suites with coverage"])
-        self.assertIn("set -o pipefail", steps["Run all parity integration targets with coverage"])
+        self.assertIn("set -euo pipefail", steps["Run small-corpus parity with coverage"])
         self.assertIn("run: exit 1", (ROOT / ".github/workflows/coverage.yml").read_text())
 
     def test_development_tests_and_distribution_have_separate_profiles(self):

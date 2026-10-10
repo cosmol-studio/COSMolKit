@@ -64,6 +64,60 @@ pub struct Geometry {
     pub coordinate_rows: Vec<CoordinateRow>,
 }
 
+/// Keep the original SMILES topology when MOL's bond type 8 introduces an Any
+/// query carrier. Coordinates still come from the same quantized common block;
+/// no query predicate is lowered into a concrete molecule.
+pub(crate) fn read_geometry(
+    case: &SmilesCase,
+    geometry: &Geometry,
+    add_hydrogens: bool,
+) -> Result<Molecule, String> {
+    let record = cosmolkit::SdfRecord::from_sdf_with_params(
+        &geometry.molblock,
+        &SdfReadParams {
+            sanitize: true,
+            remove_hs: false,
+            coordinate_mode: SdfCoordinateMode::Require3D,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    if let Ok(mol) = record.molecule() {
+        return Ok(mol.clone());
+    }
+    let query = record.query_graph().map_err(|error| error.to_string())?;
+    let base = Molecule::from_smiles(&case.smiles).map_err(|error| error.to_string())?;
+    let base = if add_hydrogens {
+        base.with_hydrogens().map_err(|error| error.to_string())?
+    } else {
+        base
+    };
+    if base.num_atoms() != query.num_atoms()
+        || base.bonds().len() != query.num_bonds()
+        || base.atoms().iter().zip(query.atoms()).any(|(a, b)| {
+            a.atomic_number() != b.atomic_number() || a.formal_charge() != b.formal_charge()
+        })
+        || base.bonds().iter().zip(query.bonds()).any(|(a, b)| {
+            a.begin() != b.begin() || a.end() != b.end() || a.order() != b.bond().order()
+        })
+    {
+        return Err("common MOL query carrier changed the original SMILES topology".into());
+    }
+    if query.conformers_3d().len() != 1 {
+        return Err("common MOL query carrier has no unique XYZ conformer".into());
+    }
+    Molecule::from_parts(
+        base.topology().clone(),
+        CoordinateBlock {
+            conformers_3d: query.conformers_3d().to_vec(),
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            ..Default::default()
+        },
+        base.properties().clone(),
+    )
+    .map_err(|error| error.to_string())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoordinateRow {
@@ -97,6 +151,59 @@ pub enum GeometryPreparation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PreparationRejection {
+    Parse,
+    MolWriterAtomicNumberNotFound,
+}
+
+pub(crate) fn reproduce_preparation_rejection(
+    case: &SmilesCase,
+    preparation: &GeometryPreparation,
+) -> Result<Option<(PreparationRejection, String)>, String> {
+    let GeometryPreparation::Rejected { stage, detail } = preparation else {
+        return Ok(None);
+    };
+    if *stage == crate::molecular::Stage::Parse {
+        return match Molecule::from_smiles(&case.smiles) {
+            Err(error @ cosmolkit::SmilesError::Construction(_)) => Err(error.to_string()),
+            Err(error) => Ok(Some((PreparationRejection::Parse, error.to_string()))),
+            Ok(_) => Err("CK accepted the common-input parse rejected by RDKit".into()),
+        };
+    }
+    if *stage == crate::molecular::Stage::Preparation && atomic_number_diagnostic(detail) {
+        let mol = Molecule::from_smiles(&case.smiles)
+            .map_err(|error| error.to_string())?
+            .with_hydrogens()
+            .map_err(|error| error.to_string())?;
+        return match mol.to_mol_with_params(&cosmolkit::MolBlockWriteParams {
+            format: cosmolkit::SdfFormat::V3000,
+            ..Default::default()
+        }) {
+            Err(cosmolkit::MolecularIoError::MolWrite(cosmolkit::MolWriteError::Value(
+                message,
+            ))) if message == "Atomic number not found" => Ok(Some((
+                PreparationRejection::MolWriterAtomicNumberNotFound,
+                message,
+            ))),
+            Err(error) => Err(format!("common-input writer rejection differs: {error}")),
+            Ok(_) => Err("CK accepted the common-input writer rejected by RDKit".into()),
+        };
+    }
+    Ok(None)
+}
+
+pub(crate) fn atomic_number_diagnostic(detail: &str) -> bool {
+    detail.lines().map(str::trim).eq([
+        "RuntimeError: Pre-condition Violation",
+        "Atomic number not found",
+        "Violation occurred on line 159 in file Code/GraphMol/PeriodicTable.h",
+        "Failed Expression: atomicNumber < byanum.size()",
+        "RDKIT: 2026.03.6",
+        "BOOST: 1_85",
+    ])
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UffInput {
     pub case: SmilesCase,
@@ -113,6 +220,16 @@ pub enum ExpectedErrorReason {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
     Coverage(bool),
+    SourceTbpCenterParamsMissing {
+        center_atom_index: usize,
+    },
+    PreparationRejected {
+        reason: PreparationRejection,
+        detail: String,
+    },
+    ParseRejected {
+        detail: String,
+    },
     TimedOut(PreparationTimeout),
     Optimized {
         status: i32,
@@ -158,10 +275,39 @@ pub fn validate_reference(
     match (recipe.profile, &prepared.preparation, output) {
         (
             Profile::Optimization { .. } | Profile::ConformerOptimization { .. },
+            Some(GeometryPreparation::Ready(geometry)),
+            Observation::SourceTbpCenterParamsMissing { center_atom_index },
+        ) if *center_atom_index < geometry.atom_count => Ok(()),
+        (
+            _,
+            Some(GeometryPreparation::Rejected {
+                stage,
+                detail: source_detail,
+            }),
+            Observation::PreparationRejected { reason, detail },
+        ) if !detail.is_empty()
+            && detail == source_detail
+            && match reason {
+                PreparationRejection::Parse => *stage == crate::molecular::Stage::Parse,
+                PreparationRejection::MolWriterAtomicNumberNotFound => {
+                    *stage == crate::molecular::Stage::Preparation
+                        && atomic_number_diagnostic(detail)
+                }
+            } =>
+        {
+            Ok(())
+        }
+        (
+            Profile::Optimization { .. } | Profile::ConformerOptimization { .. },
             Some(GeometryPreparation::TimedOut(preparation)),
             Observation::TimedOut(observation),
         ) if preparation.limit_seconds == 60 && preparation == observation => Ok(()),
         (Profile::Coverage { .. }, None, Observation::Coverage(_)) => Ok(()),
+        (Profile::Coverage { .. }, None, Observation::ParseRejected { detail })
+            if !detail.is_empty() =>
+        {
+            Ok(())
+        }
         (Profile::Coverage { .. }, None, Observation::Error { detail, .. })
             if !detail.is_empty() =>
         {
@@ -392,6 +538,11 @@ fn optimization_error_reason(
 pub fn matches(input: &Input, expected: &Observation, actual: &Observation) -> bool {
     match (expected, actual) {
         (
+            Observation::PreparationRejected { reason: a, .. },
+            Observation::PreparationRejected { reason: b, .. },
+        ) => a == b,
+        (Observation::ParseRejected { .. }, Observation::ParseRejected { .. }) => true,
+        (
             Observation::Error { stage, detail, .. },
             Observation::Error {
                 stage: actual_stage,
@@ -430,9 +581,25 @@ pub fn run(input: &Input) -> Result<Record, String> {
     let mut stage = crate::molecular::Stage::Parse;
     let mut reason = None;
     let result = (|| -> Result<Observation, String> {
+        if let Some(preparation) = &row.preparation {
+            if let Some((reason, detail)) = reproduce_preparation_rejection(&row.case, preparation)?
+            {
+                return Ok(Observation::PreparationRejected { reason, detail });
+            }
+        }
         match row.profile {
             Profile::Coverage { add_hydrogens } => {
-                let mol = Molecule::from_smiles(&row.case.smiles).map_err(|e| e.to_string())?;
+                let mol = match Molecule::from_smiles(&row.case.smiles) {
+                    Ok(mol) => mol,
+                    Err(error @ cosmolkit::SmilesError::Construction(_)) => {
+                        return Err(error.to_string());
+                    }
+                    Err(error) => {
+                        return Ok(Observation::ParseRejected {
+                            detail: error.to_string(),
+                        });
+                    }
+                };
                 stage = crate::molecular::Stage::Preparation;
                 let mol = if add_hydrogens {
                     mol.with_hydrogens()
@@ -478,18 +645,9 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     }
                 };
                 stage = crate::molecular::Stage::Preparation;
-                let mol = Molecule::from_sdf_with_params(
-                    &geometry.molblock,
-                    &SdfReadParams {
-                        sanitize: true,
-                        remove_hs: false,
-                        coordinate_mode: SdfCoordinateMode::Require3D,
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| e.to_string())?
-                .with_assigned_valence()
-                .map_err(|e| e.to_string())?;
+                let mol = read_geometry(&row.case, geometry, true)?
+                    .with_assigned_valence()
+                    .map_err(|e| e.to_string())?;
                 if mol.num_atoms() != geometry.atom_count {
                     return Err("common geometry atom count changed".into());
                 }
@@ -553,16 +711,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     return Err("common UFF conformer coordinate rows are invalid".into());
                 }
                 stage = crate::molecular::Stage::Preparation;
-                let base = Molecule::from_sdf_with_params(
-                    &geometry.molblock,
-                    &SdfReadParams {
-                        sanitize: true,
-                        remove_hs: false,
-                        coordinate_mode: SdfCoordinateMode::Require3D,
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| e.to_string())?;
+                let base = read_geometry(&row.case, geometry, true)?;
                 if base.num_atoms() != geometry.atom_count {
                     return Err("common geometry atom count changed".into());
                 }
@@ -636,10 +785,130 @@ pub fn run(input: &Input) -> Result<Record, String> {
     })();
     Ok(Record {
         input: input.clone(),
-        output: Value::Uff(result.unwrap_or_else(|detail| Observation::Error {
-            stage,
-            detail,
-            reason,
+        output: Value::Uff(result.unwrap_or_else(|detail| match reason {
+            Some(ExpectedErrorReason::SourceTbpCenterParamsMissing { center_atom_index }) => {
+                Observation::SourceTbpCenterParamsMissing { center_atom_index }
+            }
+            _ => Observation::Error {
+                stage,
+                detail,
+                reason,
+            },
         })),
     })
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn common_input_rejections_are_reproduced_not_copied() {
+        let case = SmilesCase {
+            id: "invalid".into(),
+            smiles: "C==C".into(),
+        };
+        let preparation = GeometryPreparation::Rejected {
+            stage: crate::molecular::Stage::Parse,
+            detail: "native parse rejected".into(),
+        };
+        assert_eq!(
+            reproduce_preparation_rejection(&case, &preparation)
+                .unwrap()
+                .unwrap()
+                .0,
+            PreparationRejection::Parse
+        );
+        assert!(
+            reproduce_preparation_rejection(
+                &SmilesCase {
+                    smiles: "CCO".into(),
+                    ..case
+                },
+                &preparation
+            )
+            .is_err()
+        );
+        let detail = [
+            "RuntimeError: Pre-condition Violation",
+            "Atomic number not found",
+            "Violation occurred on line 159 in file Code/GraphMol/PeriodicTable.h",
+            "Failed Expression: atomicNumber < byanum.size()",
+            "RDKIT: 2026.03.6",
+            "BOOST: 1_85",
+        ]
+        .join("\n");
+        let preparation = GeometryPreparation::Rejected {
+            stage: crate::molecular::Stage::Preparation,
+            detail,
+        };
+        let case = SmilesCase {
+            id: "writer".into(),
+            smiles: format!("[C+9]{}F", "(F)".repeat(12)),
+        };
+        assert_eq!(
+            reproduce_preparation_rejection(&case, &preparation)
+                .unwrap()
+                .unwrap()
+                .0,
+            PreparationRejection::MolWriterAtomicNumberNotFound
+        );
+    }
+
+    #[test]
+    fn mol_any_bond_transport_preserves_original_topology_and_quantized_xyz() {
+        let case = SmilesCase {
+            id: "any bond".into(),
+            smiles: "C~C".into(),
+        };
+        let base = Molecule::from_smiles(&case.smiles)
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+        let coordinates: Vec<_> = (0..base.num_atoms())
+            .map(|i| [i as f64 * 0.125, 0.25, 0.5])
+            .collect();
+        let mol = Molecule::from_parts(
+            base.topology().clone(),
+            CoordinateBlock {
+                conformers_3d: vec![Conformer3D::new(0, coordinates.clone(), true)],
+                source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                ..Default::default()
+            },
+            base.properties().clone(),
+        )
+        .unwrap();
+        let block = mol
+            .to_mol_with_params(&cosmolkit::MolBlockWriteParams {
+                format: cosmolkit::SdfFormat::V3000,
+                ..Default::default()
+            })
+            .unwrap();
+        let geometry = Geometry {
+            molblock: block,
+            atom_count: mol.num_atoms(),
+            coordinate_rows: vec![],
+        };
+        let read = read_geometry(&case, &geometry, true)
+            .unwrap()
+            .with_assigned_valence()
+            .unwrap();
+        assert_eq!(read.coordinates_3d(0).unwrap(), coordinates);
+        assert_eq!(read.bonds()[0].order(), base.bonds()[0].order());
+        let outcome = run(&Input::Uff(UffInput {
+            case,
+            profile: profiles(Operation::UffOptimization)[0],
+            preparation: Some(GeometryPreparation::Ready(geometry)),
+        }))
+        .unwrap();
+        assert!(
+            matches!(
+                outcome.output,
+                Value::Uff(Observation::SourceTbpCenterParamsMissing {
+                    center_atom_index: 0
+                })
+            ),
+            "{outcome:?}"
+        );
+    }
 }
