@@ -33,6 +33,10 @@ COSMolKit combines a native Rust API with Python interfaces designed for array-o
 
 ## COSMolKit 0.5.0
 
+The current chemistry reference is RDKit **2026.03.6** (Python distribution
+`2026.3.6`). See the [source-upgrade record](dev/source_provenance/rdkit_2026_03_1_to_2026_03_6.md)
+for the exact revision and upstream-diff scope.
+
 - **Modular Rust architecture:** separate crates own model values and domain
   algorithms; `cosmolkit` remains the public entry point and molecule runtime.
 - **Cargo features:** select functionality such as `core`, `bio`,
@@ -71,8 +75,10 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-**0.5.0 validation is pending.** The published ChEMBL 37, 5,000-record and
-152-record results in [`VALIDATION.md`](VALIDATION.md) come from **0.3.0**.
+**No differences have been observed on the known corpus of several hundred
+thousand molecules; million-scale 0.5.0 parity validation is pending.**
+The historical ChEMBL 37, 5,000-record and 152-record results in
+[`VALIDATION.md`](VALIDATION.md) come from **0.3.0**.
 They are retained as historical evidence, not a claim that 0.5.0 has passed
 the same comparisons. Current validation must record the tested implementation,
 reference versions, options, counts and actual outcomes.
@@ -331,13 +337,12 @@ keeps operation contracts and runtime invariants enabled on `cosmolkit`
 through `op-contracts-strict`; optimized release builds for distribution use
 default features unless explicit runtime checks are requested.
 
-## Roadmap
+## Functionality in 0.5.0
 
 Status labels:
 
 - ✅ stable public functionality within its documented supported scope
 - 🧪 public experimental feature; available, but its behavior or API may change
-- 🚧 planned or not yet public
 
 The ✅ status applies to the documented COSMolKit scope. It does not claim that
 every API or input branch from an upstream reference library is implemented;
@@ -361,9 +366,8 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Typed potential-stereo analysis and lazy stereoisomer enumeration through
   the pinned RDKit Python behavior, including arbitrary-width counts, seeded
   random generation, enhanced stereo groups, uniqueness, and optional embedding
-- ✅ Atom chiral-tag assignment from selected 3D conformers, with exact
-  pinned-RDKit `assignChiralTypesFrom3D` parity across 77 fixed full-state
-  oracle records
+- ✅ Atom chiral-tag assignment from selected 3D conformers, with a designated
+  77-case full-state special-regression matrix for `assignChiralTypesFrom3D`
 - ✅ Distance-geometry bounds matrices
 - ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
   supported molecules
@@ -400,7 +404,6 @@ from Python.
 - ✅ SVG drawing
 - ✅ PNG export
 - ✅ RDKit-style visual parity testing for supported depiction output
-- 🚧 Annotation overlays and richer drawing customization
 - ✅ 3D conformer generation and embedding APIs
 
 ### Batch-Native Workflows
@@ -416,7 +419,6 @@ identity.
 - ✅ Per-record errors, valid masks, and error reports
 - ✅ Batch SMILES, image, and SDF export paths
 - ✅ Golden parity tests for parallel batch behavior
-- 🚧 More streaming and chunked dataset workflows
 
 ### Protein and Structural Biology
 
@@ -430,8 +432,7 @@ through low-level structural tables.
 - ✅ Protein-only projection from broader structural data
 - ✅ PDB/mmCIF structural parsing
 - ✅ Gemmi-aligned `BioStructure` mmCIF serialization and file writing
-- 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
-- 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
+- ✅ Structural selection and chain/residue/atom traversal
 
 ### Python API and ML Readiness
 
@@ -442,9 +443,7 @@ Goal: expose verified molecular behavior through a practical Python interface.
 - ✅ Python examples for drawing, SDF-to-SMILES, pickle round-tripping, batch
   processing, and proteins
 - ✅ Type stubs and documentation coverage
-- 🚧 Stable model-ready graph exports
-- 🚧 NumPy / PyTorch oriented adapters
-- 🚧 Molecular tokenization and AI-native geometry helpers
+- ✅ NumPy fingerprint vectors and batch matrices
 
 ### Browser and Deployment
 
@@ -452,8 +451,7 @@ Goal: make validated COSMolKit functionality usable without requiring a local Py
 
 * ✅ [COSMolKit Web Tools](https://tools.cosmol.org/tools) for browser-based molecular workflows
 * ✅ Browser-native deployment of selected COSMolKit functionality through WebAssembly
-* 🚧 Broader JavaScript bindings
-* 🚧 Expansion of browser-native chemistry and structural-biology workflows
+* ✅ Generated JavaScript/TypeScript API with prebuilt feature combinations
 
 ## Acknowledgments
 

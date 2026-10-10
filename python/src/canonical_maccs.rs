@@ -5,7 +5,12 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::error::Error;
-pyo3::create_exception!(cosmolkit, MaccsFingerprintError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    MaccsFingerprintError,
+    PyValueError,
+    "MACCS key generation failed for the supplied molecule."
+);
 pub(crate) fn maccs_pyerr(py: Python<'_>, source: ck::MaccsFingerprintError) -> PyErr {
     use ck::MaccsFingerprintError as E;
     let err = MaccsFingerprintError::new_err(source.to_string());
@@ -49,6 +54,10 @@ pub(crate) fn maccs_pyerr(py: Python<'_>, source: ck::MaccsFingerprintError) -> 
     );
     err
 }
+/// Writable configuration for MACCS key generation.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MaccsFingerprintParams {
@@ -58,6 +67,7 @@ pub(crate) struct MaccsFingerprintParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MaccsFingerprintParams {
+    /// Configure MACCS key generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,n_bits=166))]
     fn new(n_bits: usize) -> Self {
@@ -65,6 +75,7 @@ impl MaccsFingerprintParams {
             inner: ck::MaccsFingerprintParams { n_bits },
         }
     }
+    /// Logical width of the fingerprint in bits.
     #[getter]
     fn n_bits(&self) -> usize {
         self.inner.n_bits

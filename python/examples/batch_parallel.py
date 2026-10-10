@@ -16,7 +16,7 @@ smiles = [
 ]
 
 batch = (
-    ck.MoleculeBatch.from_smiles_list(
+    ck.mols_from_smiles_list(
         smiles,
         errors=ck.BatchErrorMode.KEEP,
     )
@@ -57,7 +57,8 @@ print("svg count:", sum(svg is not None for svg in svgs))
 image_report = prepared.write_images(
     str(output_dir / "images"),
     format="svg",
-    size=(320, 240),
+    width=320,
+    height=240,
     errors=ck.BatchErrorMode.KEEP,
     filenames=["ethanol", "phenol.svg", "chiral", "invalid.svg", "acetate"],
     report_path=str(output_dir / "image_errors.json"),

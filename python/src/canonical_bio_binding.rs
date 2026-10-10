@@ -27,17 +27,72 @@ fn kind_member<'py>(
         .call1((format!("{value:?}"),))
 }
 
-pyo3::create_exception!(cosmolkit, BioReadError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioMoleculeError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioMoleculeConversionError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioPdbReadError, BioReadError);
-pyo3::create_exception!(cosmolkit, BioMmcifReadError, BioReadError);
-pyo3::create_exception!(cosmolkit, ProteinReadError, BioReadError);
-pyo3::create_exception!(cosmolkit, BioOperationError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioMmcifWriteError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioSelectionParseError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioPdbWriteError, PyValueError);
-pyo3::create_exception!(cosmolkit, BioStructureError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    BioReadError,
+    PyValueError,
+    "Biological structure input could not be read or parsed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioMoleculeError,
+    PyValueError,
+    "A biological structure could not be projected into a molecular graph."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioMoleculeConversionError,
+    PyValueError,
+    "Molecule-to-biological-structure conversion failed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioPdbReadError,
+    BioReadError,
+    "PDB biological structure input could not be read or parsed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioMmcifReadError,
+    BioReadError,
+    "mmCIF biological structure input could not be read or parsed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    ProteinReadError,
+    BioReadError,
+    "Protein input could not be read into the structural model."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioOperationError,
+    PyValueError,
+    "A biological structure operation failed without committing partial changes."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioMmcifWriteError,
+    PyValueError,
+    "The biological structure could not be serialized as mmCIF."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioSelectionParseError,
+    PyValueError,
+    "The structural selection expression is invalid."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioPdbWriteError,
+    PyValueError,
+    "The biological structure could not be serialized as PDB."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    BioStructureError,
+    PyValueError,
+    "Biological hierarchy, coordinates or row references are structurally inconsistent."
+);
 
 pub(crate) fn structure_error(py: Python<'_>, source: &ck::BioStructureError) -> PyErr {
     let error = BioStructureError::new_err(source.to_string());
@@ -319,6 +374,10 @@ fn index(index: isize, len: usize, kind: &str) -> PyResult<usize> {
         .ok_or_else(|| PyIndexError::new_err(format!("{kind} index out of range")))
 }
 
+/// Writable configuration for PDB/mmCIF structural text or file reading.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioReadParams {
@@ -329,6 +388,7 @@ pub(crate) struct BioReadParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioReadParams {
+    /// Configure PDB/mmCIF structural text or file reading; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*, format=0, source_name="<string>"))]
     fn new(
@@ -346,17 +406,23 @@ impl BioReadParams {
             },
         })
     }
+    /// Input/output format selector accepted by the corresponding operation.
     #[getter]
     #[gen_stub(override_return_type(type_repr = "BioCoordinateFormat"))]
     fn format<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BioCoordinateFormat", self.inner.format as i64)
     }
+    /// Source name retained as input provenance.
     #[getter]
     fn source_name(&self) -> &str {
         &self.inner.source_name
     }
 }
 
+/// Writable configuration for PDB record handling.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioPdbReadParams {
@@ -367,6 +433,7 @@ pub(crate) struct BioPdbReadParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioPdbReadParams {
+    /// Configure PDB record handling; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*, max_line_length=0, check_non_ascii=false, ignore_ter=false, split_chain_on_ter=false, skip_remarks=false))]
     fn new(
@@ -386,28 +453,34 @@ impl BioPdbReadParams {
             },
         }
     }
+    /// Maximum accepted PDB input line length.
     #[getter]
     fn max_line_length(&self) -> i32 {
         self.inner.max_line_length
     }
+    /// Whether non-ASCII bytes in PDB input are checked.
     #[getter]
     fn check_non_ascii(&self) -> bool {
         self.inner.check_non_ascii
     }
+    /// Whether PDB TER records are ignored.
     #[getter]
     fn ignore_ter(&self) -> bool {
         self.inner.ignore_ter
     }
+    /// Whether a TER record starts a separate chain.
     #[getter]
     fn split_chain_on_ter(&self) -> bool {
         self.inner.split_chain_on_ter
     }
+    /// Whether PDB REMARK records are omitted from retained source metadata.
     #[getter]
     fn skip_remarks(&self) -> bool {
         self.inner.skip_remarks
     }
 }
 
+/// Structural selection expressed using CID syntax; applies to hierarchy rows rather than chemical SMARTS predicates.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioSelection {
@@ -417,6 +490,7 @@ pub(crate) struct BioSelection {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioSelection {
+    /// Parse a structural CID selection expression; invalid syntax raises BioSelectionError.
     #[staticmethod]
     fn from_cid(py: Python<'_>, cid: &str) -> PyResult<Self> {
         ck::BioSelection::from_cid(cid)
@@ -430,11 +504,16 @@ impl BioSelection {
                 )
             })
     }
+    /// Return the canonical CID text for this structural selection.
     fn to_cid(&self) -> String {
         self.inner.to_cid()
     }
 }
 
+/// Writable configuration for mmCIF output category and formatting selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioMmcifWriteParams {
@@ -445,6 +524,7 @@ pub(crate) struct BioMmcifWriteParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioMmcifWriteParams {
+    /// Configure mmCIF output category and formatting selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(all_groups=true, atoms=None, block_name=None, entry=None, database_status=None, author=None, cell=None, symmetry=None, entity=None, entity_poly=None, struct_ref=None, chem_comp=None, exptl=None, diffrn=None, reflns=None, refine=None, title_keywords=None, ncs=None, struct_asym=None, origx=None, struct_conf=None, struct_sheet=None, struct_biol=None, assembly=None, conn=None, cis=None, modres=None, scale=None, atom_type=None, entity_poly_seq=None, tls=None, software=None, group_pdb=None, auth_all=None, prefer_pairs=false, compact=false, misuse_hash=false, align_pairs=0, align_loops=0))]
     #[allow(clippy::too_many_arguments)]
@@ -608,6 +688,7 @@ impl BioMmcifWriteParams {
         self.inner.software = value;
         self.inner.group_pdb = value;
     }
+    /// Whether the atom_site coordinate rows are included in mmCIF output.
     #[getter]
     fn atoms(&self) -> bool {
         self.inner.atoms
@@ -616,6 +697,7 @@ impl BioMmcifWriteParams {
     fn set_atoms(&mut self, value: Option<bool>) {
         self.inner.atoms = value.unwrap_or(true);
     }
+    /// Name used for the mmCIF data block.
     #[getter]
     fn block_name(&self) -> bool {
         self.inner.block_name
@@ -624,6 +706,7 @@ impl BioMmcifWriteParams {
     fn set_block_name(&mut self, value: Option<bool>) {
         self.inner.block_name = value.unwrap_or(true);
     }
+    /// Whether mmCIF entry identification is written.
     #[getter]
     fn entry(&self) -> bool {
         self.inner.entry
@@ -632,6 +715,7 @@ impl BioMmcifWriteParams {
     fn set_entry(&mut self, value: Option<bool>) {
         self.inner.entry = value.unwrap_or(true);
     }
+    /// Whether mmCIF database-status metadata is written.
     #[getter]
     fn database_status(&self) -> bool {
         self.inner.database_status
@@ -640,6 +724,7 @@ impl BioMmcifWriteParams {
     fn set_database_status(&mut self, value: Option<bool>) {
         self.inner.database_status = value.unwrap_or(true);
     }
+    /// Whether mmCIF audit-author metadata is written.
     #[getter]
     fn author(&self) -> bool {
         self.inner.author
@@ -648,6 +733,7 @@ impl BioMmcifWriteParams {
     fn set_author(&mut self, value: Option<bool>) {
         self.inner.author = value.unwrap_or(true);
     }
+    /// Whether the crystallographic cell category is included in mmCIF output.
     #[getter]
     fn cell(&self) -> bool {
         self.inner.cell
@@ -656,6 +742,7 @@ impl BioMmcifWriteParams {
     fn set_cell(&mut self, value: Option<bool>) {
         self.inner.cell = value.unwrap_or(true);
     }
+    /// Whether mmCIF crystallographic symmetry information is written.
     #[getter]
     fn symmetry(&self) -> bool {
         self.inner.symmetry
@@ -664,6 +751,7 @@ impl BioMmcifWriteParams {
     fn set_symmetry(&mut self, value: Option<bool>) {
         self.inner.symmetry = value.unwrap_or(true);
     }
+    /// Whether mmCIF entity definitions are written.
     #[getter]
     fn entity(&self) -> bool {
         self.inner.entity
@@ -672,6 +760,7 @@ impl BioMmcifWriteParams {
     fn set_entity(&mut self, value: Option<bool>) {
         self.inner.entity = value.unwrap_or(true);
     }
+    /// Whether mmCIF polymer entity descriptions are written.
     #[getter]
     fn entity_poly(&self) -> bool {
         self.inner.entity_poly
@@ -680,6 +769,7 @@ impl BioMmcifWriteParams {
     fn set_entity_poly(&mut self, value: Option<bool>) {
         self.inner.entity_poly = value.unwrap_or(true);
     }
+    /// Whether mmCIF external sequence/database references are written.
     #[getter]
     fn struct_ref(&self) -> bool {
         self.inner.struct_ref
@@ -688,6 +778,7 @@ impl BioMmcifWriteParams {
     fn set_struct_ref(&mut self, value: Option<bool>) {
         self.inner.struct_ref = value.unwrap_or(true);
     }
+    /// Whether mmCIF chemical component descriptions are written.
     #[getter]
     fn chem_comp(&self) -> bool {
         self.inner.chem_comp
@@ -696,6 +787,7 @@ impl BioMmcifWriteParams {
     fn set_chem_comp(&mut self, value: Option<bool>) {
         self.inner.chem_comp = value.unwrap_or(true);
     }
+    /// Whether mmCIF experimental-method metadata is written.
     #[getter]
     fn exptl(&self) -> bool {
         self.inner.exptl
@@ -704,6 +796,7 @@ impl BioMmcifWriteParams {
     fn set_exptl(&mut self, value: Option<bool>) {
         self.inner.exptl = value.unwrap_or(true);
     }
+    /// Whether mmCIF diffraction experiment metadata is written.
     #[getter]
     fn diffrn(&self) -> bool {
         self.inner.diffrn
@@ -712,6 +805,7 @@ impl BioMmcifWriteParams {
     fn set_diffrn(&mut self, value: Option<bool>) {
         self.inner.diffrn = value.unwrap_or(true);
     }
+    /// Whether mmCIF reflection statistics are written.
     #[getter]
     fn reflns(&self) -> bool {
         self.inner.reflns
@@ -720,6 +814,7 @@ impl BioMmcifWriteParams {
     fn set_reflns(&mut self, value: Option<bool>) {
         self.inner.reflns = value.unwrap_or(true);
     }
+    /// Whether mmCIF refinement statistics are written.
     #[getter]
     fn refine(&self) -> bool {
         self.inner.refine
@@ -728,6 +823,7 @@ impl BioMmcifWriteParams {
     fn set_refine(&mut self, value: Option<bool>) {
         self.inner.refine = value.unwrap_or(true);
     }
+    /// Whether mmCIF structure title and keywords are written.
     #[getter]
     fn title_keywords(&self) -> bool {
         self.inner.title_keywords
@@ -736,6 +832,7 @@ impl BioMmcifWriteParams {
     fn set_title_keywords(&mut self, value: Option<bool>) {
         self.inner.title_keywords = value.unwrap_or(true);
     }
+    /// Whether mmCIF noncrystallographic symmetry operators are written.
     #[getter]
     fn ncs(&self) -> bool {
         self.inner.ncs
@@ -744,6 +841,7 @@ impl BioMmcifWriteParams {
     fn set_ncs(&mut self, value: Option<bool>) {
         self.inner.ncs = value.unwrap_or(true);
     }
+    /// Whether mmCIF asymmetric-unit chain/entity associations are written.
     #[getter]
     fn struct_asym(&self) -> bool {
         self.inner.struct_asym
@@ -752,6 +850,7 @@ impl BioMmcifWriteParams {
     fn set_struct_asym(&mut self, value: Option<bool>) {
         self.inner.struct_asym = value.unwrap_or(true);
     }
+    /// Whether original-coordinate transformation metadata is written.
     #[getter]
     fn origx(&self) -> bool {
         self.inner.origx
@@ -760,6 +859,7 @@ impl BioMmcifWriteParams {
     fn set_origx(&mut self, value: Option<bool>) {
         self.inner.origx = value.unwrap_or(true);
     }
+    /// Whether mmCIF secondary-structure helix annotations are written.
     #[getter]
     fn struct_conf(&self) -> bool {
         self.inner.struct_conf
@@ -768,6 +868,7 @@ impl BioMmcifWriteParams {
     fn set_struct_conf(&mut self, value: Option<bool>) {
         self.inner.struct_conf = value.unwrap_or(true);
     }
+    /// Whether mmCIF secondary-structure sheet annotations are written.
     #[getter]
     fn struct_sheet(&self) -> bool {
         self.inner.struct_sheet
@@ -776,6 +877,7 @@ impl BioMmcifWriteParams {
     fn set_struct_sheet(&mut self, value: Option<bool>) {
         self.inner.struct_sheet = value.unwrap_or(true);
     }
+    /// Whether mmCIF biological-structure descriptions are written.
     #[getter]
     fn struct_biol(&self) -> bool {
         self.inner.struct_biol
@@ -784,6 +886,7 @@ impl BioMmcifWriteParams {
     fn set_struct_biol(&mut self, value: Option<bool>) {
         self.inner.struct_biol = value.unwrap_or(true);
     }
+    /// Whether mmCIF biological assembly definitions are written.
     #[getter]
     fn assembly(&self) -> bool {
         self.inner.assembly
@@ -792,6 +895,7 @@ impl BioMmcifWriteParams {
     fn set_assembly(&mut self, value: Option<bool>) {
         self.inner.assembly = value.unwrap_or(true);
     }
+    /// Whether mmCIF inter-atom connection annotations are written.
     #[getter]
     fn conn(&self) -> bool {
         self.inner.conn
@@ -800,6 +904,7 @@ impl BioMmcifWriteParams {
     fn set_conn(&mut self, value: Option<bool>) {
         self.inner.conn = value.unwrap_or(true);
     }
+    /// Whether mmCIF cis-peptide annotations are written.
     #[getter]
     fn cis(&self) -> bool {
         self.inner.cis
@@ -808,6 +913,7 @@ impl BioMmcifWriteParams {
     fn set_cis(&mut self, value: Option<bool>) {
         self.inner.cis = value.unwrap_or(true);
     }
+    /// Whether mmCIF modified-residue annotations are written.
     #[getter]
     fn modres(&self) -> bool {
         self.inner.modres
@@ -816,6 +922,7 @@ impl BioMmcifWriteParams {
     fn set_modres(&mut self, value: Option<bool>) {
         self.inner.modres = value.unwrap_or(true);
     }
+    /// Whether mmCIF fractional-coordinate transformations are written.
     #[getter]
     fn scale(&self) -> bool {
         self.inner.scale
@@ -824,6 +931,7 @@ impl BioMmcifWriteParams {
     fn set_scale(&mut self, value: Option<bool>) {
         self.inner.scale = value.unwrap_or(true);
     }
+    /// Whether the atom_type category is included in mmCIF output.
     #[getter]
     fn atom_type(&self) -> bool {
         self.inner.atom_type
@@ -832,6 +940,7 @@ impl BioMmcifWriteParams {
     fn set_atom_type(&mut self, value: Option<bool>) {
         self.inner.atom_type = value.unwrap_or(true);
     }
+    /// Whether mmCIF complete polymer entity sequences are written.
     #[getter]
     fn entity_poly_seq(&self) -> bool {
         self.inner.entity_poly_seq
@@ -840,6 +949,7 @@ impl BioMmcifWriteParams {
     fn set_entity_poly_seq(&mut self, value: Option<bool>) {
         self.inner.entity_poly_seq = value.unwrap_or(true);
     }
+    /// Whether mmCIF translation/libration/screw refinement metadata is written.
     #[getter]
     fn tls(&self) -> bool {
         self.inner.tls
@@ -848,6 +958,7 @@ impl BioMmcifWriteParams {
     fn set_tls(&mut self, value: Option<bool>) {
         self.inner.tls = value.unwrap_or(true);
     }
+    /// Whether structural software metadata is written.
     #[getter]
     fn software(&self) -> bool {
         self.inner.software
@@ -856,6 +967,7 @@ impl BioMmcifWriteParams {
     fn set_software(&mut self, value: Option<bool>) {
         self.inner.software = value.unwrap_or(true);
     }
+    /// Whether atom-site mmCIF output includes the PDB ATOM/HETATM group field.
     #[getter]
     fn group_pdb(&self) -> bool {
         self.inner.group_pdb
@@ -864,6 +976,7 @@ impl BioMmcifWriteParams {
     fn set_group_pdb(&mut self, value: Option<bool>) {
         self.inner.group_pdb = value.unwrap_or(true);
     }
+    /// Whether all author identifiers are included in mmCIF output.
     #[getter]
     fn auth_all(&self) -> bool {
         self.inner.auth_all
@@ -872,6 +985,7 @@ impl BioMmcifWriteParams {
     fn set_auth_all(&mut self, value: Option<bool>) {
         self.inner.auth_all = value.unwrap_or(false);
     }
+    /// Whether single-row mmCIF categories use key/value pairs instead of loops.
     #[getter]
     fn prefer_pairs(&self) -> bool {
         self.inner.prefer_pairs
@@ -880,6 +994,7 @@ impl BioMmcifWriteParams {
     fn set_prefer_pairs(&mut self, value: bool) {
         self.inner.prefer_pairs = value;
     }
+    /// Whether compact mmCIF formatting is enabled.
     #[getter]
     fn compact(&self) -> bool {
         self.inner.compact
@@ -888,6 +1003,7 @@ impl BioMmcifWriteParams {
     fn set_compact(&mut self, value: bool) {
         self.inner.compact = value;
     }
+    /// Whether compact hash-line formatting is used for mmCIF output.
     #[getter]
     fn misuse_hash(&self) -> bool {
         self.inner.misuse_hash
@@ -896,6 +1012,7 @@ impl BioMmcifWriteParams {
     fn set_misuse_hash(&mut self, value: bool) {
         self.inner.misuse_hash = value;
     }
+    /// Whether mmCIF key/value pairs are column-aligned.
     #[getter]
     fn align_pairs(&self) -> u16 {
         self.inner.align_pairs
@@ -904,6 +1021,7 @@ impl BioMmcifWriteParams {
     fn set_align_pairs(&mut self, value: u16) {
         self.inner.align_pairs = value;
     }
+    /// Whether mmCIF loop columns are aligned.
     #[getter]
     fn align_loops(&self) -> u16 {
         self.inner.align_loops
@@ -914,6 +1032,10 @@ impl BioMmcifWriteParams {
     }
 }
 
+/// Writable configuration for PDB text formatting.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioPdbWriteParams {
@@ -924,6 +1046,7 @@ pub(crate) struct BioPdbWriteParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioPdbWriteParams {
+    /// Configure PDB text formatting; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(ter_records=true, numbered_ter=true, ter_ignores_type=false, preserve_serial=false, end_record=true))]
     fn new(
@@ -943,6 +1066,7 @@ impl BioPdbWriteParams {
             },
         }
     }
+    /// Whether PDB output includes TER records.
     #[getter]
     fn ter_records(&self) -> bool {
         self.inner.ter_records
@@ -951,6 +1075,7 @@ impl BioPdbWriteParams {
     fn set_ter_records(&mut self, value: bool) {
         self.inner.ter_records = value;
     }
+    /// Whether generated PDB TER records receive serial numbers.
     #[getter]
     fn numbered_ter(&self) -> bool {
         self.inner.numbered_ter
@@ -959,6 +1084,7 @@ impl BioPdbWriteParams {
     fn set_numbered_ter(&mut self, value: bool) {
         self.inner.numbered_ter = value;
     }
+    /// Whether TER output ignores the polymer/non-polymer residue classification.
     #[getter]
     fn ter_ignores_type(&self) -> bool {
         self.inner.ter_ignores_type
@@ -967,6 +1093,7 @@ impl BioPdbWriteParams {
     fn set_ter_ignores_type(&mut self, value: bool) {
         self.inner.ter_ignores_type = value;
     }
+    /// Whether atom serial numbers from the input are preserved in PDB output.
     #[getter]
     fn preserve_serial(&self) -> bool {
         self.inner.preserve_serial
@@ -975,6 +1102,7 @@ impl BioPdbWriteParams {
     fn set_preserve_serial(&mut self, value: bool) {
         self.inner.preserve_serial = value;
     }
+    /// Whether PDB output includes the final END record.
     #[getter]
     fn end_record(&self) -> bool {
         self.inner.end_record
@@ -985,6 +1113,7 @@ impl BioPdbWriteParams {
     }
 }
 
+/// Fixed-width structural atom name with explicit byte and text access.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct AtomName {
@@ -994,18 +1123,22 @@ pub(crate) struct AtomName {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AtomName {
+    /// Construct an atom name from ASCII bytes; return None for invalid width or non-ASCII input.
     #[staticmethod]
     fn from_ascii(bytes: &Bound<'_, PyBytes>) -> Option<Self> {
         ck::AtomName::from_ascii(bytes.as_bytes()).map(|inner| Self { inner })
     }
+    /// Return the stored source bytes without text normalization.
     fn as_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         PyBytes::new(py, self.inner.as_bytes())
     }
+    /// Return the text representation of the stored name.
     fn as_str(&self) -> &str {
         self.inner.as_str()
     }
 }
 
+/// Stored alternate-location label for a structural atom site.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct AltLocLabel {
@@ -1015,17 +1148,20 @@ pub(crate) struct AltLocLabel {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AltLocLabel {
+    /// Construct a AltLocLabel value from the supplied inputs.
     #[new]
     fn new(value: u8) -> Self {
         Self {
             inner: ck::AltLocLabel::new(value),
         }
     }
+    /// Return the stored alternate-location character code.
     fn value(&self) -> u8 {
         self.inner.value()
     }
 }
 
+/// Alternate-location selection request: any alternate or an exact label.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct AltLocRequest {
@@ -1035,6 +1171,7 @@ pub(crate) struct AltLocRequest {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AltLocRequest {
+    /// AltLocRequest value selecting any.
     #[classattr]
     #[pyo3(name = "Any")]
     fn any() -> AltLocRequest {
@@ -1042,6 +1179,7 @@ impl AltLocRequest {
             inner: ck::AltLocRequest::Any,
         }
     }
+    /// Construct a request for the supplied alternate-location label.
     #[staticmethod]
     #[pyo3(name = "Exact", signature = (altloc))]
     fn exact(altloc: Option<&AltLocLabel>) -> Self {
@@ -1051,12 +1189,14 @@ impl AltLocRequest {
     }
 }
 
+/// Three-dimensional affine transformation used by structural symmetry and assembly metadata.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioTransform {
     pub(crate) inner: ck::BioTransform,
 }
 
+/// Detached atom-ordered Cartesian coordinates for a BIO hierarchy.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioCoordinateBlock {
@@ -1066,6 +1206,7 @@ pub(crate) struct BioCoordinateBlock {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioCoordinateBlock {
+    /// Return Cartesian (x, y, z) positions in structural atom-row order.
     #[getter]
     fn positions(&self) -> Vec<[f64; 3]> {
         self.inner.coordinates().positions().to_vec()
@@ -1078,19 +1219,23 @@ impl BioCoordinateBlock {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioTransform {
+    /// Return the 3 by 3 linear transformation matrix in row order.
     #[getter]
     fn matrix(&self) -> [[f64; 3]; 3] {
         *self.inner.matrix()
     }
+    /// Return the three-component translation vector.
     #[getter]
     fn translation(&self) -> [f64; 3] {
         *self.inner.translation()
     }
+    /// Source affine-transform approximate equality, including its asymmetric NaN treatment.
     fn approx(&self, other: &Self, epsilon: f64) -> bool {
         self.inner.approx(&other.inner, epsilon)
     }
 }
 
+/// Crystallographic unit-cell and space-group information.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioCrystalInfo {
@@ -1101,11 +1246,13 @@ pub(crate) struct BioCrystalInfo {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioCrystalInfo {
+    /// Crystallographic unit-cell dimensions and angles.
     fn cell(&self) -> crate::canonical_bio_values::BioCrystalCell {
         crate::canonical_bio_values::BioCrystalCell {
             inner: self.inner.crystal().expect("existing crystal view").cell(),
         }
     }
+    /// Crystallographic space-group number, when available.
     fn space_group_number(&self) -> Option<i32> {
         self.inner
             .crystal()
@@ -1114,14 +1261,17 @@ impl BioCrystalInfo {
     }
 }
 
+/// Owned PDB/mmCIF structural hierarchy with models, chains, residues, atoms, coordinates and metadata.
+///
+/// from_pdb()/from_mmcif() take text; read() takes a path. Local row IDs are distinct
+/// from retained source serials and author/label sequence identifiers.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct BioStructure {
     inner: Arc<ck::BioStructure>,
 }
 
-/// Complete detached construction payload. This value retains every BIO block;
-/// roundtripping never rebuilds a hierarchy from selected Python fields.
+/// Detached structural hierarchy, coordinates and metadata used for checked BioStructure construction.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioStructureParts {
@@ -1131,6 +1281,7 @@ pub(crate) struct BioStructureParts {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioStructureParts {
+    /// Detected/declared structural input format.
     #[getter]
     fn input_format<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BioCoordinateFormat", self.inner.input_format as i64)
@@ -1144,6 +1295,7 @@ impl BioStructureParts {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioStructure {
+    /// Stored inter-atom connection annotations in source order.
     fn connections(&self) -> Vec<crate::canonical_bio_metadata::BioConnection> {
         self.inner
             .connections()
@@ -1152,6 +1304,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioConnection { inner })
             .collect()
     }
+    /// Stored cis-peptide annotations in source order.
     fn cispeps(&self) -> Vec<crate::canonical_bio_metadata::BioCisPep> {
         self.inner
             .cispeps()
@@ -1160,6 +1313,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioCisPep { inner })
             .collect()
     }
+    /// Modified-residue annotations in source order.
     fn mod_residues(&self) -> Vec<crate::canonical_bio_metadata::BioModRes> {
         self.inner
             .mod_residues()
@@ -1168,6 +1322,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioModRes { inner })
             .collect()
     }
+    /// Secondary-structure helix annotations.
     fn helices(&self) -> Vec<crate::canonical_bio_metadata::BioHelix> {
         self.inner
             .helices()
@@ -1176,6 +1331,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioHelix { inner })
             .collect()
     }
+    /// Secondary-structure sheet annotations.
     fn sheets(&self) -> Vec<crate::canonical_bio_metadata::BioSheet> {
         self.inner
             .sheets()
@@ -1184,6 +1340,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioSheet { inner })
             .collect()
     }
+    /// Noncrystallographic-symmetry transformations.
     fn ncs_operators(&self) -> Vec<crate::canonical_bio_metadata::BioNcsOperator> {
         self.inner
             .ncs_operators()
@@ -1192,6 +1349,7 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioNcsOperator { inner })
             .collect()
     }
+    /// Biological assembly definitions and their generators.
     fn assemblies(&self) -> Vec<crate::canonical_bio_metadata::BioAssembly> {
         self.inner
             .assemblies()
@@ -1200,16 +1358,19 @@ impl BioStructure {
             .map(|inner| crate::canonical_bio_metadata::BioAssembly { inner })
             .collect()
     }
+    /// Experimental, crystallographic and bibliographic metadata.
     fn metadata(&self) -> crate::canonical_bio_metadata::BioMetadata {
         crate::canonical_bio_metadata::BioMetadata {
             inner: self.inner.metadata().clone(),
         }
     }
+    /// Source-format state retained for structural roundtrips.
     fn source_state(&self) -> crate::canonical_bio_metadata::BioStructureSourceState {
         crate::canonical_bio_metadata::BioStructureSourceState {
             inner: self.inner.source_state().clone(),
         }
     }
+    /// Construct a value from explicit detached parts; required structural consistency is checked at the public boundary.
     #[staticmethod]
     fn from_parts(py: Python<'_>, parts: &BioStructureParts) -> PyResult<Self> {
         ck::BioStructure::from_parts(parts.inner.clone())
@@ -1218,10 +1379,12 @@ impl BioStructure {
             })
             .map_err(|error| structure_error(py, &error))
     }
+    /// Validate detached structure parts before constructing a live structure.
     #[staticmethod]
     fn validate_parts(py: Python<'_>, parts: &BioStructureParts) -> PyResult<()> {
         ck::BioStructure::validate_parts(&parts.inner).map_err(|error| structure_error(py, &error))
     }
+    /// Return detached structure parts, including coordinates, hierarchy and metadata.
     fn into_parts(&self) -> BioStructureParts {
         // Rust consumes an owned value; Python retains its receiver and passes
         // a public clone to that same facade method, preserving every block.
@@ -1229,6 +1392,7 @@ impl BioStructure {
             inner: self.inner.as_ref().clone().into_parts(),
         }
     }
+    /// Find an atom by its structural address and alternate-location request.
     #[pyo3(signature = (residue_id, name, request, element))]
     fn find_atom(
         &self,
@@ -1255,6 +1419,7 @@ impl BioStructure {
                 )
             })
     }
+    /// Find a residue atom using its name and alternate-location request.
     #[pyo3(signature = (residue_id, name, altloc))]
     fn atom_by_altloc(
         &self,
@@ -1281,16 +1446,19 @@ impl BioStructure {
             })
             .map_err(|error| structure_error(py, &error))
     }
+    /// Validate the stored structure/template and return its validation result; invalid data is not silently repaired.
     fn validate(&self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .validate()
             .map_err(|error| structure_error(py, &error))
     }
+    /// Return the BIO coordinate block in structural atom-row order.
     fn coordinates(&self) -> BioCoordinateBlock {
         BioCoordinateBlock {
             inner: Arc::clone(&self.inner),
         }
     }
+    /// Convert the selected BIO atoms and positions into a new Molecule using the conversion options. Uses the supplied configuration object.
     fn to_molecule_with_params(
         &self,
         py: Python<'_>,
@@ -1301,6 +1469,7 @@ impl BioStructure {
             .map(crate::drawing_binding::Molecule::from_inner)
             .map_err(|e| molecule_error(py, e))
     }
+    /// Convert the selected BIO atoms and positions into a new Molecule using the conversion options.
     #[pyo3(signature=(*,sanitize=true,remove_hs=true,flavor=0,proximity_bonding=true))]
     fn to_molecule(
         &self,
@@ -1321,12 +1490,14 @@ impl BioStructure {
             .map_err(|e| molecule_error(py, e))
     }
 
+    /// Parse PDB text into a structural object, preserving hierarchy, coordinates and supported source metadata; this argument is text, not a file path.
     #[staticmethod]
     fn from_pdb(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::BioStructure::from_pdb(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| pdb_error(py, e))
     }
+    /// Parse PDB text into a structural object, preserving hierarchy, coordinates and supported source metadata; this argument is text, not a file path. Uses the supplied configuration object.
     #[staticmethod]
     fn from_pdb_with_params(
         py: Python<'_>,
@@ -1337,30 +1508,35 @@ impl BioStructure {
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| pdb_error(py, e))
     }
+    /// Parse mmCIF text into a structural object, preserving hierarchy, coordinates and supported metadata; this argument is text, not a file path.
     #[staticmethod]
     fn from_mmcif(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::BioStructure::from_mmcif(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| mmcif_error(py, e))
     }
+    /// Parse structural text using the requested BioReadParams input format.
     #[staticmethod]
     fn from_text(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::BioStructure::from_text(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| read_error(py, e))
     }
+    /// Parse structural text using the requested BioReadParams input format. Uses the supplied configuration object.
     #[staticmethod]
     fn from_text_with_params(py: Python<'_>, text: &str, params: &BioReadParams) -> PyResult<Self> {
         ck::BioStructure::from_text_with_params(text, &params.inner)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| read_error(py, e))
     }
+    /// Read a PDB/mmCIF file from a filesystem path, selecting its format through the read options.
     #[staticmethod]
     fn read(py: Python<'_>, path: PathBuf) -> PyResult<Self> {
         ck::BioStructure::read(&expand_path(py, path)?)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| read_error(py, e))
     }
+    /// Read a structural file from a filesystem path using an explicit input format.
     #[staticmethod]
     fn read_with_format(
         py: Python<'_>,
@@ -1375,47 +1551,61 @@ impl BioStructure {
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| read_error(py, e))
     }
+    /// Stored name of this value.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// Detected/declared structural input format.
     fn input_format(&self) -> String {
         format!("{:?}", self.inner.input_format())
     }
+    /// Number of structural models.
     fn num_models(&self) -> usize {
         self.inner.num_models()
     }
+    /// Number of chains.
     fn num_chains(&self) -> usize {
         self.inner.num_chains()
     }
+    /// Number of residues.
     fn num_residues(&self) -> usize {
         self.inner.num_residues()
     }
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    /// Number of molecular entities.
     fn num_entities(&self) -> usize {
         self.inner.num_entities()
     }
+    /// Whether the structure contains an original-coordinate transformation.
     fn has_origx(&self) -> bool {
         self.inner.has_origx()
     }
+    /// Original-coordinate transformation stored in the structure.
     fn origx(&self) -> BioTransform {
         BioTransform {
             inner: *self.inner.origx(),
         }
     }
+    /// Identifier of the identity noncrystallographic-symmetry operator, when available.
     fn ncs_oper_identity_id(&self) -> Option<&str> {
         self.inner.ncs_oper_identity_id()
     }
+    /// Experimental resolution in angstroms as recorded in the structure.
     fn resolution(&self) -> f64 {
         self.inner.resolution()
     }
+    /// Source TER-record handling state.
     fn ter_status(&self) -> u8 {
         self.inner.ter_status()
     }
+    /// Return the (x, y, z) position in angstroms for a local atom ID.
     fn atom_position(&self, atom: u32) -> Option<[f64; 3]> {
         self.inner.atom_position(ck::BioAtomId::new(atom))
     }
+    /// Return the atom rows belonging to the specified residue.
     fn residue_atoms(&self, residue: u32) -> Option<Vec<BioAtomRow>> {
         let rows = self.inner.residue_atoms(ck::BioResidueId::new(residue))?;
         let start = self.inner.residues()[residue as usize].atom_span().start() as usize;
@@ -1428,11 +1618,13 @@ impl BioStructure {
                 .collect(),
         )
     }
+    /// Crystallographic unit cell and space-group information.
     fn crystal(&self) -> Option<BioCrystalInfo> {
         self.inner.crystal().map(|_| BioCrystalInfo {
             inner: self.inner.clone(),
         })
     }
+    /// Find the entity with the requested source entity identifier, or None if absent.
     fn find_entity(&self, source_id: &str) -> Option<(usize, BioEntityRow)> {
         self.inner.find_entity(source_id).map(|(id, _)| {
             (
@@ -1444,6 +1636,7 @@ impl BioStructure {
             )
         })
     }
+    /// Find the entity associated with the requested subchain, or None if absent.
     fn find_entity_of_subchain(&self, subchain: &str) -> Option<(usize, BioEntityRow)> {
         self.inner.find_entity_of_subchain(subchain).map(|(id, _)| {
             (
@@ -1455,6 +1648,7 @@ impl BioStructure {
             )
         })
     }
+    /// Return structural model rows in stored order.
     fn models(&self) -> Vec<BioModelRow> {
         (0..self.inner.num_models())
             .map(|index| BioModelRow {
@@ -1463,6 +1657,7 @@ impl BioStructure {
             })
             .collect()
     }
+    /// Return chain rows/references in stored hierarchy order.
     fn chains(&self) -> Vec<BioChainRow> {
         (0..self.inner.num_chains())
             .map(|index| BioChainRow {
@@ -1471,6 +1666,7 @@ impl BioStructure {
             })
             .collect()
     }
+    /// Return residue rows/references in stored hierarchy order.
     fn residues(&self) -> Vec<BioResidueRow> {
         (0..self.inner.num_residues())
             .map(|index| BioResidueRow {
@@ -1479,6 +1675,7 @@ impl BioStructure {
             })
             .collect()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<BioAtomRow> {
         (0..self.inner.num_atoms())
             .map(|index| BioAtomRow {
@@ -1487,6 +1684,7 @@ impl BioStructure {
             })
             .collect()
     }
+    /// Return molecular entity rows in stored order.
     fn entities(&self) -> Vec<BioEntityRow> {
         (0..self.inner.num_entities())
             .map(|index| BioEntityRow {
@@ -1495,6 +1693,7 @@ impl BioStructure {
             })
             .collect()
     }
+    /// Return a Protein view over the structure protein hierarchy.
     fn protein(&self, py: Python<'_>) -> PyResult<Protein> {
         self.inner
             .protein()
@@ -1512,6 +1711,7 @@ impl BioStructure {
                 )
             })
     }
+    /// Return mmCIF text using the selected category/formatting options; does not write a file. Uses the supplied configuration object.
     fn to_mmcif_with_params(
         &self,
         py: Python<'_>,
@@ -1521,6 +1721,7 @@ impl BioStructure {
             .to_mmcif_with_params(&params.inner)
             .map_err(|e| write_error(py, e))
     }
+    /// Write MMCIF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_mmcif_with_params(
         &self,
         py: Python<'_>,
@@ -1531,19 +1732,23 @@ impl BioStructure {
             .write_mmcif_with_params(&expand_path(py, path)?, &params.inner)
             .map_err(|e| write_error(py, e))
     }
+    /// Return PDB text using the selected formatting options; does not write a file.
     fn to_pdb(&self, py: Python<'_>) -> PyResult<String> {
         self.inner.to_pdb().map_err(|e| pdb_write_error(py, e))
     }
+    /// Return PDB text using the selected formatting options; does not write a file. Uses the supplied configuration object.
     fn to_pdb_with_params(&self, py: Python<'_>, params: &BioPdbWriteParams) -> PyResult<String> {
         self.inner
             .to_pdb_with_params(&params.inner)
             .map_err(|e| pdb_write_error(py, e))
     }
+    /// Write PDB output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_pdb(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
         self.inner
             .write_pdb(&expand_path(py, path)?)
             .map_err(|e| pdb_write_error(py, e))
     }
+    /// Write PDB output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_pdb_with_params(
         &self,
         py: Python<'_>,
@@ -1554,36 +1759,43 @@ impl BioStructure {
             .write_pdb_with_params(&expand_path(py, path)?, &params.inner)
             .map_err(|e| pdb_write_error(py, e))
     }
+    /// Return mmCIF text using the selected category/formatting options; does not write a file.
     fn to_mmcif(&self, py: Python<'_>) -> PyResult<String> {
         self.inner.to_mmcif().map_err(|e| write_error(py, e))
     }
+    /// Write MMCIF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_mmcif(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
         self.inner
             .write_mmcif(&expand_path(py, path)?)
             .map_err(|e| write_error(py, e))
     }
+    /// Return a new structure restricted to the selection; leave the source unchanged.
     fn with_selection(&self, py: Python<'_>, selection: &BioSelection) -> PyResult<Self> {
         self.inner
             .with_selection(&selection.inner)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| operation_error(py, e))
     }
+    /// Retain only the selected structure rows in place, updating hierarchy, coordinates and references together.
     fn retain_selection_(&mut self, py: Python<'_>, selection: &BioSelection) -> PyResult<()> {
         Arc::make_mut(&mut self.inner)
             .retain_selection_(&selection.inner)
             .map_err(|e| operation_error(py, e))
     }
+    /// Return a new structure with every atom position translated by the supplied vector; leave source coordinates unchanged.
     fn with_translated_coordinates(&self, py: Python<'_>, offset: [f64; 3]) -> PyResult<Self> {
         self.inner
             .with_translated_coordinates(offset)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| operation_error(py, e))
     }
+    /// Translate all structural atom positions in place by the supplied vector.
     fn translate_(&mut self, py: Python<'_>, offset: [f64; 3]) -> PyResult<()> {
         Arc::make_mut(&mut self.inner)
             .translate_(offset)
             .map_err(|e| operation_error(py, e))
     }
+    /// Return the local atom identifiers matching the selection.
     fn selected_atom_ids(&self, py: Python<'_>, selection: &BioSelection) -> PyResult<Vec<usize>> {
         self.inner
             .selected_atom_ids(&selection.inner)
@@ -1620,6 +1832,7 @@ impl BioStructure {
     }
 }
 
+/// Read-only structural model row with a local model ID, source model number and child chain span.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioModelRow {
@@ -1630,12 +1843,15 @@ pub(crate) struct BioModelRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioModelRow {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Model number recorded in the source structure.
     fn source_model_number(&self) -> Option<i32> {
         self.inner.models()[self.index].source_model_number()
     }
+    /// Return chain rows/references in stored hierarchy order.
     fn chains(&self) -> Vec<BioChainRow> {
         let span = self.inner.models()[self.index].chain_span();
         (span.start() as usize..span.end() as usize)
@@ -1650,6 +1866,7 @@ impl BioModelRow {
     }
 }
 
+/// Read-only chain row with local parent/entity identifiers, source identifiers and residue/atom spans.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioChainRow {
@@ -1665,24 +1882,30 @@ impl BioChainRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioChainRow {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Local identifier of the parent model.
     fn model_id(&self) -> usize {
         self.row().model_id().index()
     }
+    /// Local identifier of the associated molecular entity, when present.
     fn entity_id(&self) -> Option<usize> {
         self.row().entity_id().map(|id| id.index())
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     #[gen_stub(override_return_type(type_repr = "ChainKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "ChainKind", self.row().kind())
     }
+    /// Source-format identifiers retained separately from local row identifiers.
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
             inner: self.row().source().clone(),
         }
     }
+    /// Return residue rows/references in stored hierarchy order.
     fn residues(&self) -> Vec<BioResidueRow> {
         let span = self.row().residue_span();
         (span.start() as usize..span.end() as usize)
@@ -1692,6 +1915,7 @@ impl BioChainRow {
             })
             .collect()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<BioAtomRow> {
         let span = self.row().residue_span();
         self.inner.residues()[span.start() as usize..span.end() as usize]
@@ -1708,6 +1932,7 @@ impl BioChainRow {
     }
 }
 
+/// Read-only residue row with chain ownership, residue classification and retained source sequence identifiers.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioResidueRow {
@@ -1723,33 +1948,41 @@ impl BioResidueRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioResidueRow {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Local identifier of the parent chain.
     fn chain_id(&self) -> usize {
         self.row().chain_id().index()
     }
+    /// Stored name of this value.
     fn name(&self) -> String {
         self.row().name().as_str().to_owned()
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     #[gen_stub(override_return_type(type_repr = "ResidueKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "ResidueKind", self.row().kind())
     }
+    /// Structural entity category of the residue.
     #[gen_stub(override_return_type(type_repr = "EntityKind"))]
     fn entity_kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "EntityKind", self.row().entity_kind())
     }
+    /// SIFTS/UniProt residue mapping metadata, when present.
     fn sifts_unp(&self) -> crate::canonical_bio_values::BioSiftsUnpResidue {
         crate::canonical_bio_values::BioSiftsUnpResidue {
             inner: self.row().sifts_unp(),
         }
     }
+    /// Return the associated residue dictionary information, including its classification and sequence codes.
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: ck::find_residue_info(self.row().name().as_str()),
         }
     }
+    /// Stored residue/atom code; its interpretation is defined by the owning value type.
     #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
     fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(
@@ -1758,11 +1991,13 @@ impl BioResidueRow {
             i64::from(ck::residue_code(self.row().name().as_str()).as_u16()),
         )
     }
+    /// Source-format identifiers retained separately from local row identifiers.
     fn source(&self) -> ResidueSourceIds {
         ResidueSourceIds {
             inner: self.row().source().clone(),
         }
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<BioAtomRow> {
         let span = self.row().atom_span();
         (span.start() as usize..span.end() as usize)
@@ -1777,6 +2012,7 @@ impl BioResidueRow {
     }
 }
 
+/// Read-only structural atom row with residue ownership, chemical identity, Cartesian position, occupancy and displacement factor.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioAtomRow {
@@ -1792,44 +2028,56 @@ impl BioAtomRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioAtomRow {
+    /// Atom-site calculation/refinement flag.
     #[gen_stub(override_return_type(type_repr = "BioCalcFlag"))]
     fn calc_flag<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "BioCalcFlag", self.row().calc_flag())
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Local identifier of the parent residue.
     fn residue_id(&self) -> usize {
         self.row().residue_id().index()
     }
+    /// Stored name of this value.
     fn name(&self) -> String {
         self.row().name().as_str().trim().to_owned()
     }
+    /// Chemical element as an Element value.
     fn element(&self) -> Element {
         Element::from_inner(self.row().element())
     }
+    /// Chemical element symbol, such as "C" or "Cl".
     fn element_symbol(&self) -> &'static str {
         self.row().element().symbol()
     }
+    /// Cartesian position as an (x, y, z) tuple in angstroms.
     fn position(&self) -> Option<(f64, f64, f64)> {
         self.inner
             .atom_position(ck::BioAtomId::new(self.index as u32))
             .map(|[x, y, z]| (x, y, z))
     }
+    /// Alternate-location label, or None when the site is not alternate.
     fn altloc(&self) -> Option<String> {
         self.row()
             .altloc()
             .map(|x| char::from(x.value()).to_string())
     }
+    /// Crystallographic atom-site occupancy.
     fn occupancy(&self) -> f64 {
         self.row().occupancy()
     }
+    /// Isotropic atomic displacement B factor in square angstroms.
     fn b_iso(&self) -> f64 {
         self.row().b_iso()
     }
+    /// Formal charge in units of the elementary charge.
     fn formal_charge(&self) -> i8 {
         self.row().formal_charge()
     }
+    /// Source-format identifiers retained separately from local row identifiers.
     fn source(&self) -> AtomSourceIds {
         AtomSourceIds {
             inner: *self.row().source(),
@@ -1837,6 +2085,7 @@ impl BioAtomRow {
     }
 }
 
+/// Read-only molecular entity metadata, including polymer kind, sequence, subchains and database references.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioEntityRow {
@@ -1852,22 +2101,27 @@ impl BioEntityRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioEntityRow {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Source-format identifiers retained separately from local row identifiers.
     fn source(&self) -> EntitySourceIds {
         EntitySourceIds {
             inner: self.row().source().clone(),
         }
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     #[gen_stub(override_return_type(type_repr = "EntityKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "EntityKind", self.row().kind())
     }
+    /// Polymer category, such as peptide or nucleic acid.
     #[gen_stub(override_return_type(type_repr = "PolymerKind"))]
     fn polymer_kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "PolymerKind", self.row().polymer_kind())
     }
+    /// External database references for the entity in stored order.
     fn dbrefs(&self) -> Vec<crate::canonical_bio_values::BioEntityDbRef> {
         self.row()
             .dbrefs()
@@ -1876,9 +2130,11 @@ impl BioEntityRow {
             .map(|inner| crate::canonical_bio_values::BioEntityDbRef { inner })
             .collect()
     }
+    /// Complete entity sequence, including residues not resolved in coordinates.
     fn full_sequence(&self) -> Vec<String> {
         self.row().full_sequence().to_vec()
     }
+    /// Source subchain identifiers associated with the entity.
     fn subchains(&self) -> Vec<String> {
         self.row().subchains().to_vec()
     }
@@ -1887,6 +2143,7 @@ impl BioEntityRow {
     }
 }
 
+/// Source chain identifiers: author chain name and mmCIF label asymmetric-unit ID.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ChainSourceIds {
@@ -1896,13 +2153,16 @@ pub(crate) struct ChainSourceIds {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ChainSourceIds {
+    /// Author-provided chain identifier from the input structure.
     fn auth_chain_id(&self) -> Option<String> {
         self.inner.auth_chain_id().map(|x| x.as_str().to_owned())
     }
+    /// mmCIF label_asym_id identifying the asymmetric-unit chain.
     fn label_asym_id(&self) -> Option<&str> {
         self.inner.label_asym_id()
     }
 }
+/// Source atom-site identifiers, including the PDB serial number.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct AtomSourceIds {
@@ -1912,10 +2172,12 @@ pub(crate) struct AtomSourceIds {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl AtomSourceIds {
+    /// Atom serial number from the source file.
     fn serial(&self) -> Option<i32> {
         self.inner.serial().map(|x| x.value())
     }
 }
+/// Source entity identifier retained separately from local entity IDs.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct EntitySourceIds {
@@ -1925,10 +2187,12 @@ pub(crate) struct EntitySourceIds {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl EntitySourceIds {
+    /// Entity identifier used in the source structure.
     fn source_entity_id(&self) -> &str {
         self.inner.source_entity_id()
     }
 }
+/// Source residue sequence number plus insertion code; not a local residue row ID.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PdbSeqId {
@@ -1938,6 +2202,7 @@ pub(crate) struct PdbSeqId {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl PdbSeqId {
+    /// Construct a PdbSeqId value from the supplied inputs.
     #[new]
     #[pyo3(signature=(seq_num, ins_code=None))]
     fn new(seq_num: i32, ins_code: Option<u8>) -> Self {
@@ -1945,13 +2210,16 @@ impl PdbSeqId {
             inner: ck::PdbSeqId::new(seq_num, ins_code),
         }
     }
+    /// Residue sequence number, when present.
     fn seq_num(&self) -> i32 {
         self.inner.seq_num()
     }
+    /// Residue insertion code retained with the sequence number.
     fn ins_code(&self) -> Option<String> {
         self.inner.ins_code().map(|x| char::from(x).to_string())
     }
 }
+/// Source residue identifiers: author number/insertion code, label number, subchain and entity.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ResidueSourceIds {
@@ -1961,25 +2229,31 @@ pub(crate) struct ResidueSourceIds {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ResidueSourceIds {
+    /// Author residue sequence identifier, including insertion code.
     fn seq_id(&self) -> Option<PdbSeqId> {
         self.inner.seq_id().map(|inner| PdbSeqId { inner })
     }
+    /// mmCIF label residue sequence number, when present.
     fn label_seq_id(&self) -> Option<i32> {
         self.inner.label_seq_id()
     }
+    /// Source subchain identifier.
     fn subchain_id(&self) -> Option<&str> {
         self.inner.subchain_id()
     }
+    /// mmCIF label entity identifier.
     fn label_entity_id(&self) -> Option<&str> {
         self.inner.label_entity_id()
     }
 }
 
+/// Protein-oriented structural hierarchy with chain, residue and atom references. Parsing accepts text through from_* and files through read(); selection preserves the source unless the method ends in an underscore.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct Protein {
     inner: Arc<ck::Protein>,
 }
+/// Counts of chains, residues and atoms retained by a protein selection.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ProteinSelectionSummary {
@@ -1988,14 +2262,17 @@ pub(crate) struct ProteinSelectionSummary {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ProteinSelectionSummary {
+    /// Return chain rows/references in stored hierarchy order.
     #[getter]
     fn chains(&self) -> usize {
         self.inner.chains
     }
+    /// Return residue rows/references in stored hierarchy order.
     #[getter]
     fn residues(&self) -> usize {
         self.inner.residues
     }
+    /// Return the number of atoms in the structural selection.
     #[getter]
     fn atoms(&self) -> usize {
         self.inner.atoms
@@ -2005,27 +2282,32 @@ impl ProteinSelectionSummary {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Protein {
+    /// Return the underlying structural representation without parsing or generating coordinates.
     fn as_bio_structure(&self) -> BioStructure {
         BioStructure {
             inner: Arc::new(self.inner.as_bio_structure().clone()),
         }
     }
+    /// Return the structural representation as a BioStructure value.
     fn into_bio_structure(&self) -> BioStructure {
         BioStructure {
             inner: Arc::new(self.inner.as_ref().clone().into_bio_structure()),
         }
     }
+    /// Return the numbers of chains, residues and atoms in the protein selection.
     fn selection_summary(&self) -> ProteinSelectionSummary {
         ProteinSelectionSummary {
             inner: self.inner.selection_summary(),
         }
     }
+    /// Return the chain reference for a local chain identifier.
     fn chain(&self, index: usize) -> Option<ProteinChainRef> {
         self.inner.chain(index).map(|row| ProteinChainRef {
             inner: self.inner.clone(),
             index: row.id().index(),
         })
     }
+    /// Convert the selected BIO atoms and positions into a new Molecule using the conversion options. Uses the supplied configuration object.
     fn to_molecule_with_params(
         &self,
         py: Python<'_>,
@@ -2036,6 +2318,7 @@ impl Protein {
             .map(crate::drawing_binding::Molecule::from_inner)
             .map_err(|e| molecule_error(py, e))
     }
+    /// Convert the selected BIO atoms and positions into a new Molecule using the conversion options.
     #[pyo3(signature=(*,sanitize=true,remove_hs=true,flavor=0,proximity_bonding=true))]
     fn to_molecule(
         &self,
@@ -2056,12 +2339,14 @@ impl Protein {
             .map_err(|e| molecule_error(py, e))
     }
 
+    /// Parse PDB text into a structural object, preserving hierarchy, coordinates and supported source metadata; this argument is text, not a file path.
     #[staticmethod]
     fn from_pdb(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Protein::from_pdb(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Parse PDB text into a structural object, preserving hierarchy, coordinates and supported source metadata; this argument is text, not a file path. Uses the supplied configuration object.
     #[staticmethod]
     fn from_pdb_with_params(
         py: Python<'_>,
@@ -2072,30 +2357,35 @@ impl Protein {
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Parse mmCIF text into a structural object, preserving hierarchy, coordinates and supported metadata; this argument is text, not a file path.
     #[staticmethod]
     fn from_mmcif(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Protein::from_mmcif(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Parse structural text using the requested BioReadParams input format.
     #[staticmethod]
     fn from_text(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Protein::from_text(text)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Parse structural text using the requested BioReadParams input format. Uses the supplied configuration object.
     #[staticmethod]
     fn from_text_with_params(py: Python<'_>, text: &str, params: &BioReadParams) -> PyResult<Self> {
         ck::Protein::from_text_with_params(text, &params.inner)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Read a PDB/mmCIF file from a filesystem path, selecting its format through the read options.
     #[staticmethod]
     fn read(py: Python<'_>, path: PathBuf) -> PyResult<Self> {
         ck::Protein::read(&expand_path(py, path)?)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Read a structural file from a filesystem path using an explicit input format.
     #[staticmethod]
     fn read_with_format(
         py: Python<'_>,
@@ -2110,21 +2400,27 @@ impl Protein {
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
     }
+    /// Detected/declared structural input format.
     fn input_format(&self) -> String {
         format!("{:?}", self.inner.input_format())
     }
+    /// Number of structural models.
     fn num_models(&self) -> usize {
         self.inner.num_models()
     }
+    /// Number of chains.
     fn num_chains(&self) -> usize {
         self.inner.num_chains()
     }
+    /// Number of residues.
     fn num_residues(&self) -> usize {
         self.inner.num_residues()
     }
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    /// Return chain rows/references in stored hierarchy order.
     fn chains(&self) -> Vec<ProteinChainRef> {
         self.inner
             .chains()
@@ -2134,6 +2430,7 @@ impl Protein {
             })
             .collect()
     }
+    /// Return residue rows/references in stored hierarchy order.
     fn residues(&self) -> Vec<ProteinResidueRef> {
         self.inner
             .residues()
@@ -2143,6 +2440,7 @@ impl Protein {
             })
             .collect()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.inner
             .atoms()
@@ -2152,28 +2450,33 @@ impl Protein {
             })
             .collect()
     }
+    /// Return a new structure restricted to the selection; leave the source unchanged.
     fn with_selection(&self, py: Python<'_>, selection: &BioSelection) -> PyResult<Self> {
         self.inner
             .with_selection(&selection.inner)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| operation_error(py, e))
     }
+    /// Retain only the selected protein rows in place, updating hierarchy and coordinates together.
     fn retain_selection_(&mut self, py: Python<'_>, selection: &BioSelection) -> PyResult<()> {
         Arc::make_mut(&mut self.inner)
             .retain_selection_(&selection.inner)
             .map_err(|e| operation_error(py, e))
     }
+    /// Return a new protein with translated atom coordinates, preserving hierarchy and metadata.
     fn with_translated_coordinates(&self, py: Python<'_>, offset: [f64; 3]) -> PyResult<Self> {
         self.inner
             .with_translated_coordinates(offset)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| operation_error(py, e))
     }
+    /// Translate protein atom coordinates in place while retaining hierarchy and metadata.
     fn translate_(&mut self, py: Python<'_>, offset: [f64; 3]) -> PyResult<()> {
         Arc::make_mut(&mut self.inner)
             .translate_(offset)
             .map_err(|e| operation_error(py, e))
     }
+    /// Return the local atom identifiers matching the selection.
     fn selected_atom_ids(&self, py: Python<'_>, selection: &BioSelection) -> PyResult<Vec<usize>> {
         self.inner
             .selected_atom_ids(&selection.inner)
@@ -2208,6 +2511,7 @@ impl Protein {
     }
 }
 
+/// Read-only reference to a protein chain and its residue/atom hierarchy.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ProteinChainRef {
@@ -2225,24 +2529,29 @@ impl ProteinChainRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinChainRef {
+    /// Return the detached row represented by this hierarchy reference.
     fn row(&self) -> BioChainRow {
         BioChainRow {
             inner: Arc::new(self.inner.as_bio_structure().clone()),
             index: self.view().id().index(),
         }
     }
+    /// Source-format identifiers retained separately from local row identifiers.
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
             inner: self.view().source().clone(),
         }
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     #[gen_stub(override_return_type(type_repr = "ChainKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "ChainKind", self.view().kind())
     }
+    /// Return residue rows/references in stored hierarchy order.
     fn residues(&self) -> Vec<ProteinResidueRef> {
         self.view()
             .residues()
@@ -2252,6 +2561,7 @@ impl ProteinChainRef {
             })
             .collect()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.view()
             .atoms()
@@ -2266,6 +2576,7 @@ impl ProteinChainRef {
     }
 }
 
+/// Read-only protein residue reference with dictionary classification, sequence codes and atom access.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ProteinResidueRef {
@@ -2284,49 +2595,60 @@ impl ProteinResidueRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinResidueRef {
+    /// Return the detached row represented by this hierarchy reference.
     fn row(&self) -> BioResidueRow {
         BioResidueRow {
             inner: Arc::new(self.inner.as_bio_structure().clone()),
             index: self.view().id().index(),
         }
     }
+    /// Return the chain reference for a local chain identifier.
     fn chain(&self) -> ProteinChainRef {
         ProteinChainRef {
             inner: self.inner.clone(),
             index: self.view().chain().id().index(),
         }
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Stored name of this value.
     fn name(&self) -> String {
         self.view().name().as_str().to_owned()
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     #[gen_stub(override_return_type(type_repr = "ResidueKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         kind_member(py, "ResidueKind", self.view().kind())
     }
+    /// Return the associated residue dictionary information, including its classification and sequence codes.
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: self.view().info(),
         }
     }
+    /// Stored residue/atom code; its interpretation is defined by the owning value type.
     #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
     fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ResidueCode", i64::from(self.view().code().as_u16()))
     }
+    /// One-letter residue code recorded by the residue dictionary.
     fn one_letter_code(&self) -> String {
         self.view().one_letter_code().to_string()
     }
+    /// Residue code suitable for FASTA sequence output.
     fn fasta_code(&self) -> String {
         self.view().fasta_code().to_string()
     }
+    /// One-letter code of the corresponding standard parent residue.
     fn canonical_one_letter_code(&self) -> Option<String> {
         self.view()
             .info()
             .canonical_one_letter_code()
             .map(|x| x.to_string())
     }
+    /// Standard parent residue code for a modified residue, when known.
     #[gen_stub(override_return_type(type_repr = "typing.Optional[ResidueCode]"))]
     fn parent_standard_code<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         self.view()
@@ -2335,12 +2657,15 @@ impl ProteinResidueRef {
             .map(|x| enum_member(py, "ResidueCode", i64::from(x.as_u16())))
             .transpose()
     }
+    /// Whether the residue dictionary identifies a modified amino acid.
     fn is_modified_amino_acid(&self) -> bool {
         self.view().info().is_modified_amino_acid()
     }
+    /// Whether the residue belongs to the standard residue set.
     fn is_standard(&self) -> bool {
         self.view().is_standard()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.view()
             .atoms()
@@ -2355,6 +2680,7 @@ impl ProteinResidueRef {
     }
 }
 
+/// Read-only protein atom reference with parent residue and Cartesian position.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ProteinAtomRef {
@@ -2373,44 +2699,57 @@ impl ProteinAtomRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinAtomRef {
+    /// Return the detached row represented by this hierarchy reference.
     fn row(&self) -> BioAtomRow {
         BioAtomRow {
             inner: Arc::new(self.inner.as_bio_structure().clone()),
             index: self.view().id().index(),
         }
     }
+    /// Alternate-location label, or None when the site is not alternate.
     fn altloc(&self) -> Option<String> {
         self.view()
             .altloc()
             .map(|label| char::from(label.value()).to_string())
     }
+    /// Return the parent residue reference.
     fn residue(&self) -> ProteinResidueRef {
         ProteinResidueRef {
             inner: self.inner.clone(),
             index: self.view().residue().id().index(),
         }
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.index
     }
+    /// Stored name of this value.
     fn name(&self) -> String {
         self.view().name().as_str().trim().to_owned()
     }
+    /// Chemical element as an Element value.
     fn element(&self) -> Element {
         Element::from_inner(self.view().element())
     }
+    /// Chemical element symbol, such as "C" or "Cl".
     fn element_symbol(&self) -> &'static str {
         self.view().element().symbol()
     }
+    /// Atomic number (proton count); zero denotes a dummy atom.
     fn atomic_number(&self) -> u8 {
         self.view().element().atomic_number()
     }
+    /// Cartesian position as an (x, y, z) tuple in angstroms.
     fn position(&self) -> (f64, f64, f64) {
         let [x, y, z] = self.view().position();
         (x, y, z)
     }
 }
 
+/// Writable configuration for structural BIO-to-Molecule conversion.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioMoleculeParams {
@@ -2421,6 +2760,7 @@ pub(crate) struct BioMoleculeParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioMoleculeParams {
+    /// Configure structural BIO-to-Molecule conversion; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,sanitize=true,remove_hs=true,flavor=0,proximity_bonding=true))]
     fn new(sanitize: bool, remove_hs: bool, flavor: u32, proximity_bonding: bool) -> Self {
@@ -2433,18 +2773,22 @@ impl BioMoleculeParams {
             },
         }
     }
+    /// Apply to a new molecule and return the result: perform the selected chemical sanitization stages. The source molecule is unchanged.
     #[getter]
     fn sanitize(&self) -> bool {
         self.inner.sanitize
     }
+    /// Whether removable explicit hydrogens are removed during input conversion.
     #[getter]
     fn remove_hs(&self) -> bool {
         self.inner.remove_hs
     }
+    /// Bit mask controlling BIO-to-molecule conversion behavior.
     #[getter]
     fn flavor(&self) -> u32 {
         self.inner.flavor
     }
+    /// Whether spatially close atoms are considered when building molecular bonds.
     #[getter]
     fn proximity_bonding(&self) -> bool {
         self.inner.proximity_bonding
@@ -2517,6 +2861,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .getattr("IntEnum")?
         .call1(("BioCoordinateFormat", members))?;
     formats.setattr("__module__", "cosmolkit")?;
+    formats.setattr("__doc__", "Biological coordinate input format. Detect selects format recognition; explicit values select PDB, mmCIF, mmJSON or chemical-component input.")?;
     module.add("BioCoordinateFormat", formats)?;
     module.add_class::<BioMoleculeParams>()?;
     module.add("BioMoleculeError", py.get_type::<BioMoleculeError>())?;

@@ -15,7 +15,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 mol = (
-    ck.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]", sanitize=True)
+    ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]", sanitize=True)
     .with_hydrogens()
     .with_2d_coordinates()
 )
@@ -34,5 +34,8 @@ print("file restored smiles:", restored_from_file.to_smiles(canonical=False))
 print("atom count:", len(restored))
 print("bond count:", restored.num_bonds())
 print("has 2d coordinates:", restored.has_2d_coordinates())
-coordinate_delta = cast(float, np.abs(mol.coordinates_2d() - restored.coordinates_2d()).max())
+original_coords = mol.coordinates_2d()
+restored_coords = restored.coordinates_2d()
+assert original_coords is not None and restored_coords is not None
+coordinate_delta = float(np.abs(original_coords - restored_coords).max())
 print("max 2d coordinate delta:", coordinate_delta)

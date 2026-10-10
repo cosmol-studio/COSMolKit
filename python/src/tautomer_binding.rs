@@ -8,8 +8,18 @@ use pyo3::types::PyList;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use std::sync::{Arc, Mutex};
 
-pyo3::create_exception!(cosmolkit, TautomerRunError, PyValueError);
-pyo3::create_exception!(cosmolkit, TautomerCatalogError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    TautomerRunError,
+    PyValueError,
+    "Tautomer enumeration, scoring or canonicalization failed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    TautomerCatalogError,
+    PyValueError,
+    "A tautomer transformation or scoring catalog could not be loaded or interpreted."
+);
 
 pub(crate) fn run_pyerr(py: Python<'_>, source: &ck::TautomerRunError) -> PyErr {
     use ck::TautomerRunError as E;
@@ -74,6 +84,9 @@ fn catalog_pyerr(py: Python<'_>, source: ck::TautomerCatalogError) -> PyErr {
     )
 }
 
+/// Completion state of a tautomer-enumeration run.
+///
+/// Declared values: ``Completed``, ``MaxTautomersReached``, ``MaxTransformsReached``, ``Canceled``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -95,6 +108,7 @@ impl From<ck::TautomerEnumerationStatus> for TautomerEnumerationStatus {
     }
 }
 
+/// Named SMARTS pattern and integer score used by tautomer ranking.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -104,22 +118,27 @@ pub(crate) struct TautomerScoreTerm {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerScoreTerm {
+    /// Construct a TautomerScoreTerm value from the supplied inputs.
     #[new]
     fn py_new(name: String, smarts: String, score: i32) -> Self {
         Self::new(name, smarts, score)
     }
+    /// Construct a TautomerScoreTerm value from the supplied inputs.
     #[staticmethod]
     fn new(name: String, smarts: String, score: i32) -> Self {
         Self {
             inner: ck::TautomerScoreTerm::new(name, smarts, score),
         }
     }
+    /// Stored name of this value.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// SMARTS text defining the query or scoring pattern.
     fn smarts(&self) -> &str {
         self.inner.smarts()
     }
+    /// Integer weight contributed by a matching tautomer scoring term.
     fn score(&self) -> i32 {
         self.inner.score()
     }
@@ -134,6 +153,10 @@ impl TautomerScoreTerm {
         }
     }
 }
+/// Writable configuration for tautomer SMARTS scoring terms.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
@@ -144,6 +167,7 @@ pub(crate) struct TautomerScoreParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerScoreParams {
+    /// Configure tautomer SMARTS scoring terms; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(terms=None))]
     fn new(terms: Option<Vec<PyRef<'_, TautomerScoreTerm>>>) -> Self {
@@ -153,6 +177,7 @@ impl TautomerScoreParams {
             },
         }
     }
+    /// Named SMARTS scoring terms used to rank tautomers.
     #[getter]
     fn terms(&self) -> Option<Vec<TautomerScoreTerm>> {
         self.inner.terms.as_ref().map(|terms| {
@@ -164,6 +189,7 @@ impl TautomerScoreParams {
         })
     }
 }
+/// Tautomer ranking contributions for ring patterns, SMARTS terms and heteroatom hydrogens, plus their total.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct TautomerScore {
@@ -172,20 +198,25 @@ pub(crate) struct TautomerScore {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerScore {
+    /// Ring-pattern contribution to the tautomer score.
     fn ring(&self) -> i32 {
         self.inner.ring()
     }
+    /// SMARTS substructure contribution to the tautomer score.
     fn substructure(&self) -> i32 {
         self.inner.substructure()
     }
+    /// Heteroatom hydrogen contribution to the tautomer score.
     fn hetero_hydrogen(&self) -> i32 {
         self.inner.hetero_hydrogen()
     }
+    /// Total number of processed items.
     fn total(&self) -> i32 {
         self.inner.total()
     }
 }
 
+/// Read-only molecule view valid during a tautomer callback. Use to_owned() for an independent Molecule that outlives the callback.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerMoleculeView {
@@ -194,22 +225,27 @@ pub(crate) struct TautomerMoleculeView {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerMoleculeView {
+    /// Return a detached snapshot of the stored properties.
     fn properties(&self) -> crate::canonical_property_values::MoleculeProperties {
         crate::canonical_property_values::MoleculeProperties {
             inner: self.inner.properties().clone(),
         }
     }
+    /// Return an owned snapshot that remains usable independently of this borrowed callback view.
     fn to_owned(&self) -> Self {
         Self {
             inner: self.inner.to_owned(),
         }
     }
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    /// Number of bonds in the graph.
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
+    /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<crate::canonical_atom_bond::Atom> {
         let metadata = self.inner.atom_metadata();
         self.inner
@@ -229,6 +265,7 @@ impl TautomerMoleculeView {
             })
             .collect()
     }
+    /// Return bond rows in graph order.
     fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
         self.inner
             .bonds()
@@ -237,6 +274,7 @@ impl TautomerMoleculeView {
             .map(|inner| crate::canonical_atom_bond::Bond { inner })
             .collect()
     }
+    /// Return the read-only atom at the zero-based graph index, or None if the index is out of range.
     fn atom(&self, index: usize) -> Option<crate::canonical_atom_bond::Atom> {
         let inner = self.inner.atom(ck::AtomId::new(index))?.clone();
         Some(crate::canonical_atom_bond::Atom {
@@ -245,15 +283,18 @@ impl TautomerMoleculeView {
             metadata: self.inner.atom_metadata().map(|rows| rows[index].clone()),
         })
     }
+    /// Return the read-only bond at the zero-based graph index, or None if the index is out of range.
     fn bond(&self, index: usize) -> Option<crate::canonical_atom_bond::Bond> {
         self.inner
             .bond(ck::BondId::new(index))
             .cloned()
             .map(|inner| crate::canonical_atom_bond::Bond { inner })
     }
+    /// Degree from the validated detached adjacency, independent of valence errors.
     fn atom_degree(&self, index: usize) -> Option<usize> {
         self.inner.atom_degree(ck::AtomId::new(index))
     }
+    /// Canonical metadata query through its unique foundational owner.
     fn atom_metadata(
         &self,
         py: Python<'_>,
@@ -267,12 +308,14 @@ impl TautomerMoleculeView {
             })
             .map_err(|error| crate::canonical_atom_bond::valence_pyerr(py, error))
     }
+    /// Return a SMILES string using the selected writer settings; this does not modify the molecule.
     fn to_smiles(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_smiles()
             .map_err(|error| run_pyerr(py, &error))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return ring, SMARTS-pattern and heteroatom-hydrogen score contributions for this tautomer.
     fn tautomer_score(&mut self, py: Python<'_>) -> PyResult<TautomerScore> {
         self.inner
             .tautomer_score()
@@ -280,6 +323,7 @@ impl TautomerMoleculeView {
             .map_err(|error| run_pyerr(py, &error))
     }
 }
+/// Read-only tautomer callback progress view. Use to_owned() to retain a snapshot after the callback.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerProgress {
@@ -289,6 +333,7 @@ pub(crate) struct TautomerProgress {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerProgress {
+    /// Return an owned snapshot that remains usable independently of this borrowed callback view.
     fn to_owned(&self, py: Python<'_>) -> PyResult<Self> {
         let score_entries = self
             .score_entries
@@ -306,21 +351,26 @@ impl TautomerProgress {
             score_entries,
         })
     }
+    /// Return the number of stored entries.
     fn len(&self) -> usize {
         self.inner.len()
     }
     fn __len__(&self) -> usize {
         self.len()
     }
+    /// Return whether there are no stored entries.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    /// Return the current enumeration termination/progress status.
     fn status(&self) -> TautomerEnumerationStatus {
         self.inner.status().into()
     }
+    /// Number of tautomer transformations attempted so far.
     fn num_transforms(&self) -> u32 {
         self.inner.num_transforms()
     }
+    /// Indices of atoms participating in enumerated tautomer transformations.
     fn modified_atoms(&self) -> Vec<usize> {
         self.inner
             .modified_atoms()
@@ -328,6 +378,7 @@ impl TautomerProgress {
             .map(|id| id.index())
             .collect()
     }
+    /// Indices of bonds participating in enumerated tautomer transformations.
     fn modified_bonds(&self) -> Vec<usize> {
         self.inner
             .modified_bonds()
@@ -335,6 +386,7 @@ impl TautomerProgress {
             .map(|id| id.index())
             .collect()
     }
+    /// Return retained entries in their stored order.
     fn entries(&mut self, py: Python<'_>) -> PyResult<Vec<(String, Py<TautomerMoleculeView>)>> {
         self.score_entries
             .iter()
@@ -493,6 +545,10 @@ impl ck::TautomerScorer for PyScorer {
     }
 }
 
+/// Writable configuration for tautomer enumeration and canonical selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 pub(crate) struct TautomerParams {
@@ -546,6 +602,7 @@ fn callable(py: Python<'_>, value: Option<Py<PyAny>>) -> PyResult<Option<Py<PyAn
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerParams {
+    /// Configure tautomer enumeration and canonical selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,max_tautomers=1000,max_transforms=1000,remove_sp3_stereo=true,remove_bond_stereo=true,remove_isotopic_hydrogens=true,reassign_stereo=true,callback=None,scorer=None,score_params=None))]
     fn new(
@@ -576,12 +633,14 @@ impl TautomerParams {
         }
         Ok(value)
     }
+    /// Return tautomer enumeration parameters using the v1 transform rule set.
     #[staticmethod]
     fn v1(py: Python<'_>) -> PyResult<Self> {
         ck::TautomerParams::v1()
             .map(Self::from_inner)
             .map_err(|e| catalog_pyerr(py, e))
     }
+    /// Construct tautomer enumeration parameters from explicitly supplied transformation rule text.
     #[staticmethod]
     fn from_transform_data(
         py: Python<'_>,
@@ -595,31 +654,38 @@ impl TautomerParams {
             .map(Self::from_inner)
             .map_err(|e| catalog_pyerr(py, e))
     }
+    /// Load tautomer transformation rules from the supplied filesystem path.
     #[staticmethod]
     fn from_transform_file(py: Python<'_>, path: String) -> PyResult<Self> {
         ck::TautomerParams::from_transform_file(path)
             .map(Self::from_inner)
             .map_err(|e| catalog_pyerr(py, e))
     }
+    /// Number of transformation rules loaded in the enumerator.
     fn transform_count(&self) -> usize {
         self.inner.transform_count()
     }
+    /// Optional tautomer progress callback; return False to stop enumeration and retain the corresponding status.
     #[getter]
     fn callback(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.callback.as_ref().map(|x| x.clone_ref(py))
     }
+    /// Replace the tautomer progress callback; callback failures propagate rather than being ignored.
     fn set_callback(&mut self, py: Python<'_>, value: Option<Py<PyAny>>) -> PyResult<()> {
         self.callback = callable(py, value)?;
         Ok(())
     }
+    /// Optional callback computing a tautomer ranking score from a read-only molecule view.
     #[getter]
     fn scorer(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.scorer.as_ref().map(|x| x.clone_ref(py))
     }
+    /// Replace the tautomer ranking callback.
     fn set_scorer(&mut self, py: Python<'_>, value: Option<Py<PyAny>>) -> PyResult<()> {
         self.scorer = callable(py, value)?;
         Ok(())
     }
+    /// SMARTS scoring terms used when no custom scorer is supplied.
     #[getter]
     fn score_params(&self) -> TautomerScoreParams {
         TautomerScoreParams {
@@ -630,73 +696,91 @@ impl TautomerParams {
     fn set_score_params(&mut self, value: Option<&TautomerScoreParams>) {
         self.inner.score_params = value.map(|params| params.inner.clone()).unwrap_or_default()
     }
+    /// Maximum number of distinct tautomers retained during enumeration.
     #[getter]
     fn max_tautomers(&self) -> u32 {
         self.inner.max_tautomers()
     }
+    /// Update this configuration setting. Maximum number of distinct tautomers retained during enumeration.
     fn set_max_tautomers(&mut self, value: u32) {
         self.inner.set_max_tautomers(value)
     }
+    /// Return a new configuration with this setting. Maximum number of distinct tautomers retained during enumeration.
     fn with_max_tautomers(&self, py: Python<'_>, value: u32) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_max_tautomers(value);
         result
     }
+    /// Maximum number of tautomer transformations attempted.
     #[getter]
     fn max_transforms(&self) -> u32 {
         self.inner.max_transforms()
     }
+    /// Update this configuration setting. Maximum number of tautomer transformations attempted.
     fn set_max_transforms(&mut self, value: u32) {
         self.inner.set_max_transforms(value)
     }
+    /// Return a new configuration with this setting. Maximum number of tautomer transformations attempted.
     fn with_max_transforms(&self, py: Python<'_>, value: u32) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_max_transforms(value);
         result
     }
+    /// Whether stereo labels at potentially modified tetrahedral centers are removed.
     #[getter]
     fn remove_sp3_stereo(&self) -> bool {
         self.inner.remove_sp3_stereo()
     }
+    /// Update this configuration setting. Whether stereo labels at potentially modified tetrahedral centers are removed.
     fn set_remove_sp3_stereo(&mut self, value: bool) {
         self.inner.set_remove_sp3_stereo(value)
     }
+    /// Return a new configuration with this setting. Whether stereo labels at potentially modified tetrahedral centers are removed.
     fn with_remove_sp3_stereo(&self, py: Python<'_>, value: bool) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_remove_sp3_stereo(value);
         result
     }
+    /// Whether stereo labels on potentially modified bonds are removed.
     #[getter]
     fn remove_bond_stereo(&self) -> bool {
         self.inner.remove_bond_stereo()
     }
+    /// Update this configuration setting. Whether stereo labels on potentially modified bonds are removed.
     fn set_remove_bond_stereo(&mut self, value: bool) {
         self.inner.set_remove_bond_stereo(value)
     }
+    /// Return a new configuration with this setting. Whether stereo labels on potentially modified bonds are removed.
     fn with_remove_bond_stereo(&self, py: Python<'_>, value: bool) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_remove_bond_stereo(value);
         result
     }
+    /// Whether isotope labels on hydrogens involved in tautomer transforms are removed.
     #[getter]
     fn remove_isotopic_hydrogens(&self) -> bool {
         self.inner.remove_isotopic_hydrogens()
     }
+    /// Update this configuration setting. Whether isotope labels on hydrogens involved in tautomer transforms are removed.
     fn set_remove_isotopic_hydrogens(&mut self, value: bool) {
         self.inner.set_remove_isotopic_hydrogens(value)
     }
+    /// Return a new configuration with this setting. Whether isotope labels on hydrogens involved in tautomer transforms are removed.
     fn with_remove_isotopic_hydrogens(&self, py: Python<'_>, value: bool) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_remove_isotopic_hydrogens(value);
         result
     }
+    /// Whether stereochemistry is reassigned after tautomer transformations.
     #[getter]
     fn reassign_stereo(&self) -> bool {
         self.inner.reassign_stereo()
     }
+    /// Update this configuration setting. Whether stereochemistry is reassigned after tautomer transformations.
     fn set_reassign_stereo(&mut self, value: bool) {
         self.inner.set_reassign_stereo(value)
     }
+    /// Return a new configuration with this setting. Whether stereochemistry is reassigned after tautomer transformations.
     fn with_reassign_stereo(&self, py: Python<'_>, value: bool) -> Self {
         let mut result = self.cloned(py);
         result.inner.set_reassign_stereo(value);
@@ -787,6 +871,7 @@ pub(crate) fn canonical(
     )
     .map(|inner| Molecule { inner })
 }
+/// Ordered tautomer enumeration result with termination status, modified graph indices and canonical selection methods.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct TautomerEnumeration {
@@ -796,18 +881,22 @@ pub(crate) struct TautomerEnumeration {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl TautomerEnumeration {
+    /// Return the number of stored entries.
     fn len(&self) -> usize {
         self.inner.len()
     }
     fn __len__(&self) -> usize {
         self.len()
     }
+    /// Return whether there are no stored entries.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    /// Return why enumeration finished, including completion, limits or callback cancellation.
     fn status(&self) -> TautomerEnumerationStatus {
         self.inner.status().into()
     }
+    /// Indices of atoms participating in enumerated tautomer transformations.
     fn modified_atoms(&self) -> Vec<usize> {
         self.inner
             .modified_atoms()
@@ -815,6 +904,7 @@ impl TautomerEnumeration {
             .map(|id| id.index())
             .collect()
     }
+    /// Indices of bonds participating in enumerated tautomer transformations.
     fn modified_bonds(&self) -> Vec<usize> {
         self.inner
             .modified_bonds()
@@ -822,6 +912,7 @@ impl TautomerEnumeration {
             .map(|id| id.index())
             .collect()
     }
+    /// Canonical SMILES strings for retained tautomers in enumeration order.
     fn canonical_smiles(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         self.inner
             .canonical_smiles()
@@ -829,6 +920,7 @@ impl TautomerEnumeration {
             .map(|text| crate::canonical_sdf::decode_source_text(py, text))
             .collect()
     }
+    /// Return the retained tautomer at the supplied zero-based index.
     fn get(&self, index: usize) -> Option<Molecule> {
         self.inner
             .get(index)
@@ -852,6 +944,7 @@ impl TautomerEnumeration {
         self.get(index as usize)
             .ok_or_else(|| PyIndexError::new_err("index out of bounds"))
     }
+    /// Return retained tautomer molecules in enumeration order.
     fn entries(&self, py: Python<'_>) -> PyResult<Vec<(String, Molecule)>> {
         self.inner
             .entries()
@@ -865,6 +958,7 @@ impl TautomerEnumeration {
             })
             .collect()
     }
+    /// Return an iterator over entries in stored order.
     #[gen_stub(override_return_type(type_repr="typing.Iterator[Molecule]",imports=("typing")))]
     fn iter<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let molecules = self
@@ -879,12 +973,14 @@ impl TautomerEnumeration {
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.iter(py)
     }
+    /// Return the highest-ranked canonical tautomer using the configured scoring rules; leave the source unchanged.
     fn canonical_tautomer(&self, py: Python<'_>) -> PyResult<Molecule> {
         self.inner
             .canonical_tautomer()
             .map(|inner| Molecule { inner })
             .map_err(|error| crate::drawing_binding::operation_pyerr(py, error))
     }
+    /// Return the highest-ranked canonical tautomer using the configured scoring rules; leave the source unchanged. Uses the supplied configuration object.
     fn canonical_tautomer_with_params(
         &self,
         py: Python<'_>,
@@ -899,6 +995,7 @@ impl TautomerEnumeration {
         .map(|inner| Molecule { inner })
     }
 }
+/// Return the built-in named SMARTS tautomer scoring terms.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn default_tautomer_score_terms() -> Vec<TautomerScoreTerm> {
@@ -908,6 +1005,7 @@ fn default_tautomer_score_terms() -> Vec<TautomerScoreTerm> {
         .map(|inner| TautomerScoreTerm { inner })
         .collect()
 }
+/// Choose the canonical tautomer from the supplied molecules using the configured score terms.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -918,6 +1016,7 @@ fn canonical_tautomer_from_molecules(
 ) -> PyResult<Molecule> {
     canonical_tautomer_from_iterable(py, molecules, None)
 }
+/// Choose the canonical tautomer from the supplied molecules using the configured score terms. Uses the supplied configuration object.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]

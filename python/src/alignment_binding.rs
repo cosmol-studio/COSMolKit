@@ -73,6 +73,7 @@ fn projected_atom_map(map: &Option<Vec<PyAlignmentAtomMap>>) -> Option<Vec<ck::A
         .map(|values| values.iter().map(Into::into).collect())
 }
 
+/// Explicit atom correspondences used for alignment, as (probe index, reference index) pairs.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -82,9 +83,10 @@ fn projected_atom_map(map: &Option<Vec<PyAlignmentAtomMap>>) -> Option<Vec<ck::A
     from_py_object
 )]
 #[derive(Clone)]
-#[doc = "A probe-to-reference atom pair used by molecular alignment."]
 pub(crate) struct PyAlignmentAtomMap {
+    /// Zero-based atom index in the probe molecule.
     probe_atom: usize,
+    /// Zero-based atom index in the reference molecule.
     reference_atom: usize,
 }
 
@@ -110,10 +112,12 @@ impl From<&PyAlignmentAtomMap> for ck::AlignmentAtomMap {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyAlignmentAtomMap {
+    /// Construct a AlignmentAtomMap value from the supplied inputs.
     #[new]
     fn py_new(probe_atom: usize, reference_atom: usize) -> Self {
         Self::new(probe_atom, reference_atom)
     }
+    /// Construct a AlignmentAtomMap value from the supplied inputs.
     #[staticmethod]
     fn new(probe_atom: usize, reference_atom: usize) -> Self {
         Self {
@@ -130,6 +134,10 @@ impl PyAlignmentAtomMap {
     }
 }
 
+/// Writable configuration for molecular alignment with explicit atom mapping.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -141,13 +149,18 @@ impl PyAlignmentAtomMap {
     weakref
 )]
 #[derive(Clone)]
-#[doc = "Parameters for an explicit or first-match molecular alignment."]
 pub(crate) struct PyAlignmentParameters {
+    /// Stored conformer ID on the probe molecule.
     probe_conformer_id: i32,
+    /// Stored conformer ID on the reference molecule.
     reference_conformer_id: i32,
+    /// Explicit probe-to-reference AlignmentAtomMap pairs, or None to determine a map by substructure matching.
     atom_map: Option<Vec<PyAlignmentAtomMap>>,
+    /// Optional per-correspondence weights for alignment/RMSD calculation.
     weights: Option<Vec<f64>>,
+    /// Whether the alignment fit may use a spatial reflection.
     reflect: bool,
+    /// Maximum iterations allowed by the optimizer or embedding algorithm.
     max_iterations: u32,
 }
 
@@ -235,6 +248,7 @@ impl PyAlignmentParameters {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyAlignmentParameters {
+    /// Configure molecular alignment with explicit atom mapping; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_map=None, weights=None, reflect=false, max_iterations=50))]
     fn py_new(
@@ -254,6 +268,7 @@ impl PyAlignmentParameters {
             max_iterations,
         )
     }
+    /// Configure molecular alignment with explicit atom mapping; omitted fields use the defaults shown in the signature.
     #[staticmethod]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_map=None, weights=None, reflect=false, max_iterations=50))]
     fn new(
@@ -275,6 +290,10 @@ impl PyAlignmentParameters {
     }
 }
 
+/// Writable configuration for symmetry-aware molecular alignment.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -285,17 +304,26 @@ impl PyAlignmentParameters {
     weakref
 )]
 #[derive(Clone)]
-#[doc = "Parameters for source-compatible best molecular alignment and RMSD."]
 pub(crate) struct PyBestAlignmentParameters {
+    /// Stored conformer ID on the probe molecule.
     probe_conformer_id: i32,
+    /// Stored conformer ID on the reference molecule.
     reference_conformer_id: i32,
+    /// Candidate probe-to-reference atom mappings considered during alignment/RMSD search.
     atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    /// Optional per-correspondence weights for alignment/RMSD calculation.
     weights: Option<Vec<f64>>,
+    /// Whether the alignment fit may use a spatial reflection.
     reflect: bool,
+    /// Maximum iterations allowed by the optimizer or embedding algorithm.
     max_iterations: u32,
+    /// Maximum number of substructure matches to return.
     max_matches: i32,
+    /// Whether conjugated terminal groups are treated as equivalent during alignment mapping.
     symmetrize_conjugated_terminal_groups: bool,
+    /// Whether hydrogen atoms are excluded when finding alignment atom correspondences.
     ignore_hydrogens: bool,
+    /// Requested worker count; interpretation of zero follows the corresponding operation.
     num_threads: i32,
 }
 
@@ -357,6 +385,7 @@ impl PyBestAlignmentParameters {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyBestAlignmentParameters {
+    /// Configure symmetry-aware molecular alignment; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, reflect=false, max_iterations=50, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     #[allow(clippy::too_many_arguments)]
@@ -385,6 +414,7 @@ impl PyBestAlignmentParameters {
             num_threads,
         )
     }
+    /// Configure symmetry-aware molecular alignment; omitted fields use the defaults shown in the signature.
     #[staticmethod]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, reflect=false, max_iterations=50, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     #[allow(clippy::too_many_arguments)]
@@ -415,6 +445,10 @@ impl PyBestAlignmentParameters {
     }
 }
 
+/// Writable configuration for pairwise best RMSD between stored conformers.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -425,13 +459,18 @@ impl PyBestAlignmentParameters {
     weakref
 )]
 #[derive(Clone)]
-#[doc = "Parameters accepted by source-compatible all-conformer best RMSD."]
 pub(crate) struct PyAllConformerRmsdParameters {
+    /// Candidate probe-to-reference atom mappings considered during alignment/RMSD search.
     atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    /// Optional per-correspondence weights for alignment/RMSD calculation.
     weights: Option<Vec<f64>>,
+    /// Maximum number of substructure matches to return.
     max_matches: i32,
+    /// Whether conjugated terminal groups are treated as equivalent during alignment mapping.
     symmetrize_conjugated_terminal_groups: bool,
+    /// Whether hydrogen atoms are excluded when finding alignment atom correspondences.
     ignore_hydrogens: bool,
+    /// Requested worker count; interpretation of zero follows the corresponding operation.
     num_threads: i32,
 }
 
@@ -489,6 +528,7 @@ impl PyAllConformerRmsdParameters {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyAllConformerRmsdParameters {
+    /// Configure pairwise best RMSD between stored conformers; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     fn py_new(
@@ -508,6 +548,7 @@ impl PyAllConformerRmsdParameters {
             num_threads,
         )
     }
+    /// Configure pairwise best RMSD between stored conformers; omitted fields use the defaults shown in the signature.
     #[staticmethod]
     #[pyo3(signature = (atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     fn new(
@@ -529,6 +570,10 @@ impl PyAllConformerRmsdParameters {
     }
 }
 
+/// Writable configuration for coordinate RMSD evaluation without fitting.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -539,13 +584,18 @@ impl PyAllConformerRmsdParameters {
     weakref
 )]
 #[derive(Clone)]
-#[doc = "Parameters for RMSD measurement in the existing coordinate frame."]
 pub(crate) struct PyCoordinateRmsdParameters {
+    /// Stored conformer ID on the probe molecule.
     probe_conformer_id: i32,
+    /// Stored conformer ID on the reference molecule.
     reference_conformer_id: i32,
+    /// Candidate probe-to-reference atom mappings considered during alignment/RMSD search.
     atom_maps: Vec<Vec<PyAlignmentAtomMap>>,
+    /// Optional per-correspondence weights for alignment/RMSD calculation.
     weights: Option<Vec<f64>>,
+    /// Maximum number of substructure matches to return.
     max_matches: i32,
+    /// Whether conjugated terminal groups are treated as equivalent during alignment mapping.
     symmetrize_conjugated_terminal_groups: bool,
 }
 
@@ -571,6 +621,7 @@ impl PyCoordinateRmsdParameters {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyCoordinateRmsdParameters {
+    /// Configure coordinate RMSD evaluation without fitting; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true))]
     fn py_new(
@@ -590,6 +641,7 @@ impl PyCoordinateRmsdParameters {
             symmetrize_conjugated_terminal_groups,
         )
     }
+    /// Configure coordinate RMSD evaluation without fitting; omitted fields use the defaults shown in the signature.
     #[staticmethod]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true))]
     fn new(
@@ -611,6 +663,10 @@ impl PyCoordinateRmsdParameters {
     }
 }
 
+/// Writable configuration for alignment of stored conformers within one molecule.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -622,12 +678,16 @@ impl PyCoordinateRmsdParameters {
     weakref
 )]
 #[derive(Clone)]
-#[doc = "Parameters for aligning selected or all conformers of one molecule."]
 pub(crate) struct PyConformerAlignmentParameters {
+    /// Optional atom indices restricting the conformer alignment calculation.
     atom_indices: Option<Vec<usize>>,
+    /// Identifiers of the selected/generated 3D conformers.
     conformer_ids: Option<Vec<usize>>,
+    /// Optional per-correspondence weights for alignment/RMSD calculation.
     weights: Option<Vec<f64>>,
+    /// Whether the alignment fit may use a spatial reflection.
     reflect: bool,
+    /// Maximum iterations allowed by the optimizer or embedding algorithm.
     max_iterations: u32,
 }
 
@@ -648,6 +708,7 @@ impl PyConformerAlignmentParameters {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyConformerAlignmentParameters {
+    /// Configure alignment of stored conformers within one molecule; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (atom_indices=None, conformer_ids=None, weights=None, reflect=false, max_iterations=50))]
     fn py_new(
@@ -665,6 +726,7 @@ impl PyConformerAlignmentParameters {
             max_iterations,
         )
     }
+    /// Configure alignment of stored conformers within one molecule; omitted fields use the defaults shown in the signature.
     #[staticmethod]
     #[pyo3(signature = (atom_indices=None, conformer_ids=None, weights=None, reflect=false, max_iterations=50))]
     fn new(
@@ -684,6 +746,7 @@ impl PyConformerAlignmentParameters {
     }
 }
 
+/// Rigid 3D alignment transform; read the matrix rather than assuming coordinates were changed.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", name = "AlignmentTransform", skip_from_py_object)]
 #[derive(Clone)]
@@ -703,7 +766,7 @@ impl From<ck::AlignmentTransform> for PyAlignmentTransform {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyAlignmentTransform {
-    #[doc = "Return the source-oriented 4x4 homogeneous transform matrix."]
+    /// Return the alignment homogeneous transformation matrix in row order.
     fn matrix(&self) -> Vec<Vec<f64>> {
         self.matrix.iter().map(|row| row.to_vec()).collect()
     }
@@ -713,6 +776,7 @@ impl PyAlignmentTransform {
     }
 }
 
+/// Best alignment RMSD in angstroms together with the corresponding spatial transform.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", name = "AlignmentResult", skip_from_py_object)]
 #[derive(Clone)]
@@ -730,17 +794,17 @@ impl From<ck::AlignmentResult> for PyAlignmentResult {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyAlignmentResult {
-    #[doc = "Return the aligned root-mean-square deviation."]
+    /// Root-mean-square coordinate deviation in angstroms.
     fn rmsd(&self) -> f64 {
         self.inner.rmsd
     }
 
-    #[doc = "Return the transform mapping probe coordinates onto the reference."]
+    /// Stored spatial transformation associated with this result or structural operator.
     fn transform(&self) -> PyAlignmentTransform {
         self.inner.transform.into()
     }
 
-    #[doc = "Return the selected probe-to-reference atom map."]
+    /// Return the selected probe-to-reference atom correspondence as AlignmentAtomMap pairs.
     fn atom_map(&self) -> Vec<PyAlignmentAtomMap> {
         self.inner
             .atom_map
@@ -759,6 +823,7 @@ impl PyAlignmentResult {
     }
 }
 
+/// RMSD in angstroms for one probe/reference conformer-ID pair.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", name = "ConformerRmsd", skip_from_py_object)]
 #[derive(Clone)]
@@ -776,14 +841,17 @@ impl From<ck::ConformerRmsd> for PyConformerRmsd {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyConformerRmsd {
+    /// Stored conformer ID on the probe molecule.
     fn probe_conformer_id(&self) -> usize {
         self.inner.probe_conformer_id
     }
 
+    /// Stored conformer ID on the reference molecule.
     fn reference_conformer_id(&self) -> usize {
         self.inner.reference_conformer_id
     }
 
+    /// Root-mean-square coordinate deviation in angstroms.
     fn rmsd(&self) -> f64 {
         self.inner.rmsd
     }
@@ -796,6 +864,7 @@ impl PyConformerRmsd {
     }
 }
 
+/// Molecule/conformer alignment report with ordered RMSD values.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(
     module = "cosmolkit",
@@ -817,7 +886,7 @@ impl From<ck::ConformerAlignmentReport> for PyConformerAlignmentReport {
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyConformerAlignmentReport {
-    #[doc = "Return RMS values in the source conformer-selection order."]
+    /// Per-conformer RMSD values in the reported conformer order.
     fn rmsds(&self) -> Vec<f64> {
         self.rmsds.clone()
     }
@@ -842,7 +911,12 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-pyo3::create_exception!(cosmolkit, AlignmentError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    AlignmentError,
+    PyValueError,
+    "Molecular alignment or RMSD evaluation failed for the coordinates, mapping or parameters."
+);
 pub(crate) fn alignment_pyerr(py: Python<'_>, source: ck::AlignmentError) -> PyErr {
     use ck::AlignmentError as E;
     let kind = match &source {

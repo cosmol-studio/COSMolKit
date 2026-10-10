@@ -24,8 +24,28 @@ component = "JavaScript"
 path = "/javascript"
 binding = "javascript"
 topic = "landing"
-status = "placeholder"
-indexable = false
+status = "ready"
+indexable = true
+docname = "javascript"
+source = "sphinx"
+title = "JavaScript / TypeScript | COSMolKit"
+label = "Getting started"
+order = 0
+summary = "Initialize the WebAssembly bindings and start using COSMolKit."
+
+[[pages]]
+component = "JavaScriptApi"
+path = "/javascript/api"
+binding = "javascript"
+topic = "api"
+status = "ready"
+indexable = true
+docname = "javascript-api"
+source = "sphinx"
+title = "JavaScript / TypeScript API | COSMolKit"
+label = "API Reference"
+order = 1
+summary = "Browse signatures extracted from the generated TypeScript declarations."
 
 [[pages]]
 component = "Benchmarks"
@@ -44,21 +64,6 @@ status = "ready"
 indexable = true
 
 [[pages]]
-component = "Installation"
-path = "/python/installation"
-binding = "python"
-topic = "installation"
-status = "ready"
-indexable = true
-docname = "installation"
-source = "sphinx"
-title = "Installation | COSMolKit"
-legacy_paths = ["/installation"]
-label = "Installation"
-order = 0
-summary = "Install COSMolKit and verify the Python package."
-
-[[pages]]
 component = "Quickstart"
 path = "/python/quickstart"
 binding = "python"
@@ -68,10 +73,10 @@ indexable = true
 docname = "quickstart"
 source = "sphinx"
 title = "Quick Start | COSMolKit"
-legacy_paths = ["/quickstart"]
+legacy_paths = ["/quickstart", "/installation", "/python/installation"]
 label = "Quick Start"
-order = 1
-summary = "Build molecules and run the first core workflows."
+order = 0
+summary = "Install COSMolKit, build molecules, and run the first core workflows."
 
 [[pages]]
 component = "Confseq"
@@ -84,9 +89,9 @@ docname = "confseq"
 source = "sphinx"
 title = "ConfSeq | COSMolKit"
 legacy_paths = ["/confseq"]
-label = "ConfSeq"
-order = 2
-summary = "Generate and inspect reproducible conformers."
+label = "ConfSeq (Coming soon)"
+order = 15
+summary = "Coming soon."
 
 [[pages]]
 component = "Molecule"
@@ -100,7 +105,7 @@ source = "sphinx"
 title = "Molecule Values | COSMolKit"
 legacy_paths = ["/molecule"]
 label = "Molecule Values"
-order = 3
+order = 2
 summary = "Work with molecular graphs, stereochemistry, and coordinates."
 
 [[pages]]
@@ -159,7 +164,7 @@ docname = "forcefields"
 source = "sphinx"
 title = "Force Fields | COSMolKit"
 label = "Force Fields"
-order = 13
+order = 9
 summary = "Evaluate and optimize molecules with MMFF and UFF force fields."
 
 [[pages]]
@@ -174,7 +179,7 @@ source = "sphinx"
 title = "Protein Structures | COSMolKit"
 legacy_paths = ["/protein"]
 label = "Protein Structures"
-order = 7
+order = 10
 summary = "Read and inspect structural-biology values."
 
 [[pages]]
@@ -188,7 +193,7 @@ docname = "mcs"
 source = "sphinx"
 title = "Maximum Common Substructure | COSMolKit"
 label = "Maximum Common Substructure"
-order = 14
+order = 7
 summary = "Find common molecular substructures."
 
 [[pages]]
@@ -202,7 +207,7 @@ docname = "reaction"
 source = "sphinx"
 title = "Reactions | COSMolKit"
 label = "Reactions"
-order = 15
+order = 8
 summary = "Parse reaction templates and generate products."
 
 [[pages]]
@@ -217,7 +222,7 @@ source = "sphinx"
 title = "File IO and Arrays | COSMolKit"
 legacy_paths = ["/io"]
 label = "File IO and Arrays"
-order = 8
+order = 3
 summary = "Use molecular file readers, writers, and NumPy arrays."
 
 [[pages]]
@@ -232,7 +237,7 @@ source = "sphinx"
 title = "API Reference | COSMolKit"
 legacy_paths = ["/api"]
 label = "API Reference"
-order = 9
+order = 11
 summary = "Browse the complete generated Python API reference."
 
 [[pages]]
@@ -248,7 +253,7 @@ source = "sphinx"
 title = "Search | COSMolKit"
 legacy_paths = ["/search"]
 label = "Search"
-order = 10
+order = 12
 
 [[pages]]
 component = "Genindex"
@@ -262,18 +267,4 @@ source = "sphinx"
 title = "General Index | COSMolKit"
 legacy_paths = ["/genindex"]
 label = "General Index"
-order = 11
-
-[[pages]]
-component = "PyModindex"
-path = "/python/py-modindex"
-binding = "python"
-topic = "py-modindex"
-status = "ready"
-indexable = false
-docname = "py-modindex"
-source = "sphinx"
-title = "Python Module Index | COSMolKit"
-legacy_paths = ["/py-modindex"]
-label = "Python Module Index"
-order = 12
+order = 13

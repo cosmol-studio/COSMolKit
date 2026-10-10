@@ -3,26 +3,29 @@
 import cosmolkit as ck
 
 
-molecule = ck.Molecule.from_smiles("CC(O)c1ccncc1C(=O)NCCCl")
+molecule = ck.mol_from_smiles("CC(O)c1ccncc1C(=O)NCCCl")
 
 connectivity = {
-    "chi_0": ck.calc_chi_0(molecule),
-    "chi_3v": ck.calc_chi_3v(molecule),
-    "kappa_2": ck.calc_kappa_2(molecule),
-    "phi": ck.calc_phi(molecule),
+    "chi_0": molecule.chi_0(),
+    "chi_3v": molecule.chi_3_v(),
+    "kappa_2": molecule.kappa_2(),
+    "phi": molecule.phi(),
 }
 
 counts = {
-    "heteroatoms": ck.calc_num_heteroatoms(molecule),
-    "rings": ck.calc_num_rings(molecule),
-    "heterocycles": ck.calc_num_heterocycles(molecule),
-    "stereocenters": ck.calc_num_atom_stereo_centers(molecule),
+    "heteroatoms": molecule.num_heteroatoms(),
+    "rings": molecule.num_rings(),
+    "heterocycles": molecule.num_heterocycles(),
+    "stereocenters": molecule.num_atom_stereo_centers(),
 }
 
-mqns = ck.calc_mqns(molecule)
-asa, atom_asa, hydrogen_asa = ck.calc_labute_asa_contributions(molecule)
-slogp_vsa = ck.calc_slogp_vsa(molecule)
-smr_vsa = ck.calc_smr_vsa(molecule)
+mqns = molecule.mqns()
+contributions = molecule.labute_asa_contributions()
+asa = contributions.asa
+atom_asa = contributions.atom_contributions
+hydrogen_asa = contributions.hydrogen_contribution
+slogp_vsa = molecule.slogp_vsa()
+smr_vsa = molecule.smr_vsa()
 
 assert len(mqns) == 42
 assert len(atom_asa) == molecule.num_atoms()

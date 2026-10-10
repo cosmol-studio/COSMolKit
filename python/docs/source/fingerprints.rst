@@ -24,7 +24,7 @@ These value-returning transforms leave the original molecule unchanged:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("O=C1CCCCC1")
+   mol = ck.mol_from_smiles("O=C1CCCCC1")
    mol.murcko_scaffold().to_smiles()   # "C1CCCCC1"
    mol.net_scaffold().to_smiles()      # "*=C1CCCCC1"
    mol.murcko_decompose().to_smiles()  # "O=C1CCCCC1"
@@ -59,36 +59,39 @@ bit-domain and count-simulation rules, count output folds counts into
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCCCO")
-   generator = ck.get_topological_torsion_generator(
+   mol = ck.mol_from_smiles("CCCCO")
+   settings = ck.TopologicalTorsionParams(
        include_chirality=False,
        torsion_atom_count=4,
        count_simulation=True,
        count_bounds=[1, 2, 4, 8],
        fp_size=2048,
    )
+   generator = ck.TopologicalTorsionFingerprintGenerator(params=settings)
 
-   sparse_count = generator.get_sparse_count_fingerprint(mol)
-   sparse_bit = generator.get_sparse_fingerprint(mol)
-   count = generator.get_count_fingerprint(mol)
-   bit = generator.get_fingerprint(mol)
+   sparse_count = mol.fingerprint_topological_torsion_sparse_count_with_generator(generator)
+   sparse_bit = mol.fingerprint_topological_torsion_sparse_with_generator(generator)
+   count = mol.fingerprint_topological_torsion_count_with_generator(generator)
+   bit = mol.fingerprint_topological_torsion_with_generator(generator)
 
    print(sparse_count.nonzero_elements())
    print(sparse_bit.on_bits())
    print(count.nonzero_elements())
    print(bit.on_bits())
 
-The live object returned by ``generator.get_options()`` controls
+The ``TopologicalTorsionParams`` passed to the constructor controls
 ``include_chirality``, ``torsion_atom_count``, ``count_simulation``,
-``count_bounds``, ``fp_size``, ``num_bits_per_feature``, and
-``only_shortest_paths``. Scalar calls additionally accept ``from_atoms``,
+``count_bounds``, ``fp_size``, ``bits_per_feature``, and
+``only_shortest_paths``. ``generator.settings()`` returns a live settings view
+whose writable fields update the generator. Scalar calls accept a
+``TopologicalTorsionCallParams`` object with ``from_atoms``,
 ``ignore_atoms``, and ``custom_atom_invariants``. ``from_atoms`` selects paths
 by endpoint, while ``ignore_atoms`` excludes paths containing any selected
 atom. ``only_shortest_paths`` keeps only source-defined shortest atom paths.
 Custom invariants replace the default atom-code generator for that call.
 
 The default atom-code generator reads the molecule's explicit-valence cache,
-as does RDKit. Molecules returned by the default ``Molecule.from_smiles()``
+as does RDKit. Molecules returned by the default ``ck.mol_from_smiles()``
 path and by ``with_hydrogens()`` are ready for fingerprinting because both
 operations commit the source-defined explicit-valence state. A molecule parsed
 with ``sanitize=False`` or produced by another operation that invalidates
@@ -97,7 +100,7 @@ valence state must be sanitized first, for example with
 ``custom_atom_invariants``. Missing cache state is reported as a typed
 exception rather than being recomputed implicitly inside the fingerprint call.
 
-Topological Torsion provenance uses the shared ``AdditionalOutput`` container.
+Topological Torsion provenance uses the shared ``FingerprintAdditionalOutput`` container.
 Allocate only the outputs needed before the call. This family populates
 ``atom_to_bits``, ``atom_counts``, ``bit_paths``, and ``atoms_per_bit``;
 ``bit_info_map`` belongs to other generator families and remains empty here,
@@ -106,13 +109,13 @@ the absence of entries is verified rather than assumed.
 
 .. code-block:: python
 
-   output = ck.AdditionalOutput()
+   output = ck.FingerprintAdditionalOutput()
    output.allocate_atom_to_bits()
    output.allocate_atom_counts()
    output.allocate_bit_paths()
    output.allocate_atoms_per_bit()
 
-   generator.get_fingerprint(mol, additional_output=output)
+   mol.fingerprint_topological_torsion_with_generator(generator, output=output)
    print(output.atom_to_bits())
    print(output.atom_counts())
    print(output.bit_paths())
@@ -123,27 +126,26 @@ Bulk generator methods preserve input order and accept ``num_threads``:
 .. code-block:: python
 
    molecules = [
-       ck.Molecule.from_smiles("CCCC"),
-       ck.Molecule.from_smiles("CCCCC"),
+       ck.mol_from_smiles("CCCC"),
+       ck.mol_from_smiles("CCCCC"),
    ]
-   bits = generator.get_fingerprints(molecules, num_threads=2)
+   bits = generator.fingerprints(molecules, num_threads=2)
 
-   assert bits[0].on_bits() == generator.get_fingerprint(molecules[0]).on_bits()
-   assert bits[1].on_bits() == generator.get_fingerprint(molecules[1]).on_bits()
+   assert bits[0].on_bits() == molecules[0].fingerprint_topological_torsion_with_generator(generator).on_bits()
+   assert bits[1].on_bits() == molecules[1].fingerprint_topological_torsion_with_generator(generator).on_bits()
 
-The legacy functions are compatibility adapters, not aliases for every modern
-option:
+Additional vector forms have their own parameter semantics:
 
-- ``get_topological_torsion_fingerprint()`` returns the historical unfolded
+- ``fingerprint_topological_torsion_sparse_count_legacy()`` returns the unfolded
   sparse-count vector and preserves RDKit's ``2**width - 1`` reported-size
   compatibility behavior.
-- ``get_hashed_topological_torsion_fingerprint()`` returns folded sparse
+- ``fingerprint_topological_torsion_count_legacy()`` returns folded sparse
   counts.
-- ``get_hashed_topological_torsion_fingerprint_as_bit_vect()`` preserves the
-  legacy ``n_bits_per_entry`` block sizing and its distinct four-slot
+- ``fingerprint_topological_torsion_legacy()`` preserves the
+  ``bits_per_entry`` block sizing and its distinct four-slot
   ``[1, 2, 4, 8]`` versus non-four-slot threshold rule.
 
-All modern and legacy adapters terminate in the same Rust atom-code, path,
+All adapters terminate in the same Rust atom-code, path,
 torsion-code/hash, and shared fingerprint-vector core. They do not call RDKit
 at runtime. Invalid sizes, unsupported source-undefined shifts, malformed
 JSON, bad selections, and incompatible custom invariants fail visibly as
@@ -153,16 +155,9 @@ conveniences additionally report computation failures as indexed
 ``BatchValidationError`` records while retaining existing invalid inputs as
 ``None`` in their original positions.
 
-The exact parity boundary is RDKit 2026.03.1 at revision
-``351f8f378f8ad6bbd517980c38896e66bf907af8``. Focused fixtures cover modern
-and legacy branches, provenance, JSON, selections, chirality, paths, counts,
-collisions, and errors. The maintained CI matrix compares all 5,000 molecules
-across nine source-meaningful profiles. The complete ChEMBL 37 audit compares
-all 2,897,804 mutually parseable records across 36 vector and eight provenance
-outputs, totaling 127,503,376 exact comparisons. Neither boundary uses
-sampling or tolerance. This claim applies to the documented, modeled input
-state; it is not a claim that unrelated Atom Pair fingerprints or all RDKit
-fingerprint families are implemented.
+Validation covers vector forms, provenance, JSON, selections, chirality,
+paths, counts, collisions, and errors against the pinned RDKit reference.
+See ``VALIDATION.md`` in the source repository for the validation scope.
 
 Source-backed topological and Avalon fingerprints
 -------------------------------------------------
@@ -184,15 +179,14 @@ The two APIs are source-backed and return a fresh explicit bit vector:
   detail and is not exposed on COSMolKit's value-returning API.
 
 Comparison uses exact bit vectors, not similarity correlation or partial bit
-agreement. The default flags are the C++ ``0x007FFF``; RDKit's Python wrapper
-defaults to ``0xF07FFF``, so pass the same flags when comparing libraries.
-MOL conversion leaves the original molecule unchanged. Without coordinates,
-the source-defined conversion requires the ``depict`` capability; otherwise
-it returns a typed input-conversion error.
+agreement. Python defaults to ``0xF07FFF``, matching RDKit's Python wrapper.
+MOL conversion leaves the original molecule unchanged. The fingerprint path
+handles molecules without stored coordinates and does not require callers to
+generate 2D coordinates first.
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
+   mol = ck.mol_from_smiles("c1ccccc1O")
 
    topological = mol.fingerprint_topological(
        min_path=1,
@@ -214,7 +208,7 @@ Connected fragments
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("CC.O.[Na+]")
+   mol = ck.mol_from_smiles("CC.O.[Na+]")
    fragments = mol.fragments()
    print([part.to_smiles() for part in fragments])  # ["CC", "O", "[Na+]"]
    print(mol.largest_fragment().to_smiles())        # "CC"
@@ -276,7 +270,7 @@ roots retain the source aggregation order.
 
    import cosmolkit as ck
 
-   molecule = ck.Molecule.from_smiles("c1ccccc1O")
+   molecule = ck.mol_from_smiles("c1ccccc1O")
    substructure = molecule.fingerprint_layered(
        layers=0x07,
        min_path=1,
@@ -331,7 +325,7 @@ states:
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
+   mol = ck.mol_from_smiles("c1ccccc1O")
 
    pattern = mol.fingerprint_pattern()
    tautomeric_pattern = mol.fingerprint_pattern(
@@ -375,7 +369,7 @@ project-native implementation:
 
 - ``fingerprint_atom_pair_sparse_count()`` returns the source-width count map;
 - ``fingerprint_atom_pair_count()`` returns the folded count map;
-- ``fingerprint_atom_pair_sparse_bits()`` returns the source-width bit set;
+- ``fingerprint_atom_pair_sparse()`` returns the source-width bit set;
 - ``fingerprint_atom_pair()`` returns the fixed-width explicit bit vector.
 
 The shared parameter surface covers 2D topological or 3D conformer distances,
@@ -386,27 +380,32 @@ and custom atom invariants. A 3D call requires a conformer and sets
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("CCCO")
+   mol = ck.mol_from_smiles("CCCO")
 
-   explicit = mol.fingerprint_atom_pair(n_bits=2048)
+   explicit = mol.fingerprint_atom_pair()
    sparse_count = mol.fingerprint_atom_pair_sparse_count()
-   folded_count = mol.fingerprint_atom_pair_count(n_bits=2048)
-   sparse_bits = mol.fingerprint_atom_pair_sparse_bits()
+   folded_count = mol.fingerprint_atom_pair_count()
+   sparse_bits = mol.fingerprint_atom_pair_sparse()
 
    print(explicit.on_bits())
    print(sparse_count.nonzero_elements())
    print(folded_count.nonzero_elements())
    print(sparse_bits.on_bits())
 
-``fingerprint_atom_pair_with_output()`` additionally returns exact atom counts,
-atom-to-bit rows, endpoint-pair bit information, and atoms-per-bit provenance:
+Pass a ``FingerprintAdditionalOutput`` collector to
+``fingerprint_atom_pair_with_params()`` for exact atom counts, atom-to-bit
+rows, endpoint-pair bit information, and atoms-per-bit provenance:
 
 .. code-block:: python
 
-   result = mol.fingerprint_atom_pair_with_output()
-   output = result.additional_output()
+   output = ck.FingerprintAdditionalOutput()
+   output.allocate_atom_counts()
+   output.allocate_atom_to_bits()
+   output.allocate_bit_info_map()
+   output.allocate_atoms_per_bit()
+   fp = mol.fingerprint_atom_pair_with_params(ck.AtomPairFingerprintParams(), output)
 
-   print(result.fingerprint().on_bits())
+   print(fp.on_bits())
    print(output.atom_counts())
    print(output.atom_to_bits())
    print(output.bit_info_map())
@@ -443,8 +442,8 @@ Single Molecules
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
-   fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
+   mol = ck.mol_from_smiles("c1ccccc1O")
+   fp = mol.fingerprint_morgan(radius=2, fp_size=2048)
 
    print(fp.n_bits())
    print(fp.on_bits())
@@ -453,23 +452,29 @@ Tanimoto similarity is computed directly on ``Fingerprint`` values:
 
 .. code-block:: python
 
-   phenol = ck.Molecule.from_smiles("c1ccccc1O").fingerprint_morgan()
-   benzene = ck.Molecule.from_smiles("c1ccccc1").fingerprint_morgan()
+   phenol = ck.mol_from_smiles("c1ccccc1O").fingerprint_morgan()
+   benzene = ck.mol_from_smiles("c1ccccc1").fingerprint_morgan()
 
    print(phenol.tanimoto(benzene))
 
 Additional Output
 -----------------
 
-``fingerprint_morgan_with_output()`` returns a ``MorganFingerprintResult`` with
-the fingerprint and experimental provenance data:
+Pass a ``FingerprintAdditionalOutput`` collector to ``fingerprint_morgan()``
+to obtain provenance alongside the returned fingerprint:
 
 .. code-block:: python
 
-   result = mol.fingerprint_morgan_with_output(radius=2, n_bits=2048)
-   output = result.additional_output()
+   output = ck.FingerprintAdditionalOutput()
+   output.allocate_atom_counts()
+   output.allocate_atom_to_bits()
+   output.allocate_bit_info_map()
+   output.allocate_atoms_per_bit()
+   fp = mol.fingerprint_morgan(
+       radius=2, fp_size=2048, additional_output=output,
+   )
 
-   print(result.fingerprint().on_bits())
+   print(fp.on_bits())
    print(output.atom_counts())
    print(output.atom_to_bits())
    print(output.bit_info_map())
@@ -500,7 +505,7 @@ with generator keywords such as ``radius=``.
 The Python binding exposes the source-backed Morgan generator branches covered
 by exact RDKit bit parity:
 
-- ``radius`` and ``n_bits``
+- ``radius`` and ``fp_size``
 - ``include_chirality`` and ``use_bond_types``
 - ``count_simulation`` and ``count_bounds``
 - ``only_nonzero_invariants``
@@ -529,13 +534,13 @@ Batch Fingerprints
 
    import cosmolkit as ck
 
-   batch = ck.MoleculeBatch.from_smiles_list(
+   batch = ck.mols_from_smiles_list(
        ["CCO", "not-smiles", "CCCO"],
        errors="keep",
    ).with_parallel_jobs(8)
-   fps = batch.fingerprint_morgan_list(n_bits=2048)
+   fps = batch.fingerprint_morgan_list(fp_size=2048)
    atom_pairs = batch.fingerprint_atom_pair_list(
-       n_bits=2048,
+       fp_size=2048,
        n_jobs=8,
        progress_bar=False,
    )

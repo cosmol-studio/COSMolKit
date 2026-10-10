@@ -59,7 +59,12 @@ pyo3_stub_gen::inventory::submit! {
 use pyo3::types::{PyAny, PyBool, PyDict, PySlice, PySliceMethods, PyType};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-pyo3::create_exception!(cosmolkit, BatchImageError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    BatchImageError,
+    PyValueError,
+    "Batch depiction could not render or export the requested molecular images."
+);
 fn image_path_error(
     py: Python<'_>,
     source: crate::user_path::ImagePathError<ck::BatchValidationError>,
@@ -117,6 +122,7 @@ pub(crate) fn batch_image_error(py: Python<'_>, source: &ck::BatchImageError) ->
 pub(crate) fn io_error(py: Python<'_>, source: ck::MolecularIoError) -> PyErr {
     crate::canonical_molecular_io::error_pyerr(py, source)
 }
+/// Source record position: original index, byte/line ranges and title.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -126,21 +132,27 @@ pub(crate) struct SdfRecordMetadata {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SdfRecordMetadata {
+    /// Original zero-based input record index; failed records retain their index.
     fn index(&self) -> usize {
         self.inner.index()
     }
+    /// Byte offset of the record in its source file.
     fn byte_offset(&self) -> u64 {
         self.inner.byte_offset()
     }
+    /// Length of the source record in bytes.
     fn byte_len(&self) -> u64 {
         self.inner.byte_len()
     }
+    /// Byte range occupied by the source record.
     fn byte_range(&self) -> (u64, u64) {
         self.inner.byte_range()
     }
+    /// Line range occupied by the source record.
     fn line_range(&self) -> (usize, usize) {
         self.inner.line_range()
     }
+    /// Title recorded in the source header.
     fn title(&self) -> Option<String> {
         self.inner.title().map(str::to_owned)
     }
@@ -249,6 +261,7 @@ fn add_batch_validation_error_class(module: &Bound<'_, PyModule>) -> PyResult<()
     globals.set_item("ValueError", py.get_type::<PyValueError>())?;
     let code = r#"
 class BatchValidationError(ValueError):
+    """Batch execution failed; errors() returns structured failures with original input indices."""
     __module__ = "cosmolkit"
 
     def __init__(self, message, error_count=0, reason=None, record_errors=None):
@@ -258,6 +271,7 @@ class BatchValidationError(ValueError):
         self._errors = list(record_errors or [])
 
     def errors(self):
+        """Return a copy of the structured per-record BatchError values."""
         return list(self._errors)
 "#;
     py.import("builtins")?
@@ -345,6 +359,7 @@ pub(crate) fn n_jobs(value: Option<usize>) -> PyResult<Option<usize>> {
         Ok(value)
     }
 }
+/// Failure for one batch input, identified by its original index and operation name.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -355,12 +370,15 @@ pub(crate) struct BatchError {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BatchError {
+    /// Original zero-based input record index; failed records retain their index.
     fn index(&self) -> usize {
         self.inner.index
     }
+    /// Name of the operation that produced this error.
     fn operation(&self) -> String {
         self.inner.operation.to_owned()
     }
+    /// Human-readable failure description.
     fn message(&self) -> String {
         self.inner.message.clone()
     }
@@ -380,6 +398,11 @@ impl BatchError {
         )
     }
 }
+/// Ordered collection of molecule records and per-input errors.
+///
+/// Failed input slots retain their indices. Chemical operations preserve input order;
+/// with_valid_records() explicitly compacts valid entries. Execution defaults to one
+/// worker, and can be configured independently of chemical parameters.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
@@ -390,6 +413,7 @@ pub(crate) struct MoleculeBatch {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MoleculeBatch {
+    /// Parse SDF record texts into an ordered batch using the selected error policy; retained parse failures keep their input slots. Uses the supplied configuration object.
     #[staticmethod]
     #[pyo3(signature=(text,read,errors=None,n_jobs=None))]
     fn from_sdf_records_with_params(
@@ -408,6 +432,7 @@ impl MoleculeBatch {
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
     }
+    /// Read a SDF file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     #[pyo3(signature=(path,read,errors=None,n_jobs=None,progress_bar=false))]
     fn read_sdf_with_params(
@@ -428,6 +453,7 @@ impl MoleculeBatch {
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
     }
+    /// Read the specified indexed SDF records into a batch in the requested index order.
     #[staticmethod]
     fn from_dataset_indices(
         py: Python<'_>,
@@ -439,6 +465,7 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Construct a batch from explicit records, preserving their input order and failure information.
     #[staticmethod]
     fn from_records(
         py: Python<'_>,
@@ -464,6 +491,7 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Return the molecule at the original zero-based input index, or None for a retained failed slot.
     #[gen_stub(override_return_type(type_repr = "Molecule | BatchError | None"))]
     fn get(&self, py: Python<'_>, index: usize) -> PyResult<Option<Py<PyAny>>> {
         self.inner
@@ -471,6 +499,7 @@ impl MoleculeBatch {
             .map(|record| batch_record_object(py, record))
             .transpose()
     }
+    /// Return batch records in original input order, preserving failed entries and their errors.
     #[gen_stub(override_return_type(type_repr = "list[Molecule | BatchError]"))]
     fn records(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.inner
@@ -479,6 +508,7 @@ impl MoleculeBatch {
             .map(|record| batch_record_object(py, record))
             .collect()
     }
+    /// Write SDF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     #[pyo3(signature=(path,params,report_path))]
     fn write_sdf_with_params(
         &self,
@@ -496,6 +526,7 @@ impl MoleculeBatch {
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Write SDF FILES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     #[pyo3(signature=(directory,params,filenames,report_path))]
     fn write_sdf_files_with_params(
         &self,
@@ -515,12 +546,14 @@ impl MoleculeBatch {
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Compute topological torsion fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_topological_torsion_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_topological_torsion_list()
             .map_err(|e| batch_error(py, e))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute topological torsion fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_topological_torsion_list_with_params(
         &self,
         py: Python<'_>,
@@ -534,12 +567,14 @@ impl MoleculeBatch {
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_atom_pair_list()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_list_with_params(
         &self,
         py: Python<'_>,
@@ -602,6 +637,7 @@ impl MoleculeBatch {
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
+    /// Compute atom pair sparse feature counts in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_sparse_count_list(
         &self,
         py: Python<'_>,
@@ -616,6 +652,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute atom pair sparse feature counts in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_sparse_count_list_with_params(
         &self,
         py: Python<'_>,
@@ -683,6 +720,7 @@ impl MoleculeBatch {
             })
     }
 
+    /// Compute atom pair folded feature counts in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_count_list(
         &self,
         py: Python<'_>,
@@ -697,6 +735,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute atom pair folded feature counts in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_count_list_with_params(
         &self,
         py: Python<'_>,
@@ -764,6 +803,7 @@ impl MoleculeBatch {
             })
     }
 
+    /// Compute atom pair sparse feature bits in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_sparse_bits_list(
         &self,
         py: Python<'_>,
@@ -778,6 +818,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute atom pair sparse feature bits in original batch order, retaining None slots for failed records.
     fn fingerprint_atom_pair_sparse_bits_list_with_params(
         &self,
         py: Python<'_>,
@@ -845,6 +886,7 @@ impl MoleculeBatch {
             })
     }
 
+    /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     fn fingerprint_atom_pair_with_output_list(
         &self,
         py: Python<'_>,
@@ -859,6 +901,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     #[pyo3(signature=(options, collect_additional_output=true, params=None))]
     fn fingerprint_atom_pair_with_output_list_with_params(
         &self,
@@ -934,12 +977,14 @@ impl MoleculeBatch {
             })
     }
 
+    /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_layered_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_layered_list()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_layered_list_with_params(
         &self,
         py: Python<'_>,
@@ -989,6 +1034,7 @@ impl MoleculeBatch {
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
+    /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     fn fingerprint_layered_with_output_list(
         &self,
         py: Python<'_>,
@@ -1003,6 +1049,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     fn fingerprint_layered_with_output_list_with_params(
         &self,
         py: Python<'_>,
@@ -1061,12 +1108,14 @@ impl MoleculeBatch {
             })
     }
 
+    /// Compute pattern fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_pattern_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
             .fingerprint_pattern_list()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute pattern fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
     fn fingerprint_pattern_list_with_params(
         &self,
         py: Python<'_>,
@@ -1188,6 +1237,7 @@ impl MoleculeBatch {
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
+    /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     fn fingerprint_morgan_with_output_list(
         &self,
         py: Python<'_>,
@@ -1202,6 +1252,7 @@ impl MoleculeBatch {
             })
             .map_err(|source| batch_error(py, source))
     }
+    /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     #[pyo3(signature=(options, collect_additional_output=true, params=None))]
     fn fingerprint_morgan_with_output_list_with_params(
         &self,
@@ -1336,10 +1387,12 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Boolean flags in original input order; True marks a failed record.
     fn invalid_mask(&self) -> Vec<bool> {
         self.inner.invalid_mask()
     }
 
+    /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records using the supplied generator and per-call options.
     fn fingerprint_morgan_list_with_generator_params(
         &self,
         py: Python<'_>,
@@ -1365,6 +1418,7 @@ impl MoleculeBatch {
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
+    /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata using the supplied generator and per-call options.
     fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
         py: Python<'_>,
@@ -1398,6 +1452,7 @@ impl MoleculeBatch {
                     .collect()
             })
     }
+    /// Return the number of stored entries.
     fn len(&self) -> usize {
         self.inner.len()
     }
@@ -1414,9 +1469,11 @@ impl MoleculeBatch {
             .getattr(name)?
             .unbind())
     }
+    /// Return whether there are no stored entries.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    /// Return a new batch containing only valid records; this is explicit compaction.
     fn with_valid_records(&self) -> Self {
         Self {
             inner: self.inner.with_valid_records(),
@@ -1466,12 +1523,14 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
 
+    /// Apply to a new batch: remove eligible explicit hydrogen atoms using the selected removal policy. Preserve record order and retained errors; the source batch is unchanged.
     fn without_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .without_hydrogens()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Apply to a new batch: remove eligible explicit hydrogen atoms using the selected removal policy. Preserve record order and retained errors; the source batch is unchanged.
     fn without_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -1499,12 +1558,14 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
 
+    /// Apply to a new batch: generate and store 2D drawing coordinates. Preserve record order and retained errors; the source batch is unchanged.
     fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_2d_coordinates()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Apply to a new batch: generate and store 2D drawing coordinates. Preserve record order and retained errors; the source batch is unchanged.
     fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
@@ -1532,12 +1593,14 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
 
+    /// Apply to a new batch: perform the selected chemical sanitization stages. Preserve record order and retained errors; the source batch is unchanged.
     fn sanitize(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .sanitize()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Apply to a new batch: perform the selected chemical sanitization stages. Preserve record order and retained errors; the source batch is unchanged.
     fn sanitize_with_params(
         &self,
         py: Python<'_>,
@@ -1566,12 +1629,14 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
 
+    /// Apply to a new batch: assign explicit single/double bonds to aromatic systems. Preserve record order and retained errors; the source batch is unchanged.
     fn with_kekulized_bonds(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_kekulized_bonds()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
+    /// Apply to a new batch: assign explicit single/double bonds to aromatic systems. Preserve record order and retained errors; the source batch is unchanged.
     fn with_kekulized_bonds_with_params(
         &self,
         py: Python<'_>,
@@ -1685,6 +1750,7 @@ impl MoleculeBatch {
             .collect()
     }
 
+    /// Return per-record distance-geometry bounds matrices in input order, preserving None slots for failed records.
     #[gen_stub(override_return_type(type_repr="list[numpy.ndarray | None]",imports=("numpy")))]
     fn dg_bounds_matrix_list<'py>(
         &self,
@@ -1697,6 +1763,7 @@ impl MoleculeBatch {
                 .map_err(|source| batch_error(py, source))?,
         )
     }
+    /// Return per-record distance-geometry bounds matrices in input order, preserving None slots for failed records. Uses the supplied configuration object.
     #[gen_stub(override_return_type(type_repr="list[numpy.ndarray | None]",imports=("numpy")))]
     fn dg_bounds_matrix_list_with_params<'py>(
         &self,
@@ -1737,6 +1804,7 @@ impl MoleculeBatch {
         )
     }
 
+    /// Return SVG results in original input order; retained failed records produce None rather than shifting subsequent indices.
     fn to_svg_list(
         &self,
         py: Python<'_>,
@@ -1747,6 +1815,7 @@ impl MoleculeBatch {
             .to_svg_list(width, height)
             .map_err(|source| batch_error(py, source))
     }
+    /// Return SVG results in original input order; retained failed records produce None rather than shifting subsequent indices.
     fn to_svg_list_with_params(
         &self,
         py: Python<'_>,
@@ -1772,6 +1841,7 @@ impl MoleculeBatch {
         })
     }
 
+    /// Write IMAGES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     fn write_images(&self, py: Python<'_>, directory: &str) -> PyResult<BatchExportReport> {
         crate::user_path::with_image_user_paths(
             directory,
@@ -1783,6 +1853,7 @@ impl MoleculeBatch {
         .map(|inner| BatchExportReport { inner })
         .map_err(|source| image_path_error(py, source))
     }
+    /// Write IMAGES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     fn write_images_with_params(
         &self,
         py: Python<'_>,
@@ -1851,6 +1922,7 @@ impl MoleculeBatch {
         .map_err(|source| image_path_error(py, source))
     }
 
+    /// Parse SDF record texts into an ordered batch using the selected error policy; retained parse failures keep their input slots.
     #[classmethod]
     #[pyo3(signature=(text,errors=None,n_jobs=None))]
     fn from_sdf_records(
@@ -1869,6 +1941,7 @@ impl MoleculeBatch {
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
     }
+    /// Read a SDF file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[classmethod]
     #[pyo3(signature=(path,errors=None,n_jobs=None,progress_bar=false))]
     fn read_sdf(
@@ -1889,6 +1962,7 @@ impl MoleculeBatch {
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
     }
+    /// Write SDF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     #[pyo3(signature=(path,format=None,errors=None,n_jobs=None,report_path=None,progress_bar=None))]
     fn write_sdf(
         &self,
@@ -1917,6 +1991,7 @@ impl MoleculeBatch {
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Write SDF FILES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text. Return a report with success/failure counts and original input errors.
     #[pyo3(signature=(out_dir,format=None,errors=None,n_jobs=None,report_path=None,filenames=None,progress_bar=None))]
     fn write_sdf_files(
         &self,
@@ -1947,6 +2022,7 @@ impl MoleculeBatch {
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Return molecule-or-None entries in original input order; failed slots are retained.
     fn to_list(&self) -> Vec<Option<Molecule>> {
         self.inner
             .records()
@@ -1965,15 +2041,19 @@ impl MoleculeBatch {
     fn __len__(&self) -> usize {
         self.inner.len()
     }
+    /// Boolean flags in original input order; True marks a valid record.
     fn valid_mask(&self) -> Vec<bool> {
         self.inner.valid_mask()
     }
+    /// Number of valid records in the batch.
     fn valid_count(&self) -> usize {
         self.inner.valid_count()
     }
+    /// Number of failed records in the batch.
     fn invalid_count(&self) -> usize {
         self.inner.invalid_count()
     }
+    /// Errors retained by this result, including original input positions when applicable.
     fn errors(&self) -> Vec<BatchError> {
         self.inner
             .errors()
@@ -1981,12 +2061,15 @@ impl MoleculeBatch {
             .map(|inner| BatchError { inner })
             .collect()
     }
+    /// Configured batch worker count; the default is one worker.
     fn parallel_jobs(&self) -> Option<usize> {
         self.inner.parallel_jobs()
     }
+    /// Whether batch execution reports progress.
     fn progress_bar(&self) -> Option<bool> {
         self.inner.progress_bar()
     }
+    /// Return a batch with the requested worker count; leave the original batch unchanged.
     #[pyo3(signature=(n_jobs))]
     fn with_parallel_jobs(&self, py: Python<'_>, n_jobs: Option<usize>) -> PyResult<Self> {
         self.inner
@@ -1995,6 +2078,7 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|e| batch_error(py, e))
     }
+    /// Return a batch with progress reporting enabled or disabled; leave the original batch unchanged.
     #[pyo3(signature=(progress_bar))]
     fn with_progress_bar(&self, progress_bar: Option<bool>) -> Self {
         Self {
@@ -2060,6 +2144,7 @@ impl MoleculeBatch {
     }
 }
 
+/// Indexed SDF file for random access. Open once, then request record text, parsed records or batches.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -2070,6 +2155,7 @@ pub(crate) struct SdfDataset {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfDataset {
+    /// Open and index an SDF file for random record access; individual records are parsed when requested. Uses the supplied configuration object.
     #[staticmethod]
     fn open_with_params(
         py: Python<'_>,
@@ -2080,18 +2166,22 @@ impl SdfDataset {
             .map(|inner| Self { inner })
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return the number of stored entries.
     fn len(&self) -> usize {
         self.inner.len()
     }
+    /// Return whether there are no stored entries.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    /// Parse and return the SDF record at the specified zero-based index.
     fn record(&self, py: Python<'_>, index: usize) -> PyResult<SdfRecord> {
         self.inner
             .record(index)
             .map(|inner| SdfRecord { inner })
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Parse and return the SDF record at the specified zero-based index. Uses the supplied configuration object.
     fn record_with_params(
         &self,
         py: Python<'_>,
@@ -2103,16 +2193,19 @@ impl SdfDataset {
             .map(|inner| SdfRecord { inner })
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Return the unparsed text of the specified SDF record.
     fn record_text(&self, py: Python<'_>, index: usize) -> PyResult<String> {
         self.inner
             .record_text(index)
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Return an iterator over entries in stored order.
     fn iter(&self) -> SdfDatasetIterator {
         SdfDatasetIterator {
             inner: self.inner.iter(),
         }
     }
+    /// Open and index an SDF file for random record access; individual records are parsed when requested.
     #[classmethod]
     #[pyo3(signature=(path,index=None,build=None))]
     fn open(
@@ -2142,12 +2235,14 @@ impl SdfDataset {
             .map(|inner| Self { inner })
             .map_err(|e| io_error(py, e))
     }
+    /// Return the source filesystem path.
     fn path(&self) -> String {
         self.inner.path().to_string_lossy().into_owned()
     }
     fn __len__(&self) -> usize {
         self.inner.len()
     }
+    /// Experimental, crystallographic and bibliographic metadata.
     fn metadata(&self, index: isize) -> PyResult<SdfRecordMetadata> {
         let len = self.inner.len() as isize;
         let index = if index < 0 { len + index } else { index };
@@ -2184,6 +2279,7 @@ impl SdfDataset {
             inner: self.inner.iter(),
         }
     }
+    /// Return an iterator that reads records in bounded batches.
     #[pyo3(signature=(size=1024,indices=None,errors=None,n_jobs=None,progress_bar=false))]
     fn batches(
         &self,
@@ -2213,6 +2309,7 @@ impl SdfDataset {
             .map_err(|e| batch_error(py, e))
     }
 }
+/// Iterator over parsed records in SDF dataset order.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SdfDatasetIterator {
@@ -2237,6 +2334,7 @@ impl SdfDatasetIterator {
             .map_err(|e| sdf_error(py, e))
     }
 }
+/// Iterator over bounded batches from an indexed SDF dataset.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SdfBatchIterator {
@@ -2246,6 +2344,7 @@ pub(crate) struct SdfBatchIterator {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfBatchIterator {
+    /// Return the next batch of records, or None when the input is exhausted.
     fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
         self.inner
             .next_batch()
@@ -2263,6 +2362,7 @@ impl SdfBatchIterator {
             .map_err(|e| batch_error(py, e))
     }
 }
+/// Streaming SDF reader configured at open time; batches retain per-record outcomes.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -2272,6 +2372,7 @@ pub(crate) struct SdfReader {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SdfReader {
+    /// Open an SDF file for streaming reads using the selected BatchReadParams. Uses the supplied configuration object.
     #[staticmethod]
     fn open_with_params(
         py: Python<'_>,
@@ -2282,14 +2383,17 @@ impl SdfReader {
             .map(|inner| Self { inner })
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return the source filesystem path.
     fn path(&self) -> std::path::PathBuf {
         self.inner.path().to_path_buf()
     }
+    /// Return the parameter values associated with this result or settings view.
     fn params(&self) -> crate::canonical_sdf::SdfReadParams {
         crate::canonical_sdf::SdfReadParams {
             inner: *self.inner.params(),
         }
     }
+    /// Open an SDF file for streaming reads using the selected BatchReadParams.
     #[classmethod]
     #[pyo3(signature=(path))]
     fn open(_cls: &Bound<'_, PyType>, py: Python<'_>, path: TextPath) -> PyResult<Self> {
@@ -2299,6 +2403,7 @@ impl SdfReader {
             .map(|inner| Self { inner })
             .map_err(|e| io_error(py, e))
     }
+    /// Return an iterator that reads records in bounded batches.
     #[pyo3(signature=(size=1024,errors=None,n_jobs=None,progress_bar=false))]
     fn batches(
         &self,
@@ -2322,6 +2427,7 @@ impl SdfReader {
             .map_err(|e| batch_error(py, e))
     }
 }
+/// Iterator over bounded batches from a streaming SDF reader.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SdfReaderBatchIterator {
@@ -2331,6 +2437,7 @@ pub(crate) struct SdfReaderBatchIterator {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfReaderBatchIterator {
+    /// Return the next batch of records, or None when the input is exhausted.
     fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
         self.inner
             .next_batch()
@@ -2371,6 +2478,7 @@ pub(crate) fn write_params(
     })
 }
 
+/// Batch file-export counts and per-input errors. Failed writes remain visible in the report.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -2380,20 +2488,26 @@ pub(crate) struct BatchExportReport {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchExportReport {
+    /// Write the source-defined count-only JSON/CSV report to a literal path.
+    /// Path expansion is the caller's language-boundary responsibility.
     fn write_report(&self, py: Python<'_>, path: TextPath) -> PyResult<()> {
         self.inner
             .write_report(std::path::Path::new(path.as_str()))
             .map_err(|e| batch_error(py, e))
     }
+    /// Total number of processed items.
     fn total(&self) -> usize {
         self.inner.total()
     }
+    /// Number of successfully processed items.
     fn success(&self) -> usize {
         self.inner.success()
     }
+    /// Number of failed items.
     fn failed(&self) -> usize {
         self.inner.failed()
     }
+    /// Errors retained by this result, including original input positions when applicable.
     fn errors(&self) -> Vec<BatchError> {
         self.inner
             .errors()
@@ -2617,6 +2731,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .getattr("IntEnum")?
         .call1(("BatchErrorMode", vec![("RAISE", 1), ("KEEP", 2)]))?;
     modes.setattr("__module__", "cosmolkit")?;
+    modes.setattr("__doc__", "Batch failure policy: RAISE stops with BatchValidationError; KEEP retains failures at their original input positions.")?;
     let aliases = pyo3::types::PyDict::new(module.py());
     aliases.set_item("raise", modes.getattr("RAISE")?)?;
     aliases.set_item("keep", modes.getattr("KEEP")?)?;

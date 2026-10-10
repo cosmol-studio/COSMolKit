@@ -134,7 +134,8 @@ Two references have distinct ownership boundaries:
 - Gemmi commit `5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`, matching the
   repository submodule pin, is the structural PDB/mmCIF parser, hierarchy, and
   protein-projection reference.
-- RDKit `2026.03.1` is the PDB-to-`Molecule` and `Molecule`-to-PDB reference.
+- RDKit `2026.03.6` is the PDB-to-`Molecule` and `Molecule`-to-PDB reference,
+  as pinned by `testdata/reference/rdkit.json`.
   RDKit has no direct `MolFromMMCIFBlock` oracle, so mmCIF molecule conversion
   must not be labeled RDKit parity.
 

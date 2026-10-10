@@ -17,16 +17,21 @@ directly.
    :maxdepth: 2
    :caption: User Guide
 
-   installation
    quickstart
-   confseq
    molecule
-   mcs
-   reaction
-   forcefields
+   io
    batch
    fingerprints
    descriptors
+   mcs
+   reaction
+   forcefields
    protein
-   io
    api
+   confseq
+
+.. toctree::
+   :maxdepth: 1
+   :caption: JavaScript / TypeScript
+
+   javascript

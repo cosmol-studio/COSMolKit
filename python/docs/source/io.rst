@@ -16,7 +16,9 @@ Use ``Molecule.read_sdf()`` when you only need the first record:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.read_sdf("input.sdf", coordinate_mode="preserve")
+   mol = ck.Molecule.read_sdf_with_params(
+       "input.sdf", ck.SdfReadParams(coordinate_mode="preserve"),
+   )
 
 Use ``MoleculeBatch.read_sdf()`` when you intentionally want the entire file as
 one in-memory batch:
@@ -25,9 +27,9 @@ one in-memory batch:
 
    import cosmolkit as ck
 
-   batch = ck.MoleculeBatch.read_sdf(
+   batch = ck.MoleculeBatch.read_sdf_with_params(
        "input.sdf",
-       coordinate_mode="preserve",
+       ck.SdfReadParams(coordinate_mode="preserve"),
        errors="keep",
        progress_bar=True,
    )
@@ -43,7 +45,7 @@ random access, metadata inspection, or chunked processing:
 
    import cosmolkit as ck
 
-   dataset = ck.SdfDataset.open("large.sdf", coordinate_mode="preserve")
+   dataset = ck.SdfDataset.open("large.sdf")
 
    print(len(dataset))
    print(dataset.metadata(0).title())
@@ -73,12 +75,10 @@ not needed:
 ``SdfReader`` does not know the final record count without pre-indexing the
 file, so accurate record-count progress belongs to ``SdfDataset``.
 
-SDF readers expose the RDKit-source-backed finalization parameters
-``sanitize``, ``remove_hs``, and ``strict_parsing``. They are passed through the
-same parser parameter object for ``Molecule.read_sdf()``,
-``Molecule.read_sdf_from_str()``, ``MoleculeBatch.read_sdf()``,
-``MoleculeBatch.read_sdf_records_from_str()``, ``SdfDataset.open()``, and
-``SdfReader.open()``.
+``SdfReadParams`` exposes the RDKit-source-backed finalization parameters
+``sanitize``, ``remove_hs``, and ``strict_parsing``. Pass this object directly
+to ``ck.mol_from_sdf()`` or ``ck.mols_from_sdf_records()``. File readers expose
+``Molecule.read_sdf_with_params()`` and ``MoleculeBatch.read_sdf_with_params()``.
 
 ``sanitize=True`` runs the RDKit-aligned post-parse sanitization and final
 stereochemistry assignment during read. ``sanitize=False`` preserves the parsed
@@ -93,14 +93,18 @@ Read a single-record MDL molfile with the same CTAB parser:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_mol("input.mol", coordinate_mode="preserve")
-   mol = ck.Molecule.read_mol_from_str(mol_text, coordinate_mode="require_2d")
+   mol = ck.Molecule.read_mol_with_params(
+       "input.mol", ck.SdfReadParams(coordinate_mode="preserve"),
+   )
+   mol = ck.mol_from_mol(
+       mol_text, ck.SdfReadParams(coordinate_mode="require_2d"),
+   )
 
-``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` expose the same
+``Molecule.read_mol()`` and ``ck.mol_from_mol()`` expose the same
 ``sanitize``, ``remove_hs``, and ``strict_parsing`` controls as RDKit
 ``MolFromMolFile`` and ``MolFromMolBlock``.
 
-``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` follow RDKit
+``Molecule.read_mol()`` and ``ck.mol_from_mol()`` follow RDKit
 ``MolFromMolBlock`` boundaries: they parse the molfile CTAB through the first
 ``M  END`` line and ignore unread trailing text, including SDF data fields and
 ``$$$$`` record separators. Use ``Molecule.read_sdf()``, ``SdfDataset``, or
@@ -112,18 +116,16 @@ behavior. Molfile readers intentionally do not parse those fields because RDKit
 ``MolFromMolBlock`` stops at the molfile boundary.
 
 Write a molecule to SDF. SDF writing is explicit about the coordinate source:
-``write_sdf()`` and ``to_2d_sdf_string()`` export 2D coordinates, generating
-them when needed; ``to_3d_sdf_string()`` exports an existing 3D conformer and
+``write_sdf()`` and ``to_sdf_2d()`` export 2D coordinates, generating
+them when needed; ``to_sdf_3d()`` exports an existing 3D conformer and
 raises if the molecule has no 3D coordinates.
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("CCO").with_2d_coordinates()
-   mol.write_sdf(
+   mol = ck.mol_from_smiles("CCO").with_2d_coordinates()
+   mol.write_sdf_with_params(
        "python/examples/output/ethanol.sdf",
-       format="v2000",
-       include_stereo=True,
-       kekulize=True,
+       ck.MolBlockWriteParams(format="v2000", include_stereo=True, kekulize=True),
    )
 
 SDF Strings
@@ -131,14 +133,18 @@ SDF Strings
 
 .. code-block:: python
 
-   text = mol.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
-   restored = ck.Molecule.read_sdf_from_str(text, coordinate_mode="require_2d")
+   text = mol.to_sdf_2d_with_params(
+       ck.MolBlockWriteParams(format="v2000", include_stereo=True, kekulize=True),
+   )
+   restored = ck.mol_from_sdf(
+       text, ck.SdfReadParams(coordinate_mode="require_2d"),
+   )
 
-``Molecule.read_sdf_from_str()`` uses the SDF record parser and therefore
+``ck.mol_from_sdf()`` uses the SDF record parser and therefore
 validates and parses data fields after ``M  END``. For molfile-only string input
-where trailing SDF text should be ignored, use ``Molecule.read_mol_from_str()``.
+where trailing SDF text should be ignored, use ``ck.mol_from_mol()``.
 
-Use ``to_3d_sdf_string()`` when you explicitly want to export an existing 3D
+Use ``to_sdf_3d()`` when you explicitly want to export an existing 3D
 conformer. The molecule must already have 3D coordinates.
 
 The ``format`` argument accepts ``"v2000"``, ``"v3000"``, or ``None`` for
@@ -150,7 +156,9 @@ For multi-record strings, use the batch API:
 
 .. code-block:: python
 
-   batch = ck.MoleculeBatch.read_sdf_records_from_str(sdf_text, coordinate_mode="preserve")
+   batch = ck.mols_from_sdf_records(
+       sdf_text, ck.SdfReadParams(coordinate_mode="preserve"),
+   )
 
 MOL2 Files
 ----------
@@ -161,12 +169,11 @@ Read Tripos MOL2 input with the source-ported RDKit ``Mol2FileToMol`` and
 .. code-block:: python
 
    mol = ck.Molecule.read_mol2("input.mol2")
-   mol = ck.Molecule.read_mol2_from_str(
+   mol = ck.mol_from_mol2(
        mol2_text,
-       sanitize=True,
-       remove_hs=True,
-       variant="corina",
-       cleanup_substructures=True,
+       ck.Mol2ReadParams(
+           sanitize=True, remove_hs=True, variant="corina", cleanup_substructures=True,
+       ),
    )
 
 The MOL2 reader exposes RDKit's ``Mol2ParserParams`` controls. ``variant`` is
@@ -183,54 +190,52 @@ all modeled residue kinds and the model/chain/residue/atom/entity hierarchy:
 
    import cosmolkit as ck
 
-   structure = ck.BioStructure.from_pdb("input.pdb")
-   structure = ck.BioStructure.from_pdb_str(pdb_text)
-   structure = ck.BioStructure.from_mmcif("input.cif")
-   structure = ck.BioStructure.from_mmcif_str(cif_text, path="input.cif")
+   structure = ck.BioStructure.read("input.pdb")
+   structure = ck.BioStructure.from_pdb(pdb_text)
+   structure = ck.BioStructure.read("input.cif")
+   structure = ck.BioStructure.from_mmcif(cif_text)
 
 Use ``structure.protein()`` when an amino-acid-only projection is intentionally
 required. Use ``structure.to_molecule()`` when an explicit conversion to a
 cheminformatics graph is required.
 
-Use ``Protein.from_pdb()`` or ``Protein.from_pdb_str()`` when you want to read
+Use ``Protein.read()`` or ``Protein.from_pdb()`` when you want to read
 PDB data directly as a protein-only structural view:
 
 .. code-block:: python
 
    import cosmolkit as ck
 
-   protein = ck.Protein.from_pdb("input.pdb")
-   protein = ck.Protein.from_pdb_str(pdb_text)
+   protein = ck.Protein.read("input.pdb")
+   protein = ck.Protein.from_pdb(pdb_text)
 
-For mmCIF, use ``Protein.from_mmcif()`` or ``Protein.from_mmcif_str()``:
+For mmCIF, use ``Protein.read(path)`` or ``Protein.from_mmcif(text)``:
 
 .. code-block:: python
 
-   protein = ck.Protein.from_mmcif("input.cif")
-   protein = ck.Protein.from_mmcif_str(cif_text, path="input.cif")
+   protein = ck.Protein.read("input.cif")
+   protein = ck.Protein.from_mmcif(cif_text)
 
-Use ``Molecule.from_pdb_block()`` when you want a molecule state comparable to
+Use ``BioStructure.to_molecule()`` when you want a molecule state comparable to
 RDKit ``Chem.MolFromPDBBlock`` for the modeled conversion profile:
 
 .. code-block:: python
 
    import cosmolkit as ck
 
-   pdb_mol = ck.Molecule.from_pdb_block(
-       pdb_text,
+   pdb_mol = ck.BioStructure.from_pdb(pdb_text).to_molecule(
        sanitize=True,
        remove_hs=True,
        proximity_bonding=True,
    )
 
-Use ``Molecule.from_mmcif_block()`` for mmCIF structural text. COSMolKit reads
+Use ``BioStructure.from_mmcif()`` for mmCIF structural text. COSMolKit reads
 the mmCIF structure and then applies the same molecule-conversion profile used
-by ``from_pdb_block()``:
+by the PDB structure conversion:
 
 .. code-block:: python
 
-   cif_mol = ck.Molecule.from_mmcif_block(
-       cif_text,
+   cif_mol = ck.BioStructure.from_mmcif(cif_text).to_molecule(
        sanitize=True,
        remove_hs=True,
        proximity_bonding=True,
@@ -243,26 +248,26 @@ still accepting supported non-protein HETATM element records in the input
 structure.
 
 Gemmi-aligned ``BioStructure.to_mmcif()`` and ``write_mmcif()`` serialize the
-complete structural value without mutation. ``MmcifWriteOptions`` exposes the
+complete structural value without mutation. ``BioMmcifWriteParams`` exposes the
 source-defined category switches and CIF formatting controls. Structural
 writing remains on ``BioStructure`` only; it is not aliased onto ``Protein`` or
 ``Molecule`` because those values do not preserve the complete hierarchy.
 
 .. code-block:: python
 
-   structure = ck.BioStructure.from_pdb("input.pdb")
+   structure = ck.BioStructure.read("input.pdb")
    cif_text = structure.to_mmcif()
    structure.write_mmcif("output.cif")
 
 XYZ Blocks
 ----------
 
-Use ``Molecule.from_xyz_block()`` when you want to read atom identities and
+Use ``ck.mol_from_xyz_block()`` when you want to read atom identities and
 Cartesian coordinates from XYZ text:
 
 .. code-block:: python
 
-   xyz_mol = ck.Molecule.from_xyz_block(xyz_text)
+   xyz_mol = ck.mol_from_xyz_block(xyz_text)
 
 XYZ input contains coordinates but no bond table, so the returned molecule has
 atoms and one 3D conformer without inferred bonds. This matches COSMolKit's
@@ -283,7 +288,7 @@ For example:
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+   mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
    coords = mol.coordinates_2d()
    bounds = mol.dg_bounds_matrix()
@@ -296,7 +301,7 @@ Depiction Files
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+   mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
    mol.write_png("python/examples/output/phenol.png", width=400, height=300)

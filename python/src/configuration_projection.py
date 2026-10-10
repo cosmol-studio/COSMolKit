@@ -360,7 +360,7 @@ def install(module, document):
                     return getattr(owner, name)
                 def set_value(owner, value, name=field["name"]):
                     setattr(owner, name, value)
-                setattr(cls, alias, property(get, set_value))
+                setattr(cls, alias, property(get, set_value, doc=descriptors[field["name"]].__doc__))
         # __dict__ remains an implementation detail for live views/weakrefs;
         # arbitrary public attributes must never masquerade as native options.
         def set_attribute(owner, name, value, allowed=frozenset(allowed)):

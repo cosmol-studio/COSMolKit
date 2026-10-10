@@ -51,7 +51,7 @@ def generate(out):
     exports = []
     for p in PAGES:
         if p.get("source") == "sphinx":
-            wrappers.append(f'sphinx_page!({p["component"]}, {p["docname"].upper().replace("-", "_").replace("/", "_")}, {lit(p["docname"])}, {lit(p["title"])}{", " + p["query"] if p.get("query") else ""}, fragment);')
+            wrappers.append(f'sphinx_page!({p["component"]}, {p["docname"].upper().replace("-", "_").replace("/", "_")}, {lit(p["docname"])}, {lit(p["title"])}, {lit(p["binding"])}{", " + p["query"] if p.get("query") else ""}, fragment);')
             exports.append(p['component'])
     (out / "sphinx_pages.rs").write_text("\n".join(wrappers), encoding="utf-8")
     (out / "sphinx_exports.rs").write_text('pub use python::{Python,' + ','.join(exports) + '};', encoding="utf-8")

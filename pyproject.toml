@@ -17,6 +17,7 @@ dev = [
     "furo>=2024.8.6",
     "epam-indigo>=1.45.0",
     "sphinx-sitemap>=2.9.0",
+    "sphinx-js>=5.0.3,<6",
 ]
 
 [tool.uv]

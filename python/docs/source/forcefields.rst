@@ -1,11 +1,11 @@
-Force Fields: Current Usage and Persistent API Design
-=====================================================
+Force Fields
+============
 
 .. meta::
    :description: Evaluate molecular energies and gradients, optimize coordinates, and use MMFF and UFF force-field APIs in COSMolKit.
 
-This page separates the current Python API from the proposed persistent
-``MolecularForceField`` API. Both MMFF and UFF use coordinates in angstroms,
+Use one-shot evaluation and optimization or a persistent
+``MolecularForceField`` handle. Both MMFF and UFF use coordinates in angstroms,
 energies in kcal/mol, and energy gradients in kcal/mol/angstrom.
 
 Current API
@@ -26,7 +26,7 @@ directly; it is not a conformer-generation algorithm:
    import cosmolkit as ck
    import numpy as np
 
-   base = ck.Molecule.from_smiles("O").with_hydrogens()
+   base = ck.mol_from_smiles("O").with_hydrogens()
    builder = base.to_builder()
    builder.add_3d_conformer([
        [0.000, 0.000, 0.000],  # O
@@ -157,7 +157,7 @@ non-convergence is an optimization result, not an exception.
 Persistent force fields
 -----------------------
 
-The goal is to build an owned force field once, then update its coordinates,
+Build an owned force field once, then update its coordinates,
 evaluate it, fix atoms, and perform short minimization runs without repeating
 atom typing and contribution construction on every interaction.
 
@@ -204,15 +204,16 @@ Python factories accept keyword-only configuration:
 
 .. code-block:: python
 
-   mol.mmff_force_field(
-       *, conformer_id=None, mmff_variant="MMFF94",
+   mmff = mol.mmff_force_field(
+       conformer_id=conformer_id, mmff_variant="MMFF94",
        non_bonded_threshold=100.0, ignore_interfragment_interactions=True,
-   ) -> MolecularForceField
+   )
 
-   mol.uff_force_field(
-       *, conformer_id=None, vdw_threshold=10.0,
+   uff = mol.uff_force_field(
+       conformer_id=conformer_id, vdw_threshold=10.0,
        ignore_interfragment_interactions=True,
-   ) -> MolecularForceField
+   )
+   print(mmff.energy(), uff.energy())
 
 Reusable configuration remains available through parameter objects:
 
@@ -238,7 +239,9 @@ The registry defines the keyword projection and defaults.
 Handle and result API
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: python
+The following signatures describe the handle and its result types:
+
+.. code-block:: text
 
    class MolecularForceField:
        def position(self, atom_id: int) -> tuple[float, float, float]: ...

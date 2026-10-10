@@ -2,6 +2,7 @@
 **/*.pyc
 __pycache__/
 .venv/
+node_modules/
 python/dist/
 python/docs/build/
 python/cosmolkit.pyi

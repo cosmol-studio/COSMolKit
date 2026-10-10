@@ -4,15 +4,17 @@ import cosmolkit as ck
 
 
 molecules = [
-    ck.Molecule.from_smiles("CCCCO"),
-    ck.Molecule.from_smiles("CCCCC"),
+    ck.mol_from_smiles("CCCCO"),
+    ck.mol_from_smiles("CCCCC"),
 ]
-generator = ck.get_topological_torsion_generator(fp_size=2048)
+generator = ck.TopologicalTorsionFingerprintGenerator(
+    params=ck.TopologicalTorsionParams(fp_size=2048)
+)
 
-sparse_count = generator.get_sparse_count_fingerprint(molecules[0])
-sparse_bit = generator.get_sparse_fingerprint(molecules[0])
-count = generator.get_count_fingerprint(molecules[0])
-bit = generator.get_fingerprint(molecules[0])
+sparse_count = molecules[0].fingerprint_topological_torsion_sparse_count_with_generator(generator)
+sparse_bit = molecules[0].fingerprint_topological_torsion_sparse_with_generator(generator)
+count = molecules[0].fingerprint_topological_torsion_count_with_generator(generator)
+bit = molecules[0].fingerprint_topological_torsion_with_generator(generator)
 
 print("sparse count:", sparse_count.nonzero_elements())
 print("sparse bit:", sparse_bit.on_bits())
@@ -24,19 +26,19 @@ additional.allocate_atom_to_bits()
 additional.allocate_atom_counts()
 additional.allocate_bit_paths()
 additional.allocate_atoms_per_bit()
-_ = generator.get_fingerprint(molecules[0], additional_output=additional)
+_ = molecules[0].fingerprint_topological_torsion_with_generator(generator, output=additional)
 print("atom to bits:", additional.atom_to_bits())
 print("atom counts:", additional.atom_counts())
 print("bit paths:", additional.bit_paths())
 
-bulk = generator.get_fingerprints(molecules, num_threads=2)
-assert bulk[0].on_bits() == bit.on_bits()
+bulk = generator.fingerprints(molecules, num_threads=2)
+first = bulk[0]
+assert first is not None
+assert first.on_bits() == bit.on_bits()
 
-legacy_unfolded = ck.get_topological_torsion_fingerprint(molecules[0])
-legacy_hashed_count = ck.get_hashed_topological_torsion_fingerprint(molecules[0])
-legacy_hashed_bit = ck.get_hashed_topological_torsion_fingerprint_as_bit_vect(
-    molecules[0]
-)
+legacy_unfolded = molecules[0].fingerprint_topological_torsion_sparse_count_legacy()
+legacy_hashed_count = molecules[0].fingerprint_topological_torsion_count_legacy()
+legacy_hashed_bit = molecules[0].fingerprint_topological_torsion_legacy()
 print("legacy unfolded:", legacy_unfolded.nonzero_elements())
 print("legacy hashed count:", legacy_hashed_count.nonzero_elements())
 print("legacy hashed bit:", legacy_hashed_bit.on_bits())

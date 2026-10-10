@@ -3,8 +3,18 @@ use ::cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-pyo3::create_exception!(cosmolkit, DescriptorReadError, PyValueError);
-pyo3::create_exception!(cosmolkit, DescriptorError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    DescriptorReadError,
+    PyValueError,
+    "A molecular descriptor could not read the required chemical state."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    DescriptorError,
+    PyValueError,
+    "A molecular descriptor could not be evaluated for the supplied molecule or options."
+);
 
 fn domain_pyerr(py: Python<'_>, source: &ck::DescriptorError) -> PyErr {
     use ck::DescriptorError as E;

@@ -7,14 +7,13 @@ Molecule Values
 ``Molecule`` objects behave as value-style molecule values. Transformation
 methods return new molecule objects and leave the original object unchanged.
 Internally COSMolKit uses copy-on-write (COW) storage to share unchanged data
-efficiently. This is intentionally different from common RDKit Python
-workflows, where code often mutates an existing molecule or ``RWMol`` directly.
+efficiently.
 
 .. code-block:: python
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
    mol_h = mol.with_hydrogens()
 
    assert mol is not mol_h
@@ -33,10 +32,10 @@ Common transformations include:
 - ``with_chiral_tags_from_structure()``
 
 Importing an RDKit Molecule
---------------------------
+---------------------------
 
-``Molecule.from_rdkit()`` copies the graph fields and 3D conformers supported
-by COSMolKit 0.3.0. It constructs independent storage without a SMILES
+``ck.mol_from_rdkit()`` copies the graph fields and 3D conformers supported
+by COSMolKit 0.5.0. It constructs independent storage without a SMILES
 round trip and does not modify the RDKit object:
 
 .. code-block:: python
@@ -45,9 +44,9 @@ round trip and does not modify the RDKit object:
    import cosmolkit as ck
 
    source = Chem.MolFromSmiles("[13CH3:7][C@H](F)Cl")
-   molecule = ck.Molecule.from_rdkit(source)
-   raw = ck.Molecule.from_rdkit(source, sanitize=False)
-   sanitized = ck.Molecule.from_rdkit(source, sanitize=True)
+   molecule = ck.mol_from_rdkit(source)
+   raw = ck.mol_from_rdkit(source, sanitize=False)
+   sanitized = ck.mol_from_rdkit(source, sanitize=True)
 
 The default ``sanitize=None`` prepares valence only, preserving the copied
 aromaticity, hybridization and stereochemical fields. ``True`` runs full
@@ -60,19 +59,19 @@ properties, query trees, SGroups or enhanced stereo groups.
 Elements and Periodic-Table Metadata
 ------------------------------------
 
-``Element`` is a stable integer enum whose values are atomic numbers. Zero is
-the dummy atom, and 1 through 118 represent H through Og. Symbol lookup is
-case-sensitive and metadata comes from the same source-aligned periodic table
+``Element`` identifies chemical elements, including the dummy atom and
+H through Og. Use ``element_info(element).atomic_number()`` for the numeric
+atomic number. Symbol lookup is case-sensitive and metadata comes from the same source-aligned periodic table
 used by the chemistry core:
 
 .. code-block:: python
 
    import cosmolkit as ck
 
-   assert ck.Element.C == 6
-   assert ck.element_from_symbol("Cl") == ck.Element.CL
+   assert ck.element_info(ck.Element.C).atomic_number() == 6
+   assert ck.Element.from_symbol("Cl") == ck.Element.CL
 
-   chlorine = ck.get_element_info(ck.Element.CL)
+   chlorine = ck.element_info(ck.Element.CL)
    assert chlorine.symbol() == "Cl"
    assert chlorine.atomic_number() == 17
 
@@ -94,7 +93,7 @@ value-style sanitize operation:
 
 .. code-block:: python
 
-   raw = ck.Molecule.read_mol("input.mol", sanitize=False)
+   raw = ck.Molecule.read_mol_with_params("input.mol", ck.SdfReadParams(sanitize=False))
    sanitized = raw.sanitize()
 
    assert raw is not sanitized
@@ -104,13 +103,13 @@ hydrogen removal:
 
 .. code-block:: python
 
-   with_h = ck.Molecule.read_sdf("input.sdf", remove_hs=False)
+   with_h = ck.Molecule.read_sdf_with_params("input.sdf", ck.SdfReadParams(remove_hs=False))
    heavy = with_h.without_hydrogens()
 
    assert with_h is not heavy
 
-The same delayed-operation pattern applies to ``read_mol_from_str()`` and
-``read_sdf_from_str()``.
+The same delayed-operation pattern applies to ``ck.mol_from_mol()`` and
+``ck.mol_from_sdf()`` for strings already in memory.
 
 In-Place Operations
 -------------------
@@ -121,7 +120,7 @@ no other ``Molecule`` API meaning.
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
    mol.add_hydrogens_()
    mol.compute_2d_coordinates_()
 
@@ -145,7 +144,7 @@ SMILES Output
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.mol_from_smiles("F[C@H](Cl)Br")
 
    print(mol.to_smiles())
    print(mol.to_smiles(isomeric_smiles=False))
@@ -154,26 +153,12 @@ SMILES writer options are available on both single molecules and batches:
 
 .. code-block:: python
 
-   benzene = ck.Molecule.from_smiles("c1ccccc1")
-   ethanol = ck.Molecule.from_smiles("CCO")
+   benzene = ck.mol_from_smiles("c1ccccc1")
+   ethanol = ck.mol_from_smiles("CCO")
 
    print(benzene.to_smiles(kekule=True))
    print(ethanol.to_smiles(all_bonds_explicit=True))
    print(ethanol.to_smiles(canonical=False, rooted_at_atom=2))
-
-Explicit Editing
-----------------
-
-Use ``Molecule.edit()`` when you want to stage changes and commit them as one
-new molecule:
-
-.. code-block:: python
-
-   editor = mol.edit()
-   cl = editor.add_atom("Cl")
-   editor.add_bond(0, cl, order="single")
-
-   edited = editor.commit()
 
 Serialization
 -------------
@@ -188,23 +173,22 @@ structure.
 
    import pickle
 
-   mol = ck.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
+   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
    print(restored.to_smiles(canonical=False))
 
-Advanced callers can use ``mol_to_binary()`` and ``mol_from_binary()`` to
+Advanced callers can use ``mol.to_binary()`` and ``ck.mol_from_binary()`` to
 inspect or persist the COSMolKit molecule archive directly. Python
 applications should prefer ``pickle`` unless they specifically need the raw
 archive payload. The versioned archive preserves graph, coordinate, property,
 and materialized derived chemistry state so supported operations retain the
-same behavior after restoration; legacy archive readers remain available for
-older payloads:
+same behavior after restoration:
 
 .. code-block:: python
 
-   payload = mol.mol_to_binary()
-   restored = ck.Molecule.mol_from_binary(payload)
+   payload = mol.to_binary()
+   restored = ck.mol_from_binary(payload)
 
    assert restored.to_smiles(canonical=False) == mol.to_smiles(canonical=False)
 
@@ -215,7 +199,7 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+   mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
    svg = mol.to_svg(width=400, height=300)
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
@@ -232,16 +216,16 @@ RDKit atoms:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.mol_from_smiles("F[C@H](Cl)Br")
 
    for atom in mol.atoms():
        if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
-           print(atom.idx(), atom.chiral_tag().name)
+           print(atom.id(), atom.chiral_tag().name)
 
    print(mol.find_chiral_centers(include_unassigned=False))
 
 ``find_chiral_centers()`` follows the pinned RDKit modern perception path
-(``useLegacyImplementation=False``, CIP labels enabled). It returns only
+(CIP labels enabled). It returns only
 potential tetrahedral centers, with ``R``/``S`` or lowercase ``r``/``s`` labels.
 The default ``include_unassigned=False`` omits unspecified centers; pass
 ``True`` to include their ``?`` labels. Unknown stereo without a CIP label uses
@@ -250,11 +234,9 @@ property-to-string conversion, including empty strings. Invalid UTF-8 label
 text raises a structured error rather than losing bytes. Non-tetrahedral and double-bond stereo do
 not appear in this list. This query leaves molecule state unchanged and raises
 ``StereoReadError`` if perception, CIP assignment, or label conversion fails.
-The API remains experimental and exposes the modern path with CIP enabled;
-legacy perception and an ``includeCIP=False`` mode are not exposed.
+The API remains experimental and exposes perception with CIP enabled.
 
-This replaces the former raw-tag output and its ``include_unassigned=True``
-default. Code needing raw tags should read ``atom.chiral_tag()`` directly.
+Read ``atom.chiral_tag()`` directly when raw tags are needed.
 
 Atom and bond enum-valued fields return Python ``IntEnum`` members, so callers
 can compare or match against ``ChiralTag``, ``BondOrder``, ``BondDirection``,
@@ -272,13 +254,13 @@ canonicalized to one numeric representative. The precise contract is in
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.mol_from_smiles("F[C@H](Cl)Br")
 
    print(mol.tetrahedral_stereo())
-   print(ck.Molecule.from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo())
+   print(ck.mol_from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo())
    print(mol.with_hydrogens().tetrahedral_stereo())
-   print(ck.Molecule.from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
-   print(ck.Molecule.from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
+   print(ck.mol_from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
+   print(ck.mol_from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
 
 ``None`` in the ligand list represents an implicit hydrogen ligand. It does
 not mean the ligand slot is empty. If hydrogens are materialized with
@@ -287,12 +269,12 @@ not mean the ligand slot is empty. If hydrogens are materialized with
 Potential Stereo And Stereoisomer Enumeration
 ----------------------------------------------
 
-``analyze_potential_stereo()`` returns an isolated molecule state and ordered,
+``potential_stereo()`` returns an isolated molecule state and ordered,
 typed potential-stereo records without mutating the source. Each record reports
 its stereo type, specified state, atom or bond center, descriptor, permutation,
 and ordered controlling atoms.
 
-``stereoisomers()`` returns a lazy iterator. The default options enumerate only
+``enumerate_stereoisomers()`` returns a lazy iterator. The default options enumerate only
 unassigned atom and double-bond stereo, include enhanced stereo-group flippers,
 deduplicate by canonical isomeric SMILES, and yield at most 1,024 outputs. A
 molecule with no selected center yields one isolated molecule value.
@@ -301,21 +283,24 @@ molecule with no selected center yields one isolated molecule value.
 
    import cosmolkit as ck
 
-   source = ck.Molecule.from_smiles("CC(F)C(Cl)Br")
-   analysis = source.analyze_potential_stereo()
+   source = ck.mol_from_smiles("CC(F)C(Cl)Br")
+   analysis = source.potential_stereo()
 
-   print([(item.center_kind, item.center_index) for item in analysis.stereo_info])
+   print([(item.stereo_type, item.centered_on) for item in analysis.stereo])
    print(source.stereoisomer_count())
 
-   options = ck.StereoisomerOptions(max_isomers=4, rand=0xF00D)
-   for isomer in source.stereoisomers(options):
+   options = ck.StereoisomerOptions(
+       max_isomers=4, random_source=ck.StereoisomerRandomSource.from_integer_seed(0xF00D),
+   )
+   for isomer in source.enumerate_stereoisomers(options):
        print(isomer.to_smiles())
 
    assert source.to_smiles() == "CC(F)C(Cl)Br"
 
 ``max_isomers`` bounds successful outputs. When it is smaller than the
-configuration space, ``rand`` follows Python ``random.Random`` semantics; a
-``random.Random`` instance or subclass can supply ``getrandbits()`` lazily.
+configuration space, ``random_source`` controls sampling.
+``StereoisomerRandomSource.from_integer_seed(seed)`` provides reproducible
+sampling; ``from_random_bits(callback)`` accepts a ``getrandbits`` callback.
 ``try_embedding=True`` applies the source-defined one-conformer geometry
 filter, and embedding failures do not consume the successful-output limit.
 ``only_unassigned=False`` also enumerates assigned centers,
@@ -344,7 +329,7 @@ unrelated properties are preserved.
    import numpy as np
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
+   mol = ck.mol_from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
        np.array(
            [
                [0.0, 0.0, 0.0],
@@ -361,9 +346,9 @@ unrelated properties are preserved.
 The in-place form is ``assign_chiral_tags_from_structure_()``. Missing
 conformers and invalid source state raise structured Python exceptions without
 committing partial molecule changes. A selected non-3D conformer is a
-source-defined no-op. This stable ``supported_with_rdkit_parity`` capability
-matches all 77 fixed full-state oracle records exactly against RDKit 2026.03.1
-``assignChiralTypesFrom3D``. Its boundary includes tetrahedral C/S/Se centers,
+source-defined no-op. Special regressions exercise 77 fixed full-state cases
+against the pinned RDKit ``assignChiralTypesFrom3D`` reference.
+The boundary includes tetrahedral C/S/Se centers,
 environment-enabled square-planar, trigonal-bipyramidal, and octahedral
 centers, property updates, no-op paths, and defined errors. It does not include the
 broader ``assignStereochemistryFrom3D`` workflow, 3D double-bond direction or
@@ -382,11 +367,11 @@ completion state.
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("C[C@H](F)Cl")
+   mol = ck.mol_from_smiles("C[C@H](F)Cl")
    labeled = mol.with_cip_labels()
    print(labeled.atoms()[1].cip_descriptor())
 
-   alkene = ck.Molecule.from_smiles("F/C=C/F")
+   alkene = ck.mol_from_smiles("F/C=C/F")
    alkene.assign_cip_labels_()
    print(alkene.bonds()[1].cip_descriptor())
 
@@ -410,16 +395,16 @@ returns a new molecule value.
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+   mol = ck.mol_from_smiles("CC(=O)NC").with_hydrogens()
 
-   params = ck.EmbedParameters.etkdg_v3()
+   params = ck.EmbedParams.etkdg_v3()
    params.random_seed = 0xF00D
    params.num_threads = 1
    params.track_failures = True
 
    embedded = mol.with_3d_conformer(params)
 
-   print(embedded.num_conformers())
+   print(embedded.num_3d_conformers())
    print(embedded.coordinates_3d())
    print(params.failures)
 
@@ -435,7 +420,7 @@ state through Python.
    import numpy as np
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
 
    coords_2d = np.array(
        [
@@ -444,7 +429,7 @@ state through Python.
            [2.1, 1.2],
        ]
    )
-   drawn = mol.with_2d_coordinates(coords_2d)
+   drawn = mol.with_2d_coordinate_block(coords_2d)
 
    coords_3d = np.array(
        [
@@ -460,10 +445,10 @@ state through Python.
    cleared = placed.with_cleared_3d_conformers()
 
    print(drawn.coordinates_2d())
-   print(placed.num_conformers())
+   print(placed.num_3d_conformers())
    print(shifted.coordinates_3d())
-   print(single.num_conformers())
-   print(cleared.num_conformers())
+   print(single.num_3d_conformers())
+   print(cleared.num_3d_conformers())
 
 The in-place forms follow COSMolKit's trailing-underscore convention:
 
@@ -471,7 +456,9 @@ The in-place forms follow COSMolKit's trailing-underscore convention:
 
    mol.set_2d_coordinates_(coords_2d)
    conf_id = mol.add_3d_conformer_(coords_3d)
-   mol.set_3d_coordinates_(coords_3d + [0.0, 0.0, 1.0], conformer_index=conf_id)
+   mol.set_3d_coordinates_with_params_(
+       coords_3d + [0.0, 0.0, 1.0], ck.Replace3DCoordinatesParams(conformer_id=conf_id),
+   )
    mol.clear_3d_conformers_()
    conf_id = mol.set_only_3d_conformer_(coords_3d)
 
@@ -482,7 +469,9 @@ required to be zero, or rejected:
 .. code-block:: python
 
    coords_2d_with_zero_z = np.column_stack([coords_2d, np.zeros(mol.num_atoms())])
-   mol.with_2d_coordinates(coords_2d_with_zero_z, z_policy="require_zero")
+   mol.with_2d_coordinate_block_with_params(
+       coords_2d_with_zero_z, ck.Coordinate2DInputParams(z_policy="require_zero"),
+   )
 
 3D assignment accepts only shape ``(num_atoms, 3)``. All coordinate values must
 be finite, and row counts must match ``mol.num_atoms()``.
@@ -497,14 +486,14 @@ the source-ported RDKit path.
 
 .. code-block:: python
 
-   params = ck.EmbedParameters.etkdg()
+   params = ck.EmbedParams.etkdg()
    params.random_seed = 123
    params.num_threads = 1
    params.prune_rms_thresh = 0.5
    params.enable_sequential_random_seeds = True
 
    pruned = mol.with_3d_conformers(5, params)
-   print(pruned.num_conformers())
+   print(pruned.num_3d_conformers())
 
 Molecular Alignment And RMSD
 ----------------------------
@@ -524,8 +513,8 @@ their existing frames without alignment.
        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
    )
    probe_coords = reference_coords + np.array([3.0, -2.0, 1.0])
-   reference = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coords)
-   probe = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coords)
+   reference = ck.mol_from_smiles("CCC").with_only_3d_conformer(reference_coords)
+   probe = ck.mol_from_smiles("CCC").with_only_3d_conformer(probe_coords)
    params = ck.AlignmentParameters(
        atom_map=[ck.AlignmentAtomMap(index, index) for index in range(3)]
    )
@@ -558,10 +547,10 @@ source molecule.
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCO").with_hydrogens().with_3d_conformer()
+   mol = ck.mol_from_smiles("CCO").with_hydrogens().with_3d_conformer()
 
-   if mol.has_uff_params():
-       result = mol.with_uff_optimized(max_iters=200)
+   if mol.uff_has_all_molecule_params():
+       result = mol.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=200))
        optimized = result.molecule()
 
        print(not result.needs_more())
@@ -569,8 +558,10 @@ source molecule.
        print(result.energy())
        print(optimized.coordinates_3d())
 
-   if mol.has_mmff_params():
-       result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)
+   if mol.mmff_has_all_molecule_params():
+       result = mol.with_mmff_optimized_with_params(
+           ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
+       )
        optimized = result.molecule()
 
        print(not result.needs_more())
@@ -586,7 +577,7 @@ the canonical SMARTS parser:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
    query = ck.QueryGraph.from_smarts("CO")
 
    print(mol.has_substruct_match(query))

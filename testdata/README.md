@@ -11,6 +11,12 @@ Current corpus and designated special-regression inputs belong in
 [prepare / Cargo test workflow](../parity-tests_fixed/README.md).
 Do not duplicate preparation instructions in individual fixture directories.
 
+The current reference is RDKit `2026.03.6`, recorded in
+[`reference/rdkit.json`](reference/rdkit.json). Older versions in fixture
+READMEs and source manifests are the original provenance of those fixed
+inputs, not a competing current reference pin. Do not rewrite their source
+versions or checksums merely to match the current environment.
+
 Ordinary regressions live in their owning crates. They use small inline cases
 or fixed shared fixtures, never invoke reference generators, and do not depend
 on generated corpus expectations. Pinned `third_party/` fixtures may be read
@@ -20,4 +26,4 @@ production and package builds must not require them.
 Keep source versions, selection notes, licenses and checksums with existing
 fixtures. An unresolved provenance gap remains unresolved; do not infer a
 source from the filename. Historical 0.3.0 validation is recorded in
-[VALIDATION.md](../VALIDATION.md); complete 0.5.0 validation is pending.
+[VALIDATION.md](../VALIDATION.md); million-scale 0.5.0 parity validation is pending.

@@ -12,7 +12,7 @@ transform, export, and filtering steps.
 
    import cosmolkit as ck
 
-   batch = ck.MoleculeBatch.from_smiles_list(
+   batch = ck.mols_from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
        errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
@@ -56,7 +56,7 @@ input index, operation name, and message:
        print(error.index(), error.operation(), error.message())
 
    try:
-       ck.MoleculeBatch.from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
+       ck.mols_from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
    except ck.BatchValidationError as exc:
        print(exc.error_count)
 
@@ -94,7 +94,8 @@ Export Images
    report = prepared.write_images(
        "molecule_images",
        format="png",
-       size=(300, 300),
+       width=300,
+       height=300,
        errors="keep",
        filenames=["ethanol.png", "benzene.png", "invalid.png"],
        report_path="image_errors.json",
@@ -145,13 +146,13 @@ Derived Outputs
    rooted = prepared.to_smiles_list(rooted_at_atom=0)
    explicit = prepared.to_smiles_list(
        all_bonds_explicit=True,
-       all_hs_explicit=True,
+       all_hydrogens_explicit=True,
    )
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
-   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
+   fingerprints = prepared.fingerprint_morgan_list(fp_size=2048)
    patterns = prepared.fingerprint_pattern_list(n_bits=2048, tautomeric=False)
-   atom_pairs = prepared.fingerprint_atom_pair_list(n_bits=2048)
+   atom_pairs = prepared.fingerprint_atom_pair_list(fp_size=2048)
 
 Morgan, Pattern, and AtomPair batch APIs use the same source-backed cores as
 the single-molecule APIs, preserve record order, and are covered by exact
@@ -191,7 +192,7 @@ SMILES Options
 - ``kekule`` writes aromatic systems in Kekule form.
 - ``clean_stereo`` normalizes stereo output where possible.
 - ``all_bonds_explicit`` writes explicit bond symbols.
-- ``all_hs_explicit`` writes explicit hydrogens.
+- ``all_hydrogens_explicit`` writes explicit hydrogens.
 - ``include_dative_bonds`` includes dative bond notation.
 - ``ignore_atom_map_numbers`` omits atom map numbers from canonical decisions.
 - ``rooted_at_atom`` starts traversal from a selected atom index.
@@ -203,7 +204,7 @@ Batch SMILES output preserves isomeric chirality by default:
 
 .. code-block:: python
 
-   chiral_batch = ck.MoleculeBatch.from_smiles_list(
+   chiral_batch = ck.mols_from_smiles_list(
        ["F[C@H](Cl)Br", "F[C@@H](Cl)Br"],
        errors="raise",
    )

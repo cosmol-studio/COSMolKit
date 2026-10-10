@@ -7,7 +7,12 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::error::Error;
 
-pyo3::create_exception!(cosmolkit, LayeredFingerprintError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    LayeredFingerprintError,
+    PyValueError,
+    "Layered fingerprint generation failed for the molecule or query."
+);
 pub(crate) fn layered_pyerr(
     py: Python<'_>,
     source: impl std::borrow::Borrow<ck::LayeredFingerprintError>,
@@ -46,6 +51,7 @@ pub(crate) fn layered_pyerr(
     err
 }
 
+/// Bit mask selecting topology, bond order, atom type, ring size and aromaticity layers for layered fingerprints.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct LayeredFingerprintLayers {
@@ -54,17 +60,23 @@ pub(crate) struct LayeredFingerprintLayers {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LayeredFingerprintLayers {
+    /// Construct a flag value preserving all supplied integer bits.
     #[staticmethod]
     fn from_bits_retain(bits: u32) -> Self {
         Self {
             inner: ck::LayeredFingerprintLayers::from_bits_retain(bits),
         }
     }
+    /// Return the underlying unsigned integer bit mask.
     fn bits(&self) -> u32 {
         self.inner.bits()
     }
 }
 
+/// Writable configuration for layered fingerprint generation.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct LayeredFingerprintParams {
@@ -74,6 +86,7 @@ pub(crate) struct LayeredFingerprintParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LayeredFingerprintParams {
+    /// Configure layered fingerprint generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,layers=0xffff_ffff,min_path=1,max_path=7,fp_size=2048,atom_counts=None,set_only_bits=None,branched_paths=true,from_atoms=None))]
     fn new(
@@ -99,26 +112,32 @@ impl LayeredFingerprintParams {
             },
         }
     }
+    /// Layer flags. Unknown high bits are retained and emit no components.
     #[getter]
     fn layers(&self) -> u32 {
         self.inner.layers.bits()
     }
+    /// Minimum number of bonds in an enumerated fingerprint path.
     #[getter]
     fn min_path(&self) -> u32 {
         self.inner.min_path
     }
+    /// Maximum number of bonds in an enumerated fingerprint path.
     #[getter]
     fn max_path(&self) -> u32 {
         self.inner.max_path
     }
+    /// Number of bins/bits in the folded fingerprint.
     #[getter]
     fn fp_size(&self) -> u32 {
         self.inner.fp_size
     }
+    /// Return atom-indexed feature participation counts, or None if this sink was not allocated.
     #[getter]
     fn atom_counts(&self) -> Option<Vec<u32>> {
         self.inner.atom_counts.clone()
     }
+    /// Optional projection mask, which must have exactly ``fp_size`` bits.
     #[getter]
     fn set_only_bits(&self) -> Option<Fingerprint> {
         self.inner
@@ -126,16 +145,19 @@ impl LayeredFingerprintParams {
             .clone()
             .map(|inner| Fingerprint { inner })
     }
+    /// Whether branched subgraphs, not just linear paths, are included.
     #[getter]
     fn branched_paths(&self) -> bool {
         self.inner.branched_paths
     }
+    /// Atom indices used as fingerprint starting centers; an omitted list uses all eligible atoms.
     #[getter]
     fn from_atoms(&self) -> Option<Vec<u32>> {
         self.inner.from_atoms.clone()
     }
 }
 
+/// Layered bit fingerprint plus optional atom-count metadata requested by the call.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct LayeredFingerprintResult {
@@ -144,6 +166,7 @@ pub(crate) struct LayeredFingerprintResult {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LayeredFingerprintResult {
+    /// Return the bit fingerprint stored in this result.
     fn fingerprint(&self) -> Fingerprint {
         // COSMolKit✔️✔️:     fn fingerprint(&self) -> Fingerprint {
         // COSMolKit✔️✔️:         self.fingerprint.clone()
@@ -152,6 +175,7 @@ impl LayeredFingerprintResult {
             inner: self.inner.fingerprint().clone(),
         }
     }
+    /// Return atom-indexed feature participation counts, or None if this sink was not allocated.
     fn atom_counts(&self) -> Option<Vec<u32>> {
         // COSMolKit✔️✔️:     fn atom_counts(&self) -> Option<Vec<u32>> {
         // COSMolKit✔️✔️:         self.atom_counts.clone()
@@ -174,6 +198,7 @@ impl LayeredFingerprintResult {
     }
 }
 
+/// Compute layered fixed-width bit fingerprints for a QueryGraph without discarding its predicates.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn fingerprint_layered_query_with_params(
@@ -185,6 +210,7 @@ fn fingerprint_layered_query_with_params(
         .map(|inner| Fingerprint { inner })
         .map_err(|e| layered_pyerr(py, e))
 }
+/// Compute layered fixed-width bit fingerprints for a QueryGraph without discarding its predicates; include the requested atom/bit environment metadata.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn fingerprint_layered_query_with_output_with_params(

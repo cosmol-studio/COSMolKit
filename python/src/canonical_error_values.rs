@@ -3,6 +3,9 @@ use ::cosmolkit as ck;
 use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
+/// Reading phase at which PDB input failed: stream access, record parsing or finalization.
+///
+/// Declared values: ``Stream``, ``Record``, ``Finalization``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -21,6 +24,9 @@ impl From<ck::BioPdbReadStage> for BioPdbReadStage {
         }
     }
 }
+/// Stage of structural mmCIF reading that produced a typed error.
+///
+/// Declared values: ``CifDocument``, ``CoordinateBlock``, ``CrystalCell``, ``Refinement``, ``Tls``, ``Experimental``, ``Reflections``, ``Software``, ``Ncs``, ``FractionalTransform``, ``Origx``, ``AnisotropicU``, ``AtomSites``, ``EntitySequence``, ``Helices``, ``Sheets``, ``Connections``, ``CisPeptides``, ``ModifiedResidues``, ``Assemblies``, ``SiftsUnp``, ``CcdRestoration``, ``Materialization``, ``StructureValidation``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -81,6 +87,9 @@ impl From<ck::BioMmcifReadStage> for BioMmcifReadStage {
         }
     }
 }
+/// Category of UFF parameterization failure: preparation, parameter-table lookup or atom typing.
+///
+/// Declared values: ``Preparation``, ``ParameterTable``, ``Typing``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -99,6 +108,7 @@ impl From<ck::UffParameterErrorKind> for UffParameterErrorKind {
         }
     }
 }
+/// Stable categories; unavailable geometry is not a guessed 2D fallback.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct UffOptimizationErrorKind {
@@ -107,6 +117,7 @@ pub(crate) struct UffOptimizationErrorKind {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl UffOptimizationErrorKind {
+    /// Named variant/category of the result.
     #[getter]
     fn variant(&self) -> &'static str {
         match self.inner {
@@ -117,6 +128,7 @@ impl UffOptimizationErrorKind {
             ck::UffOptimizationErrorKind::Evaluation => "Evaluation",
         }
     }
+    /// Requested conformer identifier in a missing-conformer error, when available.
     #[getter]
     fn requested(&self) -> Option<usize> {
         match self.inner {

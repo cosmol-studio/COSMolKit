@@ -6,18 +6,21 @@ import cosmolkit as ck
 
 
 def main() -> None:
-    source = ck.Molecule.from_smiles("CC(F)C(Cl)Br")
+    source = ck.mol_from_smiles("CC(F)C(Cl)Br")
     source_smiles = source.to_smiles()
 
-    analysis = source.analyze_potential_stereo()
+    analysis = source.potential_stereo()
     print(
         "potential centers:",
-        [(item.center_kind, item.center_index) for item in analysis.stereo_info],
+        [(item.stereo_type, item.centered_on) for item in analysis.stereo],
     )
 
-    options = ck.StereoisomerOptions(max_isomers=4, rand=0xF00D)
+    options = ck.StereoisomerOptions(
+        max_isomers=4,
+        random_source=ck.StereoisomerRandomSource.from_integer_seed(0xF00D),
+    )
     print("upper-bound count:", source.stereoisomer_count(options))
-    print("outputs:", [isomer.to_smiles() for isomer in source.stereoisomers(options)])
+    print("outputs:", [isomer.to_smiles() for isomer in source.enumerate_stereoisomers(options)])
 
     assert source.to_smiles() == source_smiles
 

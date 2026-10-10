@@ -4,6 +4,26 @@ Quick Start
 .. meta::
    :description: Start using COSMolKit in Python for value-style molecular graphs, SMILES, coordinates, conformers, fingerprints, descriptors, depiction, and batch workflows.
 
+Installation
+------------
+
+Install COSMolKit from PyPI:
+
+.. code-block:: bash
+
+   pip install cosmolkit
+
+Verify the installation:
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   print(ck.__version__)
+
+COSMolKit depends on NumPy for array outputs such as coordinates and distance
+bounds matrices.
+
 Value-Style Molecule Values
 ---------------------------
 
@@ -33,22 +53,20 @@ uses copy-on-write (COW) storage to share unchanged data efficiently:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
    mol_h = mol.with_hydrogens()
 
    assert mol is not mol_h
    print(mol.to_smiles())
    print(mol_h.to_smiles())
 
-This is an intentional difference from common RDKit Python usage. Do not assume
-that a transform mutates the existing object; always keep the returned
-``Molecule``.
+Keep the returned ``Molecule`` when applying a value-style transformation.
 
 In-place molecule operations are explicit and always end with ``_``:
 
 .. code-block:: python
 
-   mol = ck.Molecule.from_smiles("CCO")
+   mol = ck.mol_from_smiles("CCO")
    mol.add_hydrogens_()
    mol.compute_2d_coordinates_()
 
@@ -61,7 +79,7 @@ Create a molecule from SMILES and export a depiction:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
+   mol = ck.mol_from_smiles("c1ccccc1O")
    drawn = mol.with_2d_coordinates()
 
    print(mol.to_smiles())
@@ -73,27 +91,27 @@ Inspect atoms and bonds:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
+   mol = ck.mol_from_smiles("c1ccccc1O")
 
    for atom in mol.atoms():
-       print(atom.idx(), atom.atomic_num(), atom.is_aromatic())
+       print(atom.id(), atom.atomic_number(), atom.is_aromatic())
 
    for bond in mol.bonds():
-       if bond.bond_type() == ck.BondOrder.SINGLE:
-           print(bond.begin_atom_idx(), bond.end_atom_idx(), bond.bond_type().name)
+       if bond.order() == ck.BondOrder.SINGLE:
+           print(bond.begin(), bond.end(), bond.order().name)
 
 Inspect chiral tags without converting to an ordered tetrahedral record:
 
 .. code-block:: python
 
-   chiral = ck.Molecule.from_smiles("F[C@H](Cl)Br")
+   chiral = ck.mol_from_smiles("F[C@H](Cl)Br")
 
    print(chiral.to_smiles())
    print(chiral.to_smiles(isomeric_smiles=False))
 
    for atom in chiral.atoms():
        if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
-           print(atom.idx(), atom.chiral_tag().name)
+           print(atom.id(), atom.chiral_tag().name)
 
 Assign atom chiral tags from a stored 3D conformer:
 
@@ -101,7 +119,7 @@ Assign atom chiral tags from a stored 3D conformer:
 
    import numpy as np
 
-   spatial = ck.Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
+   spatial = ck.mol_from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
        np.array(
            [
                [0.0, 0.0, 0.0],
@@ -129,11 +147,11 @@ source molecule:
 
    import cosmolkit as ck
 
-   source = ck.Molecule.from_smiles("CC(F)C(Cl)Br")
+   source = ck.mol_from_smiles("CC(F)C(Cl)Br")
    options = ck.StereoisomerOptions(max_isomers=4)
 
    print(source.stereoisomer_count(options))
-   print([isomer.to_smiles() for isomer in source.stereoisomers(options)])
+   print([isomer.to_smiles() for isomer in source.enumerate_stereoisomers(options)])
 
 Molecular File IO And Stored Coordinates
 -----------------------------------------
@@ -142,8 +160,12 @@ Read and write the first SDF record:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_sdf("input.sdf", coordinate_mode="preserve")
-   mol.write_sdf("python/examples/output/output.sdf", format="v2000")
+   mol = ck.Molecule.read_sdf_with_params(
+       "input.sdf", ck.SdfReadParams(coordinate_mode="preserve"),
+   )
+   mol.write_sdf_with_params(
+       "python/examples/output/output.sdf", ck.MolBlockWriteParams(format="v2000"),
+   )
 
 Read MOL2 with the RDKit-style parser profile:
 
@@ -155,7 +177,7 @@ Access coordinates as NumPy arrays:
 
 .. code-block:: python
 
-   mol2d = ck.Molecule.from_smiles("CCO").with_2d_coordinates()
+   mol2d = ck.mol_from_smiles("CCO").with_2d_coordinates()
    coords = mol2d.coordinates_2d()
 
    print(coords.shape)
@@ -166,7 +188,7 @@ Round-trip a molecule through Python pickle:
 
    import pickle
 
-   mol = ck.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
+   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
 
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
@@ -182,15 +204,15 @@ Generate a native 3D conformer with ETKDGv3:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
-   params = ck.EmbedParameters.etkdg_v3()
+   mol = ck.mol_from_smiles("CC(=O)NC").with_hydrogens()
+   params = ck.EmbedParams.etkdg_v3()
    params.random_seed = 0xF00D
    params.num_threads = 1
    params.track_failures = True
 
    embedded = mol.with_3d_conformer(params)
 
-   print(embedded.num_conformers())
+   print(embedded.num_3d_conformers())
    print(embedded.coordinates_3d().shape)
    print(params.failures)
 
@@ -204,14 +226,14 @@ Generate multiple conformers with RMS pruning:
 
 .. code-block:: python
 
-   params = ck.EmbedParameters.etkdg()
+   params = ck.EmbedParams.etkdg()
    params.random_seed = 123
    params.num_threads = 1
    params.prune_rms_thresh = 0.5
    params.enable_sequential_random_seeds = True
 
    conformers = mol.with_3d_conformers(5, params)
-   print(conformers.num_conformers())
+   print(conformers.num_3d_conformers())
 
 Enum inputs accept either an enum member or its canonical snake-case string.
 For example, ``coordinate_mode="require_3d"`` and
@@ -222,10 +244,12 @@ Optimize an existing 3D conformer with UFF:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_sdf("input_3d.sdf", coordinate_mode="require_3d")
+   mol = ck.Molecule.read_sdf_with_params(
+       "input_3d.sdf", ck.SdfReadParams(coordinate_mode="require_3d"),
+   )
 
-   if mol.has_uff_params():
-       result = mol.with_uff_optimized(max_iters=200)
+   if mol.uff_has_all_molecule_params():
+       result = mol.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=200))
        optimized = result.molecule()
 
        print(not result.needs_more())
@@ -233,8 +257,10 @@ Optimize an existing 3D conformer with UFF:
        print(result.energy())
        print(optimized.coordinates_3d().shape)
 
-   if mol.has_mmff_params():
-       result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)
+   if mol.mmff_has_all_molecule_params():
+       result = mol.with_mmff_optimized_with_params(
+           ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
+       )
        print(not result.needs_more())
        print(result.status_code())
 
@@ -247,19 +273,19 @@ Generate source-backed fingerprints:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.from_smiles("c1ccccc1O")
+   mol = ck.mol_from_smiles("c1ccccc1O")
    morgan = mol.fingerprint_morgan(
        radius=2,
-       n_bits=2048,
+       fp_size=2048,
    )
    topological = mol.fingerprint_topological(fp_size=2048)
-   avalon = mol.avalon_fingerprint(n_bits=512)
+   avalon = mol.fingerprint_avalon(n_bits=512)
    pattern = mol.fingerprint_pattern(n_bits=2048, tautomeric=False)
-   atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
-   torsion = ck.get_topological_torsion_generator(
+   atom_pair = mol.fingerprint_atom_pair()
+   torsion = mol.fingerprint_topological_torsion(
        torsion_atom_count=4,
        fp_size=2048,
-   ).get_fingerprint(mol)
+   )
 
    print(morgan.on_bits())
    print(topological.on_bits())
@@ -316,7 +342,7 @@ Process a list of molecules:
 
    import cosmolkit as ck
 
-   batch = ck.MoleculeBatch.from_smiles_list(
+   batch = ck.mols_from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
        errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
@@ -325,7 +351,7 @@ Process a list of molecules:
        print(error.index(), error.operation(), error.message())
 
    prepared = batch.with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
-   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
+   fingerprints = prepared.fingerprint_morgan_list(fp_size=2048)
 
    print(prepared.valid_mask())
    print(prepared.to_smiles_list(canonical=True))

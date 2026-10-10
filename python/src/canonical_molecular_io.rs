@@ -4,7 +4,16 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
-pyo3::create_exception!(cosmolkit, MolecularIoError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    MolecularIoError,
+    PyValueError,
+    "A molecular text format could not be parsed, serialized or read/written as a file."
+);
+/// Writable configuration for XYZ text output.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct XyzWriteParams {
@@ -14,6 +23,7 @@ pub(crate) struct XyzWriteParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl XyzWriteParams {
+    /// Configure XYZ text output; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (conformer_id=None, precision=6))]
     fn new(conformer_id: Option<usize>, precision: u32) -> Self {
@@ -24,10 +34,12 @@ impl XyzWriteParams {
             },
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id
     }
+    /// Number of decimal places used for coordinate output.
     #[getter]
     fn precision(&self) -> u32 {
         self.inner.precision
@@ -183,6 +195,9 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+/// Tripos MOL2 atom-typing convention selected by the reader.
+///
+/// Declared values: ``Corina``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -190,6 +205,9 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 pub(crate) enum Mol2Type {
     Corina,
 }
+/// Molecular connection-table output format: automatic, V2000 or V3000.
+///
+/// Declared values: ``V2000``, ``V3000``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
@@ -214,6 +232,10 @@ impl From<ck::SdfFormat> for SdfFormat {
         }
     }
 }
+/// Writable configuration for Tripos MOL2 parsing.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Mol2ReadParams {
@@ -223,6 +245,7 @@ pub(crate) struct Mol2ReadParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Mol2ReadParams {
+    /// Configure Tripos MOL2 parsing; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, sanitize=true, remove_hs=true, variant=Mol2Type::Corina, cleanup_substructures=true))]
     fn new(
@@ -243,25 +266,30 @@ impl Mol2ReadParams {
             },
         }
     }
+    /// Return a new result that will perform the selected chemical sanitization stages. The source molecule is unchanged.
     #[getter]
     fn sanitize(&self) -> bool {
         self.inner.sanitize
     }
+    /// Whether removable explicit hydrogens are removed during input conversion.
     #[getter]
     fn remove_hs(&self) -> bool {
         self.inner.remove_hs
     }
+    /// Named variant/category of the result.
     #[getter]
     fn variant(&self) -> Mol2Type {
         match self.inner.variant {
             ck::Mol2Type::Corina => Mol2Type::Corina,
         }
     }
+    /// Whether MOL2-specific substructure cleanup is performed after parsing.
     #[getter]
     fn cleanup_substructures(&self) -> bool {
         self.inner.cleanup_substructures
     }
 }
+/// Canonical unique-or-explicit geometry selection for MOL and SDF export.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, eq)]
 #[derive(PartialEq)]
@@ -271,28 +299,33 @@ pub(crate) struct MolCoordinateSelection {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MolCoordinateSelection {
+    /// Construct a MolCoordinateSelection value from the supplied inputs.
     #[new]
     fn new() -> Self {
         Self {
             inner: ck::MolCoordinateSelection::Auto,
         }
     }
+    /// Construct a coordinate selection for automatic coordinate resolution, rejecting an ambiguous selection.
     #[staticmethod]
     fn auto() -> Self {
         Self::new()
     }
+    /// Construct a coordinate selection for the separate stored 2D conformer.
     #[staticmethod]
     fn two_d(id: usize) -> Self {
         Self {
             inner: ck::MolCoordinateSelection::TwoD { id },
         }
     }
+    /// Construct a coordinate selection for the stored 3D conformer with the supplied ID.
     #[staticmethod]
     fn three_d(id: usize) -> Self {
         Self {
             inner: ck::MolCoordinateSelection::ThreeD { id },
         }
     }
+    /// Return the selected coordinate dimension, or None for automatic resolution.
     #[getter]
     fn dimension(&self) -> Option<crate::canonical_sdf::CoordinateDimension> {
         match self.inner {
@@ -305,6 +338,7 @@ impl MolCoordinateSelection {
             }
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         match self.inner {
@@ -315,6 +349,10 @@ impl MolCoordinateSelection {
         }
     }
 }
+/// Writable configuration for MOL/SDF text output and coordinate selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct MolBlockWriteParams {
@@ -324,6 +362,7 @@ pub(crate) struct MolBlockWriteParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MolBlockWriteParams {
+    /// Configure MOL/SDF text output and coordinate selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, format=SdfFormat::V2000, force_2d=false, include_stereo=true, kekulize=true, precision=6, coordinate_selection=None, include_coordinates=true))]
     fn new(
@@ -348,32 +387,39 @@ impl MolBlockWriteParams {
             },
         }
     }
+    /// Input/output format selector accepted by the corresponding operation.
     #[getter]
     fn format(&self) -> SdfFormat {
         self.inner.format.into()
     }
+    /// Whether molecular output requests a 2D representation.
     #[getter]
     fn force_2d(&self) -> bool {
         self.inner.force_2d
     }
+    /// Whether supported stereochemical annotations are emitted.
     #[getter]
     fn include_stereo(&self) -> bool {
         self.inner.include_stereo
     }
+    /// Whether aromatic systems are kekulized as part of output preprocessing.
     #[getter]
     fn kekulize(&self) -> bool {
         self.inner.kekulize
     }
+    /// Number of decimal places used for coordinate output.
     #[getter]
     fn precision(&self) -> usize {
         self.inner.precision
     }
+    /// Explicit selection of stored 2D coordinates, a 3D conformer, or automatic resolution.
     #[getter]
     fn coordinate_selection(&self) -> MolCoordinateSelection {
         MolCoordinateSelection {
             inner: self.inner.coordinate_selection,
         }
     }
+    /// Whether coordinate data is included in the output.
     #[getter]
     fn include_coordinates(&self) -> bool {
         self.inner.include_coordinates

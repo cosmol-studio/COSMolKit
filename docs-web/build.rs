@@ -411,14 +411,9 @@ mod tests {
 
     #[test]
     fn rewrites_known_pages_and_preserves_suffixes() {
-        for page in pages().into_iter().chain(["index", "javascript"]) {
-            let route = if page == "index" {
-                "python".to_string()
-            } else if page == "javascript" {
-                "javascript".to_string()
-            } else {
-                format!("python/{page}")
-            };
+        for entry in contract().iter().filter(|entry| !entry.docname.is_empty()) {
+            let page = &entry.docname;
+            let route = entry.route.trim_start_matches('/');
             for prefix in ["", "./", "/"] {
                 for extension in [".html", ""] {
                     let input = format!(

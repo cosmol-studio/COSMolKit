@@ -31,6 +31,10 @@ pub(crate) fn to_numpy<'py>(
 }
 
 /// Ordered Rust-backed bit fingerprints, including failed input slots.
+///
+/// Indexing returns Fingerprint or None; slicing returns a FingerprintBatch.
+/// to_numpy() returns a uint8 matrix of shape (rows, bits), rejecting failed slots
+/// and unequal widths rather than silently dropping or padding rows.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct FingerprintBatch {
@@ -59,6 +63,7 @@ impl FingerprintBatch {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl FingerprintBatch {
+    /// Construct a FingerprintBatch value from the supplied inputs.
     #[new]
     fn new(py: Python<'_>, fingerprints: Vec<Option<Py<Fingerprint>>>) -> Self {
         let n_bits = fingerprints
@@ -157,6 +162,7 @@ impl FingerprintBatch {
     }
 }
 
+/// Iterator over ordered Fingerprint-or-None batch entries.
 #[pyclass]
 struct FingerprintBatchIterator {
     batch: Py<FingerprintBatch>,

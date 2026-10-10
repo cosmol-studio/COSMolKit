@@ -27,7 +27,7 @@ pub fn Navbar() -> Element {
                         {
                             let counterpart = current.counterpart(binding);
                             let missing_topic = counterpart.is_none();
-                            let target = counterpart.unwrap_or_else(|| if binding == "python" { Route::Python {} } else { Route::JavaScript {} });
+                            let target = counterpart.unwrap_or_else(|| if binding == "python" { Route::Python {} } else { Route::JavaScript { fragment: String::new() } });
                             rsx! { a {
                                 class: if current.metadata().binding == binding { "docs-language-option is-active" } else { "docs-language-option" },
                                 href: target.path(),
@@ -41,13 +41,9 @@ pub fn Navbar() -> Element {
                 VersionSwitch {}
                 div {
                     class: "docs-top-links",
-                    if !is_javascript {
-                        Link { to: Route::SearchPage { q: String::new(), fragment: String::new() }, "Search" }
-                    }
-                    Link { to: if is_javascript { Route::JavaScript {} } else { Route::Python {} }, "Guides" }
-                    if !is_javascript {
-                        Link { to: Route::Api { fragment: String::new() }, "API reference" }
-                    }
+                    Link { to: Route::SearchPage { q: String::new(), fragment: String::new() }, "Search" }
+                    Link { to: if is_javascript { Route::JavaScript { fragment: String::new() } } else { Route::Python {} }, "Guides" }
+                    Link { to: if is_javascript { Route::JavaScriptApi { fragment: String::new() } } else { Route::Api { fragment: String::new() } }, "API reference" }
                     Link { class: "docs-top-secondary", to: Route::Validation {}, "Validation" }
                     a {
                         class: "docs-top-secondary",

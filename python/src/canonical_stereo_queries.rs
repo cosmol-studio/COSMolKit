@@ -4,7 +4,12 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
-pyo3::create_exception!(cosmolkit, StereoReadError, pyo3::exceptions::PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    StereoReadError,
+    pyo3::exceptions::PyValueError,
+    "The requested stereochemical information could not be read from the molecule."
+);
 
 pub(crate) fn error_pyerr(py: Python<'_>, source: ck::StereoReadError) -> PyErr {
     let kind = match &source {
@@ -39,6 +44,7 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: ck::StereoReadError) -> PyErr 
     error
 }
 
+/// Stereochemical ligand reference identifying a graph atom or an implicit hydrogen.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct LigandRef {
@@ -47,6 +53,7 @@ pub(crate) struct LigandRef {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LigandRef {
+    /// Construct a LigandRef value from the supplied inputs.
     #[new]
     #[pyo3(signature = (atom=None))]
     fn new(atom: Option<usize>) -> Self {
@@ -56,6 +63,7 @@ impl LigandRef {
             }),
         }
     }
+    /// Return the ligand atom index, or None when this reference denotes an implicit hydrogen.
     #[getter]
     fn atom(&self) -> Option<usize> {
         match self.inner {
@@ -63,6 +71,7 @@ impl LigandRef {
             ck::LigandRef::ImplicitHydrogen => None,
         }
     }
+    /// Whether this stereo ligand reference denotes an implicit hydrogen.
     #[getter]
     fn is_implicit_hydrogen(&self) -> bool {
         matches!(self.inner, ck::LigandRef::ImplicitHydrogen)

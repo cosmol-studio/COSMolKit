@@ -7,7 +7,8 @@
 [Documentation](https://kit.cosmol.org/) ·
 [Web tools](https://tools.cosmol.org/) ·
 [Rust crate](https://crates.io/crates/cosmolkit) ·
-[Python package](https://pypi.org/project/cosmolkit/).
+[Python package](https://pypi.org/project/cosmolkit/) ·
+[JavaScript package](https://www.npmjs.com/package/@cosmol-studio/cosmolkit).
 <!-- release-header:end -->
 
 <!-- release-footer:start -->
@@ -21,35 +22,86 @@ The text between the `release-header` markers is prepended to every GitHub
 Release, and the text between the `release-footer` markers is appended. For
 each release, move the completed entries from `Unreleased` into a section named
 `## [x.y.z] - YYYY-MM-DD`. The release workflow extracts the section whose
-version matches the pushed `v*` tag and fails when that section is missing or
-empty.
+version matches the existing unreleased `v*` tag on the manually selected
+commit. Creating a tag does not publish a GitHub Release. The manual workflow
+fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-10-08
+## [0.5.0] - 2026-10-10
+
+COSMolKit 0.5.0 unifies its Rust, Python and JavaScript surfaces around one
+public molecular runtime, adds browser distributions and persistent force
+fields, and updates the chemistry reference to RDKit 2026.03.6. Source changes
+follow the pinned [**upstream implementation diffs, not corpus-output fitting**](dev/source_provenance/rdkit_2026_03_1_to_2026_03_6.md#source-change-inventory).
+
+### Added
+
+- JavaScript/TypeScript bindings backed by the Rust WebAssembly engine, with
+  prebuilt feature-combination packages and a default full distribution.
+- Public `Reaction` construction and multi-reactant execution through
+  `Reaction::run`, Python `rxn.run(...)` and JavaScript `rxn.run(...)`.
+- Typed atom-property access and value/in-place updates, with opt-in reaction
+  propagation through `ReactionRunParams.copy_atom_properties`.
+- Owned persistent `MolecularForceField` objects for UFF and MMFF: reusable
+  positions, fixed atoms, energy, gradients and iterative minimization, with
+  independently configurable force and energy tolerances and typed errors.
+- Connected-fragment and largest-fragment operations, Murcko scaffold
+  decomposition, and Avalon fingerprints through the public facade.
+- Top-level construction conveniences such as `mol_from_smiles` and
+  `mols_from_smiles_list`, delegating to the corresponding class constructors.
+- NumPy conversion for individual fingerprints and batch fingerprint matrices.
+- CK-native archive 2.0 with Müsli encoding, independent block schemas and
+  automatic dispatch to retained legacy binary readers.
+- Shared Python and JavaScript API documentation, generated from the actual
+  bindings and declarations, with a documentation-version selector.
 
 ### Changed
 
 - Split model values and domain algorithms into workspace crates, with
   `cosmolkit` owning the public molecule API and operation runtime.
-- Added plain-name feature bundles and fine-grained `cap-*` selection;
-  `core` includes molecular text/file IO and `full` is the default.
+- Public Cargo feature bundles include their public prerequisites:
+  `reaction` includes `search`, which includes `core`. Internal `cap-*`
+  switches are implementation details, not the user-facing selection model.
+- `core` includes molecular text/file IO, native binary archives and batch
+  processing. `conformer` includes alignment and UFF/MMFF force fields;
+  WebAssembly excludes native binary archives and their dependencies.
 - Unified registered Rust, Python and JavaScript API projections, with
-  explicit value-style and in-place operations.
-- Added WebAssembly bindings and the `@cosmol-studio/cosmolkit` npm package.
-- Added the public `Reaction` facade and multi-reactant execution under
-  `cap-reaction`.
-- Added owned persistent UFF/MMFF evaluators for positions, fixed atoms,
-  energy, gradients and repeated minimization.
-- Added CK-native archive 2.0 using Müsli, with legacy readers retained.
+  explicit value-style and trailing-underscore in-place molecule operations,
+  writable configuration fields and consistent configuration call forms.
+- Standardized fingerprint names around the `fingerprint_*` prefix and file
+  output names around `write_*`; `to_*` methods return converted values.
+- Strengthened generated binding contracts for configuration fields,
+  constructors, Python typing, path inputs and representations.
 - Standardized corpus and special-regression preparation and Cargo comparison
   in `parity-tests_fixed`; ordinary regressions remain in owning crates.
+- Updated the reference dependency, source identity and standard parity runner
+  to RDKit `2026.03.6` (Python distribution `2026.3.6`), revision
+  `0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`. The source-change inventory is in
+  [the upgrade record](dev/source_provenance/rdkit_2026_03_1_to_2026_03_6.md).
+- Separated daily optimized `dev-test` builds from distribution `release`
+  builds with fat LTO and one codegen unit.
+- Made GitHub Release creation manual and independent of distribution
+  publishing, requiring an existing tag without an existing Release.
+
+### Fixed
+
+- Source-backed corrections across sanitization, stereo, query matching,
+  reaction execution, molecular file formats, depiction and numerical
+  chemistry, with focused regressions at the implementation boundary.
+- Preserved MOL/SDF stereochemistry without stored coordinates, rejected
+  malformed SMILES consistently, and aligned empty-molecule QED behavior.
+- Corrected dative-bond sanitization for reversed endpoint order without
+  treating a source-defined bond transition as an operation-contract failure.
+- Adapted conformer timing and interrupt handling for WebAssembly and aligned
+  optional-domain binding gates with the Rust public feature selections.
+- Preserved ordered batch errors and counts across Python and JavaScript
+  projections without an ambiguous skipped-result state.
 
 ### Validation
 
-- Complete 0.5.0 validation is pending. The published results in
-  [VALIDATION.md](VALIDATION.md) come from 0.3.0 and do not establish a 0.5.0
-  parity pass.
+- No differences have been observed on the known corpus of several hundred
+  thousand molecules. Million-scale parity validation is pending.
 
 ## [0.3.0] - 2026-08-28
 

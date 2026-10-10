@@ -33,7 +33,7 @@ pub fn Home() -> Element {
                     }
                     aside { class: "docs-reading-path", aria_label: "Getting started",
                         p { class: "home-kicker", "NEW TO COSMOLKIT?" }
-                        StartLink { number: "01", title: "Install the package", detail: "Set up your Python environment", to: Route::Installation { fragment: String::new() } }
+                        StartLink { number: "01", title: "Install the package", detail: "Set up your Python environment", to: Route::Quickstart { fragment: "installation".into() } }
                         StartLink { number: "02", title: "Create your first molecule", detail: "Follow the quick start", to: Route::Quickstart { fragment: String::new() } }
                         StartLink { number: "03", title: "Understand molecule values", detail: "Learn the core data model", to: Route::Molecule { fragment: String::new() } }
                     }
@@ -64,7 +64,7 @@ pub fn Home() -> Element {
                     }
                     div { class: "docs-availability",
                         span { class: "docs-status-label", "NOT YET AVAILABLE" }
-                        Link { to: Route::JavaScript {}, "JavaScript / WebAssembly documentation" }
+                        Link { to: Route::JavaScript { fragment: String::new() }, "JavaScript / WebAssembly documentation" }
                         span { aria_hidden: "true", "·" }
                         Link { to: Route::Benchmarks {}, "Benchmark reports" }
                     }

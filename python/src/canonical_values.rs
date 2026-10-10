@@ -7,14 +7,54 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::collections::BTreeMap;
 
-pyo3::create_exception!(cosmolkit, SmilesError, PyValueError);
-pyo3::create_exception!(cosmolkit, SmilesWriteError, PyValueError);
-pyo3::create_exception!(cosmolkit, MorganReadError, PyValueError);
-pyo3::create_exception!(cosmolkit, FingerprintPreparationError, PyValueError);
-pyo3::create_exception!(cosmolkit, AtomPairReadError, PyValueError);
-pyo3::create_exception!(cosmolkit, TopologicalTorsionReadError, PyValueError);
-pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
-pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    SmilesError,
+    PyValueError,
+    "SMILES text could not be parsed or chemically prepared as requested."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    SmilesWriteError,
+    PyValueError,
+    "The molecule could not be serialized as SMILES with the supplied options."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    MorganReadError,
+    PyValueError,
+    "Morgan fingerprint preparation could not read the required molecular state."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    FingerprintPreparationError,
+    PyValueError,
+    "The molecular state required by fingerprint generation could not be prepared."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    AtomPairReadError,
+    PyValueError,
+    "Atom-pair fingerprint preparation could not read the required molecular state."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    TopologicalTorsionReadError,
+    PyValueError,
+    "Topological-torsion fingerprint preparation could not read the required molecular state."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    FingerprintError,
+    PyValueError,
+    "Fingerprint construction, indexing or conversion failed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    FingerprintJsonError,
+    PyValueError,
+    "A fingerprint JSON representation could not be parsed or serialized."
+);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
     if let Some(error) = source.downcast_ref::<ck::SmartsParseError>() {
@@ -332,6 +372,10 @@ fn fingerprint_pyerr(
     }
 }
 
+/// Writable configuration for SMILES parsing.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmilesParseParams {
@@ -342,6 +386,7 @@ pub(crate) struct SmilesParseParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmilesParseParams {
+    /// Configure SMILES parsing; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, sanitize=true, allow_cxsmiles=true, strict_cxsmiles=true, parse_name=true, remove_hs=true, skip_cleanup=false, debug_parse=false, replacements=None))]
     fn new(
@@ -368,40 +413,52 @@ impl SmilesParseParams {
             },
         }
     }
+    /// Apply to a new molecule and return the result: perform the selected chemical sanitization stages. The source molecule is unchanged.
     #[getter]
     fn sanitize(&self) -> bool {
         self.inner.sanitize
     }
+    /// Whether a CX extension following the graph notation is parsed.
     #[getter]
     fn allow_cxsmiles(&self) -> bool {
         self.inner.allow_cxsmiles
     }
+    /// Whether malformed CX extension data is rejected.
     #[getter]
     fn strict_cxsmiles(&self) -> bool {
         self.inner.strict_cxsmiles
     }
+    /// Whether trailing text is interpreted as the molecule/query name.
     #[getter]
     fn parse_name(&self) -> bool {
         self.inner.parse_name
     }
+    /// Whether removable explicit hydrogens are removed during input conversion.
     #[getter]
     fn remove_hs(&self) -> bool {
         self.inner.remove_hs
     }
+    /// Whether parser post-processing is skipped.
     #[getter]
     fn skip_cleanup(&self) -> bool {
         self.inner.skip_cleanup
     }
+    /// Parser debug-output level.
     #[getter]
     fn debug_parse(&self) -> bool {
         self.inner.debug_parse
     }
+    /// Text substitutions applied before parsing.
     #[getter]
     fn replacements(&self) -> BTreeMap<String, String> {
         self.inner.replacements.clone()
     }
 }
 
+/// Writable configuration for SMILES serialization.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmilesWriteParams {
@@ -412,6 +469,7 @@ pub(crate) struct SmilesWriteParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmilesWriteParams {
+    /// Configure SMILES serialization; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, isomeric_smiles=true, kekule=false, canonical=true, clean_stereo=true, rooted_at_atom=None, all_bonds_explicit=false, all_hydrogens_explicit=false, include_dative_bonds=true, ignore_atom_map_numbers=false))]
     fn new(
@@ -439,44 +497,57 @@ impl SmilesWriteParams {
             },
         }
     }
+    /// Whether isotope and stereochemical information is included in the output notation.
     #[getter]
     fn isomeric_smiles(&self) -> bool {
         self.inner.isomeric_smiles
     }
+    /// Whether aromatic systems are written with explicit single/double bonds.
     #[getter]
     fn kekule(&self) -> bool {
         self.inner.kekule
     }
+    /// Whether canonical atom traversal is used for output.
     #[getter]
     fn canonical(&self) -> bool {
         self.inner.canonical
     }
+    /// Whether invalid stereochemical annotations are cleaned before SMILES output.
     #[getter]
     fn clean_stereo(&self) -> bool {
         self.inner.clean_stereo
     }
+    /// Whether all bonds, including single bonds, have explicit output symbols.
     #[getter]
     fn all_bonds_explicit(&self) -> bool {
         self.inner.all_bonds_explicit
     }
+    /// Whether hydrogen counts are written explicitly on every atom.
     #[getter]
     fn all_hydrogens_explicit(&self) -> bool {
         self.inner.all_hydrogens_explicit
     }
+    /// Whether dative bonds are included in the requested graph operation/output.
     #[getter]
     fn include_dative_bonds(&self) -> bool {
         self.inner.include_dative_bonds
     }
+    /// Whether atom-map numbers are excluded from canonical ranking.
     #[getter]
     fn ignore_atom_map_numbers(&self) -> bool {
         self.inner.ignore_atom_map_numbers
     }
+    /// Atom index at which output traversal starts, or None for the default traversal.
     #[getter]
     fn rooted_at_atom(&self) -> Option<usize> {
         self.inner.rooted_at_atom.map(|id| id.index())
     }
 }
 
+/// Fixed-width binary fingerprint backed by Rust.
+///
+/// Use on_bits() for set-bit indices and to_numpy() for a uint8 vector of shape
+/// (n_bits,). Logical bit width is distinct from population count.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct Fingerprint {
@@ -486,24 +557,28 @@ pub(crate) struct Fingerprint {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Fingerprint {
+    /// Construct a bit fingerprint of the given width from zero-based set-bit indices; out-of-range indices raise FingerprintError.
     #[staticmethod]
     fn from_on_bits(py: Python<'_>, n_bits: u32, on_bits: Vec<u32>) -> PyResult<Self> {
         ck::Fingerprint::from_on_bits(n_bits, on_bits)
             .map(|inner| Self { inner })
             .map_err(|error| fingerprint_pyerr(py, error))
     }
+    /// Return intersection/union Tanimoto similarity with an equal-width bit fingerprint; unequal widths raise FingerprintError.
     fn tanimoto(&self, py: Python<'_>, other: &Self) -> PyResult<f64> {
         self.inner
             .tanimoto(&other.inner)
             .map_err(|error| fingerprint_pyerr(py, error))
     }
+    /// Return the logical fingerprint width in bits, not the number of set bits.
     fn n_bits(&self) -> u32 {
         self.inner.n_bits()
     }
+    /// Return set-bit indices in increasing logical bit order.
     fn on_bits(&self) -> Vec<u32> {
         self.inner.on_bits()
     }
-    /// Return an independent uint8 NumPy vector in logical bit order.
+    /// Return an independent C-contiguous uint8 NumPy array of shape (n_bits,), containing 0 or 1 in logical bit-index order.
     #[gen_stub(override_return_type(type_repr = "numpy.typing.NDArray[numpy.uint8]", imports = ("numpy", "numpy.typing")))]
     fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray1<u8>> {
         crate::fingerprint_numpy::to_numpy(py, &self.inner)
@@ -516,6 +591,7 @@ impl Fingerprint {
     }
 }
 
+/// Sparse bit vector (``SparseBitVect`` equivalent).
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct SparseBitFingerprint {
@@ -524,9 +600,17 @@ pub(crate) struct SparseBitFingerprint {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SparseBitFingerprint {
+    /// Logical width of the fingerprint in bits.
     fn n_bits(&self) -> u32 {
         self.inner.n_bits()
     }
+    /// On bits as raw signed storage values, in the set's signed ascending
+    /// order (source ``IntVect`` is ``std::vector<int>``).
+    ///
+    /// Source: ``void SparseBitVect::getOnBits(IntVect &v) const``
+    /// (SparseBitVect.cpp:252-263): the ``set<int>`` iterates in signed
+    /// order, so indices >= 2^31 appear first as wrapped negative values
+    /// (oracle: {5, 2^31+1} -> [-2147483647, 5]; {7, u32::MAX} -> [-1, 7]).
     fn on_bits(&self) -> Vec<i32> {
         self.inner.on_bits()
     }
@@ -538,6 +622,7 @@ impl SparseBitFingerprint {
     }
 }
 
+/// Sparse count fingerprint with 64-bit feature indices and integer counts for nonzero entries.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SparseCountFingerprint {
@@ -555,76 +640,90 @@ impl SparseCountFingerprint {
             )
         })
     }
+    /// Construct a SparseCountFingerprint value from the supplied inputs.
     #[staticmethod]
     fn new(length: u64) -> Self {
         Self {
             inner: ck::SparseCountFingerprint::new(length),
         }
     }
+    /// Logical size of the sparse fingerprint index space.
     fn length(&self) -> u64 {
         self.inner.length()
     }
+    /// Return the count at the supplied sparse fingerprint index; absent entries have count zero.
     fn value(&self, py: Python<'_>, index: u64) -> PyResult<i32> {
         self.inner
             .value(index)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Set the count at one sparse fingerprint index; a zero count removes the nonzero entry.
     fn set_value(&mut self, py: Python<'_>, index: u64, value: i32) -> PyResult<()> {
         self.inner
             .set_value(index, value)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a dictionary mapping sparse fingerprint feature indices to nonzero counts.
     fn nonzero_elements(&self) -> BTreeMap<u64, i32> {
         self.inner.nonzero_elements().clone()
     }
+    /// Return the sum of the stored sparse fingerprint counts.
     #[pyo3(signature = (use_abs=false))]
     fn total_value(&self, py: Python<'_>, use_abs: bool) -> PyResult<i32> {
         self.inner
             .total_value(use_abs)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a new sparse count fingerprint containing the element-wise minimum counts.
     fn fuzzy_and(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .fuzzy_and(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a new sparse count fingerprint containing the element-wise maximum counts.
     fn fuzzy_or(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .fuzzy_or(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return the element-wise sum of two compatible sparse count fingerprints.
     fn with_added(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .with_added(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return the element-wise difference of two compatible sparse count fingerprints.
     fn with_subtracted(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .with_subtracted(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with the scalar added to stored nonzero counts.
     fn with_added_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_added_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with the scalar subtracted from stored nonzero counts.
     fn with_subtracted_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_subtracted_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with stored counts multiplied by the scalar.
     fn with_multiplied_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_multiplied_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with stored counts divided by the scalar using integer arithmetic.
     fn with_divided_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_divided_scalar(value)
@@ -636,6 +735,7 @@ impl SparseCountFingerprint {
     }
 }
 
+/// Sparse count fingerprint with 32-bit feature indices and integer counts for nonzero entries.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SparseCountFingerprint32 {
@@ -644,76 +744,90 @@ pub(crate) struct SparseCountFingerprint32 {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SparseCountFingerprint32 {
+    /// Construct a SparseCountFingerprint32 value from the supplied inputs.
     #[staticmethod]
     fn new(length: u32) -> Self {
         Self {
             inner: ck::SparseCountFingerprint32::new(length),
         }
     }
+    /// Logical size of the sparse fingerprint index space.
     fn length(&self) -> u32 {
         self.inner.length()
     }
+    /// Return the count at the supplied sparse fingerprint index; absent entries have count zero.
     fn value(&self, py: Python<'_>, index: u32) -> PyResult<i32> {
         self.inner
             .value(index)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Set the count at one sparse fingerprint index; a zero count removes the nonzero entry.
     fn set_value(&mut self, py: Python<'_>, index: u32, value: i32) -> PyResult<()> {
         self.inner
             .set_value(index, value)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a dictionary mapping sparse fingerprint feature indices to nonzero counts.
     fn nonzero_elements(&self) -> BTreeMap<u32, i32> {
         self.inner.nonzero_elements().clone()
     }
+    /// Return the sum of the stored sparse fingerprint counts.
     #[pyo3(signature = (use_abs=false))]
     fn total_value(&self, py: Python<'_>, use_abs: bool) -> PyResult<i32> {
         self.inner
             .total_value(use_abs)
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a new sparse count fingerprint containing the element-wise minimum counts.
     fn fuzzy_and(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .fuzzy_and(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a new sparse count fingerprint containing the element-wise maximum counts.
     fn fuzzy_or(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .fuzzy_or(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return the element-wise sum of two compatible sparse count fingerprints.
     fn with_added(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .with_added(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return the element-wise difference of two compatible sparse count fingerprints.
     fn with_subtracted(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .with_subtracted(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with the scalar added to stored nonzero counts.
     fn with_added_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_added_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with the scalar subtracted from stored nonzero counts.
     fn with_subtracted_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_subtracted_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with stored counts multiplied by the scalar.
     fn with_multiplied_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_multiplied_scalar(value)
             .map(|inner| Self { inner })
             .map_err(|e| fingerprint_pyerr(py, e))
     }
+    /// Return a sparse count fingerprint with stored counts divided by the scalar using integer arithmetic.
     fn with_divided_scalar(&self, py: Python<'_>, value: i32) -> PyResult<Self> {
         self.inner
             .with_divided_scalar(value)
@@ -725,6 +839,7 @@ impl SparseCountFingerprint32 {
     }
 }
 
+/// Return the version identifier recorded by this value or implementation.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn version() -> &'static str {

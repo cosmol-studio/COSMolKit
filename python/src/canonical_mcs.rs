@@ -9,6 +9,9 @@ use pyo3_stub_gen::derive::{
 };
 use std::collections::BTreeMap;
 
+/// MCS atom comparison rule: Any, element identity, isotope identity, or any non-hydrogen atom.
+///
+/// Declared values: ``Any``, ``Elements``, ``Isotopes``, ``AnyHeavyAtom``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
@@ -37,6 +40,9 @@ impl McsAtomComparator {
         }
     }
 }
+/// MCS bond comparison rule: Any, bond order, or exact bond-order matching.
+///
+/// Declared values: ``Any``, ``Order``, ``OrderExact``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
@@ -63,6 +69,10 @@ impl McsBondComparator {
     }
 }
 
+/// Writable configuration for MCS atom comparison.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct McsAtomCompareParameters {
@@ -72,6 +82,7 @@ pub(crate) struct McsAtomCompareParameters {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl McsAtomCompareParameters {
+    /// Configure MCS atom comparison; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, match_valences=false, match_chiral_tag=false, match_formal_charge=false, ring_matches_ring_only=false, complete_rings_only=false, match_isotope=false, max_distance=-1.0))]
     fn new(
@@ -95,30 +106,37 @@ impl McsAtomCompareParameters {
             },
         }
     }
+    /// Whether MCS atom matching requires equal valence.
     #[getter]
     fn match_valences(&self) -> bool {
         self.inner.match_valences
     }
+    /// Whether MCS atom matching considers chiral tags.
     #[getter]
     fn match_chiral_tag(&self) -> bool {
         self.inner.match_chiral_tag
     }
+    /// Whether MCS atom matching requires equal formal charge.
     #[getter]
     fn match_formal_charge(&self) -> bool {
         self.inner.match_formal_charge
     }
+    /// Whether ring atoms/bonds may match only other ring atoms/bonds.
     #[getter]
     fn ring_matches_ring_only(&self) -> bool {
         self.inner.ring_matches_ring_only
     }
+    /// Whether incomplete ring fragments are excluded from the MCS.
     #[getter]
     fn complete_rings_only(&self) -> bool {
         self.inner.complete_rings_only
     }
+    /// Whether MCS atom matching requires equal isotope labels.
     #[getter]
     fn match_isotope(&self) -> bool {
         self.inner.match_isotope
     }
+    /// Maximum permitted distance between matched atoms in angstroms; a negative value disables coordinate-distance matching.
     #[getter]
     fn max_distance(&self) -> f64 {
         self.inner.max_distance
@@ -128,6 +146,10 @@ impl McsAtomCompareParameters {
     }
 }
 
+/// Writable configuration for MCS bond comparison.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct McsBondCompareParameters {
@@ -137,6 +159,7 @@ pub(crate) struct McsBondCompareParameters {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl McsBondCompareParameters {
+    /// Configure MCS bond comparison; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, ring_matches_ring_only=false, complete_rings_only=false, match_fused_rings=false, match_fused_rings_strict=false, match_stereo=false))]
     fn new(
@@ -156,22 +179,27 @@ impl McsBondCompareParameters {
             },
         }
     }
+    /// Whether ring atoms/bonds may match only other ring atoms/bonds.
     #[getter]
     fn ring_matches_ring_only(&self) -> bool {
         self.inner.ring_matches_ring_only
     }
+    /// Whether incomplete ring fragments are excluded from the MCS.
     #[getter]
     fn complete_rings_only(&self) -> bool {
         self.inner.complete_rings_only
     }
+    /// Whether MCS matching considers ring-fusion relationships.
     #[getter]
     fn match_fused_rings(&self) -> bool {
         self.inner.match_fused_rings
     }
+    /// Whether MCS matching requires identical ring-fusion relationships.
     #[getter]
     fn match_fused_rings_strict(&self) -> bool {
         self.inner.match_fused_rings_strict
     }
+    /// Whether MCS bond matching considers bond stereochemistry.
     #[getter]
     fn match_stereo(&self) -> bool {
         self.inner.match_stereo
@@ -181,6 +209,10 @@ impl McsBondCompareParameters {
     }
 }
 
+/// Writable configuration for maximum-common-substructure search.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct McsParameters {
@@ -190,6 +222,7 @@ pub(crate) struct McsParameters {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl McsParameters {
+    /// Configure maximum-common-substructure search; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, store_all=false, maximize_bonds=true, threshold=1.0, timeout=0, verbose=false, atom_compare_parameters=None, bond_compare_parameters=None, atom_comparator=McsAtomComparator::Elements, bond_comparator=McsBondComparator::Order, initial_seed=String::new()))]
     fn new(
@@ -223,46 +256,56 @@ impl McsParameters {
             },
         }
     }
+    /// Whether all degenerate maximum common substructures are retained.
     #[getter]
     fn store_all(&self) -> bool {
         self.inner.store_all
     }
+    /// Whether MCS search maximizes bond count rather than atom count.
     #[getter]
     fn maximize_bonds(&self) -> bool {
         self.inner.maximize_bonds
     }
+    /// Minimum fraction of input molecules that must contain the common substructure.
     #[getter]
     fn threshold(&self) -> f64 {
         self.inner.threshold
     }
+    /// Time limit in seconds for the corresponding search or embedding operation.
     #[getter]
     fn timeout(&self) -> u32 {
         self.inner.timeout
     }
+    /// Whether diagnostic output is enabled.
     #[getter]
     fn verbose(&self) -> bool {
         self.inner.verbose
     }
+    /// Nested MCS atom-comparison configuration; edits update this parameter object.
     #[getter]
     fn atom_compare_parameters(&self) -> McsAtomCompareParameters {
         McsAtomCompareParameters {
             inner: self.inner.atom_compare_parameters.clone(),
         }
     }
+    /// Nested MCS bond-comparison configuration; edits update this parameter object.
     #[getter]
     fn bond_compare_parameters(&self) -> McsBondCompareParameters {
         McsBondCompareParameters {
             inner: self.inner.bond_compare_parameters.clone(),
         }
     }
+    /// Atom comparison rule used by maximum-common-substructure search.
     #[getter]
     fn atom_comparator(&self) -> McsAtomComparator {
         McsAtomComparator::from_core(self.inner.atom_comparator)
     }
+    /// Bond comparison rule used by maximum-common-substructure search.
     #[getter]
     fn bond_comparator(&self) -> McsBondComparator {
         McsBondComparator::from_core(self.inner.bond_comparator)
     }
+    /// Optional SMARTS pattern used to seed MCS search.
     #[getter]
     fn initial_seed(&self) -> String {
         self.inner.initial_seed.clone()
@@ -272,7 +315,12 @@ impl McsParameters {
     }
 }
 
-pyo3::create_exception!(cosmolkit, McsError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    McsError,
+    PyValueError,
+    "Maximum-common-substructure search failed for the supplied molecules or parameters."
+);
 
 fn mcs_pyerr(py: Python<'_>, source: ck::McsError) -> PyErr {
     let kind = match &source {
@@ -304,7 +352,7 @@ fn mcs_pyerr(py: Python<'_>, source: ck::McsError) -> PyErr {
     )
 }
 
-/// A detached query result. Query and retained alternatives are independent snapshots.
+/// Maximum-common-substructure result with its query and retained alternative queries as independent snapshots.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct McsResult {
@@ -313,26 +361,32 @@ pub(crate) struct McsResult {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl McsResult {
+    /// Return the QueryGraph represented by this compiled query.
     #[getter]
     fn query(&self) -> Option<QueryGraph> {
         self.inner.query.clone().map(|inner| QueryGraph { inner })
     }
+    /// Number of atoms in the maximum common substructure.
     #[getter]
     fn atom_count(&self) -> usize {
         self.inner.atom_count
     }
+    /// Number of bonds in the maximum common substructure.
     #[getter]
     fn bond_count(&self) -> usize {
         self.inner.bond_count
     }
+    /// Whether MCS search finished without reaching its timeout.
     #[getter]
     fn completed(&self) -> bool {
         self.inner.completed
     }
+    /// SMARTS text defining the query or scoring pattern.
     #[getter]
     fn smarts(&self, py: Python<'_>) -> PyResult<String> {
         crate::canonical_sdf::decode_source_text(py, &self.inner.smarts)
     }
+    /// All retained degenerate MCS queries when store_all is enabled.
     #[getter]
     fn degenerate(&self, py: Python<'_>) -> PyResult<BTreeMap<String, QueryGraph>> {
         self.inner
@@ -368,6 +422,11 @@ fn maximum_common_substructure(
         .map(|inner| McsResult { inner })
         .map_err(|error| mcs_pyerr(py, error))
 }
+/// Find an MCS with explicit options. ``timeout`` is in seconds; an interrupted
+/// search returns its best partial result with ``completed == false``.
+///
+/// Options requiring ring or valence state use only valid existing assignments;
+/// absent state produces the owner's typed error, never an implicit write-back.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn maximum_common_substructure_with_params(

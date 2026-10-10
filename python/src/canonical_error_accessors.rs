@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 pub(crate) fn attach(class: &Bound<'_, PyAny>, methods: &[(&str, &str)]) -> PyResult<()> {
     let definitions = PyModule::from_code(
         class.py(),
-        c"def accessor(name, field):\n    def read(self):\n        return getattr(self, field)\n    read.__name__ = name\n    read.__module__ = 'cosmolkit'\n    return read\n",
+        c"def accessor(name, field):\n    def read(self):\n        return getattr(self, field)\n    read.__doc__ = 'Return the {} context recorded by this error.'.format(name.replace('_', ' '))\n    read.__name__ = name\n    read.__module__ = 'cosmolkit'\n    return read\n",
         c"_cosmolkit_error_accessors",
         c"_cosmolkit_error_accessors",
     )?;

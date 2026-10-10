@@ -2,13 +2,13 @@
 
 import cosmolkit as ck
 
-molecule = ck.Molecule.from_smiles("CCO")
+molecule = ck.mol_from_smiles("CCO")
 inchi = molecule.to_inchi()
 molecule_key = molecule.to_inchi_key()
 
 assert ck.inchi_to_key(inchi) == molecule_key
 
-restored = ck.Molecule.from_inchi(inchi)
+restored = ck.mol_from_inchi(inchi)
 if restored is None:
     raise RuntimeError("the generated InChI did not produce a molecule")
 

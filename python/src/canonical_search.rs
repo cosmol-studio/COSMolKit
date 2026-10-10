@@ -7,7 +7,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pyme
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-/// A query atom is not an Element-only Atom: wildcard/OR queries can have Z=0.
+/// Read-only query atom metadata. Predicates belong to the owning QueryGraph; these fields do not turn it into a concrete atom.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct QueryAtom {
@@ -17,33 +17,43 @@ pub(crate) struct QueryAtom {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl QueryAtom {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    /// Atomic number (proton count); zero denotes a dummy atom.
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
+    /// Formal charge in units of the elementary charge.
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
+    /// Hydrogen count stored on the atom, excluding separate hydrogen graph vertices.
     fn explicit_hydrogens(&self) -> u8 {
         self.inner.explicit_hydrogens()
     }
+    /// Explicit isotope mass number, or None when unspecified.
     fn isotope(&self) -> Option<u16> {
         self.inner.isotope()
     }
+    /// Reaction atom-map number, or None when no map is assigned.
     fn atom_map(&self) -> Option<u32> {
         self.inner.atom_map()
     }
+    /// Whether the stored atom or bond has the aromatic flag.
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    /// Whether implicit hydrogen addition is disabled for this atom.
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
     }
+    /// Number of unpaired radical electrons assigned to the atom.
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
     }
+    /// Number of graph neighbors, including explicit hydrogen vertices.
     fn degree(&self) -> usize {
         self.degree
     }
@@ -56,11 +66,36 @@ impl QueryAtom {
     }
 }
 
-pyo3::create_exception!(cosmolkit, SmartsParseError, PyValueError);
-pyo3::create_exception!(cosmolkit, SmartsWriteError, PyValueError);
-pyo3::create_exception!(cosmolkit, SubstructMatchError, PyValueError);
-pyo3::create_exception!(cosmolkit, QueryCompileError, PyValueError);
-pyo3::create_exception!(cosmolkit, MatchError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    SmartsParseError,
+    PyValueError,
+    "SMARTS text could not be parsed into a query graph."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    SmartsWriteError,
+    PyValueError,
+    "The query graph could not be serialized as SMARTS."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    SubstructMatchError,
+    PyValueError,
+    "Substructure matching failed while preparing or evaluating the query and target."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    QueryCompileError,
+    PyValueError,
+    "The SMARTS query could not be compiled into a reusable matching plan."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    MatchError,
+    PyValueError,
+    "The substructure matcher could not evaluate the supplied query and target."
+);
 
 pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr {
     use ck::SmartsParseError as E;
@@ -271,6 +306,10 @@ pub(crate) fn match_pyerr(py: Python<'_>, source: ck::MatchError) -> PyErr {
     )
 }
 
+/// SMARTS query graph with atom/bond predicates.
+///
+/// Construct with from_smarts() or parse_smarts(). A query graph is not a concrete
+/// molecule and retains predicates needed by substructure matching.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct QueryGraph {
@@ -279,6 +318,7 @@ pub(crate) struct QueryGraph {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl QueryGraph {
+    /// Parse SMARTS text into a QueryGraph; this is a query, not a concrete Molecule.
     #[staticmethod]
     fn from_smarts(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::search::from_smarts(text)
@@ -286,6 +326,7 @@ impl QueryGraph {
             .map_err(|error| parse_pyerr(py, error))
     }
 
+    /// Parse SMARTS text into a QueryGraph; this is a query, not a concrete Molecule. Uses the supplied configuration object.
     #[staticmethod]
     fn from_smarts_with_params(
         py: Python<'_>,
@@ -297,12 +338,15 @@ impl QueryGraph {
             .map_err(|error| parse_pyerr(py, error))
     }
 
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    /// Number of bonds in the graph.
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
+    /// Stored name of this value.
     fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner
             .name()
@@ -322,6 +366,7 @@ impl QueryGraph {
     }
 }
 
+/// Reusable query with a precomputed matching order; retains the canonical QueryGraph predicates.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct CompiledQuery {
@@ -330,15 +375,19 @@ pub(crate) struct CompiledQuery {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CompiledQuery {
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    /// Number of bonds in the graph.
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
+    /// Return the query atom visitation order chosen by the matcher compiler.
     fn atom_order(&self) -> Vec<usize> {
         self.inner.atom_order().to_vec()
     }
+    /// Return the QueryGraph represented by this compiled query.
     fn query(&self) -> QueryGraph {
         QueryGraph {
             inner: self.inner.query().clone(),
@@ -353,6 +402,7 @@ impl CompiledQuery {
     }
 }
 
+/// Substructure match mapping query atoms and bonds to target graph indices. Atom order is query order, not target traversal order.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct MatchResult {
@@ -361,12 +411,15 @@ pub(crate) struct MatchResult {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MatchResult {
+    /// Return target atom indices in query-atom order.
     fn atom_mapping(&self) -> Vec<usize> {
         self.inner.atom_mapping.clone()
     }
+    /// Return target bond indices in query-bond order.
     fn bond_mapping(&self) -> Vec<usize> {
         self.inner.bond_mapping.clone()
     }
+    /// Return (query atom index, target atom index) pairs for this match.
     fn atom_pairs(&self) -> Vec<(usize, usize)> {
         // RDKit✔️✔️: std::for_each(matches.begin(), matches.end(), [res, &matches](const auto &pair) {
         // RDKit✔️✔️:   PyObject *pyPair = PyTuple_New(2);
@@ -391,6 +444,10 @@ impl MatchResult {
     }
 }
 
+/// Writable configuration for SMARTS query parsing.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmartsParseParams {
@@ -400,6 +457,7 @@ pub(crate) struct SmartsParseParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmartsParseParams {
+    /// Configure SMARTS query parsing; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, allow_cxsmiles=true, strict_cxsmiles=true, parse_name=true, merge_hs=false, skip_cleanup=false, debug_parse=false, replacements=None))]
     fn new(
@@ -427,30 +485,37 @@ impl SmartsParseParams {
             },
         }
     }
+    /// Whether a CX extension following the graph notation is parsed.
     #[getter]
     fn allow_cxsmiles(&self) -> bool {
         self.inner.allow_cxsmiles
     }
+    /// Whether malformed CX extension data is rejected.
     #[getter]
     fn strict_cxsmiles(&self) -> bool {
         self.inner.strict_cxsmiles
     }
+    /// Whether trailing text is interpreted as the molecule/query name.
     #[getter]
     fn parse_name(&self) -> bool {
         self.inner.parse_name
     }
+    /// Whether explicit query hydrogens are merged into hydrogen-count predicates.
     #[getter]
     fn merge_hs(&self) -> bool {
         self.inner.merge_hs
     }
+    /// Whether parser post-processing is skipped.
     #[getter]
     fn skip_cleanup(&self) -> bool {
         self.inner.skip_cleanup
     }
+    /// Parser debug-output level.
     #[getter]
     fn debug_parse(&self) -> bool {
         self.inner.debug_parse
     }
+    /// Text substitutions applied before parsing.
     #[getter]
     fn replacements(&self) -> PyResult<BTreeMap<String, String>> {
         self.inner
@@ -470,6 +535,10 @@ impl SmartsParseParams {
     }
 }
 
+/// Writable configuration for SMARTS query serialization.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SmartsWriteParams {
@@ -479,6 +548,7 @@ pub(crate) struct SmartsWriteParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmartsWriteParams {
+    /// Configure SMARTS query serialization; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, include_atom_maps=true, isomeric_smiles=true, include_dative_bonds=true, rooted_at_atom=None))]
     fn new(
@@ -496,18 +566,22 @@ impl SmartsWriteParams {
             },
         }
     }
+    /// Whether atom-map numbers are included in SMARTS output.
     #[getter]
     fn include_atom_maps(&self) -> bool {
         self.inner.include_atom_maps
     }
+    /// Whether isotope and stereochemical information is included in the output notation.
     #[getter]
     fn isomeric_smiles(&self) -> bool {
         self.inner.isomeric_smiles
     }
+    /// Whether dative bonds are included in the requested graph operation/output.
     #[getter]
     fn include_dative_bonds(&self) -> bool {
         self.inner.include_dative_bonds
     }
+    /// Atom index at which output traversal starts, or None for the default traversal.
     #[getter]
     fn rooted_at_atom(&self) -> Option<usize> {
         self.inner.rooted_at_atom
@@ -517,6 +591,11 @@ impl SmartsWriteParams {
     }
 }
 
+/// Writable substructure matching configuration.
+///
+/// Accept constructor fields or assign them afterward. final_match/atom_match/
+/// bond_match callbacks filter matches and propagate their original Python exceptions.
+/// Unknown attributes/options are rejected rather than ignored.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SubstructMatchParams {
@@ -696,6 +775,7 @@ impl SubstructMatchParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstructMatchParams {
+    /// Configure substructure matching; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, max_matches=1000, uniquify=true, use_chirality=false, use_enhanced_stereo=false, specified_stereo_query_matches_unspecified=false, use_query_query_matches=false, recursion_possible=true, max_recursive_matches=1000, num_threads=1, aromatic_matches_conjugated=false, aromatic_matches_single_or_double=false, atom_properties=None, bond_properties=None, extra_atom_check_overrides_default_check=false, extra_bond_check_overrides_default_check=false, use_generic_matchers=false, final_match=None, atom_match=None, bond_match=None))]
     fn new(
@@ -762,16 +842,19 @@ impl SubstructMatchParams {
             bond_match,
         })
     }
+    /// Optional callback (target, atom_indices) -> bool filtering a complete match. Indices are target atoms in query-atom order; callback exceptions propagate unchanged. extra_final_check is an accepted alias.
     #[getter]
     #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[Molecule, typing.Sequence[builtins.int]], builtins.bool]]", imports=("typing", "builtins")))]
     fn final_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.final_match.as_ref().map(|value| value.clone_ref(py))
     }
+    /// Optional callback (query_atom, target_atom) -> bool filtering an atom pair. Arguments are QueryAtom and Atom values, not indices. extra_atom_check is an accepted alias; callback exceptions propagate unchanged.
     #[getter]
     #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[QueryAtom, Atom], builtins.bool]]", imports=("typing", "builtins")))]
     fn atom_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.atom_match.as_ref().map(|value| value.clone_ref(py))
     }
+    /// Optional callback (query_bond, target_bond) -> bool filtering a bond pair. Arguments are Bond values, not indices. extra_bond_check is an accepted alias; callback exceptions propagate unchanged.
     #[getter]
     #[gen_stub(override_return_type(type_repr="typing.Optional[typing.Callable[[Bond, Bond], builtins.bool]]", imports=("typing", "builtins")))]
     fn bond_match(&self, py: Python<'_>) -> Option<Py<PyAny>> {
@@ -789,66 +872,82 @@ impl SubstructMatchParams {
         self.atom_match = None;
         self.bond_match = None;
     }
+    /// Maximum number of substructure matches to return.
     #[getter]
     fn max_matches(&self) -> usize {
         self.inner.max_matches
     }
+    /// Whether matches using the same target atom set are deduplicated.
     #[getter]
     fn uniquify(&self) -> bool {
         self.inner.uniquify
     }
+    /// Whether stereochemistry participates in substructure matching.
     #[getter]
     fn use_chirality(&self) -> bool {
         self.inner.use_chirality
     }
+    /// Whether enhanced stereo groups participate in matching.
     #[getter]
     fn use_enhanced_stereo(&self) -> bool {
         self.inner.use_enhanced_stereo
     }
+    /// Whether a stereospecified query may match an unspecified target stereocenter.
     #[getter]
     fn specified_stereo_query_matches_unspecified(&self) -> bool {
         self.inner.specified_stereo_query_matches_unspecified
     }
+    /// Whether query predicates may be matched against target query predicates.
     #[getter]
     fn use_query_query_matches(&self) -> bool {
         self.inner.use_query_query_matches
     }
+    /// Whether recursive SMARTS predicates are evaluated.
     #[getter]
     fn recursion_possible(&self) -> bool {
         self.inner.recursion_possible
     }
+    /// Maximum matches retained while evaluating recursive SMARTS predicates.
     #[getter]
     fn max_recursive_matches(&self) -> usize {
         self.inner.max_recursive_matches
     }
+    /// Requested worker count; interpretation of zero follows the corresponding operation.
     #[getter]
     fn num_threads(&self) -> i32 {
         self.inner.num_threads
     }
+    /// Whether aromatic query bonds may match conjugated target bonds.
     #[getter]
     fn aromatic_matches_conjugated(&self) -> bool {
         self.inner.aromatic_matches_conjugated
     }
+    /// Whether aromatic bonds may match single or double bonds.
     #[getter]
     fn aromatic_matches_single_or_double(&self) -> bool {
         self.inner.aromatic_matches_single_or_double
     }
+    /// Atom property names whose values must agree during matching.
     #[getter]
     fn atom_properties(&self) -> Vec<String> {
         self.inner.atom_properties.clone()
     }
+    /// Bond property names whose values must agree during matching.
     #[getter]
     fn bond_properties(&self) -> Vec<String> {
         self.inner.bond_properties.clone()
     }
+    /// Whether the atom callback replaces, rather than supplements, the default atom test.
     #[getter]
     fn extra_atom_check_overrides_default_check(&self) -> bool {
         self.inner.extra_atom_check_overrides_default_check
     }
+    /// Whether the bond callback replaces, rather than supplements, the default bond test.
     #[getter]
     fn extra_bond_check_overrides_default_check(&self) -> bool {
         self.inner.extra_bond_check_overrides_default_check
     }
+    /// Whether generic query-group matching is enabled.
     #[getter]
     fn use_generic_matchers(&self) -> bool {
         self.inner.use_generic_matchers
@@ -858,6 +957,7 @@ impl SubstructMatchParams {
     }
 }
 
+/// Parse SMARTS text into a QueryGraph; this is a query, not a concrete Molecule.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn parse_smarts(py: Python<'_>, text: &str) -> PyResult<QueryGraph> {
@@ -865,6 +965,7 @@ fn parse_smarts(py: Python<'_>, text: &str) -> PyResult<QueryGraph> {
         .map(|inner| QueryGraph { inner })
         .map_err(|e| parse_pyerr(py, e))
 }
+/// Parse SMARTS text into a QueryGraph; this is a query, not a concrete Molecule. Uses the supplied configuration object.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn parse_smarts_with_params(
@@ -876,6 +977,7 @@ fn parse_smarts_with_params(
         .map(|inner| QueryGraph { inner })
         .map_err(|e| parse_pyerr(py, e))
 }
+/// Compile a QueryGraph for reuse by substructure matching without changing its predicates.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn compile_query(py: Python<'_>, query: &QueryGraph) -> PyResult<CompiledQuery> {
@@ -891,6 +993,7 @@ fn compile_query(py: Python<'_>, query: &QueryGraph) -> PyResult<CompiledQuery> 
             )
         })
 }
+/// Serialize a QueryGraph to SMARTS text; return the text rather than writing a file.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn write_smarts(
@@ -902,6 +1005,7 @@ fn write_smarts(
         .map_err(|e| write_pyerr(py, e))
         .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
 }
+/// Serialize a QueryGraph to SMARTS text with the selected CX annotations.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn write_cx_smarts(

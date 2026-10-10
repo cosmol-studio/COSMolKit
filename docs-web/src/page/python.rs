@@ -15,7 +15,7 @@ pub fn Python() -> Element {
                     span { class: "text-xs font-bold tracking-[0.08em] text-[#4b96ff]", "PYTHON API" }
                     h1 { class: "mb-3 mt-2 text-[28px] leading-[1.35] font-bold text-white", "Python documentation" }
                     p { class: "m-0 max-w-[760px] text-[15px] leading-6 text-[#9caabd]", "Explore Python guides, examples, and the complete COSMolKit API reference." }
-                    Link { class: "docs-text-action", to: Route::SearchPage { q: String::new(), fragment: String::new() }, "Search Python documentation" }
+                    Link { class: "docs-text-action", to: Route::SearchPage { q: String::new(), fragment: String::new() }, "Search documentation" }
                 }
                 section { class: "mt-8 grid grid-cols-2 gap-4 max-[760px]:grid-cols-1", aria_label: "Python documentation sections",
                     for route in Route::navigation("python").into_iter().filter(|r| !r.metadata().summary.is_empty()) {
@@ -43,13 +43,22 @@ fn PythonCard(to: Route, title: &'static str, summary: &'static str) -> Element 
 }
 
 #[component]
-fn DocumentationNavigation(current: &'static str) -> Element {
-    let pages = Route::navigation("python");
+fn DocumentationNavigation(current: &'static str, binding: &'static str) -> Element {
+    let pages = Route::navigation(binding);
+    let javascript = binding == "javascript";
+    let landing = if javascript {
+        Route::JavaScript {
+            fragment: String::new(),
+        }
+    } else {
+        Route::Python {}
+    };
+    let language = if javascript { "JavaScript" } else { "Python" };
     rsx! {
-        nav { class: "docs-navigation", aria_label: "Python documentation",
-            Link { class: "docs-sidebar-brand", to: Route::Python {},
+        nav { class: "docs-navigation", aria_label: "{language} documentation",
+            Link { class: "docs-sidebar-brand", to: landing,
                 span { class: "docs-eyebrow", "COSMOLKIT" }
-                span { "Python documentation" }
+                span { "{language} documentation" }
             }
             p { class: "docs-nav-label", "USER GUIDE & REFERENCE" }
             for route in pages {
@@ -64,13 +73,15 @@ fn DocumentationNavigation(current: &'static str) -> Element {
 }
 
 macro_rules! sphinx_page {
-    ($name:ident, $constant:ident, $source:literal, $title:literal $(, $parameter:ident)*) => {
+    ($name:ident, $constant:ident, $source:literal, $title:literal, $binding:literal $(, $parameter:ident)*) => {
         #[component]
         pub fn $name($($parameter: String),*) -> Element {
             $(let _ = &$parameter;)*
             #[cfg(all(target_arch = "wasm32", feature = "web"))]
             super::anchor::use_fragment_scroll();
             let description = sphinx_metadata($source);
+            let language = if $binding == "javascript" { "JavaScript" } else { "Python" };
+            let landing = if $binding == "javascript" { Route::JavaScript { fragment: String::new() } } else { Route::Python {} };
             rsx! {
                 document::Style { "{STYLESHEET}" }
                 Seo { title: $title.to_string(), description,  }
@@ -78,16 +89,16 @@ macro_rules! sphinx_page {
                     div { class: "docs-layout",
                         a { class: "docs-skip-link", href: "#docs-article", "Skip to content" }
                         aside { class: "docs-sidebar",
-                            DocumentationNavigation { current: $source }
+                            DocumentationNavigation { current: $source, binding: $binding }
                         }
                         details { class: "docs-mobile-navigation",
-                            summary { "Browse Python documentation" }
-                            DocumentationNavigation { current: $source }
+                            summary { "Browse {language} documentation" }
+                            DocumentationNavigation { current: $source, binding: $binding }
                         }
                         main { role: "main", class: "docs-main", id: "docs-article", tabindex: "-1",
                             div { class: "docs-article-toolbar",
-                                Link { to: Route::Python {}, "Python documentation" }
-                                if !matches!($source, "search" | "genindex" | "py-modindex") {
+                                Link { to: landing, "{language} documentation" }
+                                if !matches!($source, "search" | "genindex") {
                                     a { href: concat!("https://github.com/cosmol-studio/COSMolKit/blob/main/python/docs/source/", $source, ".rst"), target: "_blank", rel: "noreferrer", "View source ↗" }
                                 }
                             }

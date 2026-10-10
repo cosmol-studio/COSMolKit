@@ -48,7 +48,7 @@ Step 1 [x]: Read `dev/agent_plan_standard.md`.
 ### Source lock and single-core gate
 
 Step 2 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 3 [x]: Restore `third_party/rdkit/` at RDKit revision `351f8f378f8ad6bbd517980c38896e66bf907af8` and write its verified revision plus SMARTS-source file hashes to `dev/source_provenance/rdkit_smarts_2026_03_1.md`.
+Step 3 [x]: Restore `third_party/rdkit/` at RDKit revision `351f8f378f8ad6bbd517980c38896e66bf907af8` and write its verified revision plus SMARTS-source file hashes to `dev/source_provenance/rdkit_2026_03_1_to_2026_03_6.md`.
 Step 4 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 5 [x]: Audit the restored pinned sources against `dev/gap_reports/rdkit_smarts_full_call_path_and_single_core_audit.md` and update that report with exact local file and line ranges for every in-scope function.
 Step 6 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.

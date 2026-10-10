@@ -9,8 +9,8 @@ reference_coordinates = np.array(
 )
 probe_coordinates = reference_coordinates + np.array([3.0, -2.0, 1.0])
 
-reference = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coordinates)
-probe = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coordinates)
+reference = ck.mol_from_smiles("CCC").with_only_3d_conformer(reference_coordinates)
+probe = ck.mol_from_smiles("CCC").with_only_3d_conformer(probe_coordinates)
 params = ck.AlignmentParameters(
     atom_map=[ck.AlignmentAtomMap(index, index) for index in range(3)]
 )

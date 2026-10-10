@@ -16,10 +16,25 @@ use pyo3::types::PyBytes;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
-pyo3::create_exception!(cosmolkit, DrawingError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    DrawingError,
+    PyValueError,
+    "Molecular depiction or image rendering failed for the graph or drawing options."
+);
 
-pyo3::create_exception!(cosmolkit, OperationError, PyValueError);
-pyo3::create_exception!(cosmolkit, DrawingWriteError, pyo3::exceptions::PyOSError);
+pyo3::create_exception!(
+    cosmolkit,
+    OperationError,
+    PyValueError,
+    "A molecular operation failed validation or execution without committing partial changes."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    DrawingWriteError,
+    pyo3::exceptions::PyOSError,
+    "A rendered molecular image could not be written to the requested path."
+);
 
 // Preserve each recognized canonical domain cause through the shared projection.
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
@@ -223,7 +238,10 @@ pub(crate) fn drawing_write_pyerr(
     }
 }
 
-/// Immutable detached parameters projected from the public facade.
+/// Writable configuration for 2D coordinate generation.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate2DParams {
@@ -234,6 +252,7 @@ pub(crate) struct Coordinate2DParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Coordinate2DParams {
+    /// Configure 2D coordinate generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (coordinate_map=None, *, canonical_orientation=false, clear_existing_2d=true, flips_per_sample=0, samples=0, sample_seed=0, permute_degree_four=false, force_rdkit=false, use_ring_templates=false))]
     fn new(
@@ -262,53 +281,75 @@ impl Coordinate2DParams {
         }
     }
 
+    /// Fixed coordinates indexed by atom index for coordinate generation.
     #[getter]
     fn coordinate_map(&self) -> std::collections::BTreeMap<usize, [f64; 2]> {
         self.inner.coordinate_map.clone()
     }
 
+    /// Whether generated 2D coordinates are canonically oriented.
     #[getter]
     fn canonical_orientation(&self) -> bool {
         self.inner.canonical_orientation
     }
 
+    /// Whether existing 2D conformers are cleared before storing generated coordinates.
     #[getter]
     fn clear_existing_2d(&self) -> bool {
         self.inner.clear_existing_2d
     }
 
+    /// Number of rotatable-bond flips attempted per 2D layout sample.
     #[getter]
     fn flips_per_sample(&self) -> u32 {
         self.inner.flips_per_sample
     }
 
+    /// Number of randomized 2D layout samples.
     #[getter]
     fn samples(&self) -> u32 {
         self.inner.samples
     }
 
+    /// Random seed for sampled 2D coordinate generation.
     #[getter]
     fn sample_seed(&self) -> i32 {
         self.inner.sample_seed
     }
 
+    /// Whether degree-four atom arrangements are permuted during 2D sampling.
     #[getter]
     fn permute_degree_four(&self) -> bool {
         self.inner.permute_degree_four
     }
 
+    /// Whether to force the RDKit-style coordinate generation path.
     #[getter]
     fn force_rdkit(&self) -> bool {
         self.inner.force_rdkit
     }
 
+    /// Whether ring templates are used for 2D layouts.
     #[getter]
     fn use_ring_templates(&self) -> bool {
         self.inner.use_ring_templates
     }
 }
 
-/// Immutable source definition selector, projected from the public facade.
+/// Selects which rotatable-bond definition the count functions use.
+///
+/// Mirrors RDKit ``NumRotatableBondsOptions`` (``Lipinski.h:39-43``). The C++
+/// int discriminants (``Default = -1``, ``NonStrict = 0``, ``Strict = 1``,
+/// ``StrictLinkages = 2``) are never observable through the source API (the
+/// option is only compared for equality), so the Rust projection carries no
+/// numeric discriminants.
+///
+/// The source also exposes a deprecated ``bool`` overload
+/// (``Lipinski.cpp:185-187``) mapping ``strict == true`` to ``Strict`` and
+/// ``false`` to ``NonStrict``. This binding exposes the enum options, not the
+/// deprecated boolean overload.
+///
+/// Declared values: ``Default``, ``NonStrict``, ``Strict``, ``StrictLinkages``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq)]
@@ -330,6 +371,7 @@ impl RotatableBondsOptions {
     }
 }
 
+/// Wildman-Crippen logP and molar-refractivity scalar results.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 struct CrippenTotals {
@@ -338,16 +380,19 @@ struct CrippenTotals {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CrippenTotals {
+    /// Wildman-Crippen octanol/water log partition coefficient.
     #[getter]
     fn logp(&self) -> f64 {
         self.inner.logp
     }
+    /// Wildman-Crippen molar refractivity.
     #[getter]
     fn molar_refractivity(&self) -> f64 {
         self.inner.molar_refractivity
     }
 }
 
+/// Total Labute accessible surface area plus atom-indexed and hydrogen contributions.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 struct LabuteAsaContributions {
@@ -356,20 +401,27 @@ struct LabuteAsaContributions {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LabuteAsaContributions {
+    /// Total Labute approximate accessible surface area.
     #[getter]
     fn asa(&self) -> f64 {
         self.inner.asa
     }
+    /// Per-atom contributions in atom-index order.
     #[getter]
     fn atom_contributions(&self) -> Vec<f64> {
         self.inner.atom_contributions.clone()
     }
+    /// Hydrogen contribution to the total Labute accessible surface area.
     #[getter]
     fn hydrogen_contribution(&self) -> f64 {
         self.inner.hydrogen_contribution
     }
 }
-/// Python ownership wraps the ONE live runtime value, not detached chemistry.
+/// Owned molecular graph with properties and separate 2D/3D conformers.
+///
+/// Queries do not change the graph. Value transformations return a new molecule;
+/// methods ending in an underscore modify this object in place with copy-on-write
+/// isolation from other molecules.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
@@ -386,6 +438,7 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    /// Parse InChI text into a new Molecule. sanitize and remove_hs default to True; params and keyword options are mutually exclusive. Invalid input raises InchiError.
     #[staticmethod]
     #[pyo3(signature=(text, params=None, *, sanitize=None, remove_hs=None))]
     fn from_inchi(
@@ -408,6 +461,7 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Parse InChI text into a new Molecule. sanitize and remove_hs default to True; params and keyword options are mutually exclusive. Invalid input raises InchiError. Uses the supplied configuration object.
     #[staticmethod]
     fn from_inchi_with_params(
         py: Python<'_>,
@@ -418,6 +472,7 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Return InChI text for this molecule without changing it. Supply InchiWriteParams or options, not both; failures raise InchiError.
     #[pyo3(signature=(params=None, *, options=None))]
     fn to_inchi(
         &self,
@@ -429,6 +484,7 @@ impl Molecule {
             .to_inchi_with_params(&crate::canonical_inchi::write_params(params, options)?)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Return InChI text for this molecule without changing it. Supply InchiWriteParams or options, not both; failures raise InchiError. Uses the supplied configuration object.
     fn to_inchi_with_params(
         &self,
         py: Python<'_>,
@@ -438,6 +494,7 @@ impl Molecule {
             .to_inchi_with_params(&params.inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Return the InChIKey for this molecule using the selected InChI options; leave the molecule unchanged.
     #[pyo3(signature=(params=None, *, options=None))]
     fn to_inchi_key(
         &self,
@@ -449,6 +506,7 @@ impl Molecule {
             .to_inchi_key_with_params(&crate::canonical_inchi::write_params(params, options)?)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Return the InChIKey for this molecule using the selected InChI options; leave the molecule unchanged. Uses the supplied configuration object.
     fn to_inchi_key_with_params(
         &self,
         py: Python<'_>,
@@ -458,6 +516,7 @@ impl Molecule {
             .to_inchi_key_with_params(&params.inner)
             .map_err(|e| crate::canonical_inchi::error(py, e))
     }
+    /// Run this molecule against the selected reactant template and return reaction product sets; the source molecule is unchanged.
     fn reaction_products(
         &self,
         py: Python<'_>,
@@ -469,6 +528,7 @@ impl Molecule {
             .map(crate::canonical_reaction::product_sets)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Run this molecule against the selected reactant template and return reaction product sets; the source molecule is unchanged. Uses the supplied configuration object.
     fn reaction_products_with_params(
         &self,
         py: Python<'_>,
@@ -481,6 +541,7 @@ impl Molecule {
             .map(crate::canonical_reaction::product_sets)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Run the reaction on the explicit reactant list and return product sets in enumeration order.
     fn reaction_products_from_inputs(
         &self,
         py: Python<'_>,
@@ -494,6 +555,7 @@ impl Molecule {
             .map(crate::canonical_reaction::product_sets)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return the product and changed flag from single-reactant in-place-compatible reaction application, without changing this source molecule.
     fn apply_reaction(
         &self,
         py: Python<'_>,
@@ -504,6 +566,7 @@ impl Molecule {
             .map(crate::canonical_reaction::apply_result)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return the product and changed flag from single-reactant in-place-compatible reaction application, without changing this source molecule. Uses the supplied configuration object.
     fn apply_reaction_with_params(
         &self,
         py: Python<'_>,
@@ -515,6 +578,7 @@ impl Molecule {
             .map(crate::canonical_reaction::apply_result)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply the supported single-reactant reaction in place and return whether the molecule changed.
     fn apply_reaction_(
         &mut self,
         py: Python<'_>,
@@ -524,6 +588,7 @@ impl Molecule {
             .apply_reaction_(&mut reaction.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return the product and changed flag from single-reactant in-place-compatible reaction application, without changing this source molecule. Uses the supplied configuration object.
     fn apply_reaction_with_params_(
         &mut self,
         py: Python<'_>,
@@ -571,6 +636,7 @@ impl Molecule {
             .set_atom_property_(ck::AtomId::new(atom), key, &value.0)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return the string projection of an atom property; invalid indices/types raise an error.
     fn atom_property_string(
         &self,
         py: Python<'_>,
@@ -584,6 +650,7 @@ impl Molecule {
             .transpose()
     }
 
+    /// Return the string projection of a bond property; invalid indices/types raise an error.
     fn bond_property_string(
         &self,
         py: Python<'_>,
@@ -596,12 +663,14 @@ impl Molecule {
             .map(|text| crate::canonical_sdf::decode_source_text(py, &text))
             .transpose()
     }
+    /// Return molecules for the allowed stereoisomers using StereoisomerOptions; leave the source unchanged.
     fn enumerate_stereoisomers(
         &self,
         py: Python<'_>,
     ) -> PyResult<crate::canonical_stereoisomers::StereoisomerIterator> {
         crate::canonical_stereoisomers::enumerate_stereoisomers(self, py)
     }
+    /// Return molecules for the allowed stereoisomers using StereoisomerOptions; leave the source unchanged. Uses the supplied configuration object.
     fn enumerate_stereoisomers_with_options(
         &self,
         py: Python<'_>,
@@ -609,6 +678,7 @@ impl Molecule {
     ) -> PyResult<crate::canonical_stereoisomers::StereoisomerIterator> {
         crate::canonical_stereoisomers::enumerate_stereoisomers_with_options(self, py, options)
     }
+    /// Enumerate stereoisomers using the supplied random-bit callback for sampling.
     fn enumerate_stereoisomers_with_random_bits(
         &self,
         py: Python<'_>,
@@ -619,10 +689,12 @@ impl Molecule {
             self, py, options, callback,
         )
     }
+    /// Return the estimated number of stereoisomers for the configured enumeration scope.
     #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
     fn stereoisomer_count(&self, py: Python<'_>) -> PyResult<num_bigint::BigUint> {
         crate::canonical_stereoisomers::stereoisomer_count(self, py)
     }
+    /// Return the estimated number of stereoisomers for the configured enumeration scope. Uses the supplied configuration object.
     #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
     fn stereoisomer_count_with_options(
         &self,
@@ -639,17 +711,20 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a XYZ file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_xyz(py: Python<'_>, path: &str) -> PyResult<Self> {
         ck::Molecule::read_xyz(path)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return XYZ text for the selected stored 3D conformer; missing or ambiguous coordinates raise an error.
     fn to_xyz(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_xyz()
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return XYZ text for the selected stored 3D conformer; missing or ambiguous coordinates raise an error. Uses the supplied configuration object.
     fn to_xyz_with_params(
         &self,
         py: Python<'_>,
@@ -659,11 +734,13 @@ impl Molecule {
             .to_xyz_with_params(&params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write XYZ output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_xyz(&self, py: Python<'_>, path: &str) -> PyResult<()> {
         self.inner
             .write_xyz(path)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write XYZ output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_xyz_with_params(
         &self,
         py: Python<'_>,
@@ -675,12 +752,14 @@ impl Molecule {
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
 
+    /// Parse a MOL text block into a Molecule with the selected coordinate policy.
     #[staticmethod]
     fn from_mol(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Molecule::from_mol(text)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Parse a MOL text block into a Molecule with the selected coordinate policy. Uses the supplied configuration object.
     #[staticmethod]
     fn from_mol_with_params(
         py: Python<'_>,
@@ -691,12 +770,14 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Parse an SDF text record into a Molecule with the selected coordinate policy; use SdfRecord when the record may contain a query graph.
     #[staticmethod]
     fn from_sdf(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Molecule::from_sdf(text)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Parse an SDF text record into a Molecule with the selected coordinate policy; use SdfRecord when the record may contain a query graph. Uses the supplied configuration object.
     #[staticmethod]
     fn from_sdf_with_params(
         py: Python<'_>,
@@ -707,12 +788,14 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
     }
+    /// Read a MOL file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_mol(py: Python<'_>, path: &str) -> PyResult<Self> {
         ck::Molecule::read_mol(path)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a MOL file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_mol_with_params(
         py: Python<'_>,
@@ -723,12 +806,14 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a SDF file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_sdf(py: Python<'_>, path: &str) -> PyResult<Self> {
         ck::Molecule::read_sdf(path)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a SDF file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_sdf_with_params(
         py: Python<'_>,
@@ -739,12 +824,14 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Parse a Tripos MOL2 text block into a new Molecule using the read options.
     #[staticmethod]
     fn from_mol2(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Molecule::from_mol2(text)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Parse a Tripos MOL2 text block into a new Molecule using the read options. Uses the supplied configuration object.
     #[staticmethod]
     fn from_mol2_with_params(
         py: Python<'_>,
@@ -755,12 +842,14 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a MOL2 file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_mol2(py: Python<'_>, path: &str) -> PyResult<Self> {
         ck::Molecule::read_mol2(path)
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Read a MOL2 file from a filesystem path and return a new Molecule; use from_* for in-memory text.
     #[staticmethod]
     fn read_mol2_with_params(
         py: Python<'_>,
@@ -771,11 +860,13 @@ impl Molecule {
             .map(Self::from_inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return a MOL text block using the selected writer options; does not write a file or install generated drawing coordinates on this object.
     fn to_mol(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_mol()
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return a MOL text block using the selected writer options; does not write a file or install generated drawing coordinates on this object. Uses the supplied configuration object.
     fn to_mol_with_params(
         &self,
         py: Python<'_>,
@@ -785,11 +876,13 @@ impl Molecule {
             .to_mol_with_params(&params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return an SDF text record using the selected writer options; does not write a file.
     fn to_sdf(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_sdf()
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return an SDF text record using the selected writer options; does not write a file. Uses the supplied configuration object.
     fn to_sdf_with_params(
         &self,
         py: Python<'_>,
@@ -799,11 +892,13 @@ impl Molecule {
             .to_sdf_with_params(&params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return SDF text with 2D coordinates. When needed and enabled, generate temporary 2D coordinates for export without installing them on the source molecule.
     fn to_sdf_2d(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_sdf_2d()
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return SDF text with 2D coordinates. When needed and enabled, generate temporary 2D coordinates for export without installing them on the source molecule. Uses the supplied configuration object.
     fn to_sdf_2d_with_params(
         &self,
         py: Python<'_>,
@@ -813,11 +908,13 @@ impl Molecule {
             .to_sdf_2d_with_params(&params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return SDF text for the selected stored 3D conformer; does not fall back to 2D coordinates.
     fn to_sdf_3d(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_sdf_3d()
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Return SDF text for the selected stored 3D conformer; does not fall back to 2D coordinates. Uses the supplied configuration object.
     fn to_sdf_3d_with_params(
         &self,
         py: Python<'_>,
@@ -827,11 +924,13 @@ impl Molecule {
             .to_sdf_3d_with_params(&params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write MOL output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_mol(&self, py: Python<'_>, path: &str) -> PyResult<()> {
         self.inner
             .write_mol(path)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write MOL output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_mol_with_params(
         &self,
         py: Python<'_>,
@@ -843,11 +942,13 @@ impl Molecule {
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
 
+    /// Write SDF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_sdf(&self, py: Python<'_>, path: &str) -> PyResult<()> {
         self.inner
             .write_sdf(path)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write SDF output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_sdf_with_params(
         &self,
         py: Python<'_>,
@@ -858,6 +959,7 @@ impl Molecule {
             .write_sdf_with_params(path, &params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write SDF FILES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     #[pyo3(signature=(directory, file_name=None))]
     fn write_sdf_files(
         &self,
@@ -869,6 +971,7 @@ impl Molecule {
             .write_sdf_files(directory, file_name)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Write SDF FILES output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     fn write_sdf_files_with_params(
         &self,
         py: Python<'_>,
@@ -880,6 +983,7 @@ impl Molecule {
             .write_sdf_files_with_params(directory, file_name, &params.inner)
             .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
+    /// Compute pattern fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_pattern(
         &self,
         py: Python<'_>,
@@ -889,6 +993,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_pattern::pattern_pyerr(py, e))
     }
+    /// Compute pattern fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_pattern_with_params(
         &self,
         py: Python<'_>,
@@ -899,6 +1004,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_pattern::pattern_pyerr(py, e))
     }
+    /// Compute topological fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_topological(
         &self,
         py: Python<'_>,
@@ -908,6 +1014,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
     }
+    /// Compute topological fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_with_params(
         &self,
         py: Python<'_>,
@@ -918,6 +1025,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
     }
+    /// Compute topological fixed-width bit fingerprints for this molecule without changing its graph or coordinates; include the requested atom/bit environment metadata.
     fn fingerprint_topological_with_output(
         &self,
         py: Python<'_>,
@@ -927,6 +1035,7 @@ impl Molecule {
             .map(|inner| crate::canonical_topological::TopologicalFingerprintResult { inner })
             .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
     }
+    /// Compute topological fixed-width bit fingerprints for this molecule without changing its graph or coordinates; include the requested atom/bit environment metadata.
     fn fingerprint_topological_with_output_with_params(
         &self,
         py: Python<'_>,
@@ -938,12 +1047,14 @@ impl Molecule {
             .map(|inner| crate::canonical_topological::TopologicalFingerprintResult { inner })
             .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
     }
+    /// Compute maccs fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_maccs(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
         self.inner
             .fingerprint_maccs()
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
     }
+    /// Compute maccs fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_maccs_with_params(
         &self,
         py: Python<'_>,
@@ -954,6 +1065,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
     }
+    /// Compute maccs fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_maccs_raw(
         &self,
         py: Python<'_>,
@@ -963,6 +1075,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
     }
+    /// Compute layered fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_layered(
         &self,
         py: Python<'_>,
@@ -985,6 +1098,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_avalon::error(py, e))
     }
+    /// Compute avalon fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_avalon_with_params(
         &self,
         py: Python<'_>,
@@ -995,6 +1109,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_avalon::error(py, e))
     }
+    /// Compute layered fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_layered_with_params(
         &self,
         py: Python<'_>,
@@ -1005,6 +1120,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
     }
+    /// Compute layered fixed-width bit fingerprints for this molecule without changing its graph or coordinates; include the requested atom/bit environment metadata.
     fn fingerprint_layered_with_output(
         &self,
         py: Python<'_>,
@@ -1014,6 +1130,7 @@ impl Molecule {
             .map(|inner| crate::canonical_layered::LayeredFingerprintResult { inner })
             .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
     }
+    /// Compute layered fixed-width bit fingerprints for this molecule without changing its graph or coordinates; include the requested atom/bit environment metadata.
     fn fingerprint_layered_with_output_with_params(
         &self,
         py: Python<'_>,
@@ -1024,6 +1141,7 @@ impl Molecule {
             .map(|inner| crate::canonical_layered::LayeredFingerprintResult { inner })
             .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
     }
+    /// Return the packed topological-torsion identifier for the supplied path and atom codes.
     #[pyo3(signature=(path,size,atom_codes=None))]
     fn topological_torsion_path_score(
         &self,
@@ -1036,17 +1154,20 @@ impl Molecule {
             .topological_torsion_path_score(&path, size, atom_codes.as_deref())
             .map_err(|e| crate::canonical_path_score::score_pyerr(py, e))
     }
+    /// Return a detached snapshot of the stored properties.
     fn properties(&self) -> crate::canonical_property_values::MoleculeProperties {
         crate::canonical_property_values::MoleculeProperties {
             inner: self.inner.properties().clone(),
         }
     }
+    /// Enumerate tautomers and return a TautomerEnumeration containing molecules, status and modified atom/bond indices.
     fn enumerate_tautomers(
         &self,
         py: Python<'_>,
     ) -> PyResult<crate::tautomer_binding::TautomerEnumeration> {
         crate::tautomer_binding::enumerate(py, self, None)
     }
+    /// Enumerate tautomers and return a TautomerEnumeration containing molecules, status and modified atom/bond indices. Uses the supplied configuration object.
     fn enumerate_tautomers_with_params(
         &self,
         py: Python<'_>,
@@ -1054,9 +1175,11 @@ impl Molecule {
     ) -> PyResult<crate::tautomer_binding::TautomerEnumeration> {
         crate::tautomer_binding::enumerate(py, self, Some(params))
     }
+    /// Return the highest-ranked canonical tautomer using the configured scoring rules; leave the source unchanged.
     fn canonical_tautomer(&self, py: Python<'_>) -> PyResult<Self> {
         crate::tautomer_binding::canonical(py, self, None)
     }
+    /// Return the highest-ranked canonical tautomer using the configured scoring rules; leave the source unchanged. Uses the supplied configuration object.
     fn canonical_tautomer_with_params(
         &self,
         py: Python<'_>,
@@ -1064,12 +1187,14 @@ impl Molecule {
     ) -> PyResult<Self> {
         crate::tautomer_binding::canonical(py, self, Some(params))
     }
+    /// Return ring, SMARTS-pattern and heteroatom-hydrogen score contributions for this tautomer.
     fn tautomer_score(&self, py: Python<'_>) -> PyResult<crate::tautomer_binding::TautomerScore> {
         self.inner
             .tautomer_score()
             .map(|inner| crate::tautomer_binding::TautomerScore { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
+    /// Return ring, SMARTS-pattern and heteroatom-hydrogen score contributions for this tautomer. Uses the supplied configuration object.
     fn tautomer_score_with_params(
         &self,
         py: Python<'_>,
@@ -1080,6 +1205,7 @@ impl Molecule {
             .map(|inner| crate::tautomer_binding::TautomerScore { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
+    /// Return the atom-pair atom code and associated molecule result for the requested atom.
     #[pyo3(signature=(atom_id, branch_subtract=0, include_chirality=false, use_legacy_stereo_perception=true))]
     fn with_atom_pair_atom_code(
         &self,
@@ -1099,6 +1225,7 @@ impl Molecule {
             .map(|inner| crate::canonical_fingerprint_values::AtomPairAtomCodeResult { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
+    /// Compute morgan fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_morgan_with_generator(
         &self,
@@ -1118,6 +1245,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
+    /// Compute morgan folded feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_morgan_count_with_generator(
         &self,
@@ -1137,6 +1265,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::SparseCountFingerprint32 { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
+    /// Compute morgan sparse feature bits for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_morgan_sparse_with_generator(
         &self,
@@ -1156,6 +1285,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::SparseBitFingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
+    /// Compute morgan sparse feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_morgan_sparse_count_with_generator(
         &self,
@@ -1175,6 +1305,7 @@ impl Molecule {
             .map(|inner| crate::canonical_values::SparseCountFingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
+    /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_topological_torsion_with_generator(
         &self,
@@ -1193,6 +1324,7 @@ impl Molecule {
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
+    /// Compute topological torsion sparse feature bits for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
@@ -1211,6 +1343,7 @@ impl Molecule {
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
+    /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_topological_torsion_count_with_generator(
         &self,
@@ -1229,6 +1362,7 @@ impl Molecule {
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
+    /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
@@ -1247,6 +1381,7 @@ impl Molecule {
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
+    /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_sparse_count_legacy(
         &self,
         py: Python<'_>,
@@ -1257,6 +1392,7 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
         &self,
         py: Python<'_>,
@@ -1268,6 +1404,7 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_count_legacy(
         &self,
         py: Python<'_>,
@@ -1278,6 +1415,7 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_count_legacy_with_params(
         &self,
         py: Python<'_>,
@@ -1289,6 +1427,7 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_legacy(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .fingerprint_topological_torsion_legacy()
@@ -1296,6 +1435,7 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the torsion-vector entry point.
     fn fingerprint_topological_torsion_legacy_with_params(
         &self,
         py: Python<'_>,
@@ -1307,18 +1447,22 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    /// Compute the original native 64-bit hash in legacy CIP rank order.
+    /// Requires already prepared valence; absent ordinary rings remain absent.
     fn molecular_hash(&self, py: Python<'_>) -> PyResult<u64> {
         self.inner
             .molecular_hash()
             .map_err(|error| crate::canonical_molecular_hash::error_pyerr(py, &error))
     }
 
+    /// Compute the same native hash with exactly one supplied rank per atom.
     fn molecular_hash_with_ranks(&self, py: Python<'_>, ranks: Vec<u32>) -> PyResult<u64> {
         self.inner
             .molecular_hash_with_ranks(&ranks)
             .map_err(|error| crate::canonical_molecular_hash::error_pyerr(py, &error))
     }
 
+    /// Return a native COSMolKit archive as bytes, including stored graph, coordinates, properties and retained derived state.
     fn to_binary(&self, py: Python<'_>) -> PyResult<Py<pyo3::types::PyBytes>> {
         let data = self
             .inner
@@ -1327,6 +1471,7 @@ impl Molecule {
         Ok(pyo3::types::PyBytes::new(py, &data).unbind())
     }
 
+    /// Read a native COSMolKit archive into a new Molecule, dispatching supported archive versions automatically.
     #[staticmethod]
     fn from_binary(
         py: Python<'_>,
@@ -1359,49 +1504,63 @@ impl Molecule {
         self.__reduce__(py)
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the number of amide bonds.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_amide_bonds(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_amide_bonds()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the number of atoms shared by otherwise disjoint rings.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_spiro_atoms(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_spiro_atoms()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the number of bridgehead atoms in the ring system.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_bridgehead_atoms(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_bridgehead_atoms()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the number of specified and unspecified atom stereocenters.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_atom_stereo_centers(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_atom_stereo_centers()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the number of atom stereocenters without a specified configuration.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_unspecified_atom_stereo_centers(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_unspecified_atom_stereo_centers()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the rotatable bond count using the selected RotatableBondsOptions definition.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_rotatable_bonds(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_rotatable_bonds()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the rotatable bond count using the selected RotatableBondsOptions definition. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_rotatable_bonds_with_params(
         &self,
         py: Python<'_>,
@@ -1412,14 +1571,18 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the average molecular weight in g/mol, including implicit hydrogens. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn molecular_weight_with_params(&self, py: Python<'_>, only_heavy: bool) -> PyResult<f64> {
         self.inner
             .molecular_weight_with_params(only_heavy)
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the monoisotopic molecular mass, respecting explicit isotope labels. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn exact_molecular_weight_with_params(
         &self,
         py: Python<'_>,
@@ -1430,7 +1593,9 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the molecular formula using the selected isotope and element-count formatting. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn molecular_formula_with_params(
         &self,
         py: Python<'_>,
@@ -1442,218 +1607,253 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the average molecular weight in g/mol, including implicit hydrogens.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn molecular_weight(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .molecular_weight()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the monoisotopic molecular mass, respecting explicit isotope labels.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn exact_molecular_weight(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .exact_molecular_weight()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Descriptor query through the canonical public Rust method.
+    /// Return the molecular formula using the selected isotope and element-count formatting.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn molecular_formula(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .molecular_formula()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of non-hydrogen graph atoms.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_heavy_atoms(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_heavy_atoms()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the total atom count including graph atoms and implicit hydrogens.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn total_atom_count(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .total_atom_count()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the Lipinski hydrogen-bond acceptor count.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn lipinski_hba(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .lipinski_hba()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the Lipinski hydrogen-bond donor count.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn lipinski_hbd(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .lipinski_hbd()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the fraction of carbon atoms with sp3 hybridization.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn fraction_csp3(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .fraction_csp3()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of graph atoms other than carbon and hydrogen.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_heteroatoms(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_heteroatoms()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the hydrogen-bond acceptor count using the descriptor SMARTS definitions.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_hba(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_hba()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the hydrogen-bond donor count using the descriptor SMARTS definitions.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn num_hbd(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_hbd()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of perceived rings; use the current perceived ring state without modifying the graph.
     fn num_rings(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_rings()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of heterocyclic rings; use the current perceived ring state without modifying the graph.
     fn num_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_heterocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of aromatic rings; use the current perceived ring state without modifying the graph.
     fn num_aromatic_rings(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aromatic_rings()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of fully saturated rings; use the current perceived ring state without modifying the graph.
     fn num_saturated_rings(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_saturated_rings()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of non-aromatic rings; use the current perceived ring state without modifying the graph.
     fn num_aliphatic_rings(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aliphatic_rings()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of aromatic rings containing a heteroatom; use the current perceived ring state without modifying the graph.
     fn num_aromatic_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aromatic_heterocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of all-carbon aromatic rings; use the current perceived ring state without modifying the graph.
     fn num_aromatic_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aromatic_carbocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of non-aromatic rings containing a heteroatom; use the current perceived ring state without modifying the graph.
     fn num_aliphatic_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aliphatic_heterocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of all-carbon non-aromatic rings; use the current perceived ring state without modifying the graph.
     fn num_aliphatic_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_aliphatic_carbocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of saturated rings containing a heteroatom; use the current perceived ring state without modifying the graph.
     fn num_saturated_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_saturated_heterocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Read-only descriptor through the canonical public Rust method.
+    /// Return the number of all-carbon saturated rings; use the current perceived ring state without modifying the graph.
     fn num_saturated_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
             .num_saturated_carbocycles()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Degree-based Chi0 through the canonical public Rust method.
+    /// Return the degree-based zeroth-order Chi molecular connectivity index.
     fn chi_0(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_0()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Degree-based Chi1 through the canonical public Rust method.
+    /// Return the degree-based first-order Chi molecular connectivity index.
     fn chi_1(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_1()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the Hall-Kier alpha correction from the stored atomic hybridization state.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn hall_kier_alpha(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .hall_kier_alpha()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
+    /// Return the Hall-Kier alpha value and atom-indexed contribution values.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn hall_kier_alpha_with_contributions(&self, py: Python<'_>) -> PyResult<(f64, Vec<f64>)> {
         self.inner
             .hall_kier_alpha_with_contributions()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
+    /// Return the first-order Kier molecular shape index.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn kappa_1(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .kappa_1()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
+    /// Return the second-order Kier molecular shape index.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn kappa_2(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .kappa_2()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
+    /// Return the third-order Kier molecular shape index.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn kappa_3(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .kappa_3()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
+    /// Return the Kier molecular flexibility index.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn phi(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .phi()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// All 42 components; the source ignores force and performs no cache write.
+    /// Return all 42 molecular quantum numbers in their defined component order.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (force=false))]
     fn mqns(&self, py: Python<'_>, force: bool) -> PyResult<Vec<u32>> {
         self.inner
@@ -1661,54 +1861,42 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 0th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_0_v(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_0_v()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 1th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_1_v(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_1_v()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 2th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_2_v(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_2_v()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 3th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_3_v(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_3_v()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 4th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_4_v(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_4_v()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the requested-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (order))]
     fn chi_n_v(&self, py: Python<'_>, order: u32) -> PyResult<f64> {
         self.inner
@@ -1716,62 +1904,49 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 0th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_0_n(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_0_n()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 1th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_1_n(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_1_n()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 2th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_2_n(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_2_n()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 3th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_3_n(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_3_n()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the 4th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     fn chi_4_n(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .chi_4_n()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
-    /// Experimental read-only query using the canonical public facade.
-    /// Recomputes only; no vector-property caching or force parameter.
-    /// Requires existing prepared valence only; missing/reset rings succeed.
+    /// Return the requested-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (order))]
     fn chi_n_n(&self, py: Python<'_>, order: u32) -> PyResult<f64> {
         self.inner
             .chi_n_n(order)
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
-    /// Return atom views with recalculated valence metadata. To inspect only
-    /// existing cached metadata, use atom_metadata(recalculate=False).
+    /// Return read-only atom values in graph order with recalculated valence metadata. Use atom_metadata(recalculate=False) to inspect an existing valid cache without recalculation.
     fn atoms(&self) -> Vec<crate::canonical_atom_bond::Atom> {
         let metadata = self.inner.atom_metadata(true);
         self.inner
@@ -1789,6 +1964,7 @@ impl Molecule {
             .collect()
     }
 
+    /// Return the read-only Atom at the zero-based graph index, or None if the index is out of range.
     fn atom(&self, atom_id: usize) -> Option<crate::canonical_atom_bond::Atom> {
         let inner = self.inner.atom(ck::AtomId::new(atom_id))?.clone();
         let metadata = self.inner.atom_metadata(true);
@@ -1799,6 +1975,7 @@ impl Molecule {
         })
     }
 
+    /// Return the read-only Bond at the zero-based graph index, or None if the index is out of range.
     fn bond(&self, bond_id: usize) -> Option<crate::canonical_atom_bond::Bond> {
         self.inner
             .bond(ck::BondId::new(bond_id))
@@ -1806,6 +1983,7 @@ impl Molecule {
             .map(|inner| crate::canonical_atom_bond::Bond { inner })
     }
 
+    /// Return the stored value for the requested property key, or None if absent.
     fn property(&self, key: &str) -> Option<crate::canonical_property_values::PropertyValue> {
         self.inner
             .property(key)
@@ -1813,6 +1991,7 @@ impl Molecule {
             .map(|inner| crate::canonical_property_values::PropertyValue { inner })
     }
 
+    /// Return bond rows in graph order.
     fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
         self.inner
             .bonds()
@@ -1822,10 +2001,8 @@ impl Molecule {
             .collect()
     }
 
+    /// Return atom-indexed metadata. recalculate=True requests a fresh calculation; False requires an existing valid cache and raises ValenceError if it is absent or invalid. Does not modify graph topology.
     #[pyo3(signature = (recalculate=true))]
-    /// Return current atom metadata without modifying molecule state.
-    /// With recalculate=False, require the existing valid valence cache;
-    /// missing or invalidated cache entries raise ValenceError.
     fn atom_metadata(
         &self,
         py: Python<'_>,
@@ -1853,10 +2030,12 @@ impl Molecule {
         )
     }
 
+    /// In place, perform the selected chemical sanitization stages. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn sanitize_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner.sanitize_().map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Apply to a new molecule and return the result: assign CIP stereochemical descriptors. The source molecule is unchanged.
     fn with_cip_labels(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_cip_labels()
@@ -1864,6 +2043,7 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Apply to a new molecule and return the result: assign CIP stereochemical descriptors. The source molecule is unchanged.
     fn with_cip_labels_with_options(
         &self,
         py: Python<'_>,
@@ -1875,12 +2055,14 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// In place, assign CIP stereochemical descriptors. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_cip_labels_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_cip_labels_()
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// In place, assign CIP stereochemical descriptors. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_cip_labels_with_options_(
         &mut self,
         py: Python<'_>,
@@ -1891,6 +2073,7 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Return candidate stereocenters/bonds and the associated stereo-perception result.
     fn potential_stereo(
         &self,
         py: Python<'_>,
@@ -1900,6 +2083,7 @@ impl Molecule {
             .map(|inner| crate::canonical_potential_stereo::PotentialStereoResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return candidate stereocenters/bonds and the associated stereo-perception result. Uses the supplied configuration object.
     fn potential_stereo_with_params(
         &self,
         py: Python<'_>,
@@ -1910,12 +2094,14 @@ impl Molecule {
             .map(|inner| crate::canonical_potential_stereo::PotentialStereoResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return whether the molecule carries the CIP-computed marker.
     fn cip_computed(&self, py: Python<'_>) -> PyResult<bool> {
         self.inner
             .cip_computed()
             .map_err(|error| crate::canonical_atom_bond::property_pyerr(py, error))
     }
 
+    /// Create an owned persistent MMFF evaluator from the selected stored conformer. Later evaluator edits do not change this molecule.
     #[pyo3(signature=(*,conformer_id=crate::persistent_forcefields::default_conformer(),mmff_variant=crate::persistent_forcefields::default_variant(),non_bonded_threshold=crate::persistent_forcefields::default_non_bonded(),ignore_interfragment_interactions=crate::persistent_forcefields::default_mmff_ignore()))]
     fn mmff_force_field(
         &self,
@@ -1936,6 +2122,7 @@ impl Molecule {
             .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
             .map_err(|e| crate::persistent_forcefields::mmff_pyerr(py, e))
     }
+    /// Create an owned persistent MMFF evaluator from the selected stored conformer. Later evaluator edits do not change this molecule. Uses the supplied configuration object.
     fn mmff_force_field_with_params(
         &self,
         py: Python<'_>,
@@ -1946,6 +2133,7 @@ impl Molecule {
             .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
             .map_err(|e| crate::persistent_forcefields::mmff_pyerr(py, e))
     }
+    /// Create an owned persistent UFF evaluator from the selected stored conformer. Later evaluator edits do not change this molecule.
     #[pyo3(signature=(*,conformer_id=crate::persistent_forcefields::default_uff_conformer(),vdw_threshold=crate::persistent_forcefields::default_vdw(),ignore_interfragment_interactions=crate::persistent_forcefields::default_uff_ignore()))]
     fn uff_force_field(
         &self,
@@ -1964,6 +2152,7 @@ impl Molecule {
             .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
             .map_err(|e| crate::persistent_forcefields::uff_pyerr(py, e))
     }
+    /// Create an owned persistent UFF evaluator from the selected stored conformer. Later evaluator edits do not change this molecule. Uses the supplied configuration object.
     fn uff_force_field_with_params(
         &self,
         py: Python<'_>,
@@ -1974,6 +2163,7 @@ impl Molecule {
             .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
             .map_err(|e| crate::persistent_forcefields::uff_pyerr(py, e))
     }
+    /// Evaluate UFF energy in kcal/mol and atom-ordered Cartesian energy derivatives at the selected stored coordinates.
     fn uff_energy_gradient(
         &self,
         py: Python<'_>,
@@ -1983,6 +2173,7 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffEnergyGradient { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Evaluate UFF energy in kcal/mol and atom-ordered Cartesian energy derivatives at the selected stored coordinates. Uses the supplied configuration object.
     fn uff_energy_gradient_with_params(
         &self,
         py: Python<'_>,
@@ -1993,17 +2184,20 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffEnergyGradient { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return whether UFF parameters are available for all atoms in this molecule.
     fn uff_has_all_molecule_params(&self, py: Python<'_>) -> PyResult<bool> {
         self.inner
             .uff_has_all_molecule_params()
             .map_err(|e| crate::uff_binding::parameter_query_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: calculate and install the atom valence assignment. The source molecule is unchanged.
     fn with_assigned_valence(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_assigned_valence()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: calculate and install the atom valence assignment. The source molecule is unchanged.
     fn with_assigned_valence_with_params(
         &self,
         py: Python<'_>,
@@ -2014,11 +2208,13 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, calculate and install the atom valence assignment. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_valence_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_valence_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, calculate and install the atom valence assignment. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_valence_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2028,22 +2224,26 @@ impl Molecule {
             .assign_valence_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return whether the atom has a valence violation under the current chemical state.
     fn has_valence_violation(&self, py: Python<'_>, atom_id: usize) -> PyResult<bool> {
         self.inner
             .has_valence_violation(ck::AtomId::new(atom_id))
             .map_err(|e| crate::canonical_atom_bond::valence_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign explicit single/double bonds to aromatic systems. The source molecule is unchanged.
     fn with_kekulized_bonds(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_kekulized_bonds()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign explicit single/double bonds to aromatic systems. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn kekulize_bonds_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .kekulize_bonds_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign explicit single/double bonds to aromatic systems. The source molecule is unchanged.
     fn with_kekulized_bonds_with_params(
         &self,
         py: Python<'_>,
@@ -2054,6 +2254,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign explicit single/double bonds to aromatic systems. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn kekulize_bonds_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2063,17 +2264,20 @@ impl Molecule {
             .kekulize_bonds_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign aromatic atom and bond flags using the selected aromaticity model. The source molecule is unchanged.
     fn with_assigned_aromaticity(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_assigned_aromaticity()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign aromatic atom and bond flags using the selected aromaticity model. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_aromaticity_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_aromaticity_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign aromatic atom and bond flags using the selected aromaticity model. The source molecule is unchanged.
     fn with_assigned_aromaticity_with_params(
         &self,
         py: Python<'_>,
@@ -2084,6 +2288,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign aromatic atom and bond flags using the selected aromaticity model. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_aromaticity_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2093,39 +2298,46 @@ impl Molecule {
             .assign_aromaticity_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign atomic radical electron counts. The source molecule is unchanged.
     fn with_assigned_radicals(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_assigned_radicals()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign atomic radical electron counts. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_radicals_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_radicals_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: calculate and install ring membership and ring information. The source molecule is unchanged.
     fn with_assigned_rings(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_assigned_rings()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, calculate and install ring membership and ring information. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_rings_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_rings_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: calculate and install unique ring families. The source molecule is unchanged.
     fn with_assigned_ring_families(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_assigned_ring_families()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, calculate and install unique ring families. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_ring_families_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_ring_families_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: calculate and install unique ring families. The source molecule is unchanged.
     fn with_assigned_ring_families_with_params(
         &self,
         py: Python<'_>,
@@ -2136,6 +2348,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, calculate and install unique ring families. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_ring_families_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2145,17 +2358,20 @@ impl Molecule {
             .assign_ring_families_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign atom chiral tags from the selected stored conformer. The source molecule is unchanged.
     fn with_chiral_tags_from_structure(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_chiral_tags_from_structure()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign atom chiral tags from the selected stored conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_chiral_tags_from_structure_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .assign_chiral_tags_from_structure_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: assign atom chiral tags from the selected stored conformer. The source molecule is unchanged.
     fn with_chiral_tags_from_structure_with_params(
         &self,
         py: Python<'_>,
@@ -2166,6 +2382,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, assign atom chiral tags from the selected stored conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn assign_chiral_tags_from_structure_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2175,17 +2392,20 @@ impl Molecule {
             .assign_chiral_tags_from_structure_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: remove eligible explicit hydrogen atoms using the selected removal policy. The source molecule is unchanged.
     fn without_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .without_hydrogens()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, remove eligible explicit hydrogen atoms using the selected removal policy. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn remove_hydrogens_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .remove_hydrogens_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: remove eligible explicit hydrogen atoms using the selected removal policy. The source molecule is unchanged.
     fn without_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -2196,6 +2416,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, remove eligible explicit hydrogen atoms using the selected removal policy. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn remove_hydrogens_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2205,6 +2426,7 @@ impl Molecule {
             .remove_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: add explicit hydrogen atoms with the selected hydrogen/coordinate options. The source molecule is unchanged.
     fn with_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -2215,11 +2437,13 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, add explicit hydrogen atoms with the selected hydrogen/coordinate options. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn add_hydrogens_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .add_hydrogens_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, add explicit hydrogen atoms with the selected hydrogen/coordinate options. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn add_hydrogens_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2229,6 +2453,7 @@ impl Molecule {
             .add_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: embed one 3D conformer using the selected distance-geometry parameters. The source molecule is unchanged.
     fn with_3d_conformer_with_params(
         &self,
         py: Python<'_>,
@@ -2239,6 +2464,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, embed one 3D conformer using the selected distance-geometry parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn embed_3d_conformer_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2248,6 +2474,7 @@ impl Molecule {
             .embed_3d_conformer_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: embed one 3D conformer and report its ID and updated embedding parameters. The source molecule is unchanged.
     fn with_3d_conformer_result_with_params(
         &self,
         py: Python<'_>,
@@ -2258,6 +2485,7 @@ impl Molecule {
             .map(|inner| EmbedMoleculeResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, embed one 3D conformer and report its ID and updated embedding parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn embed_3d_conformer_result_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2268,6 +2496,7 @@ impl Molecule {
             .map(|inner| EmbedMoleculeResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: embed the requested number of 3D conformers using the selected distance-geometry parameters. The source molecule is unchanged.
     fn with_3d_conformers_with_params(
         &self,
         py: Python<'_>,
@@ -2279,6 +2508,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, embed the requested number of 3D conformers using the selected distance-geometry parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn embed_3d_conformers_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2289,6 +2519,7 @@ impl Molecule {
             .embed_3d_conformers_with_params_(num_confs, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: embed multiple 3D conformers and report generated IDs and embedding parameters. The source molecule is unchanged.
     fn with_3d_conformers_result_with_params(
         &self,
         py: Python<'_>,
@@ -2300,6 +2531,7 @@ impl Molecule {
             .map(|inner| EmbedMultipleConfsResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, embed multiple 3D conformers and report generated IDs and embedding parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn embed_3d_conformers_result_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2311,6 +2543,7 @@ impl Molecule {
             .map(|inner| EmbedMultipleConfsResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return the atom-ordered graph-distance matrix using the selected bond/atom weight options.
     fn distance_matrix(
         &self,
         py: Python<'_>,
@@ -2320,6 +2553,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
             .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
     }
+    /// Return the atom-ordered graph-distance matrix using the selected bond/atom weight options. Uses the supplied configuration object.
     fn distance_matrix_with_params(
         &self,
         py: Python<'_>,
@@ -2330,6 +2564,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
             .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
     }
+    /// Return the atom-ordered Euclidean distance matrix for the selected stored 3D conformer, in angstroms.
     fn distance_matrix_3d(
         &self,
         py: Python<'_>,
@@ -2339,6 +2574,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
             .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
     }
+    /// Return the atom-ordered Euclidean distance matrix for the selected stored 3D conformer, in angstroms. Uses the supplied configuration object.
     fn distance_matrix_3d_with_params(
         &self,
         py: Python<'_>,
@@ -2349,6 +2585,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
             .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace the position of one atom in the selected stored conformer. The source molecule is unchanged.
     fn with_atom_position(
         &self,
         py: Python<'_>,
@@ -2360,6 +2597,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace the position of one atom in the selected stored conformer. The source molecule is unchanged.
     fn with_atom_position_with_params(
         &self,
         py: Python<'_>,
@@ -2372,6 +2610,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Replace the requested atom position in place using the selected stored conformer; invalid input raises an error before commit.
     fn set_atom_position_(
         &mut self,
         py: Python<'_>,
@@ -2382,6 +2621,7 @@ impl Molecule {
             .set_atom_position_(ck::AtomId::new(atom), position)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Replace the requested atom position in place using the selected stored conformer; invalid input raises an error before commit.
     fn set_atom_position_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2393,6 +2633,7 @@ impl Molecule {
             .set_atom_position_with_params_(ck::AtomId::new(atom), position, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: perform the selected chemical sanitization stages. The source molecule is unchanged.
     fn sanitize_with_params(
         &self,
         py: Python<'_>,
@@ -2403,6 +2644,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, perform the selected chemical sanitization stages. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn sanitize_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2412,6 +2654,7 @@ impl Molecule {
             .sanitize_with_params_(&params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return structured chemistry problems without committing a sanitized molecule.
     fn detect_chemistry_problems(
         &self,
         py: Python<'_>,
@@ -2421,6 +2664,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::ChemistryProblemReport { inner })
             .map_err(|e| crate::canonical_chemistry_values::sanitize_pyerr(py, e))
     }
+    /// Return structured chemistry problems without committing a sanitized molecule. Uses the supplied configuration object.
     fn detect_chemistry_problems_with_params(
         &self,
         py: Python<'_>,
@@ -2431,6 +2675,7 @@ impl Molecule {
             .map(|inner| crate::canonical_chemistry_values::ChemistryProblemReport { inner })
             .map_err(|e| crate::canonical_chemistry_values::sanitize_pyerr(py, e))
     }
+    /// Optimize the selected 3D conformer with UFF and return UffOptimizationResult containing the new molecule, convergence status and final energy. The source molecule is unchanged.
     fn with_uff_optimized(
         &self,
         py: Python<'_>,
@@ -2440,6 +2685,7 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffOptimizationResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Optimize the selected 3D conformer with UFF and return UffOptimizationResult containing the new molecule, convergence status and final energy. The source molecule is unchanged. Uses the supplied configuration object.
     fn with_uff_optimized_with_params(
         &self,
         py: Python<'_>,
@@ -2450,6 +2696,7 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffOptimizationResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Optimize stored 3D conformers with UFF and return a new molecule with per-conformer convergence statuses and energies. The source molecule is unchanged.
     fn with_uff_optimized_conformers(
         &self,
         py: Python<'_>,
@@ -2459,6 +2706,7 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffConformerOptimizationResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Optimize stored 3D conformers with UFF and return a new molecule with per-conformer convergence statuses and energies. The source molecule is unchanged. Uses the supplied configuration object.
     fn with_uff_optimized_conformers_with_params(
         &self,
         py: Python<'_>,
@@ -2469,6 +2717,7 @@ impl Molecule {
             .map(|inner| crate::uff_binding::UffConformerOptimizationResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Evaluate MMFF energy in kcal/mol and atom-ordered Cartesian energy derivatives at the selected stored coordinates.
     fn mmff_energy_gradient(
         &self,
         py: Python<'_>,
@@ -2478,6 +2727,7 @@ impl Molecule {
             .map(|value| value.map(|inner| crate::mmff_binding::MmffEnergyGradient { inner }))
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Evaluate MMFF energy in kcal/mol and atom-ordered Cartesian energy derivatives at the selected stored coordinates. Uses the supplied configuration object.
     fn mmff_energy_gradient_with_params(
         &self,
         py: Python<'_>,
@@ -2489,6 +2739,7 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Apply to a new molecule and return the result: store caller-supplied atom-ordered 2D coordinates. The source molecule is unchanged.
     fn with_2d_coordinate_block(
         &self,
         py: Python<'_>,
@@ -2505,6 +2756,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: store caller-supplied atom-ordered 2D coordinates. The source molecule is unchanged.
     fn with_2d_coordinate_block_with_params(
         &self,
         py: Python<'_>,
@@ -2522,6 +2774,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, store caller-supplied atom-ordered 2D coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_2d_coordinates_(
         &mut self,
         py: Python<'_>,
@@ -2537,6 +2790,7 @@ impl Molecule {
             .set_2d_coordinates_(rows)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, store caller-supplied atom-ordered 2D coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_2d_coordinates_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2553,6 +2807,7 @@ impl Molecule {
             .set_2d_coordinates_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace coordinates of the selected stored 3D conformer. The source molecule is unchanged.
     fn with_3d_coordinates(
         &self,
         py: Python<'_>,
@@ -2569,6 +2824,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace coordinates of the selected stored 3D conformer. The source molecule is unchanged.
     fn with_3d_coordinates_with_params(
         &self,
         py: Python<'_>,
@@ -2586,6 +2842,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, replace coordinates of the selected stored 3D conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_3d_coordinates_(
         &mut self,
         py: Python<'_>,
@@ -2601,6 +2858,7 @@ impl Molecule {
             .set_3d_coordinates_(rows)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, replace coordinates of the selected stored 3D conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_3d_coordinates_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2617,6 +2875,7 @@ impl Molecule {
             .set_3d_coordinates_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: append a conformer using caller-supplied atom-ordered 3D coordinates. The source molecule is unchanged.
     fn with_added_3d_conformer(
         &self,
         py: Python<'_>,
@@ -2633,6 +2892,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: append a conformer using caller-supplied atom-ordered 3D coordinates. The source molecule is unchanged.
     fn with_added_3d_conformer_with_params(
         &self,
         py: Python<'_>,
@@ -2650,6 +2910,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, append a conformer using caller-supplied atom-ordered 3D coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn add_3d_conformer_(
         &mut self,
         py: Python<'_>,
@@ -2665,6 +2926,7 @@ impl Molecule {
             .add_3d_conformer_(rows)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, append a conformer using caller-supplied atom-ordered 3D coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn add_3d_conformer_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2681,6 +2943,7 @@ impl Molecule {
             .add_3d_conformer_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace the 3D conformer collection with one caller-supplied conformer. The source molecule is unchanged.
     fn with_only_3d_conformer(
         &self,
         py: Python<'_>,
@@ -2697,6 +2960,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: replace the 3D conformer collection with one caller-supplied conformer. The source molecule is unchanged.
     fn with_only_3d_conformer_with_params(
         &self,
         py: Python<'_>,
@@ -2714,6 +2978,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, replace the 3D conformer collection with one caller-supplied conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_only_3d_conformer_(
         &mut self,
         py: Python<'_>,
@@ -2729,6 +2994,7 @@ impl Molecule {
             .set_only_3d_conformer_(rows)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, replace the 3D conformer collection with one caller-supplied conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn set_only_3d_conformer_with_params_(
         &mut self,
         py: Python<'_>,
@@ -2745,17 +3011,20 @@ impl Molecule {
             .set_only_3d_conformer_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: remove all stored 3D conformers while retaining the separate 2D state. The source molecule is unchanged.
     fn with_cleared_3d_conformers(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_cleared_3d_conformers()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// In place, remove all stored 3D conformers while retaining the separate 2D state. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn clear_3d_conformers_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .clear_3d_conformers_()
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: add explicit hydrogen atoms with the selected hydrogen/coordinate options. The source molecule is unchanged.
     fn with_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_hydrogens()
@@ -2799,6 +3068,7 @@ impl Molecule {
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Return tetrahedral stereochemical information for the current molecule.
     fn tetrahedral_stereo(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.inner
             .tetrahedral_stereo()
@@ -2807,11 +3077,13 @@ impl Molecule {
             .map(|row| crate::canonical_stereo_queries::tetrahedral_row(py, row))
             .collect()
     }
+    /// Return the stereochemistry-perception result using the selected cleanup/assignment options.
     fn perceive_stereochemistry(&self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .perceive_stereochemistry()
             .map_err(|e| crate::canonical_stereo_queries::error_pyerr(py, e))
     }
+    /// Return atom indices and assigned or unspecified stereocenter labels using the selected options.
     #[pyo3(signature = (include_unassigned=false))]
     fn find_chiral_centers(
         &self,
@@ -2822,11 +3094,13 @@ impl Molecule {
             .find_chiral_centers(include_unassigned)
             .map_err(|e| crate::canonical_stereo_queries::error_pyerr(py, e))
     }
+    /// Return an editable builder initialized from this molecule; building changes does not modify the source.
     fn to_builder(&self) -> crate::canonical_builder::MoleculeBuilder {
         crate::canonical_builder::MoleculeBuilder {
             inner: self.inner.to_builder(),
         }
     }
+    /// Return stored 3D conformer values in storage order, preserving each conformer ID.
     fn conformers_3d(&self) -> Vec<crate::mmff_binding::Conformer3D> {
         self.inner
             .conformers_3d()
@@ -2835,17 +3109,20 @@ impl Molecule {
             .map(|inner| crate::mmff_binding::Conformer3D { inner })
             .collect()
     }
+    /// Return whether every atom can be parameterized by the selected MMFF variant.
     fn mmff_has_all_molecule_params(&self, py: Python<'_>) -> PyResult<bool> {
         self.inner
             .mmff_has_all_molecule_params()
             .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
     }
+    /// Return MMFF atom types, formal charges and partial charges for this molecule.
     fn mmff_properties(&self, py: Python<'_>) -> PyResult<crate::mmff_binding::MmffProperties> {
         self.inner
             .mmff_properties()
             .map(|inner| crate::mmff_binding::MmffProperties { inner })
             .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
     }
+    /// Return MMFF atom types, formal charges and partial charges for this molecule. Uses the supplied configuration object.
     fn mmff_properties_with_params(
         &self,
         py: Python<'_>,
@@ -2856,6 +3133,7 @@ impl Molecule {
             .map(|inner| crate::mmff_binding::MmffProperties { inner })
             .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: optimize the selected stored 3D conformer with the selected MMFF variant. The source molecule is unchanged.
     fn with_mmff_optimized(
         &self,
         py: Python<'_>,
@@ -2865,6 +3143,7 @@ impl Molecule {
             .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeResult { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
+    /// Apply to a new molecule and return the result: optimize the selected stored 3D conformer with the selected MMFF variant. The source molecule is unchanged.
     fn with_mmff_optimized_with_params(
         &self,
         py: Python<'_>,
@@ -2875,6 +3154,7 @@ impl Molecule {
             .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
+    /// Apply to a new molecule and return the result: optimize stored 3D conformers with MMFF and return per-conformer outcomes. The source molecule is unchanged.
     fn with_mmff_optimized_conformers(
         &self,
         py: Python<'_>,
@@ -2884,6 +3164,7 @@ impl Molecule {
             .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeConfsResult { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
+    /// Apply to a new molecule and return the result: optimize stored 3D conformers with MMFF and return per-conformer outcomes. The source molecule is unchanged.
     fn with_mmff_optimized_conformers_with_params(
         &self,
         py: Python<'_>,
@@ -2895,6 +3176,7 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    /// Return SMARTS text describing this graph using the selected query writer options.
     fn to_smarts(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_smarts()
@@ -2902,6 +3184,7 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return SMARTS text describing this graph using the selected query writer options. Uses the supplied configuration object.
     fn to_smarts_with_params(
         &self,
         py: Python<'_>,
@@ -2913,6 +3196,7 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return SMARTS text with supported CX annotations.
     fn to_cx_smarts(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_cx_smarts()
@@ -2920,6 +3204,7 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return SMARTS text with supported CX annotations. Uses the supplied configuration object.
     fn to_cx_smarts_with_params(
         &self,
         py: Python<'_>,
@@ -2931,6 +3216,7 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return the first query-to-target MatchResult, or None if there is no match. params and keyword configuration are mutually exclusive.
     fn substruct_match(
         &self,
         py: Python<'_>,
@@ -2941,6 +3227,7 @@ impl Molecule {
             .map(|result| result.map(|inner| crate::canonical_search::MatchResult { inner }))
             .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
     }
+    /// Return query-to-target MatchResult values subject to max_matches and uniquify. An unmatched query returns an empty list; callbacks and chirality use the supplied configuration.
     fn substruct_matches(
         &self,
         py: Python<'_>,
@@ -2956,6 +3243,7 @@ impl Molecule {
             })
             .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
     }
+    /// Return query-to-target MatchResult values subject to max_matches and uniquify. An unmatched query returns an empty list; callbacks and chirality use the supplied configuration. Uses the supplied configuration object.
     fn substruct_matches_with_params(
         &self,
         py: Python<'_>,
@@ -2974,6 +3262,7 @@ impl Molecule {
                     .collect()
             })
     }
+    /// Return the first query-to-target MatchResult, or None if there is no match. params and keyword configuration are mutually exclusive. Uses the supplied configuration object.
     fn substruct_match_with_params(
         &self,
         py: Python<'_>,
@@ -2986,6 +3275,7 @@ impl Molecule {
             })
             .map(|result| result.map(|inner| crate::canonical_search::MatchResult { inner }))
     }
+    /// Return whether the query matches this molecule using the supplied matching configuration. Uses the supplied configuration object.
     fn has_substruct_match_with_params(
         &self,
         py: Python<'_>,
@@ -2997,6 +3287,7 @@ impl Molecule {
                 .has_substruct_match_with_params(&query.inner, params)
         })
     }
+    /// Return whether the query matches this molecule using the supplied matching configuration.
     fn has_substruct_match(
         &self,
         py: Python<'_>,
@@ -3006,6 +3297,7 @@ impl Molecule {
             .has_substruct_match(&query.inner)
             .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
     }
+    /// Match a reusable CompiledQuery against this molecule and return MatchResult values.
     fn substruct_matches_compiled(
         &self,
         py: Python<'_>,
@@ -3022,6 +3314,7 @@ impl Molecule {
             .map_err(|e| crate::canonical_search::match_pyerr(py, e))
     }
 
+    /// Construct a Molecule value from the supplied inputs.
     #[staticmethod]
     fn new() -> Self {
         Self {
@@ -3029,6 +3322,7 @@ impl Molecule {
         }
     }
 
+    /// Construct a value from explicit detached parts; required structural consistency is checked at the public boundary.
     #[staticmethod]
     fn from_parts(
         py: Python<'_>,
@@ -3045,12 +3339,14 @@ impl Molecule {
         .map_err(|error| operation_pyerr(py, error))
     }
 
+    /// Returns the immutable topology value.
     fn topology(&self) -> crate::canonical_detached_blocks::TopologyBlock {
         crate::canonical_detached_blocks::TopologyBlock {
             inner: self.inner.topology().clone(),
         }
     }
 
+    /// Parse SMILES text into a new Molecule with the selected parsing/sanitization options; invalid input raises SmilesError.
     #[staticmethod]
     fn from_smiles(py: Python<'_>, smiles: crate::text_input::TextInput<'_>) -> PyResult<Self> {
         ck::Molecule::from_smiles(&smiles.as_text()?)
@@ -3058,6 +3354,7 @@ impl Molecule {
             .map_err(|error| smiles_pyerr(py, error))
     }
 
+    /// Parse SMILES text into a new Molecule with the selected parsing/sanitization options; invalid input raises SmilesError. Uses the supplied configuration object.
     #[staticmethod]
     fn from_smiles_with_params(
         py: Python<'_>,
@@ -3069,14 +3366,17 @@ impl Molecule {
             .map_err(|e| smiles_pyerr(py, e))
     }
 
+    /// Number of atoms in the graph or selected structure.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
 
+    /// Number of bonds in the graph.
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
 
+    /// Return a SMILES string using the selected writer settings; this does not modify the molecule.
     fn to_smiles(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_smiles()
@@ -3084,6 +3384,7 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return a SMILES string using the selected writer settings; this does not modify the molecule. Uses the supplied configuration object.
     fn to_smiles_with_params(
         &self,
         py: Python<'_>,
@@ -3095,12 +3396,14 @@ impl Molecule {
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
+    /// Return SMILES with the selected CXSMILES annotations; leave the molecule unchanged.
     fn to_cx_smiles(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_cx_smiles()
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return SMILES for the explicitly selected atom/bond fragment; indices refer to this molecule.
     fn to_fragment_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
         let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
         self.inner
@@ -3108,6 +3411,7 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return fragment SMILES with the selected CX annotations; indices refer to this molecule.
     fn to_fragment_cx_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
         let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
         self.inner
@@ -3115,6 +3419,7 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return SMILES with the selected CXSMILES annotations; leave the molecule unchanged. Uses the supplied configuration object.
     fn to_cx_smiles_with_params(
         &self,
         py: Python<'_>,
@@ -3125,6 +3430,7 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return SMILES for the explicitly selected atom/bond fragment; indices refer to this molecule. Uses the supplied configuration object.
     fn to_fragment_smiles_with_params(
         &self,
         py: Python<'_>,
@@ -3135,6 +3441,7 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return fragment SMILES with the selected CX annotations; indices refer to this molecule. Uses the supplied configuration object.
     fn to_fragment_cx_smiles_with_params(
         &self,
         py: Python<'_>,
@@ -3145,6 +3452,7 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
             .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
+    /// Return randomized SMILES strings using the supplied seed and output options; leave the graph unchanged.
     fn to_random_smiles(&self, py: Python<'_>, count: u32, seed: u32) -> PyResult<Vec<String>> {
         self.inner
             .to_random_smiles(count, seed)
@@ -3153,6 +3461,7 @@ impl Molecule {
             .map(|text| crate::canonical_sdf::decode_source_text(py, text))
             .collect()
     }
+    /// Return randomized SMILES strings using the supplied seed and output options; leave the graph unchanged. Uses the supplied configuration object.
     fn to_random_smiles_with_params(
         &self,
         py: Python<'_>,
@@ -3167,12 +3476,14 @@ impl Molecule {
             .map(|text| crate::canonical_sdf::decode_source_text(py, text))
             .collect()
     }
+    /// Compute atom pair fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .fingerprint_atom_pair()
             .map(|inner| Fingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_with_params(
         &self,
         py: Python<'_>,
@@ -3187,12 +3498,14 @@ impl Molecule {
             .map(|inner| Fingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_sparse(&self, py: Python<'_>) -> PyResult<SparseBitFingerprint> {
         self.inner
             .fingerprint_atom_pair_sparse()
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_sparse_with_params(
         &self,
         py: Python<'_>,
@@ -3207,12 +3520,14 @@ impl Molecule {
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_count(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint32> {
         self.inner
             .fingerprint_atom_pair_count()
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_count_with_params(
         &self,
         py: Python<'_>,
@@ -3227,6 +3542,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_sparse_count(
         &self,
         py: Python<'_>,
@@ -3236,6 +3552,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Compute atom pair sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         py: Python<'_>,
@@ -3250,11 +3567,13 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
     }
+    /// Return feature identifiers for the enumerated topological torsion paths using the supplied atom-count/options.
     fn topological_torsion_ids(&self, py: Python<'_>) -> PyResult<Vec<u64>> {
         self.inner
             .topological_torsion_ids()
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Return feature identifiers for the enumerated topological torsion paths using the supplied atom-count/options. Uses the supplied configuration object.
     fn topological_torsion_ids_with_params(
         &self,
         py: Python<'_>,
@@ -3264,12 +3583,14 @@ impl Molecule {
             .topological_torsion_ids_with_params(torsion_atom_count)
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .fingerprint_topological_torsion()
             .map(|inner| Fingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_with_params(
         &self,
         py: Python<'_>,
@@ -3284,6 +3605,7 @@ impl Molecule {
             .map(|inner| Fingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_sparse(
         &self,
         py: Python<'_>,
@@ -3293,6 +3615,7 @@ impl Molecule {
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         py: Python<'_>,
@@ -3307,6 +3630,7 @@ impl Molecule {
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_count(
         &self,
         py: Python<'_>,
@@ -3316,6 +3640,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_count_with_params(
         &self,
         py: Python<'_>,
@@ -3330,6 +3655,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_sparse_count(
         &self,
         py: Python<'_>,
@@ -3339,6 +3665,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         py: Python<'_>,
@@ -3353,6 +3680,7 @@ impl Molecule {
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
+    /// Compute morgan fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .fingerprint_morgan()
@@ -3360,6 +3688,7 @@ impl Molecule {
             .map_err(|e| morgan_pyerr(py, e))
     }
 
+    /// Compute morgan sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_sparse(&self, py: Python<'_>) -> PyResult<SparseBitFingerprint> {
         self.inner
             .fingerprint_morgan_sparse()
@@ -3367,6 +3696,7 @@ impl Molecule {
             .map_err(|e| morgan_pyerr(py, e))
     }
 
+    /// Compute morgan sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_sparse_count(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint> {
         self.inner
             .fingerprint_morgan_sparse_count()
@@ -3374,6 +3704,7 @@ impl Molecule {
             .map_err(|e| morgan_pyerr(py, e))
     }
 
+    /// Compute morgan folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_count(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint32> {
         self.inner
             .fingerprint_morgan_count()
@@ -3381,6 +3712,7 @@ impl Molecule {
             .map_err(|e| morgan_pyerr(py, e))
     }
 
+    /// Compute morgan fixed-width bit fingerprints for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_with_params(
         &self,
         py: Python<'_>,
@@ -3396,6 +3728,7 @@ impl Molecule {
             .map_err(|error| morgan_pyerr(py, error))
     }
 
+    /// Compute morgan sparse feature bits for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_sparse_with_params(
         &self,
         py: Python<'_>,
@@ -3411,6 +3744,7 @@ impl Molecule {
             .map_err(|error| morgan_pyerr(py, error))
     }
 
+    /// Compute morgan folded feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_count_with_params(
         &self,
         py: Python<'_>,
@@ -3426,6 +3760,7 @@ impl Molecule {
             .map_err(|error| morgan_pyerr(py, error))
     }
 
+    /// Compute morgan sparse feature counts for this molecule without changing its graph or coordinates.
     fn fingerprint_morgan_sparse_count_with_params(
         &self,
         py: Python<'_>,
@@ -3441,7 +3776,7 @@ impl Molecule {
             .map_err(|error| morgan_pyerr(py, error))
     }
 
-    /// Return a detached float64 NumPy array (N, 3) for the exact conformer ID.
+    /// Return an independent float64 NumPy array of shape (num_atoms, 3) for the exact stored conformer ID. Missing or ambiguous selection raises Coordinate3DReadError.
     #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]", imports = ("numpy", "typing")))]
     #[pyo3(signature = (conformer_id=0))]
     fn coordinates_3d<'py>(
@@ -3455,7 +3790,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_coordinate_input::read_pyerr(py, &error))
     }
 
-    /// Return a detached float64 NumPy array (N, 2), or None.
+    /// Return an independent float64 NumPy array of shape (num_atoms, 2), or None when no 2D conformer is stored. Never generates coordinates or falls back to 3D.
     #[gen_stub(override_return_type(type_repr = "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]", imports = ("numpy", "typing")))]
     fn coordinates_2d<'py>(&self, py: Python<'py>) -> Option<Bound<'py, numpy::PyArray2<f64>>> {
         self.inner
@@ -3463,10 +3798,12 @@ impl Molecule {
             .map(|rows| crate::canonical_coordinate_input::coordinate_array(py, rows))
     }
 
+    /// Return whether a 2D conformer is stored; do not generate coordinates or use a 3D fallback.
     fn has_2d_coordinates(&self) -> bool {
         self.inner.has_2d_coordinates()
     }
 
+    /// In place, generate and store 2D drawing coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn compute_2d_coordinates_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
             .compute_2d_coordinates_()
@@ -3485,6 +3822,7 @@ impl Molecule {
         crate::rdkit_binding::from_rdkit(rdmol, sanitize)
     }
 
+    /// In place, generate and store 2D drawing coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn compute_2d_coordinates_with_params_(
         &mut self,
         py: Python<'_>,
@@ -3495,6 +3833,7 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
 
+    /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
     fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_2d_coordinates()
@@ -3511,6 +3850,7 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
 
+    /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
     fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
@@ -3546,6 +3886,7 @@ impl Molecule {
         Ok(PyBytes::new(py, &png))
     }
 
+    /// Write SVG output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     #[pyo3(signature = (path, width, height))]
     fn write_svg(&self, py: Python<'_>, path: &str, width: u32, height: u32) -> PyResult<()> {
         let path = expand_user_path(path)?;
@@ -3554,6 +3895,7 @@ impl Molecule {
             .map_err(|error| drawing_write_pyerr(py, error))
     }
 
+    /// Write PNG output to the supplied filesystem path/directory using the selected options. This writes files rather than returning serialized text.
     #[pyo3(signature = (path, width, height))]
     fn write_png(&self, py: Python<'_>, path: &str, width: u32, height: u32) -> PyResult<()> {
         let path = expand_user_path(path)?;
@@ -3561,6 +3903,9 @@ impl Molecule {
             .write_png(&path, width, height)
             .map_err(|error| drawing_write_pyerr(py, error))
     }
+    /// Return Wildman-Crippen logP and molar refractivity as CrippenTotals.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn crippen_descriptors(&self, py: Python<'_>) -> PyResult<CrippenTotals> {
         let result = self
             .inner
@@ -3569,6 +3914,9 @@ impl Molecule {
         Ok(CrippenTotals { inner: result })
     }
 
+    /// Return the Labute approximate accessible surface area.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn labute_asa(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3577,6 +3925,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return total Labute surface area, per-atom contributions and the hydrogen contribution as LabuteAsaContributions.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn labute_asa_contributions(&self, py: Python<'_>) -> PyResult<LabuteAsaContributions> {
         let result = self
             .inner
@@ -3585,6 +3936,9 @@ impl Molecule {
         Ok(LabuteAsaContributions { inner: result })
     }
 
+    /// Return the topological polar surface area using the selected sulfur/phosphorus inclusion policy.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn tpsa(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3593,6 +3947,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return the 12 surface-area bins grouped by atomic Wildman-Crippen logP contributions.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn slogp_vsa(&self, py: Python<'_>) -> PyResult<Vec<f64>> {
         let result = self
             .inner
@@ -3601,6 +3958,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return the 10 surface-area bins grouped by atomic Wildman-Crippen molar-refractivity contributions.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn smr_vsa(&self, py: Python<'_>) -> PyResult<Vec<f64>> {
         let result = self
             .inner
@@ -3609,6 +3969,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 1 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_1(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3617,6 +3978,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 2 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_2(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3625,6 +3987,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 3 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_3(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3633,6 +3996,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 4 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_4(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3641,6 +4005,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 5 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_5(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3649,6 +4014,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 6 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_6(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3657,6 +4023,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 7 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_7(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3665,6 +4032,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 8 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_8(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3673,6 +4041,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 9 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_9(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3681,6 +4050,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 10 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_10(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3689,6 +4059,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 11 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_11(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3697,6 +4068,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 12 of the logP-weighted accessible-surface-area descriptor.
     fn slogp_vsa_12(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3705,6 +4077,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 1 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_1(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3713,6 +4086,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 2 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_2(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3721,6 +4095,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 3 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_3(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3729,6 +4104,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 4 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_4(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3737,6 +4113,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 5 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_5(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3745,6 +4122,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 6 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_6(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3753,6 +4131,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 7 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_7(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3761,6 +4140,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 8 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_8(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3769,6 +4149,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 9 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_9(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3777,6 +4158,7 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return bin 10 of the molar-refractivity-weighted accessible-surface-area descriptor.
     fn smr_vsa_10(&self, py: Python<'_>) -> PyResult<f64> {
         let result = self
             .inner
@@ -3785,6 +4167,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return Wildman-Crippen logP and molar refractivity as CrippenTotals. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (include_hydrogens, force))]
     fn crippen_descriptors_with_params(
         &self,
@@ -3799,6 +4184,9 @@ impl Molecule {
         Ok(CrippenTotals { inner: result })
     }
 
+    /// Return the Labute approximate accessible surface area. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (include_hydrogens, force))]
     fn labute_asa_with_params(
         &self,
@@ -3813,6 +4201,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return total Labute surface area, per-atom contributions and the hydrogen contribution as LabuteAsaContributions. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (include_hydrogens, force))]
     fn labute_asa_contributions_with_params(
         &self,
@@ -3827,6 +4218,9 @@ impl Molecule {
         Ok(LabuteAsaContributions { inner: result })
     }
 
+    /// Return the topological polar surface area using the selected sulfur/phosphorus inclusion policy. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (include_sulfur_phosphorus, force))]
     fn tpsa_with_params(
         &self,
@@ -3841,6 +4235,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return the 12 surface-area bins grouped by atomic Wildman-Crippen logP contributions. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (bins, force))]
     fn slogp_vsa_with_params(
         &self,
@@ -3855,6 +4252,9 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return the 10 surface-area bins grouped by atomic Wildman-Crippen molar-refractivity contributions. Uses the explicit arguments shown in the signature.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     #[pyo3(signature = (bins, force))]
     fn smr_vsa_with_params(
         &self,
@@ -3869,11 +4269,15 @@ impl Molecule {
         Ok(result)
     }
 
+    /// Return the quantitative estimate of drug-likeness using the configured descriptor weights.
+    ///
+    /// This is a read-only molecular query; the source graph and coordinates are unchanged.
     fn qed(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner
             .qed()
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
+    /// Return the 0th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_0_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3881,6 +4285,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 1th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_1_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3888,6 +4293,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 2th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_2_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3895,6 +4301,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 3th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_3_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3902,6 +4309,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 4th-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_4_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3909,6 +4317,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the requested-order valence-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (order, force))]
     fn chi_n_v_with_params(&self, py: Python<'_>, order: u32, force: bool) -> PyResult<f64> {
         self.inner
@@ -3916,6 +4325,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 0th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_0_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3923,6 +4333,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 1th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_1_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3930,6 +4341,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 2th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_2_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3937,6 +4349,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 3th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_3_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3944,6 +4357,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the 4th-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (force))]
     fn chi_4_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
         self.inner
@@ -3951,12 +4365,14 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
 
+    /// Return the requested-order n-weighted Chi molecular connectivity index. Requires prepared valence; does not change the graph.
     #[pyo3(signature = (order, force))]
     fn chi_n_n_with_params(&self, py: Python<'_>, order: u32, force: bool) -> PyResult<f64> {
         self.inner
             .chi_n_n_with_params(order, force)
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
+    /// Return an alignment result containing RMSD and the transform for the supplied atom correspondence; do not move either molecule.
     #[pyo3(signature = (reference, params=None))]
     #[doc = r#"
 Compute the transform aligning this molecule to ``reference`` without mutation.
@@ -3980,6 +4396,7 @@ Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
             .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
     }
 
+    /// Return the best fitted alignment RMSD and transform across the allowed atom correspondences; leave the molecules unchanged.
     #[pyo3(signature = (reference, params=None))]
     #[doc = "Return the best source-compatible alignment result without mutating either molecule."]
     fn best_alignment_to(
@@ -3998,6 +4415,7 @@ Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
             .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
     }
 
+    /// Return the smallest fitted RMSD to the reference over the allowed atom mappings, in angstroms; leave both molecules unchanged.
     #[pyo3(signature = (reference, params=None))]
     #[doc = "Return the best aligned RMSD without changing either molecule's coordinates."]
     fn best_rmsd_to(
@@ -4015,6 +4433,7 @@ Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
             .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
     }
 
+    /// Return coordinate RMSD to the reference without fitting or modifying either molecule.
     #[pyo3(signature = (reference, params=None))]
     #[doc = r#"
 Measure RMSD in the existing coordinate frame without alignment or mutation.
@@ -4035,6 +4454,7 @@ enumeration and optional terminal-group symmetrization.
             .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
     }
 
+    /// Return best RMSDs for the stored conformer pairs using the configured mapping/symmetry policy.
     #[pyo3(signature = (params=None))]
     #[doc = "Return best RMSD values for every ordered triangular conformer pair without mutation."]
     fn all_conformer_best_rmsds(
@@ -4052,6 +4472,7 @@ enumeration and optional terminal-group symmetrization.
             .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
     }
 
+    /// Apply to a new molecule and return the result: align the selected conformer to the reference molecule. The source molecule is unchanged.
     #[pyo3(signature = (reference, params=None))]
     #[doc = r#"
 Return a new molecule aligned to ``reference`` together with its alignment result.
@@ -4078,6 +4499,7 @@ The source and reference molecules remain unchanged.
             .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
     }
 
+    /// In place, align the selected conformer to the reference molecule. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature = (reference, params=None))]
     #[doc = "Align this molecule to ``reference`` in place and return the applied result."]
     fn align_to_<'py>(
@@ -4105,6 +4527,7 @@ The source and reference molecules remain unchanged.
             .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
     }
 
+    /// Apply to a new molecule and return the result: align the selected stored conformers to a reference conformer. The source molecule is unchanged.
     #[pyo3(signature = (params=None))]
     #[doc = "Return a molecule with aligned conformers and the ordered source RMS report."]
     fn with_aligned_conformers(
@@ -4120,6 +4543,7 @@ The source and reference molecules remain unchanged.
             .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
     }
 
+    /// In place, align the selected stored conformers to a reference conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature = (params=None))]
     #[doc = "Align selected or all conformers in place and return the ordered source RMS report."]
     fn align_conformers_(
@@ -4134,6 +4558,7 @@ The source and reference molecules remain unchanged.
             .map(Into::into)
             .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
     }
+    /// Return an alignment result containing RMSD and the transform for the supplied atom correspondence; do not move either molecule. Uses the supplied configuration object.
     fn alignment_transform_to_with_params(
         &self,
         reference: &Molecule,
@@ -4142,6 +4567,7 @@ The source and reference molecules remain unchanged.
         self.alignment_transform_to(reference, Some(params))
     }
 
+    /// Return the best fitted alignment RMSD and transform across the allowed atom correspondences; leave the molecules unchanged. Uses the supplied configuration object.
     fn best_alignment_to_with_params(
         &self,
         reference: &Molecule,
@@ -4150,6 +4576,7 @@ The source and reference molecules remain unchanged.
         self.best_alignment_to(reference, Some(params))
     }
 
+    /// Return the smallest fitted RMSD to the reference over the allowed atom mappings, in angstroms; leave both molecules unchanged. Uses the supplied configuration object.
     fn best_rmsd_to_with_params(
         &self,
         reference: &Molecule,
@@ -4158,6 +4585,7 @@ The source and reference molecules remain unchanged.
         self.best_rmsd_to(reference, Some(params))
     }
 
+    /// Return coordinate RMSD to the reference without fitting or modifying either molecule. Uses the supplied configuration object.
     fn coordinate_rmsd_to_with_params(
         &self,
         reference: &Molecule,
@@ -4166,6 +4594,7 @@ The source and reference molecules remain unchanged.
         self.coordinate_rmsd_to(reference, Some(params))
     }
 
+    /// Apply to a new molecule and return the result: align the selected conformer to the reference molecule. The source molecule is unchanged.
     fn with_alignment_to_with_params(
         &self,
         reference: &Molecule,
@@ -4174,24 +4603,28 @@ The source and reference molecules remain unchanged.
         self.with_alignment_to(reference, Some(params))
     }
 
+    /// Return best RMSDs for the stored conformer pairs using the configured mapping/symmetry policy. Uses the supplied configuration object.
     fn all_conformer_best_rmsds_with_params(
         &self,
         params: &PyAllConformerRmsdParameters,
     ) -> PyResult<Vec<PyConformerRmsd>> {
         self.all_conformer_best_rmsds(Some(params))
     }
+    /// Apply to a new molecule and return the result: align the selected stored conformers to a reference conformer. The source molecule is unchanged.
     fn with_aligned_conformers_with_params(
         &self,
         params: &PyConformerAlignmentParameters,
     ) -> PyResult<(Molecule, PyConformerAlignmentReport)> {
         self.with_aligned_conformers(Some(params))
     }
+    /// In place, align the selected stored conformers to a reference conformer. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn align_conformers_with_params_(
         &mut self,
         params: &PyConformerAlignmentParameters,
     ) -> PyResult<PyConformerAlignmentReport> {
         self.align_conformers_(Some(params))
     }
+    /// In place, align the selected conformer to the reference molecule. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     fn align_to_with_params_<'py>(
         slf: PyRefMut<'py, Self>,
         #[gen_stub(override_type(type_repr = "Molecule"))] reference: &Bound<'py, PyAny>,
@@ -4200,9 +4633,11 @@ The source and reference molecules remain unchanged.
         Self::align_to_(slf, reference, Some(params))
     }
 
+    /// Return the number of stored 3D conformers; 2D conformers are not included.
     fn num_3d_conformers(&self) -> usize {
         self.inner.num_3d_conformers()
     }
+    /// Return the atom-pair lower/upper bounds matrix used by distance-geometry embedding.
     #[gen_stub(override_return_type(type_repr="numpy.ndarray[typing.Any, typing.Any]",imports=("numpy","typing")))]
     fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let rows = self
@@ -4214,6 +4649,7 @@ The source and reference molecules remain unchanged.
             .map(|a| a.into_pyarray(py).into_any())
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
+    /// Apply to a new molecule and return the result: embed one 3D conformer using the selected distance-geometry parameters. The source molecule is unchanged.
     #[pyo3(signature=(params=None))]
     fn with_3d_conformer(&self, py: Python<'_>, params: Option<&EmbedParams>) -> PyResult<Self> {
         let defaults;
@@ -4232,6 +4668,7 @@ The source and reference molecules remain unchanged.
             inner: outcome.molecule,
         })
     }
+    /// In place, embed one 3D conformer using the selected distance-geometry parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature=(params=None))]
     fn embed_3d_conformer_(
         &mut self,
@@ -4252,6 +4689,7 @@ The source and reference molecules remain unchanged.
             .map_err(|e| operation_pyerr(py, e))?;
         Ok(())
     }
+    /// Apply to a new molecule and return the result: embed one 3D conformer and report its ID and updated embedding parameters. The source molecule is unchanged.
     #[pyo3(signature=(params=None))]
     fn with_3d_conformer_result(
         &self,
@@ -4272,6 +4710,7 @@ The source and reference molecules remain unchanged.
             .map_err(|e| operation_pyerr(py, e))?;
         Ok(EmbedMoleculeResult { inner: outcome })
     }
+    /// In place, embed one 3D conformer and report its ID and updated embedding parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature=(params=None))]
     fn embed_3d_conformer_result_(
         &mut self,
@@ -4292,6 +4731,7 @@ The source and reference molecules remain unchanged.
             .map_err(|e| operation_pyerr(py, e))?;
         Ok(EmbedMoleculeResult { inner: outcome })
     }
+    /// Apply to a new molecule and return the result: embed the requested number of 3D conformers using the selected distance-geometry parameters. The source molecule is unchanged.
     #[pyo3(signature=(num_confs, params=None))]
     fn with_3d_conformers(
         &self,
@@ -4315,6 +4755,7 @@ The source and reference molecules remain unchanged.
             inner: outcome.molecule,
         })
     }
+    /// In place, embed the requested number of 3D conformers using the selected distance-geometry parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature=(num_confs, params=None))]
     fn embed_3d_conformers_(
         &mut self,
@@ -4336,6 +4777,7 @@ The source and reference molecules remain unchanged.
             .map_err(|e| operation_pyerr(py, e))?;
         Ok(())
     }
+    /// Apply to a new molecule and return the result: embed multiple 3D conformers and report generated IDs and embedding parameters. The source molecule is unchanged.
     #[pyo3(signature=(num_confs, params=None))]
     fn with_3d_conformers_result(
         &self,
@@ -4357,6 +4799,7 @@ The source and reference molecules remain unchanged.
             .map_err(|e| operation_pyerr(py, e))?;
         Ok(EmbedMultipleConfsResult { inner: outcome })
     }
+    /// In place, embed multiple 3D conformers and report generated IDs and embedding parameters. Copy-on-write isolates other molecule values; errors do not commit partial changes.
     #[pyo3(signature=(num_confs, params=None))]
     fn embed_3d_conformers_result_(
         &mut self,

@@ -10,6 +10,9 @@ use pyo3_stub_gen::derive::{
     gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pyfunction, gen_stub_pymethods,
 };
 use std::collections::BTreeMap;
+/// Source template role, retaining source vector order.
+///
+/// Declared values: ``Reactant``, ``Product``, ``Agent``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
@@ -28,6 +31,9 @@ impl From<ck::ReactionRole> for ReactionRole {
         }
     }
 }
+/// Severity of a reaction validation issue: warning or error.
+///
+/// Declared values: ``Warning``, ``Error``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
@@ -44,6 +50,9 @@ impl From<ck::ReactionValidationSeverity> for ReactionValidationSeverity {
         }
     }
 }
+/// Typed category of reaction template or atom-map validation failure.
+///
+/// Declared values: ``MissingReactants``, ``MissingProducts``, ``DuplicateReactantMap``, ``UnmappedReactant``, ``DuplicateProductMap``, ``MissingProductMapReactant``, ``UnmappedProduct``, ``UnmappedReactantMaps``, ``MultipleCharge``, ``MultipleHydrogenCount``, ``MultipleMass``, ``MultipleIsotope``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
@@ -82,6 +91,7 @@ impl From<ck::ReactionValidationIssueKind> for ReactionValidationIssueKind {
         }
     }
 }
+/// Explicit reaction coordinate selection: automatic, stored 2D, or a specified 3D conformer ID.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, eq)]
 #[derive(PartialEq)]
@@ -91,41 +101,52 @@ pub(crate) struct ReactionCoordinateSelection {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionCoordinateSelection {
+    /// Construct a coordinate selection for automatic coordinate resolution, rejecting an ambiguous selection.
     #[staticmethod]
     fn auto() -> Self {
         Self {
             inner: ck::ReactionCoordinateSelection::auto(),
         }
     }
+    /// Construct a coordinate selection for the separate stored 2D conformer.
     #[staticmethod]
     fn two_d(id: usize) -> Self {
         Self {
             inner: ck::ReactionCoordinateSelection::two_d(id),
         }
     }
+    /// Construct a coordinate selection for the stored 3D conformer with the supplied ID.
     #[staticmethod]
     fn three_d(id: usize) -> Self {
         Self {
             inner: ck::ReactionCoordinateSelection::three_d(id),
         }
     }
+    /// Requested stored 2D or 3D conformer ID, or None for automatic selection.
     #[getter]
     fn id(&self) -> Option<usize> {
         self.inner.id()
     }
+    /// Return whether this selection uses automatic coordinate resolution.
     #[getter]
     fn is_auto(&self) -> bool {
         self.inner.is_auto()
     }
+    /// Return whether this selection uses stored 2D coordinates.
     #[getter]
     fn is_2d(&self) -> bool {
         self.inner.is_2d()
     }
+    /// Whether the conformer/input is designated three-dimensional.
     #[getter]
     fn is_3d(&self) -> bool {
         self.inner.is_3d()
     }
 }
+/// Writable configuration for reaction SMIRKS parsing.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionParseParams {
@@ -135,6 +156,7 @@ pub(crate) struct ReactionParseParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionParseParams {
+    /// Configure reaction SMIRKS parsing; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,use_smiles=false,sanitize=false,replacements=None,allow_cxsmiles=true,strict_cxsmiles=true))]
     fn new(
@@ -154,27 +176,36 @@ impl ReactionParseParams {
             ),
         }
     }
+    /// Whether reaction components are parsed as SMILES rather than SMARTS.
     #[getter]
     fn use_smiles(&self) -> bool {
         self.inner.use_smiles()
     }
+    /// Apply to a new molecule and return the result: perform the selected chemical sanitization stages. The source molecule is unchanged.
     #[getter]
     fn sanitize(&self) -> bool {
         self.inner.sanitize()
     }
+    /// Text substitutions applied before parsing.
     #[getter]
     fn replacements(&self) -> BTreeMap<String, String> {
         self.inner.replacements().clone()
     }
+    /// Whether a CX extension following the graph notation is parsed.
     #[getter]
     fn allow_cxsmiles(&self) -> bool {
         self.inner.allow_cxsmiles()
     }
+    /// Whether malformed CX extension data is rejected.
     #[getter]
     fn strict_cxsmiles(&self) -> bool {
         self.inner.strict_cxsmiles()
     }
 }
+/// Writable configuration for reaction validation diagnostics.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionValidationParams {
@@ -184,6 +215,7 @@ pub(crate) struct ReactionValidationParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionValidationParams {
+    /// Configure reaction validation diagnostics; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,silent=false))]
     fn new(silent: bool) -> Self {
@@ -191,11 +223,16 @@ impl ReactionValidationParams {
             inner: ck::ReactionValidationParams::new(silent),
         }
     }
+    /// Whether reaction validation suppresses diagnostic output.
     #[getter]
     fn silent(&self) -> bool {
         self.inner.silent()
     }
 }
+/// Writable configuration for single-reactant reaction coordinate selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionSingleRunParams {
@@ -205,6 +242,7 @@ pub(crate) struct ReactionSingleRunParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionSingleRunParams {
+    /// Configure single-reactant reaction coordinate selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,coordinate_selection=None))]
     fn new(coordinate_selection: Option<&ReactionCoordinateSelection>) -> Self {
@@ -214,6 +252,7 @@ impl ReactionSingleRunParams {
             ),
         }
     }
+    /// Explicit selection of stored 2D coordinates, a 3D conformer, or automatic resolution.
     #[getter]
     fn coordinate_selection(&self) -> ReactionCoordinateSelection {
         ReactionCoordinateSelection {
@@ -221,6 +260,10 @@ impl ReactionSingleRunParams {
         }
     }
 }
+/// Writable configuration for multi-reactant reaction execution.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionRunParams {
@@ -230,6 +273,7 @@ pub(crate) struct ReactionRunParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionRunParams {
+    /// Configure multi-reactant reaction execution; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,max_products=1000,coordinate_selections=None,copy_atom_properties=false))]
     fn new(
@@ -249,14 +293,18 @@ impl ReactionRunParams {
             ),
         }
     }
+    /// RDKit default 1000; zero leaves matching and combinations unlimited.
     #[getter]
     fn max_products(&self) -> u32 {
         self.inner.max_products()
     }
+    /// CK extension: fill missing product user properties from atom origins.
+    /// False preserves native behavior; it never clears existing properties.
     #[getter]
     fn copy_atom_properties(&self) -> bool {
         self.inner.copy_atom_properties()
     }
+    /// Empty selects Auto for each input; otherwise input arity must match.
     #[getter]
     fn coordinate_selections(&self) -> Vec<ReactionCoordinateSelection> {
         self.inner
@@ -266,6 +314,10 @@ impl ReactionRunParams {
             .collect()
     }
 }
+/// Writable configuration for single-reactant reaction application.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionApplyParams {
@@ -275,6 +327,7 @@ pub(crate) struct ReactionApplyParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionApplyParams {
+    /// Configure single-reactant reaction application; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,remove_unmatched_atoms=true))]
     fn new(remove_unmatched_atoms: bool) -> Self {
@@ -282,11 +335,16 @@ impl ReactionApplyParams {
             inner: ck::ReactionApplyParams::new(remove_unmatched_atoms),
         }
     }
+    /// Whether atoms not matched by the reaction template are removed during application.
     #[getter]
     fn remove_unmatched_atoms(&self) -> bool {
         self.inner.remove_unmatched_atoms()
     }
 }
+/// Writable configuration for filtering unmapped reaction templates.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionTemplateRemovalParams {
@@ -296,6 +354,7 @@ pub(crate) struct ReactionTemplateRemovalParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionTemplateRemovalParams {
+    /// Configure filtering unmapped reaction templates; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,threshold_unmapped_atoms=0.2,move_to_agent_templates=true))]
     fn new(threshold_unmapped_atoms: f64, move_to_agent_templates: bool) -> Self {
@@ -306,15 +365,21 @@ impl ReactionTemplateRemovalParams {
             ),
         }
     }
+    /// Unmapped-atom fraction above which a reaction template is removed.
     #[getter]
     fn threshold_unmapped_atoms(&self) -> f64 {
         self.inner.threshold_unmapped_atoms()
     }
+    /// Whether removed reactant/product templates are retained as agent templates.
     #[getter]
     fn move_to_agent_templates(&self) -> bool {
         self.inner.move_to_agent_templates()
     }
 }
+/// Writable configuration for reaction SMIRKS/CX output.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct ReactionWriteParams {
@@ -324,6 +389,7 @@ pub(crate) struct ReactionWriteParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionWriteParams {
+    /// Configure reaction SMIRKS/CX output; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,canonical=false,isomeric_smiles=true,rooted_at_atom=None,include_dative_bonds=true,include_cx=false,cx_fields=None,coordinate_selections=None))]
     fn new(
@@ -351,32 +417,39 @@ impl ReactionWriteParams {
             ),
         }
     }
+    /// Whether canonical atom traversal is used for output.
     #[getter]
     fn canonical(&self) -> bool {
         self.inner.canonical()
     }
+    /// Whether isotope and stereochemical information is included in the output notation.
     #[getter]
     fn isomeric_smiles(&self) -> bool {
         self.inner.isomeric_smiles()
     }
+    /// Atom index at which output traversal starts, or None for the default traversal.
     #[getter]
     fn rooted_at_atom(&self) -> Option<usize> {
         self.inner.rooted_at_atom()
     }
+    /// Whether dative bonds are included in the requested graph operation/output.
     #[getter]
     fn include_dative_bonds(&self) -> bool {
         self.inner.include_dative_bonds()
     }
+    /// Whether reaction output includes supported CX annotations.
     #[getter]
     fn include_cx(&self) -> bool {
         self.inner.include_cx()
     }
+    /// Bit mask selecting CX annotation fields.
     #[getter]
     fn cx_fields(&self) -> CxSmilesFields {
         CxSmilesFields {
             inner: self.inner.cx_fields(),
         }
     }
+    /// Per template in original reactant, agent, product insertion order.
     #[getter]
     fn coordinate_selections(&self) -> Vec<ReactionCoordinateSelection> {
         self.inner
@@ -386,6 +459,11 @@ impl ReactionWriteParams {
             .collect()
     }
 }
+/// Owned reaction template with reactant, agent and product QueryGraph values.
+///
+/// Construct from SMIRKS or explicit templates. run() accepts the ordered reactant
+/// list and returns product sets without mutating those reactants. Template edits
+/// use value-returning methods.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct Reaction {
@@ -394,7 +472,7 @@ pub(crate) struct Reaction {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Reaction {
-    /// Run with default settings, a parameter object, or configuration keywords.
+    /// Run this reaction on the ordered reactant Molecule list. Return a list of product sets, each a list of Molecule values in product-template order. Reactants are unchanged; params and keyword options are mutually exclusive.
     #[pyo3(signature = (reactants, params=None))]
     fn run(
         &mut self,
@@ -416,18 +494,21 @@ impl Reaction {
             .map(product_sets)
             .map_err(|error| crate::drawing_binding::operation_pyerr(py, &error))
     }
+    /// Construct a Reaction value from the supplied inputs.
     #[new]
     fn new() -> Self {
         Self {
             inner: ck::Reaction::new(),
         }
     }
+    /// Parse reaction SMIRKS text into a Reaction; parsing failures raise ReactionParseError.
     #[staticmethod]
     fn from_smirks(py: Python<'_>, text: &str) -> PyResult<Self> {
         ck::Reaction::from_smirks(text)
             .map(|inner| Self { inner })
             .map_err(|e| parse_error(py, &e))
     }
+    /// Parse reaction SMIRKS text into a Reaction; parsing failures raise ReactionParseError. Uses the supplied configuration object.
     #[staticmethod]
     fn from_smirks_with_params(
         py: Python<'_>,
@@ -438,6 +519,7 @@ impl Reaction {
             .map(|inner| Self { inner })
             .map_err(|e| parse_error(py, &e))
     }
+    /// Construct a Reaction from reactant, product and agent query templates.
     #[staticmethod]
     fn from_templates(
         py: Python<'_>,
@@ -453,9 +535,11 @@ impl Reaction {
         .map(|inner| Self { inner })
         .map_err(|e| model_error(py, &e))
     }
+    /// Return the number of reactant query templates.
     fn num_reactant_templates(&self) -> usize {
         self.inner.num_reactant_templates()
     }
+    /// Return reactant QueryGraph template(s) in stored template order; indices are zero-based.
     fn reactant_templates(&self) -> Vec<QueryGraph> {
         self.inner
             .reactant_templates()
@@ -464,21 +548,25 @@ impl Reaction {
             .map(|inner| QueryGraph { inner })
             .collect()
     }
+    /// Return reactant QueryGraph template(s) in stored template order; indices are zero-based.
     fn reactant_template(&self, py: Python<'_>, index: usize) -> PyResult<QueryGraph> {
         self.inner
             .reactant_template(index)
             .map(|v| QueryGraph { inner: v.clone() })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return a new Reaction with the supplied reactant QueryGraph template; leave the source reaction unchanged.
     fn with_reactant_template(&self, py: Python<'_>, template: &QueryGraph) -> PyResult<Self> {
         self.inner
             .with_reactant_template(template.inner.clone())
             .map(|inner| Self { inner })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return the number of product query templates.
     fn num_product_templates(&self) -> usize {
         self.inner.num_product_templates()
     }
+    /// Return product QueryGraph template(s) in stored template order; indices are zero-based.
     fn product_templates(&self) -> Vec<QueryGraph> {
         self.inner
             .product_templates()
@@ -487,21 +575,25 @@ impl Reaction {
             .map(|inner| QueryGraph { inner })
             .collect()
     }
+    /// Return product QueryGraph template(s) in stored template order; indices are zero-based.
     fn product_template(&self, py: Python<'_>, index: usize) -> PyResult<QueryGraph> {
         self.inner
             .product_template(index)
             .map(|v| QueryGraph { inner: v.clone() })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return a new Reaction with the supplied product QueryGraph template; leave the source reaction unchanged.
     fn with_product_template(&self, py: Python<'_>, template: &QueryGraph) -> PyResult<Self> {
         self.inner
             .with_product_template(template.inner.clone())
             .map(|inner| Self { inner })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return the number of agent query templates.
     fn num_agent_templates(&self) -> usize {
         self.inner.num_agent_templates()
     }
+    /// Return agent QueryGraph template(s) in stored template order; indices are zero-based.
     fn agent_templates(&self) -> Vec<QueryGraph> {
         self.inner
             .agent_templates()
@@ -510,32 +602,39 @@ impl Reaction {
             .map(|inner| QueryGraph { inner })
             .collect()
     }
+    /// Return agent QueryGraph template(s) in stored template order; indices are zero-based.
     fn agent_template(&self, py: Python<'_>, index: usize) -> PyResult<QueryGraph> {
         self.inner
             .agent_template(index)
             .map(|v| QueryGraph { inner: v.clone() })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return a new Reaction with the supplied agent QueryGraph template; leave the source reaction unchanged.
     fn with_agent_template(&self, py: Python<'_>, template: &QueryGraph) -> PyResult<Self> {
         self.inner
             .with_agent_template(template.inner.clone())
             .map(|inner| Self { inner })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return whether reactant matchers have been initialized.
     fn is_initialized(&self) -> bool {
         self.inner.is_initialized()
     }
+    /// Return whether unspecified product atom properties may be inherited from reactants.
     fn implicit_properties(&self) -> bool {
         self.inner.implicit_properties()
     }
+    /// Return a new Reaction with the requested product-property inheritance policy.
     fn with_implicit_properties(&self, enabled: bool) -> Self {
         Self {
             inner: self.inner.with_implicit_properties(enabled),
         }
     }
+    /// Return the substructure-matching configuration used to find reactant template matches.
     fn match_params(&self) -> SubstructMatchParams {
         SubstructMatchParams::from_inner(self.inner.match_params().clone())
     }
+    /// Return a new Reaction using the supplied SubstructMatchParams for reactant template matching.
     fn with_match_params(&self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<Self> {
         if params.has_python_callbacks() {
             return Err(pyo3::exceptions::PyNotImplementedError::new_err(
@@ -547,10 +646,12 @@ impl Reaction {
             .map(|inner| Self { inner })
             .map_err(|e| model_error(py, &e))
     }
+    /// Return reaction SMIRKS text with reactants, agents and products; leave the Reaction unchanged.
     fn to_smirks(&self, py: Python<'_>) -> PyResult<String> {
         let v = self.inner.to_smirks().map_err(|e| write_error(py, &e))?;
         crate::canonical_sdf::decode_source_text(py, &v)
     }
+    /// Return reaction SMIRKS text with reactants, agents and products; leave the Reaction unchanged. Uses the supplied configuration object.
     fn to_smirks_with_params(
         &self,
         py: Python<'_>,
@@ -562,10 +663,12 @@ impl Reaction {
             .map_err(|e| write_error(py, &e))?;
         crate::canonical_sdf::decode_source_text(py, &v)
     }
+    /// Return reaction SMIRKS text with supported CX annotations.
     fn to_cx_smirks(&self, py: Python<'_>) -> PyResult<String> {
         let v = self.inner.to_cx_smirks().map_err(|e| write_error(py, &e))?;
         crate::canonical_sdf::decode_source_text(py, &v)
     }
+    /// Return reaction SMIRKS text with supported CX annotations. Uses the supplied configuration object.
     fn to_cx_smirks_with_params(
         &self,
         py: Python<'_>,
@@ -577,12 +680,14 @@ impl Reaction {
             .map_err(|e| write_error(py, &e))?;
         crate::canonical_sdf::decode_source_text(py, &v)
     }
+    /// Return a ReactionValidationReport with warnings and errors for template and atom-map consistency; do not silently repair the reaction.
     fn validate(&self, py: Python<'_>) -> PyResult<ReactionValidationReport> {
         self.inner
             .validate()
             .map(|inner| ReactionValidationReport { inner })
             .map_err(|e| validation_error(py, &e))
     }
+    /// Return a ReactionValidationReport with warnings and errors for template and atom-map consistency; do not silently repair the reaction. Uses the supplied configuration object.
     fn validate_with_params(
         &self,
         py: Python<'_>,
@@ -593,12 +698,14 @@ impl Reaction {
             .map(|inner| ReactionValidationReport { inner })
             .map_err(|e| validation_error(py, &e))
     }
+    /// Return an initialized Reaction with compiled reactant matchers; leave the source Reaction unchanged.
     fn with_initialized(&self, py: Python<'_>) -> PyResult<Reaction> {
         self.inner
             .with_initialized()
             .map(|inner| Reaction { inner })
             .map_err(|e| initialization_error(py, &e))
     }
+    /// Return an initialized Reaction with compiled reactant matchers; leave the source Reaction unchanged. Uses the supplied configuration object.
     fn with_initialized_with_params(
         &self,
         py: Python<'_>,
@@ -609,16 +716,19 @@ impl Reaction {
             .map(|inner| Reaction { inner })
             .map_err(|e| initialization_error(py, &e))
     }
+    /// Return a new Reaction with all agent templates removed.
     fn without_agents(&self) -> ReactionTemplateRemoval {
         ReactionTemplateRemoval {
             inner: self.inner.without_agents(),
         }
     }
+    /// Return a ReactionTemplateRemoval containing the new reaction and removed reactant templates, according to the unmapped-atom threshold.
     fn without_unmapped_reactants(&self) -> ReactionTemplateRemoval {
         ReactionTemplateRemoval {
             inner: self.inner.without_unmapped_reactants(),
         }
     }
+    /// Return a ReactionTemplateRemoval containing the new reaction and removed reactant templates, according to the unmapped-atom threshold. Uses the supplied configuration object.
     fn without_unmapped_reactants_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
@@ -629,11 +739,13 @@ impl Reaction {
                 .without_unmapped_reactants_with_params(&params.inner),
         }
     }
+    /// Return a ReactionTemplateRemoval containing the new reaction and removed product templates, according to the unmapped-atom threshold.
     fn without_unmapped_products(&self) -> ReactionTemplateRemoval {
         ReactionTemplateRemoval {
             inner: self.inner.without_unmapped_products(),
         }
     }
+    /// Return a ReactionTemplateRemoval containing the new reaction and removed product templates, according to the unmapped-atom threshold. Uses the supplied configuration object.
     fn without_unmapped_products_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
@@ -645,6 +757,7 @@ impl Reaction {
         }
     }
 }
+/// New reaction plus the query templates removed by a template-filtering operation.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ReactionTemplateRemoval {
@@ -653,12 +766,14 @@ pub(crate) struct ReactionTemplateRemoval {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionTemplateRemoval {
+    /// Reaction value produced by this result.
     #[getter]
     fn reaction(&self) -> Reaction {
         Reaction {
             inner: self.inner.reaction().clone(),
         }
     }
+    /// QueryGraph templates removed by the filtering operation.
     #[getter]
     fn removed_templates(&self) -> Vec<QueryGraph> {
         self.inner
@@ -669,6 +784,7 @@ impl ReactionTemplateRemoval {
             .collect()
     }
 }
+/// Result of single-reactant reaction application: the resulting molecule and whether it changed.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ReactionApplyResult {
@@ -677,17 +793,20 @@ pub(crate) struct ReactionApplyResult {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionApplyResult {
+    /// Return the molecule produced by this operation; the input molecule remains independently owned.
     #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    /// Whether reaction application changed the molecule.
     #[getter]
     fn changed(&self) -> bool {
         self.inner.changed()
     }
 }
+/// Reaction-template validation warnings and errors; is_valid reports whether errors are absent.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ReactionValidationReport {
@@ -696,6 +815,7 @@ pub(crate) struct ReactionValidationReport {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionValidationReport {
+    /// Reaction validation warning issues in report order.
     #[getter]
     fn warnings(&self) -> Vec<ReactionValidationIssue> {
         self.inner
@@ -705,6 +825,7 @@ impl ReactionValidationReport {
             .map(|inner| ReactionValidationIssue { inner })
             .collect()
     }
+    /// Return the reaction-template validation issues classified as errors.
     #[getter]
     fn errors(&self) -> Vec<ReactionValidationIssue> {
         self.inner
@@ -714,19 +835,23 @@ impl ReactionValidationReport {
             .map(|inner| ReactionValidationIssue { inner })
             .collect()
     }
+    /// Whether this result satisfies its domain validity conditions.
     #[getter]
     fn is_valid(&self) -> bool {
         self.inner.is_valid()
     }
+    /// Number of reaction validation warnings.
     #[getter]
     fn num_warnings(&self) -> usize {
         self.inner.num_warnings()
     }
+    /// Number of reaction validation errors.
     #[getter]
     fn num_errors(&self) -> usize {
         self.inner.num_errors()
     }
 }
+/// Structured reaction validation issue, with severity, template role/index, atom/map context and detail.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ReactionValidationIssue {
@@ -735,40 +860,53 @@ pub(crate) struct ReactionValidationIssue {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionValidationIssue {
+    /// Classification/discriminant of this value as defined by its owning type.
     #[getter]
     fn kind(&self) -> ReactionValidationIssueKind {
         self.inner.kind().into()
     }
+    /// Validation issue severity.
     #[getter]
     fn severity(&self) -> ReactionValidationSeverity {
         self.inner.severity().into()
     }
+    /// Reactant, product or agent template role associated with this issue.
     #[getter]
     fn role(&self) -> Option<ReactionRole> {
         self.inner.role().map(Into::into)
     }
+    /// Zero-based template index associated with this issue, when available.
     #[getter]
     fn template(&self) -> Option<usize> {
         self.inner.template()
     }
+    /// Atom index associated with the validation issue, when available.
     #[getter]
     fn atom(&self) -> Option<usize> {
         self.inner.atom().map(|v| v.index())
     }
+    /// Atom-map number associated with this issue, when available.
     #[getter]
     fn map(&self) -> Option<i32> {
         self.inner.map()
     }
+    /// Atom-map numbers associated with this issue.
     #[getter]
     fn maps(&self) -> Vec<i32> {
         self.inner.maps().to_vec()
     }
+    /// Human-readable context for this issue.
     #[getter]
     fn detail(&self) -> String {
         self.inner.detail().to_owned()
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionModelError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionModelError,
+    PyValueError,
+    "The reaction templates or their references are structurally invalid."
+);
 pub(crate) fn model_error(py: Python<'_>, source: &ck::ReactionModelError) -> PyErr {
     use ck::ReactionModelError as E;
     let kind = match source {
@@ -805,7 +943,12 @@ pub(crate) fn model_error(py: Python<'_>, source: &ck::ReactionModelError) -> Py
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionParseError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionParseError,
+    PyValueError,
+    "Reaction SMARTS, SMILES or reaction-block text could not be parsed."
+);
 pub(crate) fn parse_error(py: Python<'_>, source: &ck::ReactionParseError) -> PyErr {
     use ck::ReactionParseError as E;
     let kind = match source {
@@ -953,7 +1096,12 @@ pub(crate) fn parse_error(py: Python<'_>, source: &ck::ReactionParseError) -> Py
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionRunError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionRunError,
+    PyValueError,
+    "A reaction could not be executed with the supplied reactants and options."
+);
 pub(crate) fn run_error(py: Python<'_>, source: &ck::ReactionRunError) -> PyErr {
     use ck::ReactionRunError as E;
     let kind = match source {
@@ -1043,7 +1191,12 @@ pub(crate) fn run_error(py: Python<'_>, source: &ck::ReactionRunError) -> PyErr 
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionApplyError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionApplyError,
+    PyValueError,
+    "A reaction could not be applied to the molecule."
+);
 pub(crate) fn apply_error(py: Python<'_>, source: &ck::ReactionApplyError) -> PyErr {
     use ck::ReactionApplyError as E;
     let kind = match source {
@@ -1104,7 +1257,12 @@ pub(crate) fn apply_error(py: Python<'_>, source: &ck::ReactionApplyError) -> Py
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionProductError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionProductError,
+    PyValueError,
+    "A reaction product could not be constructed or finalized."
+);
 pub(crate) fn product_error(py: Python<'_>, source: &ck::ReactionProductError) -> PyErr {
     use ck::ReactionProductError as E;
     let kind = match source {
@@ -1232,7 +1390,12 @@ pub(crate) fn product_error(py: Python<'_>, source: &ck::ReactionProductError) -
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionWriteError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionWriteError,
+    PyValueError,
+    "The reaction could not be serialized in the requested notation or format."
+);
 pub(crate) fn write_error(py: Python<'_>, source: &ck::ReactionWriteError) -> PyErr {
     use ck::ReactionWriteError as E;
     let kind = match source {
@@ -1279,7 +1442,12 @@ pub(crate) fn write_error(py: Python<'_>, source: &ck::ReactionWriteError) -> Py
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionValidationError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionValidationError,
+    PyValueError,
+    "Reaction-template validation could not be completed."
+);
 pub(crate) fn validation_error(py: Python<'_>, source: &ck::ReactionValidationError) -> PyErr {
     use ck::ReactionValidationError as E;
     let kind = match source {
@@ -1371,7 +1539,12 @@ pub(crate) fn validation_error(py: Python<'_>, source: &ck::ReactionValidationEr
         Err(e) => e,
     }
 }
-pyo3::create_exception!(cosmolkit, ReactionInitializationError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ReactionInitializationError,
+    PyValueError,
+    "Reaction templates could not be initialized for execution."
+);
 pub(crate) fn initialization_error(
     py: Python<'_>,
     source: &ck::ReactionInitializationError,
@@ -1408,11 +1581,13 @@ pub(crate) fn initialization_error(
         Err(e) => e,
     }
 }
+/// Parse reaction SMIRKS text into a Reaction using the canonical reaction parser.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn parse_smirks(py: Python<'_>, text: &str) -> PyResult<Reaction> {
     Reaction::from_smirks(py, text)
 }
+/// Parse reaction SMIRKS text into a Reaction using the canonical reaction parser. Uses the supplied configuration object.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn parse_smirks_with_params(

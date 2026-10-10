@@ -2,15 +2,17 @@
 
 import cosmolkit as ck
 
-mol = ck.Molecule.from_smiles("c1ccccc1CCO", sanitize=True)
-fp1 = mol.fingerprint_morgan(radius=2, n_bits=2048)
-fp2 = ck.Molecule.from_smiles("CCN", sanitize=True).fingerprint_morgan(
-    radius=2, n_bits=2048
+mol = ck.mol_from_smiles("c1ccccc1CCO", sanitize=True)
+fp1 = mol.fingerprint_morgan(radius=2, fp_size=2048)
+fp2 = ck.mol_from_smiles("CCN", sanitize=True).fingerprint_morgan(
+    radius=2, fp_size=2048
 )
 similarity = fp1.tanimoto(fp2)
 
-result = mol.fingerprint_morgan_with_output(radius=2, n_bits=2048)
-additional = result.additional_output()
+additional = ck.FingerprintAdditionalOutput()
+additional.allocate_atom_counts()
+additional.allocate_bit_info_map()
+_ = mol.fingerprint_morgan(radius=2, fp_size=2048, additional_output=additional)
 
 topological = mol.fingerprint_topological(fp_size=2048)
 topological_output = mol.fingerprint_topological_with_output(
@@ -18,13 +20,15 @@ topological_output = mol.fingerprint_topological_with_output(
     atom_bits=True,
     bit_info=True,
 )
-avalon = mol.avalon_fingerprint(n_bits=512)
+avalon = mol.fingerprint_avalon(n_bits=512)
 pattern = mol.fingerprint_pattern(n_bits=2048)
 tautomeric_pattern = mol.fingerprint_pattern(n_bits=2048, tautomeric=True)
 maccs = mol.fingerprint_maccs()
-atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
+atom_pair = mol.fingerprint_atom_pair(fp_size=2048)
 atom_pair_sparse_count = mol.fingerprint_atom_pair_sparse_count()
-atom_pair_output = mol.fingerprint_atom_pair_with_output().additional_output()
+atom_pair_output = ck.FingerprintAdditionalOutput()
+atom_pair_output.allocate_atom_counts()
+_ = mol.fingerprint_atom_pair(additional_output=atom_pair_output)
 layered_mask = mol.fingerprint_layered(fp_size=257)
 layered = mol.fingerprint_layered_with_output(
     layers=0x3F,
@@ -40,7 +44,9 @@ layered = mol.fingerprint_layered_with_output(
 print("fp1 bits:", fp1.on_bits()[:8])
 print("similarity:", similarity)
 print("atom counts:", additional.atom_counts())
-print("bit info entries:", len(additional.bit_info_map()))
+bit_info = additional.bit_info_map()
+assert bit_info is not None
+print("bit info entries:", len(bit_info))
 print("topological bits:", topological.on_bits()[:8])
 print(
     "topological atom provenance counts:",

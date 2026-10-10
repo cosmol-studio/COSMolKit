@@ -7,8 +7,18 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
-pyo3::create_exception!(cosmolkit, CoordinateInputError, PyValueError);
-pyo3::create_exception!(cosmolkit, Coordinate3DReadError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    CoordinateInputError,
+    PyValueError,
+    "Coordinate input has an invalid shape, atom count, index or numerical value."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    Coordinate3DReadError,
+    PyValueError,
+    "The requested stored 3D conformer or atom coordinate is unavailable."
+);
 
 /// Python owns this XYZ snapshot; it never aliases a molecule's COW block.
 /// Preserve the runtime dimension: XY for 2D, XYZ for 3D.
@@ -26,6 +36,9 @@ pub(crate) fn coordinate_array<'py, const D: usize>(
     array.into_pyarray(py)
 }
 
+/// Policy for a third coordinate column supplied to a 2D API: Ignore drops it, RequireZero accepts only zero Z, and Error rejects a third column.
+///
+/// Declared values: ``Ignore``, ``RequireZero``, ``Error``.
 #[cosmolkit_macros::python_enum(existing_methods)]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
@@ -58,6 +71,7 @@ impl CoordinateZPolicy {
     fn _enum_string_values() -> Vec<(&'static str, CoordinateZPolicy)> {
         Self::enum_string_values()
     }
+    /// Parse a documented selector string; unknown strings raise an error.
     #[staticmethod]
     fn from_name(py: Python<'_>, value: &str) -> PyResult<CoordinateZPolicy> {
         ck::CoordinateZPolicy::from_name(value)
@@ -65,6 +79,10 @@ impl CoordinateZPolicy {
             .map_err(|e| error_pyerr(py, &e))
     }
 }
+/// Writable configuration for caller-supplied 2D coordinates and optional Z-column policy.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate2DInputParams {
@@ -74,6 +92,7 @@ pub(crate) struct Coordinate2DInputParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Coordinate2DInputParams {
+    /// Configure caller-supplied 2D coordinates and optional Z-column policy; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(z_policy=CoordinateZPolicy::Ignore))]
     fn new(z_policy: CoordinateZPolicy) -> Self {
@@ -83,11 +102,16 @@ impl Coordinate2DInputParams {
             },
         }
     }
+    /// Policy for a Z column supplied to a 2D coordinate API: ignore, require_zero, or error.
     #[getter]
     fn z_policy(&self) -> CoordinateZPolicy {
         CoordinateZPolicy::from_core(self.inner.z_policy)
     }
 }
+/// Writable configuration for caller-supplied 3D conformers.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Coordinate3DInputParams {
@@ -97,6 +121,7 @@ pub(crate) struct Coordinate3DInputParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Coordinate3DInputParams {
+    /// Configure caller-supplied 3D conformers; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(is_3d=true))]
     fn new(is_3d: bool) -> Self {
@@ -104,11 +129,16 @@ impl Coordinate3DInputParams {
             inner: ck::Coordinate3DInputParams { is_3d },
         }
     }
+    /// Whether the conformer/input is designated three-dimensional.
     #[getter]
     fn is_3d(&self) -> bool {
         self.inner.is_3d
     }
 }
+/// Writable configuration for replacement of a stored 3D conformer by ID.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct Replace3DCoordinatesParams {
@@ -118,6 +148,7 @@ pub(crate) struct Replace3DCoordinatesParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Replace3DCoordinatesParams {
+    /// Configure replacement of a stored 3D conformer by ID; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(conformer_id=0))]
     fn new(conformer_id: usize) -> Self {
@@ -125,6 +156,7 @@ impl Replace3DCoordinatesParams {
             inner: ck::Replace3DCoordinatesParams { conformer_id },
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> usize {
         self.inner.conformer_id

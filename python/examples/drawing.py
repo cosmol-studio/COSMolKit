@@ -1,15 +1,15 @@
-"""Run after installing the experimental drawing-bindings profile."""
+"""Generate 2D coordinates and export SVG/PNG images."""
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from cosmolkit import Coordinate2DParams, DrawingError, Molecule
+import cosmolkit as ck
 
 
 def main() -> None:
-    original = Molecule.from_smiles("CCO")
+    original = ck.mol_from_smiles("CCO")
     laid_out = original.with_2d_coordinates()
-    params = Coordinate2DParams(coordinate_map={0: [-0.0, 1.5]})
+    params = ck.Coordinate2DParams(coordinate_map={0: [-0.0, 1.5]})
     configured = original.with_2d_coordinates_with_params(params)
     assert original.coordinates_2d() is None
     assert laid_out.coordinates_2d() is not None
@@ -28,7 +28,7 @@ def main() -> None:
 
     try:
         _ = original.to_svg(0, 200)
-    except DrawingError as error:
+    except ck.DrawingError as error:
         assert error.domain == "drawing"
         assert error.kind == "InvalidDimensions"
         assert (error.width, error.height) == (0, 200)

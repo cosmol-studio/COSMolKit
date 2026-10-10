@@ -5,7 +5,12 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::error::Error;
-pyo3::create_exception!(cosmolkit, PatternFingerprintError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    PatternFingerprintError,
+    PyValueError,
+    "Pattern fingerprint generation failed for the molecule or query."
+);
 pub(crate) fn pattern_pyerr(
     py: Python<'_>,
     source: impl std::borrow::Borrow<ck::PatternFingerprintError>,
@@ -54,6 +59,10 @@ pub(crate) fn pattern_pyerr(
     );
     err
 }
+/// Writable configuration for Pattern fingerprint generation.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct PatternFingerprintParams {
@@ -63,6 +72,7 @@ pub(crate) struct PatternFingerprintParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PatternFingerprintParams {
+    /// Configure Pattern fingerprint generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,n_bits=2048,tautomeric=false))]
     fn new(n_bits: usize, tautomeric: bool) -> Self {
@@ -70,15 +80,18 @@ impl PatternFingerprintParams {
             inner: ck::PatternFingerprintParams { n_bits, tautomeric },
         }
     }
+    /// Logical width of the fingerprint in bits.
     #[getter]
     fn n_bits(&self) -> usize {
         self.inner.n_bits
     }
+    /// Whether single, double, and aromatic bonds use tautomer-aware hashing.
     #[getter]
     fn tautomeric(&self) -> bool {
         self.inner.tautomeric
     }
 }
+/// Compute pattern fixed-width bit fingerprints for a QueryGraph without discarding its predicates.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn fingerprint_pattern_query(
@@ -89,6 +102,7 @@ fn fingerprint_pattern_query(
         .map(|inner| crate::canonical_values::Fingerprint { inner })
         .map_err(|e| pattern_pyerr(py, e))
 }
+/// Compute pattern fixed-width bit fingerprints for a QueryGraph without discarding its predicates.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
 fn fingerprint_pattern_query_with_params(

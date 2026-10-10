@@ -33,7 +33,7 @@ def generate_index(sphinx, destination):
     if not raw.startswith("Search.setIndex(") or not raw.endswith(")"):
         raise ValueError("unsupported Sphinx search index format")
     index = json.loads(raw[len("Search.setIndex("):-1])
-    pages = {p["docname"]: p for p in PAGES if p["binding"] == "python" and "docname" in p}
+    pages = {p["docname"]: p for p in PAGES if "docname" in p}
     records = {}
     for docname in index["docnames"]:
         if docname not in pages:

@@ -101,7 +101,7 @@ zeros with explicit case IDs. Include signaling/quiet NaNs and payload/sign
 variants. Full preparation and input/reference identity checks precede CK
 comparison; no dropped failures or zero-case passes.
 
-Use the installed RDKit 2026.03.1 / Boost 1.85 / verified glibc
+Use the installed RDKit 2026.03.6 / Boost 1.85 / verified glibc
 2.43-2ubuntu2.4 reference, C locale and verified default rounding. Actual RDKit
 Double-property string conversion is an acceptable oracle because it executes
 the relevant Boost path. An external pinned C++ Boost oracle is also allowed

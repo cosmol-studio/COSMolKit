@@ -6,9 +6,24 @@ use pyo3::types::PyDict;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
-pyo3::create_exception!(cosmolkit, CipDescriptorError, PyValueError);
-pyo3::create_exception!(cosmolkit, PropertyValueError, PyValueError);
-pyo3::create_exception!(cosmolkit, ValenceError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    CipDescriptorError,
+    PyValueError,
+    "The requested CIP descriptor is not recognized."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    PropertyValueError,
+    PyValueError,
+    "A property value has the wrong type for the requested accessor."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    ValenceError,
+    PyValueError,
+    "Valence assignment or validation failed for the molecular graph."
+);
 
 pub(crate) fn cip_pyerr(py: Python<'_>, source: ck::CipDescriptorError) -> PyErr {
     let kind = match &source {
@@ -231,6 +246,8 @@ fn descriptor_member<'py>(
         .transpose()
 }
 
+/// Owned context-dependent atom read results. Canonical Atom vocabulary stays
+/// in the model; these rows hold only degree and calculated valence metadata.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct AtomMetadata {
@@ -239,23 +256,29 @@ pub(crate) struct AtomMetadata {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AtomMetadata {
+    /// Number of graph neighbors, including explicit hydrogen vertices.
     fn degree(&self) -> usize {
         self.inner.degree
     }
+    /// Valence contribution from explicit bonds and atom-stored explicit hydrogens.
     fn explicit_valence(&self) -> i32 {
         self.inner.explicit_valence
     }
+    /// Calculated implicit hydrogen count for this atom.
     fn implicit_hydrogens(&self) -> i32 {
         self.inner.implicit_hydrogens
     }
+    /// Total attached hydrogen count under this metadata calculation.
     fn total_hydrogens(&self) -> i32 {
         self.inner.total_hydrogens
     }
+    /// Sum of explicit and implicit valence.
     fn total_valence(&self) -> i32 {
         self.inner.total_valence
     }
 }
 
+/// Read-only atom value identified by its graph index. Includes stored chemical flags and, when requested by the molecule accessor, calculated valence metadata.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct Atom {
@@ -282,6 +305,7 @@ impl Atom {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Atom {
+    /// Reaction-template attachment ordering, when recorded.
     fn template_attachment_order(
         &self,
     ) -> Option<crate::canonical_group_values::TemplateAttachmentOrder> {
@@ -290,21 +314,26 @@ impl Atom {
             .cloned()
             .map(|inner| crate::canonical_group_values::TemplateAttachmentOrder { inner })
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    /// Number of graph neighbors, including explicit hydrogen vertices.
     fn degree(&self) -> usize {
         self.degree
     }
+    /// Chemical element as an Element value.
     fn element(&self) -> crate::canonical_element_metadata::Element {
         crate::canonical_element_metadata::Element {
             inner: self.inner.element(),
         }
     }
+    /// Stored local tetrahedral or non-tetrahedral chirality tag, not a CIP label.
     #[gen_stub(override_return_type(type_repr = "ChiralTag"))]
     fn chiral_tag<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ChiralTag", self.inner.chiral_tag_code())
     }
+    /// Assigned CIP stereochemical descriptor, when present.
     #[gen_stub(override_return_type(type_repr="typing.Optional[CipDescriptor]",imports=("typing")))]
     fn cip_descriptor<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         descriptor_member(
@@ -312,66 +341,83 @@ impl Atom {
             self.inner.cip_descriptor().map_err(|e| cip_pyerr(py, e))?,
         )
     }
+    /// Neighbor ordering retained for interpreting the assigned CIP descriptor.
     fn cip_neighbor_order(&self, py: Python<'_>) -> PyResult<Option<Vec<u32>>> {
         self.inner
             .cip_neighbor_order()
             .map_err(|e| cip_pyerr(py, e))
     }
+    /// Assigned CIP ranking value, when present.
     fn cip_rank(&self, py: Python<'_>) -> PyResult<Option<u32>> {
         self.inner.cip_rank().map_err(|e| property_pyerr(py, e))
     }
+    /// Atomic number (proton count); zero denotes a dummy atom.
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
+    /// Formal charge in units of the elementary charge.
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
+    /// Hydrogen count stored on the atom, excluding separate hydrogen graph vertices.
     fn explicit_hydrogens(&self) -> u8 {
         self.inner.explicit_hydrogens()
     }
+    /// Return the integer representation of the stored chiral tag.
     fn chiral_tag_code(&self) -> i64 {
         self.inner.chiral_tag_code()
     }
+    /// Return the symbolic name of the stored chiral tag.
     fn chiral_tag_name(&self) -> &'static str {
         self.inner.chiral_tag_name()
     }
+    /// Explicit isotope mass number, or None when unspecified.
     fn isotope(&self) -> Option<u16> {
         self.inner.isotope()
     }
+    /// Reaction atom-map number, or None when no map is assigned.
     fn atom_map(&self) -> Option<u32> {
         self.inner.atom_map()
     }
+    /// Whether the stored atom or bond has the aromatic flag.
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    /// Whether implicit hydrogen addition is disabled for this atom.
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
     }
+    /// Assigned atomic hybridization as a Hybridization value.
     #[gen_stub(override_return_type(type_repr = "Hybridization"))]
     fn hybridization<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "Hybridization", self.inner.hybridization().rdkit_code())
     }
+    /// Number of unpaired radical electrons assigned to the atom.
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
     }
+    /// Valence contribution from explicit bonds and atom-stored explicit hydrogens.
     fn explicit_valence(&self, py: Python<'_>) -> PyResult<i32> {
         self.metadata
             .as_ref()
             .map(|m| m.explicit_valence)
             .map_err(|e| valence_pyerr(py, e.clone()))
     }
+    /// Calculated implicit hydrogen count for this atom.
     fn implicit_hydrogens(&self, py: Python<'_>) -> PyResult<i32> {
         self.metadata
             .as_ref()
             .map(|m| m.implicit_hydrogens)
             .map_err(|e| valence_pyerr(py, e.clone()))
     }
+    /// Total attached hydrogen count under this metadata calculation.
     fn total_hydrogens(&self, py: Python<'_>) -> PyResult<i32> {
         self.metadata
             .as_ref()
             .map(|m| m.total_hydrogens)
             .map_err(|e| valence_pyerr(py, e.clone()))
     }
+    /// Sum of explicit and implicit valence.
     fn total_valence(&self, py: Python<'_>) -> PyResult<i32> {
         self.metadata
             .as_ref()
@@ -394,6 +440,7 @@ impl Atom {
     }
 }
 
+/// Read-only bond value containing endpoint atom indices, order and stereochemical annotations.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct Bond {
@@ -403,18 +450,23 @@ pub(crate) struct Bond {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Bond {
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    /// Zero-based index of the bond begin atom.
     fn begin(&self) -> usize {
         self.inner.begin().index()
     }
+    /// Zero-based index of the bond end atom.
     fn end(&self) -> usize {
         self.inner.end().index()
     }
+    /// Atom indices used to define the bond stereochemistry.
     fn stereo_atoms(&self) -> Option<[usize; 2]> {
         self.inner.stereo_atoms().map(|x| x.map(ck::AtomId::index))
     }
+    /// Assigned CIP stereochemical descriptor, when present.
     #[gen_stub(override_return_type(type_repr="typing.Optional[CipDescriptor]",imports=("typing")))]
     fn cip_descriptor<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         descriptor_member(
@@ -422,44 +474,56 @@ impl Bond {
             self.inner.cip_descriptor().map_err(|e| cip_pyerr(py, e))?,
         )
     }
+    /// Neighbor ordering retained for interpreting the assigned CIP descriptor.
     fn cip_neighbor_order(&self, py: Python<'_>) -> PyResult<Option<Vec<u32>>> {
         self.inner
             .cip_neighbor_order()
             .map_err(|e| cip_pyerr(py, e))
     }
+    /// Bond order as a BondOrder value, including aromatic and dative orders.
     #[gen_stub(override_return_type(type_repr = "BondOrder"))]
     fn order<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondOrder", self.inner.order_code())
     }
+    /// Stored directional/wedge bond annotation.
     #[gen_stub(override_return_type(type_repr = "BondDirection"))]
     fn direction<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondDirection", self.inner.direction_code())
     }
+    /// Stored double-bond or other bond stereochemistry annotation.
     #[gen_stub(override_return_type(type_repr = "BondStereo"))]
     fn stereo<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondStereo", self.inner.stereo_code())
     }
+    /// Integer code identifying the stored bond order.
     fn order_code(&self) -> i64 {
         self.inner.order_code()
     }
+    /// Return the symbolic name of the stored order.
     fn order_name(&self) -> &'static str {
         self.inner.order_name()
     }
+    /// Return the integer representation of the stored direction.
     fn direction_code(&self) -> i64 {
         self.inner.direction_code()
     }
+    /// Return the symbolic name of the stored direction.
     fn direction_name(&self) -> &'static str {
         self.inner.direction_name()
     }
+    /// Return the integer representation of the stored stereo.
     fn stereo_code(&self) -> i64 {
         self.inner.stereo_code()
     }
+    /// Return the symbolic name of the stored stereo.
     fn stereo_name(&self) -> &'static str {
         self.inner.stereo_name()
     }
+    /// Whether the stored atom or bond has the aromatic flag.
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    /// Whether the bond is marked conjugated.
     fn is_conjugated(&self) -> bool {
         self.inner.is_conjugated()
     }
@@ -476,6 +540,10 @@ impl Bond {
     }
 }
 
+/// Writable configuration for CIP stereochemical label assignment.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct CipLabelOptions {
@@ -485,6 +553,7 @@ pub(crate) struct CipLabelOptions {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CipLabelOptions {
+    /// Configure CIP stereochemical label assignment; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,atoms=None,bonds=None,max_recursive_iterations=0))]
     fn new(
@@ -502,18 +571,21 @@ impl CipLabelOptions {
         }
         Self { inner }
     }
+    /// Atom indices to label, or None to consider all atoms.
     #[getter]
     fn atoms(&self) -> Option<Vec<usize>> {
         self.inner
             .atoms()
             .map(|x| x.iter().map(|x| x.index()).collect())
     }
+    /// Bond indices to label, or None to consider all bonds.
     #[getter]
     fn bonds(&self) -> Option<Vec<usize>> {
         self.inner
             .bonds()
             .map(|x| x.iter().map(|x| x.index()).collect())
     }
+    /// Maximum recursive CIP ranking iterations; zero removes the user-specified iteration limit.
     #[getter]
     fn max_recursive_iterations(&self) -> u32 {
         self.inner.max_recursive_iterations()
@@ -644,5 +716,33 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
             .getattr("Enum")?
             .call(("CipDescriptor", members), Some(&kwargs))?,
     )?;
+    for (name, description) in [
+        (
+            "Hybridization",
+            "Assigned atomic orbital hybridization, including unspecified and other states.",
+        ),
+        (
+            "BondOrder",
+            "Chemical bond order, including aromatic, dative and zero-order bonds.",
+        ),
+        (
+            "ChiralTag",
+            "Local atom chirality annotation; this is not an assigned CIP descriptor.",
+        ),
+        (
+            "BondDirection",
+            "Directional bond annotation used by wedge, dash and double-bond notation.",
+        ),
+        (
+            "BondStereo",
+            "Stored bond stereochemistry, including cis/trans, E/Z and atropisomeric states.",
+        ),
+        (
+            "CipDescriptor",
+            "CIP stereochemical descriptor; values preserve upper/lower-case distinctions such as R versus r.",
+        ),
+    ] {
+        module.getattr(name)?.setattr("__doc__", description)?;
+    }
     Ok(())
 }

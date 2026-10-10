@@ -1,9 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: github-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -14,14 +16,54 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Find an unreleased tag on this commit
+        id: release_tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tags = await github.paginate(github.rest.repos.listTags, {
+              ...context.repo, per_page: 100,
+            });
+            const candidates = tags.filter(tag =>
+              tag.name.startsWith('v') && tag.commit.sha === context.sha &&
+              (!context.ref.startsWith('refs/tags/') ||
+                context.ref === `refs/tags/${tag.name}`)
+            );
+            if (candidates.length === 0) {
+              core.notice('This commit has no matching v* tag; no Release created.');
+              return;
+            }
+            // Include drafts and prereleases: never update an existing Release.
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              ...context.repo, per_page: 100,
+            });
+            const released = new Set(releases.map(release => release.tag_name));
+            const pending = candidates.filter(tag => !released.has(tag.name));
+            if (pending.length === 0) {
+              core.notice('This commit has no unreleased tag; no Release created.');
+              return;
+            }
+            if (pending.length !== 1) {
+              core.setFailed('Multiple unreleased tags point to this commit. Run this workflow on the intended tag ref.');
+              return;
+            }
+            core.setOutput('tag', pending[0].name);
+            core.info(`Release tag: ${pending[0].name}`);
+
       - name: Checkout
+        if: steps.release_tag.outputs.tag != ''
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Read release notes from changelog
+        if: steps.release_tag.outputs.tag != ''
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          release_version="${GITHUB_REF_NAME#v}"
+          release_version="${RELEASE_TAG#v}"
           release_header="$RUNNER_TEMP/release-header.md"
           release_footer="$RUNNER_TEMP/release-footer.md"
           version_notes="$RUNNER_TEMP/version-notes.md"
@@ -103,11 +145,11 @@ jobs:
                 }
               }
             ' CHANGELOG.md > "$version_notes"; then
-            echo "CHANGELOG.md has no section for $GITHUB_REF_NAME" >&2
+            echo "CHANGELOG.md has no section for $RELEASE_TAG" >&2
             exit 1
           fi
           if ! grep -q '[^[:space:]]' "$version_notes"; then
-            echo "CHANGELOG.md has no release notes for $GITHUB_REF_NAME" >&2
+            echo "CHANGELOG.md has no release notes for $RELEASE_TAG" >&2
             exit 1
           fi
           {
@@ -119,6 +161,13 @@ jobs:
           } > "$release_notes"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: ${{ runner.temp }}/release-notes.md
+        if: steps.release_tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" --verify-tag \
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

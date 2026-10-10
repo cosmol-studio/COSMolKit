@@ -5,6 +5,10 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::sync::{Arc, Mutex};
 
+/// Writable configuration for batch execution and error retention.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", eq, dict, weakref)]
 pub(crate) struct BatchParams {
@@ -19,6 +23,10 @@ impl PartialEq for BatchParams {
     }
 }
 
+/// Writable configuration for batch molecular file export.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BatchExportParams {
@@ -32,6 +40,7 @@ impl BatchExportParams {
         crate::configuration_projection::repr(slf.as_any())
     }
 
+    /// Configure batch molecular file export; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,format=None,errors=None,n_jobs=None,progress_bar=None))]
     fn new(
@@ -51,6 +60,7 @@ impl BatchExportParams {
             },
         })
     }
+    /// Input/output format selector accepted by the corresponding operation.
     #[getter]
     fn format(&self) -> &'static str {
         match self.inner.format {
@@ -58,6 +68,7 @@ impl BatchExportParams {
             ck::SdfFormat::V3000 => "v3000",
         }
     }
+    /// BatchErrorMode controlling whether export failures raise or are retained in the export report.
     #[getter]
     fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         BatchParams {
@@ -69,10 +80,12 @@ impl BatchExportParams {
         }
         .errors(py)
     }
+    /// Worker count for batch execution; one selects sequential execution.
     #[getter]
     fn n_jobs(&self) -> Option<usize> {
         self.inner.n_jobs
     }
+    /// Whether batch execution reports progress.
     #[getter]
     fn progress_bar(&self) -> Option<bool> {
         self.inner.progress_bar
@@ -86,6 +99,7 @@ impl BatchParams {
         crate::configuration_projection::repr(slf.as_any())
     }
 
+    /// Configure batch execution and error retention; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,errors=None,n_jobs=None,progress_bar=None))]
     fn new(
@@ -103,6 +117,7 @@ impl BatchParams {
             },
         })
     }
+    /// BatchErrorMode controlling whether a failed input raises immediately or remains as a failed slot.
     #[getter]
     fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let Some(mode) = self.inner.errors else {
@@ -118,16 +133,19 @@ impl BatchParams {
             .getattr(name)?
             .unbind())
     }
+    /// Worker count for batch execution; one selects sequential execution.
     #[getter]
     fn n_jobs(&self) -> Option<usize> {
         self.inner.n_jobs
     }
+    /// Whether batch execution reports progress.
     #[getter]
     fn progress_bar(&self) -> Option<bool> {
         self.inner.progress_bar
     }
 }
 
+/// Runtime overrides for ordered read results; newly failed queries always raise.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 #[derive(Default)]
@@ -144,6 +162,7 @@ impl BatchQueryParams {
         crate::configuration_projection::repr(slf.as_any())
     }
 
+    /// Construct a BatchQueryParams value from the supplied inputs.
     #[new]
     #[pyo3(signature=(*,n_jobs=None,progress_bar=None,progress_callback=None))]
     fn new(
@@ -166,14 +185,17 @@ impl BatchQueryParams {
             progress_callback,
         })
     }
+    /// Worker count for batch execution; one selects sequential execution.
     #[getter]
     fn n_jobs(&self) -> Option<usize> {
         self.n_jobs
     }
+    /// Whether batch execution reports progress.
     #[getter]
     fn progress_bar(&self) -> Option<bool> {
         self.progress_bar
     }
+    /// One notification after every completed input row, including invalid rows.
     #[getter]
     fn progress_callback(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.progress_callback
@@ -223,6 +245,10 @@ impl BatchQueryParams {
     }
 }
 
+/// Writable configuration for batch image file export.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BatchImageParams {
@@ -236,6 +262,7 @@ impl BatchImageParams {
         crate::configuration_projection::repr(slf.as_any())
     }
 
+    /// Configure batch image file export; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,format="png",width=300,height=300,execution=None,filenames=None,report_path=None))]
     fn new(
@@ -257,28 +284,34 @@ impl BatchImageParams {
             },
         }
     }
+    /// Input/output format selector accepted by the corresponding operation.
     #[getter]
     fn format(&self) -> String {
         self.inner.format.clone()
     }
+    /// Output image width in pixels.
     #[getter]
     fn width(&self) -> u32 {
         self.inner.width
     }
+    /// Output image height in pixels.
     #[getter]
     fn height(&self) -> u32 {
         self.inner.height
     }
+    /// Batch execution configuration, separate from the chemical/output options.
     #[getter]
     fn execution(&self) -> BatchParams {
         BatchParams {
             inner: self.inner.execution,
         }
     }
+    /// Per-record output filenames in input order, when explicitly supplied.
     #[getter]
     fn filenames(&self) -> Option<Vec<Option<String>>> {
         self.inner.filenames.clone()
     }
+    /// Optional filesystem path for the export report.
     #[getter]
     fn report_path(&self) -> Option<String> {
         self.inner

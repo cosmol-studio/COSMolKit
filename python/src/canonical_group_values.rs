@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
+/// Local identifier of a substance-group annotation in a molecular graph.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -13,17 +14,20 @@ pub(crate) struct SubstanceGroupId {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstanceGroupId {
+    /// Construct a SubstanceGroupId value from the supplied inputs.
     #[staticmethod]
     fn new(index: usize) -> Self {
         Self {
             inner: ck::SubstanceGroupId::new(index),
         }
     }
+    /// Return the zero-based substance-group index in its owning molecule.
     fn index(&self) -> usize {
         self.inner.index()
     }
 }
 
+/// MOL/SDF substance-group classification, including standard kinds and an explicit generic kind.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -33,6 +37,7 @@ pub(crate) struct SubstanceGroupKind {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstanceGroupKind {
+    /// SubstanceGroupKind value selecting data.
     #[classattr]
     #[pyo3(name = "Data")]
     fn variant_data() -> SubstanceGroupKind {
@@ -40,6 +45,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Data,
         }
     }
+    /// SubstanceGroupKind value selecting superatom.
     #[classattr]
     #[pyo3(name = "Superatom")]
     fn variant_superatom() -> SubstanceGroupKind {
@@ -47,6 +53,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Superatom,
         }
     }
+    /// SubstanceGroupKind value selecting multiplegroup.
     #[classattr]
     #[pyo3(name = "MultipleGroup")]
     fn variant_multiplegroup() -> SubstanceGroupKind {
@@ -54,6 +61,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::MultipleGroup,
         }
     }
+    /// SubstanceGroupKind value selecting structuralrepeatunit.
     #[classattr]
     #[pyo3(name = "StructuralRepeatUnit")]
     fn variant_structuralrepeatunit() -> SubstanceGroupKind {
@@ -61,6 +69,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::StructuralRepeatUnit,
         }
     }
+    /// SubstanceGroupKind value selecting monomer.
     #[classattr]
     #[pyo3(name = "Monomer")]
     fn variant_monomer() -> SubstanceGroupKind {
@@ -68,6 +77,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Monomer,
         }
     }
+    /// SubstanceGroupKind value selecting copolymer.
     #[classattr]
     #[pyo3(name = "Copolymer")]
     fn variant_copolymer() -> SubstanceGroupKind {
@@ -75,6 +85,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Copolymer,
         }
     }
+    /// SubstanceGroupKind value selecting crosslink.
     #[classattr]
     #[pyo3(name = "Crosslink")]
     fn variant_crosslink() -> SubstanceGroupKind {
@@ -82,6 +93,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Crosslink,
         }
     }
+    /// SubstanceGroupKind value selecting graft.
     #[classattr]
     #[pyo3(name = "Graft")]
     fn variant_graft() -> SubstanceGroupKind {
@@ -89,6 +101,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Graft,
         }
     }
+    /// SubstanceGroupKind value selecting modification.
     #[classattr]
     #[pyo3(name = "Modification")]
     fn variant_modification() -> SubstanceGroupKind {
@@ -96,6 +109,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Modification,
         }
     }
+    /// SubstanceGroupKind value selecting mer.
     #[classattr]
     #[pyo3(name = "Mer")]
     fn variant_mer() -> SubstanceGroupKind {
@@ -103,6 +117,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Mer,
         }
     }
+    /// SubstanceGroupKind value selecting anypolymer.
     #[classattr]
     #[pyo3(name = "AnyPolymer")]
     fn variant_anypolymer() -> SubstanceGroupKind {
@@ -110,6 +125,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::AnyPolymer,
         }
     }
+    /// SubstanceGroupKind value selecting mixturecomponent.
     #[classattr]
     #[pyo3(name = "MixtureComponent")]
     fn variant_mixturecomponent() -> SubstanceGroupKind {
@@ -117,6 +133,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::MixtureComponent,
         }
     }
+    /// SubstanceGroupKind value selecting mixture.
     #[classattr]
     #[pyo3(name = "Mixture")]
     fn variant_mixture() -> SubstanceGroupKind {
@@ -124,6 +141,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Mixture,
         }
     }
+    /// SubstanceGroupKind value selecting formulation.
     #[classattr]
     #[pyo3(name = "Formulation")]
     fn variant_formulation() -> SubstanceGroupKind {
@@ -131,6 +149,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Formulation,
         }
     }
+    /// Construct an explicitly named substance-group kind not represented by a dedicated standard value.
     #[staticmethod]
     #[pyo3(name = "Generic")]
     fn generic(value: String) -> Self {
@@ -138,6 +157,7 @@ impl SubstanceGroupKind {
             inner: ck::SubstanceGroupKind::Generic(value.into()),
         }
     }
+    /// Return the generic substance-group kind text, or None for a dedicated standard kind.
     #[getter]
     fn generic_value(&self, py: Python<'_>) -> PyResult<Option<String>> {
         match &self.inner {
@@ -164,6 +184,7 @@ impl SubstanceGroupKind {
     }
 }
 
+/// Three-point bracket geometry associated with a substance group.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -173,17 +194,20 @@ pub(crate) struct SGroupBracket {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SGroupBracket {
+    /// Construct a SGroupBracket value from the supplied inputs.
     #[staticmethod]
     fn new(points: [[f64; 3]; 3]) -> Self {
         Self {
             inner: ck::SGroupBracket::new(points),
         }
     }
+    /// Three points defining the substance-group bracket geometry.
     fn points(&self) -> [[f64; 3]; 3] {
         *self.inner.points()
     }
 }
 
+/// Substance-group bond reference and its three-component crossing/connection vector.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -193,20 +217,24 @@ pub(crate) struct SGroupCState {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SGroupCState {
+    /// Construct a SGroupCState value from the supplied inputs.
     #[staticmethod]
     fn new(bond: usize, vector: [f64; 3]) -> Self {
         Self {
             inner: ck::SGroupCState::new(ck::BondId::new(bond), vector),
         }
     }
+    /// Return the zero-based bond index referenced by this substance-group connection state.
     fn bond(&self) -> usize {
         self.inner.bond().index()
     }
+    /// Three-component vector retained by this SGroup connection state.
     fn vector(&self) -> [f64; 3] {
         *self.inner.vector()
     }
 }
 
+/// Display annotations attached to a substance group, including bracket geometries.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -216,6 +244,7 @@ pub(crate) struct SGroupDisplay {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SGroupDisplay {
+    /// Substance-group bracket geometries in stored order.
     fn brackets(&self) -> Vec<SGroupBracket> {
         self.inner
             .brackets()
@@ -226,6 +255,7 @@ impl SGroupDisplay {
     }
 }
 
+/// Substance-group annotation with typed kind, referenced atoms/bonds, properties and display/connection data.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -235,28 +265,33 @@ pub(crate) struct SubstanceGroup {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstanceGroup {
+    /// Construct a SubstanceGroup value from the supplied inputs.
     #[staticmethod]
     fn new(id: &SubstanceGroupId, kind: &SubstanceGroupKind) -> Self {
         Self {
             inner: ck::SubstanceGroup::new(id.inner, kind.inner.clone()),
         }
     }
+    /// Zero-based identifier in the owning object; not a PDB serial or residue number.
     fn id(&self) -> SubstanceGroupId {
         SubstanceGroupId {
             inner: self.inner.id(),
         }
     }
+    /// Classification/discriminant of this value as defined by its owning type.
     fn kind(&self) -> SubstanceGroupKind {
         SubstanceGroupKind {
             inner: self.inner.kind().clone(),
         }
     }
+    /// Substance-group display annotations.
     fn display(&self) -> Option<SGroupDisplay> {
         self.inner
             .display()
             .cloned()
             .map(|inner| SGroupDisplay { inner })
     }
+    /// Substance-group bond crossing/connection vectors in stored order.
     fn cstates(&self) -> Vec<SGroupCState> {
         self.inner
             .cstates()
@@ -265,6 +300,8 @@ impl SubstanceGroup {
             .map(|inner| SGroupCState { inner })
             .collect()
     }
+    /// Ordered crossing-bond references encoded by V3000 ``XBHEAD`` and CX
+    /// polymer head-crossing state.
     fn head_crossing_bonds(&self) -> Vec<usize> {
         self.inner
             .head_crossing_bonds()
@@ -272,6 +309,8 @@ impl SubstanceGroup {
             .map(|id| id.index())
             .collect()
     }
+    /// Ordered crossing-bond correspondence references encoded by V3000
+    /// ``XBCORR`` and CX polymer tail-crossing state.
     fn crossing_bond_correspondence(&self) -> Vec<usize> {
         self.inner
             .crossing_bond_correspondence()
@@ -281,6 +320,10 @@ impl SubstanceGroup {
     }
 }
 
+/// One ordered template-attachment entry carried by an atom.
+///
+/// ``target`` is a canonical COSMolKit atom-table id. Source row numbers and
+/// bookmarks must be resolved before this value is constructed.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -290,14 +333,17 @@ pub(crate) struct TemplateAttachment {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TemplateAttachment {
+    /// Target identifier of this template attachment or SDF property list.
     fn target(&self) -> usize {
         self.inner.target().index()
     }
+    /// Label retained for this template attachment.
     fn label(&self) -> &str {
         self.inner.label()
     }
 }
 
+/// Ordered template attachment state associated with one carrier atom.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -307,6 +353,7 @@ pub(crate) struct TemplateAttachmentOrder {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TemplateAttachmentOrder {
+    /// Return retained entries in their stored order.
     fn entries(&self) -> Vec<TemplateAttachment> {
         self.inner
             .entries()
@@ -317,6 +364,7 @@ impl TemplateAttachmentOrder {
     }
 }
 
+/// Detached enhanced-stereo membership with independent read and write IDs.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
@@ -326,12 +374,15 @@ pub(crate) struct StereoGroup {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl StereoGroup {
+    /// Stored enhanced-stereochemistry group identifier, or None when no explicit identifier is present.
     fn id(&self) -> Option<u32> {
         self.inner.id()
     }
+    /// Return zero-based atom indices belonging to this enhanced-stereochemistry group.
     fn atoms(&self) -> Vec<usize> {
         self.inner.atoms().iter().map(|id| id.index()).collect()
     }
+    /// Return zero-based bond indices belonging to this enhanced-stereochemistry group.
     fn bonds(&self) -> Vec<usize> {
         self.inner.bonds().iter().map(|id| id.index()).collect()
     }

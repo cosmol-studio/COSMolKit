@@ -9,6 +9,48 @@ from route_contract import MANIFEST, PAGES, counterpart, load_contract, redirect
 
 
 class RouteContractTests(unittest.TestCase):
+    def test_python_navigation_prioritizes_guides_and_places_coming_soon_last(self):
+        navigation = sorted(
+            (p for p in PAGES if p["binding"] == "python" and "order" in p
+             and p["status"] == "ready"),
+            key=lambda p: p["order"],
+        )
+        names = [p["docname"] for p in navigation]
+        self.assertEqual(names[:4], ["quickstart", "molecule", "io", "batch"])
+        self.assertNotIn("installation", names)
+        self.assertNotIn("py-modindex", names)
+        self.assertEqual(names[-1], "confseq")
+        self.assertIn("Coming soon", navigation[-1]["label"])
+        api = names.index("api")
+        for guide in ("batch", "fingerprints", "descriptors", "mcs", "reaction",
+                      "forcefields", "protein"):
+            self.assertLess(names.index(guide), api)
+        self.assertEqual(len({p["order"] for p in navigation}), len(navigation))
+
+        index = MANIFEST.parent.parent / "python/docs/source/index.rst"
+        guide_tree = index.read_text(encoding="utf-8").split(".. toctree::")[1]
+        sphinx_order = [line.strip() for line in guide_tree.splitlines()
+                        if line.startswith("   ") and not line.strip().startswith(":")]
+        sidebar_guides = [p["docname"] for p in navigation if p.get("summary")]
+        self.assertEqual(sphinx_order, sidebar_guides)
+
+    def test_installation_is_first_quickstart_section(self):
+        source = MANIFEST.parent.parent / "python/docs/source/quickstart.rst"
+        text = source.read_text(encoding="utf-8")
+        self.assertLess(text.index("Installation\n"), text.index("Value-Style Molecule Values\n"))
+        self.assertIn("pip install cosmolkit", text)
+        rules = redirect_rules(PAGES)
+        self.assertEqual(rules["/python/installation"], ("/python/quickstart", "301"))
+
+    def test_generated_api_definitions_only_live_in_api_pages(self):
+        source = MANIFEST.parent.parent / "python/docs/source"
+        for page in source.rglob("*.rst"):
+            if page.name in {"api.rst", "javascript-api.rst"}:
+                continue
+            with self.subTest(page=page.name):
+                self.assertNotRegex(page.read_text(encoding="utf-8"),
+                                    r"(?m)^\s*\.\.\s+(?:auto(?:module|class|function|method|attribute|data)|js:auto\w+)::")
+
     def test_all_legacy_forms_redirect_directly_to_python(self):
         rules = redirect_rules(PAGES)
         for page in PAGES:
@@ -20,13 +62,16 @@ class RouteContractTests(unittest.TestCase):
 
     def test_missing_counterpart_and_common_page_landings(self):
         api = next(p for p in PAGES if p["path"] == "/python/api")
-        self.assertIsNone(counterpart(PAGES, api, "javascript"))
+        self.assertEqual(counterpart(PAGES, api, "javascript")["path"], "/javascript/api")
+        guide = next(p for p in PAGES if p["path"] == "/python/molecule")
+        self.assertIsNone(counterpart(PAGES, guide, "javascript"))
         home = next(p for p in PAGES if p["path"] == "/")
         self.assertEqual(counterpart(PAGES, home, "javascript")["path"], "/javascript")
         self.assertEqual(counterpart(PAGES, home, "python")["path"], "/python")
 
     def test_published_counterparts_pair_by_topic_not_slug(self):
         pages = copy.deepcopy(PAGES)
+        pages = [p for p in pages if p["path"] != "/javascript/api"]
         api = next(p for p in pages if p["path"] == "/python/api")
         js = dict(api, component="JavaScriptApi", path="/javascript/reference", binding="javascript")
         pages.append(js)

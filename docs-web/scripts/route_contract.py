@@ -53,8 +53,8 @@ def load_contract(path=MANIFEST):
             raise ValueError("unknown page source")
         if page.get("source") == "sphinx" and not all(key in page for key in ("docname", "title", "label", "order")):
             raise ValueError("incomplete Sphinx page")
-        if page.get("source") == "sphinx" and page["binding"] != "python":
-            raise ValueError("the current Sphinx source belongs to Python")
+        if page.get("source") == "sphinx" and page["binding"] not in ("python", "javascript"):
+            raise ValueError("Sphinx pages must belong to a language binding")
         if "order" in page and (type(page["order"]) is not int or page["order"] < 0 or not page.get("label")):
             raise ValueError("invalid navigation entry")
     if "/" not in seen["path"]:

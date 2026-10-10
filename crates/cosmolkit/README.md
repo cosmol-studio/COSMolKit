@@ -2,6 +2,9 @@
 
 `cosmolkit` is the public Rust API and runtime owner for COSMolKit 0.5.0, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
 
+The current chemistry reference is RDKit **2026.03.6** (Python distribution
+`2026.3.6`), revision `0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`.
+
 ## Feature dependency tree
 
 Public feature relationships.
@@ -64,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.22", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0-rc.23", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -87,8 +90,8 @@ cosmolkit = { version = "0.5.0-rc.22", default-features = false, features = ["co
 `io` bundle. It does **not** include descriptors, search, depiction, tautomers or
 stereoisomer enumeration. Select `descriptors`, `search`, `depict`, `tautomer`, or
 `stereoisomers` explicitly when needed. Basic stereo assignment remains in
-`core`; enumeration is a separate capability. Bundle names select features,
-not a promise that every planned API in that area is already implemented.
+`core`; enumeration is a separate capability. Bundle names select the
+documented public APIs; internal helper reuse does not expose another domain.
 
 With defaults disabled, `features = ["bio", "core"]` does not pull in
 `cosmolkit-descriptors` or `cosmolkit-tautomer` through these selections.
@@ -158,24 +161,18 @@ Consult the package API and support status for the selected version.
 
 ## Validation Status
 
-**0.5.0 validation is pending.** The results summarized below are from
-**0.3.0**, not a validation pass for 0.5.0. See
+**No differences have been observed on the known corpus of several hundred
+thousand molecules; million-scale 0.5.0 parity validation is pending.** See
 [VALIDATION.md](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-for the historical boundary and the current pending status.
+for the current status and the separate historical 0.3.0 evidence.
 
-### Historical 0.3.0 evidence
-
-COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
-
-The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
-
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 34 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
-
-Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
-
-The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
-
-See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, focused regressions, and upstream surfaces outside the current claim.
+Validation compares source-defined discrete results exactly and numerical
+outputs under each suite's declared comparison rule. Source reproduction,
+local regressions and corpus comparisons are separate evidence boundaries.
+The standard preparation and comparison workflow is documented in
+[`parity-tests_fixed/README.md`](../../parity-tests_fixed/README.md).
+Historical ChEMBL counts and pass results remain in
+[`VALIDATION.md`](../../VALIDATION.md); they are not 0.5.0 results.
 
 ## Installation
 
@@ -195,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smiles = mol.to_smiles_with_params(&SmilesWriteParams::default())?;
     let svg = mol.to_svg(300, 300)?;
 
-    println!("{smiles}");
+    println!("{smiles:?}");
     println!("{}", svg.len());
     Ok(())
 }
@@ -238,7 +235,8 @@ in-place counterpart `assign_chiral_tags_from_structure_()`.
 use cosmolkit::Protein;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let protein = Protein::from_pdb("1crn.pdb")?;
+    let text = std::fs::read_to_string("1crn.pdb")?;
+    let protein = Protein::from_pdb(&text)?;
     let summary = protein.selection_summary();
 
     println!("chains: {}", summary.chains);
@@ -251,7 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Batch Workflows
 
 ```rust
-use cosmolkit::{BatchErrorMode, MoleculeBatch};
+use cosmolkit::MoleculeBatch;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smiles = vec![
@@ -260,11 +258,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "CC(=O)O".to_string(),
     ];
 
-    let batch = MoleculeBatch::from_smiles_list(&smiles)
-        .with_parallel_jobs(Some(8))
-        .with_2d_coordinates(BatchErrorMode::Strict)?;
+    let batch = MoleculeBatch::from_smiles_list(&smiles)?
+        .with_parallel_jobs(Some(8))?
+        .with_2d_coordinates()?;
 
-    let out = batch.to_smiles_list(BatchErrorMode::Strict)?;
+    let out = batch.to_smiles_list()?;
     println!("{out:?}");
     Ok(())
 }
@@ -293,39 +291,30 @@ assert_eq!(parsed.to_inchi()?, identifier);
 true). `InchiWriteParams` carries the engine option string. The corresponding
 `*_with_params` methods accept these values. Queries leave the molecule
 unchanged; failures return typed `InchiError` values. The implementation uses
-the existing official InChI v1.07.5 / RDKit 2026.03.1 source port. IXA, AuxInfo
+the official InChI v1.07.5 engine and RDKit 2026.03.6 adapter source. IXA, AuxInfo
 reconstruction, INCHIGEN, version-query, and extended-polymer entry points are
 not exposed by this facade.
 
 ## Molecular Descriptors
 
-The facade re-exports the source-backed descriptor functions from
-`cosmolkit-core`:
+Enable `descriptors` (or use `full`). Public molecule queries delegate to the
+detached `cosmolkit-descriptors` algorithms:
 
 ```rust
-use cosmolkit::{
-    Molecule, calc_chi_0, calc_mol_formula, calc_mol_wt, calc_mqns,
-    calc_num_aromatic_rings,
-};
+use cosmolkit::Molecule;
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
-assert_eq!(calc_mol_formula(&molecule, false, true)?, "C6H6O");
-assert!(calc_mol_wt(&molecule, false)? > 94.0);
-assert_eq!(calc_num_aromatic_rings(&molecule)?, 1);
-assert!(calc_chi_0(&molecule) > 0.0);
-assert_eq!(calc_mqns(&molecule)?.len(), 42);
+assert_eq!(molecule.molecular_formula()?, "C6H6O");
+assert!(molecule.molecular_weight()? > 94.0);
+assert_eq!(molecule.num_aromatic_rings()?, 1);
+assert!(molecule.chi_0()? > 0.0);
+assert_eq!(molecule.mqns(false)?.len(), 42);
 ```
 
-The documented descriptor surface includes molecular properties, connectivity
-and shape indices, Lipinski and ring/stereo counts, MQN, Labute ASA, and
-SlogP/SMR VSA. Supported rows and parameter combinations are checked
-field-by-field against pinned RDKit golden data; unmodeled source states return
-an explicit descriptor error.
-
-### Descriptor count queries
-
-Five read-only `Molecule` queries return RDKit-compatible count values and
-are available with the `descriptors` feature:
+The descriptor surface includes molecular properties, connectivity and shape
+indices, Lipinski and ring/stereo counts, MQN, Labute ASA, and SlogP/SMR VSA.
+Queries use their declared prepared-state requirements and return typed
+`DescriptorReadError` values; they do not silently install missing caches.
 
 ```rust
 let mol = Molecule::from_smiles("CCO")?;
@@ -336,179 +325,99 @@ assert_eq!(mol.lipinski_hbd()?, 1);
 assert_eq!(mol.fraction_csp3()?.to_bits(), 1.0_f64.to_bits());
 ```
 
-`num_heavy_atoms` and `lipinski_hba` read only the topology;
-`total_atom_count`, `lipinski_hbd` and `fraction_csp3` require the prepared
-valence assignment cached by a sanitizing constructor and return the typed
-`DescriptorReadError::MissingPreparedValence` otherwise — the queries never
-create or install cache values themselves, and algorithm failures retain the
-owned domain error through `Error::source`. `Molecule::num_atoms` keeps its
-separate explicit-atom-row meaning; `total_atom_count` includes implicit and
-explicit-property hydrogens (`includeNeighbors=false`). `lipinski_hba` is the
-direct N/O count (not the general recursive `NumHBA`) and `lipinski_hbd` is
-the donor-hydrogen sum on N/O (not the donor-atom count). All five run in
-the parity pipeline over the 5000-record SMILES corpus under both
-`remove_hs` parser policies (10000 observations per task).
+`num_atoms()` counts explicit atom rows; `total_atom_count()` also includes
+implicit and explicit-property hydrogens. `lipinski_hba()` is the N/O count,
+and `lipinski_hbd()` is the donor-hydrogen sum on N/O, not the general
+acceptor/donor-atom SMARTS counts.
 
 ## Fingerprints
 
-The Rust facade exposes source-backed Morgan, AtomPair, Topological Torsion,
-MACCS, RDKit topological, Avalon, and Layered fingerprints. ``TopologicalTorsion*`` is
-the ordered atom-path torsion family; ``TopologicalFingerprint*`` remains
-RDKit's distinct path/subgraph ``RDKFingerprintMol`` family. The applicable
-families can also return typed provenance:
+Enable `fingerprints` (or use `full`). The public `fingerprint_*` family
+covers Morgan, MACCS, AtomPair, Topological Torsion, RDKit topological, Pattern,
+Layered and Avalon fingerprints. Topological Torsion is the ordered atom-path
+family, distinct from the path/subgraph Topological fingerprint.
 
 ```rust
-use cosmolkit::{
-    AtomPairFingerprintParams, AvalonFingerprintParams, LayeredFingerprintLayers,
-    LayeredFingerprintParams, Molecule,
-    TopologicalFingerprintOutputRequest,
-    TopologicalFingerprintParams, TopologicalTorsionFingerprintOutputRequest,
-    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintVector,
-    fingerprint_topological_torsion, fingerprint_topological_torsion_with_output,
-    fingerprint_topological_torsion_sparse_count,
-};
+use cosmolkit::{FingerprintAdditionalOutput, Molecule, TopologicalTorsionFingerprintParams};
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
-let topological = molecule.fingerprint_topological(
-    &TopologicalFingerprintParams::default(),
+let morgan = molecule.fingerprint_morgan()?;
+let avalon = molecule.fingerprint_avalon()?;
+let layered = molecule.fingerprint_layered()?;
+let params = TopologicalTorsionFingerprintParams::default();
+let mut output = FingerprintAdditionalOutput::default();
+output.allocate_atom_to_bits();
+output.allocate_bit_paths();
+let torsion = molecule.fingerprint_topological_torsion_with_params(
+    &params, Some(&mut output),
 )?;
-let provenance = molecule.fingerprint_topological_with_output(
-    &TopologicalFingerprintParams::default(),
-    TopologicalFingerprintOutputRequest {
-        atom_bits: true,
-        bit_info: true,
-    },
-)?;
-let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
-let atom_pair = molecule.fingerprint_atom_pair(&AtomPairFingerprintParams::default())?;
-let layered = molecule.fingerprint_layered(&LayeredFingerprintParams {
-    layers: LayeredFingerprintLayers::SUBSTRUCTURE,
-    ..Default::default()
-})?;
-let torsion_params = TopologicalTorsionFingerprintParams::default();
-let torsion_ids = fingerprint_topological_torsion_sparse_count(&molecule, &torsion_params)?;
-let torsion_bits = fingerprint_topological_torsion(&molecule, &torsion_params)?;
-let torsion_provenance = fingerprint_topological_torsion_with_output(
-    &molecule,
-    &torsion_params,
-    TopologicalTorsionFingerprintOutputRequest {
-        vector: TopologicalTorsionFingerprintVector::Bit,
-        bit_paths: true,
-        ..Default::default()
-    },
-)?;
-
-assert_eq!(topological.n_bits(), 2048);
-assert!(provenance.output.atom_bits.is_some());
+assert_eq!(morgan.n_bits(), 2048);
 assert_eq!(avalon.n_bits(), 512);
-assert_eq!(atom_pair.n_bits(), 2048);
 assert_eq!(layered.n_bits(), 2048);
-assert!(!torsion_ids.nonzero_elements().is_empty());
-assert_eq!(torsion_bits.n_bits(), 2048);
-assert!(torsion_provenance.additional_output.is_some());
+assert_eq!(torsion.n_bits(), 2048);
 ```
 
-Topological Torsion also exposes sparse-bit and folded-count forms, ordered
-``MoleculeBatch`` conveniences, shared ``FingerprintAdditionalOutput`` provenance, and
-three explicitly typed legacy adapters. Invalid arguments return
-``FingerprintError``; batch calculation errors retain the original record
-index. Exact parity is continuously checked against pinned RDKit 2026.03.1 on
-focused branch fixtures and every row of a 5,000-molecule, nine-profile
-matrix. The complete ChEMBL 37 audit additionally covers all 2,897,804
-mutually parseable records through 127,503,376 exact vector and provenance
-comparisons. Legacy adapters preserve their historical unfolded-size and
-``n_bits_per_entry`` threshold differences while delegating to the same
-chemistry and vector-assembly core.
+Use `*_with_params` for explicit settings and the family's supported output
+collector for atom/bit/path provenance. Batch APIs preserve input order and
+record positions for failures. Current corpus comparisons use RDKit 2026.03.6;
+historical full-corpus totals remain in [VALIDATION.md](../../VALIDATION.md).
 
-The documented topological and Avalon profiles are checked against pinned
-RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
-full-corpus audit completed 113,014,356 exact comparisons over 14 topological
-vectors, 23 Avalon vectors, and two complete topological provenance outputs
-with zero mismatches. The committed 5,000-row matrices remain the continuous
-regression gates for these profiles.
-
-AtomPair is additionally checked across all 2,897,804 mutually parseable
-ChEMBL 37 molecules, covering 118,809,964 comparisons over 40 vectors and one
-complete provenance output per molecule with zero mismatches.
-
-Layered exposes the six source layers, arbitrary retained source flags,
-inclusive path bounds, rooted linear or branched enumeration, exact-width bit
-masks, and seeded atom counts through one read-only core while preserving the
-upstream ``0.7.0`` compatibility metadata. ``None`` roots mean whole-molecule
-enumeration; an explicitly empty root vector enumerates no paths. Invalid
-bounds, widths, count lengths, masks, and roots return ``FingerprintError``.
-The complete ChEMBL 37 audit covers all 2,897,804 mutually parseable records
-across 18 profiles and 52,160,472 exact comparisons with zero mismatches.
-Pinned RDKit's unrooted linear branch can consume atom indices as bond indices
-and terminate the process; COSMolKit deliberately uses the documented
-bond-path semantics instead of reproducing that crash.
+Layered retains the upstream algorithm's `0.7.0` metadata; this is not the
+COSMolKit package version. Unspecified roots enumerate the whole molecule,
+whereas an explicitly empty root list enumerates no paths. Invalid parameters
+return typed errors. Native reference crashes are reported separately, not
+counted as matches.
 
 ## Conformer Generation And Force Field Applications
 
-Native conformer generation uses RDKit-aligned distance-geometry parameters.
-The default value-style molecule operation uses ETKDGv3 and returns a new
-molecule value. Multi-conformer generation supports deterministic seeded runs,
-RMS pruning, and sequential seed expansion:
+Enable `conformer` (or use `full`) for embedding, alignment and UFF/MMFF.
+Embedding returns new molecule values and supports fixed seeds, RMS pruning
+and sequential seed expansion.
 
 ```rust
-use cosmolkit::{EmbedParameters, Molecule};
+use cosmolkit::{EmbedParams, Molecule};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let molecule = Molecule::from_smiles("CC(=O)NC")?.with_hydrogens()?;
+let molecule = Molecule::from_smiles("CC(=O)NC")?.with_hydrogens()?;
+let mut params = EmbedParams::etkdg_v3();
+params.random_seed = 123;
+params.num_threads = 1;
+let embedded = molecule.with_3d_conformer_with_params(&params)?;
+let multiple = molecule.with_3d_conformers_with_params(5, &params)?;
+assert_eq!(embedded.conformers_3d().len(), 1);
+assert!(!multiple.conformers_3d().is_empty());
+```
 
-    let embedded = molecule.with_3d_conformer()?;
-    println!("{}", embedded.conformers_3d().len());
+Force-field calls require existing coordinates and do not add hydrogens or
+embed automatically. Value-style optimization leaves the input unchanged:
 
-    let mut params = EmbedParameters::etkdg();
-    params.random_seed = 123;
-    params.num_threads = 1;
-    params.prune_rms_thresh = 0.5;
+```rust
+use cosmolkit::{MmffOptimizationParams, UffOptimizationParams};
 
-    let pruned = molecule.with_3d_conformers_with_params(5, params)?;
-    println!("{}", pruned.conformers_3d().len());
-    Ok(())
+if embedded.uff_has_all_molecule_params()? {
+    let result = embedded.with_uff_optimized_with_params(&UffOptimizationParams::default())?;
+    println!("UFF energy: {}", result.energy);
+}
+if embedded.mmff_has_all_molecule_params()? {
+    let result = embedded.with_mmff_optimized_with_params(&MmffOptimizationParams::default())?;
+    println!("MMFF needs_more: {}", result.needs_more());
 }
 ```
 
-Force-field APIs operate on molecules with existing 3D conformers and return
-new molecule values, so the input coordinates are left unchanged.
+For repeated interactive evaluation, use an owned persistent handle:
 
 ```rust
-use cosmolkit::{
-    Molecule, mmff_has_all_molecule_params, mmff_optimize_molecule,
-    uff_has_all_molecule_params, uff_optimize_molecule,
-};
+use cosmolkit::ForceFieldMinimizeParams;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let molecule = Molecule::from_smiles("CCO")?.with_hydrogens()?.sanitize()?;
-
-    let mut builder = molecule.to_builder();
-    builder.add_3d_conformer(vec![
-        [0.000, 0.000, 0.000],
-        [1.540, 0.000, 0.000],
-        [2.100, 1.200, 0.000],
-        [-0.600, 0.900, 0.000],
-        [-0.600, -0.900, 0.000],
-        [0.000, 0.000, 1.000],
-        [1.900, -0.900, 0.000],
-        [1.700, 0.000, 1.000],
-        [2.900, 1.200, 0.000],
-    ])?;
-    let molecule = builder.build()?;
-
-    if uff_has_all_molecule_params(&molecule)? {
-        let result = uff_optimize_molecule(&molecule, 200, 10.0, -1, true)?;
-        println!("UFF energy: {:.6}", result.energy);
-    }
-
-    if mmff_has_all_molecule_params(&molecule)? {
-        let result = mmff_optimize_molecule(&molecule, "MMFF94", 200, 100.0, -1, true)?;
-        println!("MMFF94 needs_more: {}", result.needs_more);
-    }
-
-    Ok(())
-}
+let mut field = embedded.uff_force_field()?;
+let initial_energy = field.energy()?;
+let gradient = field.gradient()?;
+let outcome = field.minimize_with_params_(&ForceFieldMinimizeParams::new(20, 1e-4, 1e-6))?;
+println!("{initial_energy} {gradient:?} {outcome:?}");
 ```
+
+`mmff_force_field()` provides the corresponding MMFF handle.
+`set_positions_()` and `set_fixed_atoms_()` update the detached evaluator;
+they do not implicitly write coordinates back to the source molecule.
 
 ## Molecular Alignment And RMSD
 
@@ -522,12 +431,10 @@ use cosmolkit::{AlignmentAtomMap, AlignmentParameters, Molecule};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reference = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
-        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
-        true,
+        vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0], vec![0.0, 2.0, 0.0]],
     )?;
     let probe = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
-        vec![[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]],
-        true,
+        vec![vec![3.0, -2.0, 1.0], vec![4.0, -2.0, 1.0], vec![3.0, 0.0, 1.0]],
     )?;
     let params = AlignmentParameters {
         atom_map: Some(
@@ -541,8 +448,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let measured = probe.alignment_transform_to(&reference, &params)?;
-    let (aligned, applied) = probe.with_alignment_to(&reference, &params)?;
+    let measured = probe.alignment_transform_to_with_params(&reference, &params)?;
+    let (aligned, applied) = probe.with_alignment_to_with_params(&reference, &params)?;
     assert_eq!(probe.conformers_3d()[0].coordinates()[0], [3.0, -2.0, 1.0]);
     assert!(measured.rmsd < 1.0e-8 && applied.rmsd < 1.0e-8);
     assert_eq!(aligned.conformers_3d()[0].coordinates()[0], [0.0, 0.0, 0.0]);

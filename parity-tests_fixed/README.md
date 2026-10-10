@@ -1,7 +1,9 @@
 # Parity tests
 
 This is the current COSMolKit 0.5.0 corpus and special-regression workflow.
-Complete 0.5.0 validation is pending; historical 0.3.0 results are recorded
+No differences have been observed on the known corpus of several hundred
+thousand molecules; million-scale 0.5.0 parity validation is pending.
+Historical 0.3.0 results are recorded
 separately in [VALIDATION.md](../VALIDATION.md).
 
 Run from the repository root. Each lane has two commands: prepare references,

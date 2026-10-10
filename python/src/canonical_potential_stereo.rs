@@ -7,7 +7,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 pyo3::create_exception!(
     cosmolkit,
     PotentialStereoError,
-    pyo3::exceptions::PyValueError
+    pyo3::exceptions::PyValueError,
+    "Potential stereocenters could not be identified for the supplied graph."
 );
 
 /// Preserve the canonical error variant and its scalar carrier fields. This
@@ -184,6 +185,10 @@ fn enum_value(py: Python<'_>, name: &str, value: &str) -> PyResult<Py<PyAny>> {
         .call1((value,))?
         .unbind())
 }
+/// Writable configuration for potential stereocenter perception.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct PotentialStereoParams {
@@ -193,6 +198,7 @@ pub(crate) struct PotentialStereoParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PotentialStereoParams {
+    /// Configure potential stereocenter perception; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*, clean=false, flag_possible=true, allow_nontetrahedral=true))]
     fn new(clean: bool, flag_possible: bool, allow_nontetrahedral: bool) -> Self {
@@ -204,14 +210,17 @@ impl PotentialStereoParams {
             },
         }
     }
+    /// Whether invalid stereo annotations are cleaned during perception.
     #[getter]
     fn clean(&self) -> bool {
         self.inner.clean
     }
+    /// Whether potential stereocenters are flagged even if unspecified.
     #[getter]
     fn flag_possible(&self) -> bool {
         self.inner.flag_possible
     }
+    /// Whether non-tetrahedral stereochemistry is considered.
     #[getter]
     fn allow_nontetrahedral(&self) -> bool {
         self.inner.allow_nontetrahedral
@@ -223,6 +232,7 @@ impl PotentialStereoParams {
         )
     }
 }
+/// Index and category of a potential atom/bond stereo feature.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PotentialStereoCenter {
@@ -231,6 +241,7 @@ pub(crate) struct PotentialStereoCenter {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PotentialStereoCenter {
+    /// Classification/discriminant of this value as defined by its owning type.
     #[getter]
     fn kind(&self) -> &'static str {
         match self.inner {
@@ -238,6 +249,7 @@ impl PotentialStereoCenter {
             ck::PotentialStereoCenter::Bond(_) => "bond",
         }
     }
+    /// Original zero-based input record index; failed records retain their index.
     #[getter]
     fn index(&self) -> usize {
         match self.inner {
@@ -253,6 +265,7 @@ impl PotentialStereoCenter {
         )
     }
 }
+/// Potential stereo feature with its center, specification state, descriptor and controlling atoms.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PotentialStereoInfo {
@@ -261,6 +274,7 @@ pub(crate) struct PotentialStereoInfo {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PotentialStereoInfo {
+    /// Type of potential stereogenic atom or bond.
     #[getter]
     fn stereo_type(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         enum_value(
@@ -269,6 +283,7 @@ impl PotentialStereoInfo {
             stereo_type(self.inner.stereo_type),
         )
     }
+    /// Whether the stereochemistry is specified, unspecified or unknown.
     #[getter]
     fn specified(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         enum_value(
@@ -277,12 +292,14 @@ impl PotentialStereoInfo {
             specified(self.inner.specified),
         )
     }
+    /// Atom or bond index on which the stereo feature is centered.
     #[getter]
     fn centered_on(&self) -> PotentialStereoCenter {
         PotentialStereoCenter {
             inner: self.inner.centered_on,
         }
     }
+    /// Local stereo descriptor retained by the perception result.
     #[getter]
     fn descriptor(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         enum_value(
@@ -291,10 +308,12 @@ impl PotentialStereoInfo {
             descriptor(self.inner.descriptor),
         )
     }
+    /// Permutation code for non-tetrahedral stereochemistry, when applicable.
     #[getter]
     fn permutation(&self) -> u32 {
         self.inner.permutation
     }
+    /// Atom indices defining the local stereo feature.
     #[getter]
     fn controlling_atoms(&self) -> Vec<Option<usize>> {
         self.inner
@@ -314,6 +333,7 @@ impl PotentialStereoInfo {
         )
     }
 }
+/// Relative stereochemical orientation between two ring stereocenters.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct RingStereoRelation {
@@ -322,19 +342,23 @@ pub(crate) struct RingStereoRelation {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RingStereoRelation {
+    /// Zero-based atom index of the first stereocenter in this ring relationship.
     #[getter]
     fn atom(&self) -> usize {
         self.inner.atom.index()
     }
+    /// Index of the other stereocenter in this ring relationship.
     #[getter]
     fn other(&self) -> usize {
         self.inner.other.index()
     }
+    /// Whether the linked ring stereocenters have the same relative orientation.
     #[getter]
     fn same_orientation(&self) -> bool {
         self.inner.same_orientation
     }
 }
+/// Potential-stereochemistry analysis with stereocenter rows, atom ranks and ring relationships. The cleaned_molecule is present only when clean=True requested a cleaned result.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PotentialStereoResult {
@@ -343,6 +367,7 @@ pub(crate) struct PotentialStereoResult {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PotentialStereoResult {
+    /// Return the perceived PotentialStereoInfo rows for potential atom and bond stereocenters.
     #[getter]
     fn stereo(&self) -> Vec<PotentialStereoInfo> {
         self.inner
@@ -352,10 +377,12 @@ impl PotentialStereoResult {
             .map(|inner| PotentialStereoInfo { inner })
             .collect()
     }
+    /// Atom-indexed ranks used by stereo perception.
     #[getter]
     fn atom_ranks(&self) -> Vec<u32> {
         self.inner.atom_ranks.clone()
     }
+    /// Relative stereochemical relationships between ring centers.
     #[getter]
     fn ring_relations(&self) -> Vec<RingStereoRelation> {
         self.inner
@@ -365,6 +392,7 @@ impl PotentialStereoResult {
             .map(|inner| RingStereoRelation { inner })
             .collect()
     }
+    /// Molecule value with the requested stereo cleanup applied; source input is unchanged.
     #[getter]
     fn cleaned_molecule(&self) -> Option<crate::drawing_binding::Molecule> {
         self.inner
@@ -436,5 +464,21 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
             ck::PotentialStereoDescriptor::BondAtropCcw
         ]
     );
+    for (name, description) in [
+        (
+            "PotentialStereoType",
+            "Type of a potential stereocenter, distinguishing atom geometries from double, cumulene and atropisomeric bonds.",
+        ),
+        (
+            "PotentialStereoSpecified",
+            "Whether potential stereochemistry is unspecified, specified or explicitly unknown.",
+        ),
+        (
+            "PotentialStereoDescriptor",
+            "Perceived local stereo orientation, including tetrahedral handedness, cis/trans and atropisomeric directions.",
+        ),
+    ] {
+        module.getattr(name)?.setattr("__doc__", description)?;
+    }
     Ok(())
 }

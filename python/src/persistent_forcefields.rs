@@ -9,6 +9,9 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyTuple};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
+/// Stable categories shared by persistent evaluators and their factories.
+///
+/// Declared values: ``MissingConformer``, ``Parameterization``, ``InvalidParameterization``, ``InvalidAtomIndex``, ``InvalidFixedAtom``, ``CoordinateCount``, ``CoordinateShape``, ``NonFiniteCoordinate``, ``InvalidTolerance``, ``Preparation``, ``Construction``, ``Initialization``, ``Rings``, ``Kernel``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
@@ -52,9 +55,24 @@ impl From<ck::MolecularForceFieldErrorKind> for MolecularForceFieldErrorKind {
     }
 }
 
-pyo3::create_exception!(cosmolkit, ForceFieldError, PyValueError);
-pyo3::create_exception!(cosmolkit, MmffForceFieldError, PyValueError);
-pyo3::create_exception!(cosmolkit, UffForceFieldError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    ForceFieldError,
+    PyValueError,
+    "Persistent force-field evaluation or minimization failed; inspect the typed kind property and the available context properties."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    MmffForceFieldError,
+    PyValueError,
+    "An MMFF force-field evaluator could not be prepared from the molecule and parameters."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    UffForceFieldError,
+    PyValueError,
+    "A UFF force-field evaluator could not be prepared from the molecule and parameters."
+);
 fn cause_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
     if let Some(source) = source.downcast_ref::<ck::ForceFieldError>() {
         return force_pyerr(py, source);
@@ -284,6 +302,10 @@ fn default_force_tolerance() -> f64 {
     ck::ForceFieldMinimizeParams::default().force_tolerance()
 }
 
+/// Writable configuration for persistent MMFF evaluator construction.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
@@ -295,6 +317,7 @@ pub(crate) struct MmffForceFieldParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MmffForceFieldParams {
+    /// Configure persistent MMFF evaluator construction; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,conformer_id=default_conformer(),mmff_variant=default_variant(),non_bonded_threshold=default_non_bonded(),ignore_interfragment_interactions=default_mmff_ignore()))]
     fn new(
@@ -312,23 +335,31 @@ impl MmffForceFieldParams {
             ),
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id()
     }
+    /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
         self.inner.mmff_variant().into()
     }
+    /// MMFF nonbonded interaction distance threshold in angstroms.
     #[getter]
     fn non_bonded_threshold(&self) -> f64 {
         self.inner.non_bonded_threshold()
     }
+    /// Whether force-field interactions between disconnected fragments are omitted.
     #[getter]
     fn ignore_interfragment_interactions(&self) -> bool {
         self.inner.ignore_interfragment_interactions()
     }
 }
+/// Writable configuration for persistent UFF evaluator construction.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
@@ -340,6 +371,7 @@ pub(crate) struct UffForceFieldParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl UffForceFieldParams {
+    /// Configure persistent UFF evaluator construction; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,conformer_id=default_uff_conformer(),vdw_threshold=default_vdw(),ignore_interfragment_interactions=default_uff_ignore()))]
     fn new(
@@ -355,19 +387,26 @@ impl UffForceFieldParams {
             ),
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id()
     }
+    /// UFF van der Waals interaction threshold used during force-field construction.
     #[getter]
     fn vdw_threshold(&self) -> f64 {
         self.inner.vdw_threshold()
     }
+    /// Whether force-field interactions between disconnected fragments are omitted.
     #[getter]
     fn ignore_interfragment_interactions(&self) -> bool {
         self.inner.ignore_interfragment_interactions()
     }
 }
+/// Writable configuration for persistent force-field minimization with iteration, force and energy convergence limits.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
 #[derive(Clone)]
@@ -379,6 +418,7 @@ pub(crate) struct ForceFieldMinimizeParams {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ForceFieldMinimizeParams {
+    /// Configure persistent force-field minimization with iteration, force and energy convergence limits; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature=(*,max_iterations=default_iterations(),force_tolerance=default_force_tolerance(),energy_tolerance=default_energy_tolerance()))]
     fn new(max_iterations: u32, force_tolerance: f64, energy_tolerance: f64) -> Self {
@@ -390,19 +430,23 @@ impl ForceFieldMinimizeParams {
             ),
         }
     }
+    /// Energy-change convergence tolerance for minimization.
     #[getter]
     fn energy_tolerance(&self) -> f64 {
         self.inner.energy_tolerance()
     }
+    /// Maximum iterations allowed by the optimizer or embedding algorithm.
     #[getter]
     fn max_iterations(&self) -> u32 {
         self.inner.max_iterations()
     }
+    /// Force/gradient convergence tolerance for minimization.
     #[getter]
     fn force_tolerance(&self) -> f64 {
         self.inner.force_tolerance()
     }
 }
+/// Energy in kcal/mol and an independent atom-ordered float64 gradient array of shape (N, 3).
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -413,16 +457,19 @@ pub(crate) struct ForceFieldEnergyGradient {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ForceFieldEnergyGradient {
+    /// Force-field potential energy in kcal/mol.
     #[getter]
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
+    /// Independent float64 NumPy array of shape (num_atoms, 3) containing Cartesian energy derivatives.
     #[gen_stub(override_return_type(type_repr="numpy.typing.NDArray[numpy.float64]",imports=("numpy","numpy.typing")))]
     #[getter]
     fn gradient<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         snapshot(py, self.inner.gradient())
     }
 }
+/// Persistent force-field minimization result containing final energy and convergence status.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
 #[derive(Clone)]
@@ -433,19 +480,27 @@ pub(crate) struct ForceFieldMinimizeOutcome {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ForceFieldMinimizeOutcome {
+    /// Whether minimization met its convergence criteria.
     #[getter]
     fn converged(&self) -> bool {
         self.inner.converged()
     }
+    /// Number of minimization iterations performed.
     #[getter]
     fn iterations(&self) -> u32 {
         self.inner.iterations()
     }
+    /// Force-field potential energy in kcal/mol.
     #[getter]
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
 }
+/// Owned persistent MMFF/UFF evaluator for interactive coordinate editing.
+///
+/// Build through mol.mmff_force_field() or mol.uff_force_field(). Position updates
+/// and minimize_() change only evaluator state, not the source molecule. Gradients
+/// are energy derivatives; physical force is their negative.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct MolecularForceField {
@@ -455,6 +510,7 @@ pub(crate) struct MolecularForceField {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MolecularForceField {
+    /// Return one atom position as an (x, y, z) tuple in angstroms; invalid indices raise ForceFieldError.
     fn position(
         &self,
         py: Python<'_>,
@@ -470,6 +526,7 @@ impl MolecularForceField {
             .map_err(|e| force_pyerr(py, &e))?;
         Ok((row[0], row[1], row[2]))
     }
+    /// Replace one evaluator atom position with three finite coordinates in angstroms; invalid input leaves evaluator positions unchanged.
     fn set_position_(
         &mut self,
         py: Python<'_>,
@@ -487,10 +544,12 @@ impl MolecularForceField {
             .set_position_(id, row)
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Return an independent float64 NumPy array of shape (num_atoms, 3), in angstroms and atom-index order. Editing the array does not change the evaluator.
     #[gen_stub(override_return_type(type_repr="numpy.typing.NDArray[numpy.float64]",imports=("numpy","numpy.typing")))]
     fn positions<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         snapshot(py, &self.inner.positions())
     }
+    /// Replace evaluator coordinates from an array-like of shape (num_atoms, 3). Validate shape, count and finite values before changing state; the source Molecule is unaffected.
     fn set_positions_(
         &mut self,
         py: Python<'_>,
@@ -502,10 +561,12 @@ impl MolecularForceField {
             .set_positions_(&rows)
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Return the tuple of fixed atom indices. Fixed atoms remain in their current positions during minimization.
     #[gen_stub(override_return_type(type_repr = "builtins.tuple[builtins.int, ...]"))]
     fn fixed_atoms<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, self.inner.fixed_atoms().iter().map(|id| id.index()))
     }
+    /// Replace the set of fixed atom indices used by subsequent minimization. Invalid indices raise ForceFieldError without changing the fixed set.
     fn set_fixed_atoms_(
         &mut self,
         py: Python<'_>,
@@ -545,9 +606,11 @@ impl MolecularForceField {
             .set_fixed_atoms_(&ids)
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Evaluate potential energy in kcal/mol at the current evaluator positions; does not minimize or modify coordinates.
     fn energy(&self, py: Python<'_>) -> PyResult<f64> {
         self.inner.energy().map_err(|e| force_pyerr(py, &e))
     }
+    /// Return an independent float64 (num_atoms, 3) array of energy derivatives in kcal/(mol angstrom). Fixed-atom rows are zero; physical force is the negative gradient.
     #[gen_stub(override_return_type(type_repr="numpy.typing.NDArray[numpy.float64]",imports=("numpy","numpy.typing")))]
     fn gradient<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         self.inner
@@ -565,12 +628,14 @@ impl MolecularForceField {
             .map(|rows| snapshot(py, &rows))
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Return energy and the constrained atom-ordered gradient evaluated at the current positions.
     fn energy_gradient(&self, py: Python<'_>) -> PyResult<ForceFieldEnergyGradient> {
         self.inner
             .energy_gradient()
             .map(|inner| ForceFieldEnergyGradient { inner })
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Minimize evaluator positions in place while holding fixed atoms still. Return ForceFieldMinimizeOutcome with energy and convergence status; the source Molecule is unchanged. Uses max_iterations, force_tolerance and energy_tolerance.
     #[pyo3(signature=(*,max_iterations=default_iterations(),force_tolerance=default_force_tolerance(),energy_tolerance=default_energy_tolerance()))]
     fn minimize_(
         &mut self,
@@ -586,6 +651,7 @@ impl MolecularForceField {
             .map(|inner| ForceFieldMinimizeOutcome { inner })
             .map_err(|e| force_pyerr(py, &e))
     }
+    /// Minimize evaluator positions in place using ForceFieldMinimizeParams and the current fixed atom set; return energy and convergence status without changing the source Molecule. Uses the supplied configuration object.
     fn minimize_with_params_(
         &mut self,
         py: Python<'_>,
@@ -617,7 +683,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // Publish the registered payload getters as read-only Python properties.
     let descriptors = PyModule::from_code(
         module.py(),
-        c"def getter(field):\n    return property(lambda self: getattr(self, '_' + field))\n",
+        c"def getter(field):\n    return property(lambda self: getattr(self, '_' + field), doc='The {} context recorded by this force-field error, or None when not applicable.'.format(field.replace('_', ' ')))\n",
         c"_persistent_error_properties",
         c"_persistent_error_properties",
     )?;

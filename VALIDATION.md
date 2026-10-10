@@ -1,9 +1,11 @@
 # COSMolKit Validation
 
-## 0.5.0: validation pending
+## 0.5.0: million-scale parity validation pending
 
-COSMolKit 0.5.0 is pending complete validation. The results, pass claims,
-comparison counts and coverage descriptions below are historical evidence
+No differences have been observed on the known corpus of several hundred
+thousand molecules. Million-scale parity validation is pending.
+
+The results, pass claims, comparison counts and coverage descriptions below are historical evidence
 from COSMolKit 0.3.0, not validation results for 0.5.0. They must not be
 transferred to the new architecture or APIs without rerunning the applicable
 tests against 0.5.0 and recording the actual results.

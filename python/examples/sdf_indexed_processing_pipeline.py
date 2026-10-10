@@ -31,8 +31,8 @@ SEED_SMILES = [
 def build_seed_sdf(path: Path) -> None:
     records: list[str] = []
     for idx, smiles in enumerate(SEED_SMILES):
-        mol = ck.Molecule.from_smiles(smiles, sanitize=True).with_2d_coordinates()
-        record = mol.to_2d_sdf_string(format="v2000")
+        mol = ck.mol_from_smiles(smiles, sanitize=True).with_2d_coordinates()
+        record = mol.to_sdf_2d(format="v2000")
         record = record.replace(
             "$$$$\n",
             f">  <source_index>\n{idx}\n\n>  <input_smiles>\n{smiles}\n\n$$$$\n",
@@ -69,7 +69,7 @@ selected = selected.with_2d_coordinates(
 print("selected valid mask:", selected.valid_mask())
 print("selected smiles:", selected.to_smiles_list())
 
-fps = selected.fingerprint_morgan_list(radius=2, n_bits=512, n_jobs=2)
+fps = selected.fingerprint_morgan_list(radius=2, fp_size=512, n_jobs=2)
 for index, fingerprint in enumerate(fps):
     if fingerprint is not None:
         print("selected fingerprint:", index, "bits=", len(fingerprint.on_bits()))
@@ -85,7 +85,8 @@ for chunk in dataset.batches(size=2, errors=ck.BatchErrorMode.KEEP, n_jobs=2):
 report = selected.write_images(
     str(OUTPUT_DIR / "selected_images"),
     format="png",
-    size=(320, 240),
+    width=320,
+    height=240,
     filenames=["ethanol", "benzene", "benzonitrile"],
     errors=ck.BatchErrorMode.KEEP,
 )

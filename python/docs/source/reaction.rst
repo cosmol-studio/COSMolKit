@@ -15,7 +15,7 @@ Generate products
    import cosmolkit as ck
 
    reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
-   source = ck.Molecule.from_smiles("C")
+   source = ck.mol_from_smiles("C")
    product_sets = reaction.run([source], ck.ReactionRunParams())
    assert product_sets[0][0].to_smiles() == "N"
    assert source.to_smiles() == "C"
@@ -58,7 +58,7 @@ User metadata retains its type instead of being converted to text:
 
 .. code-block:: python
 
-   carbon = ck.Molecule.from_smiles("C")
+   carbon = ck.mol_from_smiles("C")
    tagged = carbon.with_atom_property(0, "tracking_id", 42)
    assert carbon.atom_property(0, "tracking_id") is None
    assert tagged.atom_property(0, "tracking_id") == 42
@@ -76,7 +76,7 @@ Reaction copying is an explicit CK extension, disabled by default:
 
 .. code-block:: python
 
-   oxygen = ck.Molecule.from_smiles("O").with_atom_property(0, "tracking_id", 84)
+   oxygen = ck.mol_from_smiles("O").with_atom_property(0, "tracking_id", 84)
    reaction = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
    params = ck.ReactionRunParams(copy_atom_properties=True)
    product = reaction.run([tagged, oxygen], params)[0][0]
@@ -101,6 +101,8 @@ Restricted application
 
 .. code-block:: python
 
+   source = ck.mol_from_smiles("C")
+   reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
    result = source.apply_reaction(reaction)
    assert result.changed
    assert result.molecule.to_smiles() == "N"

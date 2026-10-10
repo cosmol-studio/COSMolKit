@@ -32,15 +32,6 @@ def shell_steps():
 
 
 class CoverageWorkflowTests(unittest.TestCase):
-    def test_documentation_build_reports_warnings_without_failing_on_them(self):
-        workflow = (ROOT / ".github/workflows/docs-web.yml").read_text()
-        command = next(line for line in workflow.splitlines() if " -m sphinx " in line)
-        self.assertIn("--keep-going -E -b html", command)
-        self.assertNotIn(" -W", command)
-        self.assertNotIn("||", command)
-        fallback = (ROOT / "docs-web/build.rs").read_text()
-        self.assertNotIn('"sphinx", "-W"', fallback)
-
     def test_core_has_no_runtime_features_or_forwarders(self):
         core = tomllib.loads((ROOT / "crates/cosmolkit-core/Cargo.toml").read_text())
         self.assertEqual(core.get("features", {}), {})

@@ -1,5 +1,5 @@
 Maximum common substructure
-==========================
+===========================
 
 .. meta::
    :description: Find maximum common molecular substructures and inspect query graphs with COSMolKit.
@@ -14,7 +14,7 @@ the SMARTS comparison is exact, without sorting equivalent alternatives.
 
    import cosmolkit as ck
 
-   molecules = [ck.Molecule.from_smiles(s) for s in ("CCO", "CCN")]
+   molecules = [ck.mol_from_smiles(s) for s in ("CCO", "CCN")]
    result = ck.maximum_common_substructure(molecules)
    print(result.atom_count, result.bond_count)  # 2 1
    print(result.smarts)                        # [#6]-[#6]
@@ -52,6 +52,7 @@ Rust uses ``cosmolkit::maximum_common_substructure(&[&a, &b])`` or
 ``maximumCommonSubstructure([a, b], params)`` and accepts a plain options
 object such as ``{timeout: 10}``. Nested JavaScript parameter views are writable.
 
-.. automodule:: cosmolkit
-   :members: maximum_common_substructure, McsParameters, McsAtomCompareParameters, McsBondCompareParameters, McsAtomComparator, McsBondComparator, McsResult
-   :no-index:
+See the API Reference for :func:`cosmolkit.maximum_common_substructure`,
+:class:`cosmolkit.McsParameters`, :class:`cosmolkit.McsAtomCompareParameters`,
+:class:`cosmolkit.McsBondCompareParameters`, :class:`cosmolkit.McsAtomComparator`,
+:class:`cosmolkit.McsBondComparator` and :class:`cosmolkit.McsResult`.

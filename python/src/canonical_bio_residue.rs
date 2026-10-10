@@ -3,7 +3,8 @@
 pyo3::create_exception!(
     cosmolkit,
     ResidueCodeParseError,
-    pyo3::exceptions::PyValueError
+    pyo3::exceptions::PyValueError,
+    "A residue dictionary code name is not recognized; input() returns the supplied name."
 );
 use ::cosmolkit as ck;
 use pyo3::exceptions::{PyIndexError, PyValueError};
@@ -41,6 +42,7 @@ fn kind_from_code(code: i64) -> PyResult<ck::ResidueInfoKind> {
     }
 }
 
+/// Read-only residue dictionary entry containing identity, class, sequence codes, composition and standard/modified status.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ResidueInfo {
@@ -51,64 +53,83 @@ pub(crate) struct ResidueInfo {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ResidueInfo {
+    /// Stored residue/atom code; its interpretation is defined by the owning value type.
     #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
     fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ResidueCode", i64::from(self.inner.code.as_u16()))
     }
+    /// Stored name of this value.
     fn name(&self) -> &'static str {
         self.inner.name
     }
+    /// Return the residue dictionary chemical classification.
     #[gen_stub(override_return_type(type_repr = "ResidueInfoKind"))]
     fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ResidueInfoKind", self.inner.kind as i64)
     }
+    /// Return the text name of the residue dictionary classification.
     fn kind_name(&self) -> &'static str {
         self.inner.kind.name()
     }
+    /// Residue polymer-linking classification.
     fn linking_type(&self) -> u8 {
         self.inner.linking_type
     }
+    /// One-letter residue code recorded by the residue dictionary.
     fn one_letter_code(&self) -> String {
         self.inner.one_letter_code.to_string()
     }
+    /// Hydrogen count recorded in the residue dictionary.
     fn hydrogen_count(&self) -> u8 {
         self.inner.hydrogen_count
     }
+    /// Residue molecular weight from the residue dictionary.
     fn weight(&self) -> f32 {
         self.inner.weight
     }
+    /// Whether the residue name was found in the built-in dictionary.
     fn found(&self) -> bool {
         self.inner.found()
     }
+    /// Whether the residue dictionary identifies water.
     fn is_water(&self) -> bool {
         self.inner.is_water()
     }
+    /// Return whether the dictionary classifies this residue as DNA.
     fn is_dna(&self) -> bool {
         self.inner.is_dna()
     }
+    /// Return whether the dictionary classifies this residue as RNA.
     fn is_rna(&self) -> bool {
         self.inner.is_rna()
     }
+    /// Whether the residue dictionary identifies a nucleic-acid residue.
     fn is_nucleic_acid(&self) -> bool {
         self.inner.is_nucleic_acid()
     }
+    /// Whether the residue dictionary identifies an amino acid.
     fn is_amino_acid(&self) -> bool {
         self.inner.is_amino_acid()
     }
+    /// Return whether the residue is classified as buffer or water.
     fn is_buffer_or_water(&self) -> bool {
         self.inner.is_buffer_or_water()
     }
+    /// Whether the residue belongs to the standard residue set.
     fn is_standard(&self) -> bool {
         self.inner.is_standard()
     }
+    /// Residue code suitable for FASTA sequence output.
     fn fasta_code(&self) -> String {
         self.inner.fasta_code().to_string()
     }
+    /// One-letter code of the corresponding standard parent residue.
     fn canonical_one_letter_code(&self) -> Option<String> {
         self.inner
             .canonical_one_letter_code()
             .map(|c| c.to_string())
     }
+    /// Standard parent residue code for a modified residue, when known.
     #[gen_stub(override_return_type(type_repr = "typing.Optional[ResidueCode]"))]
     fn parent_standard_code<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         self.inner
@@ -116,12 +137,15 @@ impl ResidueInfo {
             .map(|c| enum_member(py, "ResidueCode", i64::from(c.as_u16())))
             .transpose()
     }
+    /// Whether the residue dictionary identifies a modified amino acid.
     fn is_modified_amino_acid(&self) -> bool {
         self.inner.is_modified_amino_acid()
     }
+    /// Return whether the residue participates in peptide polymer linkage.
     fn is_peptide_linking(&self) -> bool {
         self.inner.is_peptide_linking()
     }
+    /// Return whether the residue participates in nucleic-acid polymer linkage.
     fn is_na_linking(&self) -> bool {
         self.inner.is_na_linking()
     }
@@ -135,6 +159,7 @@ impl ResidueInfo {
     }
 }
 
+/// Look up a residue code and return its dictionary information, preserving the not-found state.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -144,6 +169,7 @@ fn find_residue_info(name: &str) -> ResidueInfo {
     }
 }
 
+/// Return the built-in dictionary index for a residue code when found.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -151,6 +177,7 @@ fn find_residue_info_index(name: &str) -> usize {
     ck::find_residue_info_index(name)
 }
 
+/// Return the residue dictionary entry at the supplied index.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -160,12 +187,14 @@ fn residue_info(index: usize) -> PyResult<ResidueInfo> {
         .ok_or_else(|| PyIndexError::new_err(format!("residue info index {index} out of range")))
 }
 
+/// Return the residue dictionary entry at the supplied index; reject an invalid index.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn residue_info_checked(index: usize) -> Option<ResidueInfo> {
     ck::residue_info_checked(index).map(|inner| ResidueInfo { inner })
 }
 
+/// Residue name and its dictionary classification, preserving unrecognized names.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ResidueIdentity {
@@ -176,29 +205,35 @@ pub(crate) struct ResidueIdentity {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ResidueIdentity {
+    /// Construct a ResidueIdentity value from the supplied inputs.
     #[staticmethod]
     fn new(name: String) -> Self {
         Self {
             inner: ck::ResidueIdentity::new(name),
         }
     }
+    /// Stored name of this value.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// Stored residue/atom code; its interpretation is defined by the owning value type.
     #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
     fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ResidueCode", i64::from(self.inner.code().as_u16()))
     }
+    /// Return the associated residue dictionary information, including its classification and sequence codes.
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: self.inner.info(),
         }
     }
+    /// Return whether the residue name appears in the built-in residue dictionary.
     fn is_tabulated(&self) -> bool {
         self.inner.is_tabulated()
     }
 }
 
+/// Return the canonical residue code from a residue identity.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -211,6 +246,7 @@ fn residue_code<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>>
     )
 }
 
+/// Expand a one-letter residue code to a three-letter residue code using the chosen polymer convention.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -228,6 +264,7 @@ fn expand_one_letter(
     Ok(ck::expand_one_letter(c, kind_from_code(kind)?).map(str::to_owned))
 }
 
+/// Expand a sequence of one-letter residue codes to residue names in sequence order.
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
@@ -257,6 +294,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     let codes = int_enum.call1(("ResidueCode", members))?;
     codes.setattr("__module__", "cosmolkit")?;
+    codes.setattr("__doc__", "Residue identities from the built-in chemical dictionary, including amino acids, nucleotides, water and non-polymer entries.")?;
     let code_map = PyDict::new(py);
     for (key, name) in names.iter() {
         code_map.set_item(key, codes.getattr(name.extract::<String>()?.as_str())?)?;
@@ -288,6 +326,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     let kinds = int_enum.call1(("ResidueInfoKind", members))?;
     kinds.setattr("__module__", "cosmolkit")?;
+    kinds.setattr("__doc__", "Chemical classification of a residue dictionary entry, including peptide, nucleic-acid and non-polymer classes.")?;
     // Preserve IntEnum.name as a string property, including mapping/pickle use.
     let error = py.get_type::<ResidueCodeParseError>();
     crate::canonical_error_accessors::residue_error(error.as_any())?;

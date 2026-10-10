@@ -1,31 +1,8 @@
-"""ConfSeq migration example; requires the not-yet-enabled ConfSeq projection."""
+"""ConfSeq: coming soon.
 
-from __future__ import annotations
+ConfSeq decoding is not exposed in the Python API. This file is a status
+notice, not a runnable decoding workflow.
+"""
 
-import cosmolkit as ck
-
-
-# Tokenized corpus record: dude_aa2ar__L021087 candidate 0.
-# Spaces are ConfSeq token boundaries and must be preserved.
-confseq = (
-    "N C <112> | ( = O ) <84> C <111> | <-45> n 1 c c ( <21> N <123> | "
-    "<173> C <116> | ( = O ) <120> c 2 c c c c c 2 <112> C <112> | <-66> "
-    "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
-)
-
-reference = ck.decode_confseq(
-    confseq,
-    optimize_with_uff=False,
-    template_backend="distance_geometry",
-)
-
-fast = ck.decode_confseq(
-    confseq,
-    optimize_with_uff=False,
-    template_backend="fast_geometry",
-)
-
-print("Corpus record: dude_aa2ar__L021087 candidate 0")
-print("ConfSeq numeric tokens:", confseq.count("<"))
-print("DistanceGeometry decoded atoms:", reference.num_atoms(), "conformers:", reference.num_conformers())
-print("FastGeometry decoded atoms:", fast.num_atoms(), "conformers:", fast.num_conformers())
+if __name__ == "__main__":
+    print("ConfSeq: coming soon. Python decoding examples are not available yet.")

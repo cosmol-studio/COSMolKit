@@ -45,8 +45,19 @@ jobs:
 
             - uses: astral-sh/setup-uv@v6
 
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+
+            - uses: taiki-e/install-action@v2
+              with:
+                  tool: alef@0.83.3,wasm-bindgen-cli@0.2.128
+
             - name: Sync documentation environment
               run: uv sync --group dev
+
+            - name: Install TypeDoc
+              run: npm ci --prefix python/docs --no-audit --no-fund
 
             - name: Test deployment scripts
               run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
@@ -54,10 +65,17 @@ jobs:
             - name: Build checkout package for autodoc
               run: .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
 
+            - name: Generate checkout JavaScript type declarations
+              env:
+                  CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
+              # Match the publication build's temporary registry-gate policy.
+              # Compilation and generated JavaScript/TypeScript tests still run.
+              run: .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract --out-dir target/docs-js-package
+
             - name: Build Sphinx source
               run: |
                   rm -rf python/docs/build/html
-                  .venv/bin/python -m sphinx --keep-going -E -b html python/docs/source python/docs/build/html
+                  .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
 
             - name: Install cargo-binstall
               uses: cargo-bins/cargo-binstall@main

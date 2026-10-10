@@ -12,7 +12,7 @@ molblock = """ethane_heavy_atoms_3d
 M  END
 """
 
-mol = ck.Molecule.read_mol_from_str(molblock, coordinate_mode="require_3d")
+mol = ck.mol_from_mol(molblock, coordinate_mode="require_3d")
 coords = mol.coordinates_3d()
 
 print("atoms:", mol.num_atoms())

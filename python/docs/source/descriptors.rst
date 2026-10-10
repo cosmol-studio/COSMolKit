@@ -4,15 +4,12 @@ Molecular Descriptors
 .. meta::
    :description: Calculate source-backed molecular properties, connectivity and shape indices, Lipinski counts, MQN, Labute ASA, and SlogP/SMR VSA descriptors with COSMolKit.
 
-COSMolKit exposes the source-backed molecular descriptor functions from the
-Rust core directly in Python. Descriptor calls are read-only and do not mutate
+COSMolKit exposes the source-backed molecular descriptor methods on
+:class:`cosmolkit.Molecule`. Descriptor calls are read-only and do not mutate
 the input :class:`cosmolkit.Molecule`.
 
-The documented descriptor surface is supported with pinned-RDKit parity.
-Validation compares scalar values, complete vectors, atom contributions,
-custom bins, and cold/warm/forced cache sequences, including exact
-floating-point bit patterns. See ``VALIDATION.md`` in the source repository
-for the complete evidence boundary.
+The implementations follow the pinned RDKit source. See ``VALIDATION.md`` in
+the source repository for validation coverage.
 
 Basic Descriptors
 -----------------
@@ -21,45 +18,45 @@ Basic Descriptors
 
    import cosmolkit as ck
 
-   molecule = ck.Molecule.from_smiles("c1ccccc1O")
+   molecule = ck.mol_from_smiles("c1ccccc1O")
 
-   formula = ck.calc_mol_formula(molecule)
-   average_weight = ck.calc_mol_wt(molecule)
-   exact_weight = ck.calc_exact_mol_wt(molecule)
-   aromatic_rings = ck.calc_num_aromatic_rings(molecule)
+   formula = molecule.molecular_formula()
+   average_weight = molecule.molecular_weight()
+   exact_weight = molecule.exact_molecular_weight()
+   aromatic_rings = molecule.num_aromatic_rings()
 
    print(formula, average_weight, exact_weight, aromatic_rings)
 
 The basic property functions are:
 
-* :func:`cosmolkit.calc_mol_wt`
-* :func:`cosmolkit.calc_exact_mol_wt`
-* :func:`cosmolkit.calc_mol_formula`
-* :func:`cosmolkit.calc_num_hbd`
-* :func:`cosmolkit.calc_num_hba`
-* :func:`cosmolkit.calc_fraction_csp3`
-* :func:`cosmolkit.calc_crippen_descriptors`
-* :func:`cosmolkit.calc_tpsa`
-* :func:`cosmolkit.calc_num_aromatic_rings`
-* :func:`cosmolkit.calc_num_rotatable_bonds`
-* :func:`cosmolkit.calc_qed`
+* :meth:`cosmolkit.Molecule.molecular_weight`
+* :meth:`cosmolkit.Molecule.exact_molecular_weight`
+* :meth:`cosmolkit.Molecule.molecular_formula`
+* :meth:`cosmolkit.Molecule.num_hbd`
+* :meth:`cosmolkit.Molecule.num_hba`
+* :meth:`cosmolkit.Molecule.fraction_csp3`
+* :meth:`cosmolkit.Molecule.crippen_descriptors`
+* :meth:`cosmolkit.Molecule.tpsa`
+* :meth:`cosmolkit.Molecule.num_aromatic_rings`
+* :meth:`cosmolkit.Molecule.num_rotatable_bonds`
+* :meth:`cosmolkit.Molecule.qed`
 
 Connectivity And Shape
 ----------------------
 
-Connectivity descriptors include graph-degree ``calc_chi_0()`` and
-``calc_chi_1()``, generic order-N ``calc_chi_nv()`` and ``calc_chi_nn()``, and
-the fixed ``calc_chi_0v()`` through ``calc_chi_4v()`` and ``calc_chi_0n()``
-through ``calc_chi_4n()`` projections.
+Connectivity descriptors include graph-degree ``chi_0()`` and
+``chi_1()``, generic order-N ``chi_n_v()`` and ``chi_n_n()``, and
+the fixed ``chi_0_v()`` through ``chi_4_v()`` and ``chi_0_n()``
+through ``chi_4_n()`` projections.
 
 Hall-Kier and shape functions are:
 
-* :func:`cosmolkit.calc_hall_kier_alpha`
-* :func:`cosmolkit.calc_hall_kier_alpha_with_contributions`
-* :func:`cosmolkit.calc_kappa_1`
-* :func:`cosmolkit.calc_kappa_2`
-* :func:`cosmolkit.calc_kappa_3`
-* :func:`cosmolkit.calc_phi`
+* :meth:`cosmolkit.Molecule.hall_kier_alpha`
+* :meth:`cosmolkit.Molecule.hall_kier_alpha_with_contributions`
+* :meth:`cosmolkit.Molecule.kappa_1`
+* :meth:`cosmolkit.Molecule.kappa_2`
+* :meth:`cosmolkit.Molecule.kappa_3`
+* :meth:`cosmolkit.Molecule.phi`
 
 Lipinski And Ring Counts
 ------------------------
@@ -74,27 +71,32 @@ implementations; there is no descriptor-local chemistry path.
 MQN And Molecular Surface
 -------------------------
 
-``calc_mqns()`` returns the fixed source-order 42-entry molecular quantum
-number vector. ``calc_labute_asa()`` returns the scalar surface area, while
-``calc_labute_asa_contributions()`` returns the scalar, atom-index-aligned
-contributions, and aggregate hydrogen contribution.
+``mqns()`` returns the fixed source-order 42-entry molecular quantum
+number vector. ``labute_asa()`` returns the scalar surface area, while
+``labute_asa_contributions()`` returns a ``LabuteAsaContributions`` value
+with ``asa``, ``atom_contributions`` (in atom-index order), and
+``hydrogen_contribution`` properties.
 
-``calc_slogp_vsa()`` and ``calc_smr_vsa()`` return 12-bin and 10-bin vectors.
-Pass ``bins=`` for custom boundaries; the result then has ``len(bins) + 1``
-entries. Scalar projections ``calc_slogp_vsa_1()`` through
-``calc_slogp_vsa_12()`` and ``calc_smr_vsa_1()`` through
-``calc_smr_vsa_10()`` delegate to the same vector cores.
+``slogp_vsa()`` and ``smr_vsa()`` return 12-bin and 10-bin vectors.
+Use ``slogp_vsa_with_params(bins, force)`` or
+``smr_vsa_with_params(bins, force)`` for custom boundaries; the result then
+has ``len(bins) + 1`` entries. Scalar projections ``slogp_vsa_1()`` through
+``slogp_vsa_12()`` and ``smr_vsa_1()`` through
+``smr_vsa_10()`` delegate to the same vector cores.
 
 .. code-block:: python
 
    import cosmolkit as ck
 
-   molecule = ck.Molecule.from_smiles("CC(O)c1ccncc1")
+   molecule = ck.mol_from_smiles("CC(O)c1ccncc1")
 
-   chi = [ck.calc_chi_nv(molecule, order) for order in range(5)]
-   mqns = ck.calc_mqns(molecule)
-   asa, atom_asa, hydrogen_asa = ck.calc_labute_asa_contributions(molecule)
-   slogp_vsa = ck.calc_slogp_vsa(molecule)
+   chi = [molecule.chi_n_v(order) for order in range(5)]
+   mqns = molecule.mqns()
+   surface = molecule.labute_asa_contributions()
+   asa = surface.asa
+   atom_asa = surface.atom_contributions
+   hydrogen_asa = surface.hydrogen_contribution
+   slogp_vsa = molecule.slogp_vsa()
 
    assert len(mqns) == 42
    assert len(atom_asa) == molecule.num_atoms()
@@ -103,13 +105,15 @@ entries. Scalar projections ``calc_slogp_vsa_1()`` through
 Formula Options
 ---------------
 
-``calc_mol_formula()`` accepts ``separate_isotopes`` and
-``abbreviate_h_isotopes``. When isotope separation and hydrogen abbreviation
+``molecular_formula()`` uses the default options. Use
+``molecular_formula_with_params(separate_isotopes, abbreviate_h_isotopes)``
+for explicit options. When isotope separation and hydrogen abbreviation
 are enabled, hydrogen-2 and hydrogen-3 are written as D and T.
 
 Rotatable-Bond Modes
 --------------------
 
-``calc_num_rotatable_bonds()`` accepts ``mode="default"``,
-``"non_strict"``, ``"strict"``, or ``"strict_linkages"``. Unknown modes raise
-``ValueError``.
+``num_rotatable_bonds()`` uses the default mode. For explicit selection, use
+``num_rotatable_bonds_with_params(ck.RotatableBondsOptions.Strict)`` or pass
+``"default"``, ``"non_strict"``, ``"strict"``, or ``"strict_linkages"`` to
+that method. Unknown modes raise ``ValueError``.

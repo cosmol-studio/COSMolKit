@@ -18,6 +18,6 @@ tiny-skia = "=0.12.0"
 usvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 resvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 thiserror = "2"
-cosmolkit-core = { version = "0.5.0-rc.22", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.22", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.0-rc.22", path = "../cosmolkit-search", default-features = false }
+cosmolkit-core = { version = "0.5.0-rc.23", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.23", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.0-rc.23", path = "../cosmolkit-search", default-features = false }

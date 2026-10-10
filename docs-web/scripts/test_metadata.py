@@ -34,7 +34,7 @@ class MetadataTests(unittest.TestCase):
     def test_generated_utility_descriptions_and_contract_noindex(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            for page in ("search", "genindex", "py-modindex"):
+            for page in ("search", "genindex"):
                 (path / f"{page}.html").write_text('<head></head>', encoding="utf-8")
                 generated = generate_metadata(path, [page])
                 self.assertIn("COSMolKit", generated)

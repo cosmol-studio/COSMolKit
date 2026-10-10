@@ -4,6 +4,10 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
+/// Writable configuration for aromatic-system kekulization.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct KekulizeParams {
@@ -13,6 +17,7 @@ pub(crate) struct KekulizeParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl KekulizeParams {
+    /// Configure aromatic-system kekulization; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, mark_atoms_bonds=true, canonical=true, max_backtracks=100))]
     fn new(mark_atoms_bonds: bool, canonical: bool, max_backtracks: u32) -> Self {
@@ -24,20 +29,27 @@ impl KekulizeParams {
             },
         }
     }
+    /// Whether aromatic atom/bond flags are cleared during kekulization.
     #[getter]
     fn mark_atoms_bonds(&self) -> bool {
         self.inner.mark_atoms_bonds
     }
+    /// Whether canonical atom traversal is used for output.
     #[getter]
     fn canonical(&self) -> bool {
         self.inner.canonical
     }
+    /// Maximum backtracking attempts during kekulization.
     #[getter]
     fn max_backtracks(&self) -> u32 {
         self.inner.max_backtracks
     }
 }
 
+/// Writable configuration for ring perception.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct RingSearchParams {
@@ -47,6 +59,7 @@ pub(crate) struct RingSearchParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RingSearchParams {
+    /// Configure ring perception; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, include_dative_bonds=false, include_hydrogen_bonds=false))]
     fn new(include_dative_bonds: bool, include_hydrogen_bonds: bool) -> Self {
@@ -57,16 +70,22 @@ impl RingSearchParams {
             },
         }
     }
+    /// Whether dative bonds are included in the requested graph operation/output.
     #[getter]
     fn include_dative_bonds(&self) -> bool {
         self.inner.include_dative_bonds
     }
+    /// Whether hydrogen bonds participate in ring search.
     #[getter]
     fn include_hydrogen_bonds(&self) -> bool {
         self.inner.include_hydrogen_bonds
     }
 }
 
+/// Writable configuration for chiral-tag assignment from stored coordinates.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct StructureTagParams {
@@ -76,6 +95,7 @@ pub(crate) struct StructureTagParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl StructureTagParams {
+    /// Configure chiral-tag assignment from stored coordinates; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, conformer_id=-1, replace_existing_tags=true))]
     fn new(conformer_id: i32, replace_existing_tags: bool) -> Self {
@@ -86,16 +106,22 @@ impl StructureTagParams {
             },
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> i32 {
         self.inner.conformer_id
     }
+    /// Whether existing chiral tags may be replaced by structure-derived tags.
     #[getter]
     fn replace_existing_tags(&self) -> bool {
         self.inner.replace_existing_tags
     }
 }
 
+/// Writable configuration for graph distance-matrix weights.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct DistanceMatrixParams {
@@ -105,6 +131,7 @@ pub(crate) struct DistanceMatrixParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl DistanceMatrixParams {
+    /// Configure graph distance-matrix weights; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, use_bond_order=false, use_atom_weights=false))]
     fn new(use_bond_order: bool, use_atom_weights: bool) -> Self {
@@ -115,16 +142,22 @@ impl DistanceMatrixParams {
             },
         }
     }
+    /// Whether bond-order weights are included in the calculation.
     #[getter]
     fn use_bond_order(&self) -> bool {
         self.inner.use_bond_order
     }
+    /// Whether atomic weights contribute to the distance-matrix diagonal.
     #[getter]
     fn use_atom_weights(&self) -> bool {
         self.inner.use_atom_weights
     }
 }
 
+/// Writable configuration for 3D distance-matrix conformer selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct DistanceMatrix3dParams {
@@ -134,6 +167,7 @@ pub(crate) struct DistanceMatrix3dParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl DistanceMatrix3dParams {
+    /// Configure 3D distance-matrix conformer selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, conformer_id=None, use_atom_weights=false))]
     fn new(conformer_id: Option<usize>, use_atom_weights: bool) -> Self {
@@ -144,16 +178,22 @@ impl DistanceMatrix3dParams {
             },
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id
     }
+    /// Whether atomic weights contribute to the distance-matrix diagonal.
     #[getter]
     fn use_atom_weights(&self) -> bool {
         self.inner.use_atom_weights
     }
 }
 
+/// Writable configuration for single-atom position replacement and conformer selection.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AtomPositionParams {
@@ -163,6 +203,7 @@ pub(crate) struct AtomPositionParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AtomPositionParams {
+    /// Configure single-atom position replacement and conformer selection; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, conformer_id=None))]
     fn new(conformer_id: Option<usize>) -> Self {
@@ -170,12 +211,17 @@ impl AtomPositionParams {
             inner: ck::AtomPositionParams { conformer_id },
         }
     }
+    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
     fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id
     }
 }
 
+/// Writable configuration for explicit hydrogen removal.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct RemoveHsParams {
@@ -185,6 +231,7 @@ pub(crate) struct RemoveHsParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RemoveHsParams {
+    /// Configure explicit hydrogen removal; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, remove_degree_zero=false, remove_higher_degrees=false, remove_only_h_neighbors=false, remove_isotopes=false, remove_and_track_isotopes=false, remove_dummy_neighbors=false, remove_defining_bond_stereo=false, remove_with_wedged_bond=true, remove_with_query=false, remove_mapped=true, remove_in_sgroups=true, show_warnings=true, remove_nonimplicit=true, update_explicit_count=false, remove_hydrides=false, remove_nontetrahedral_neighbors=false, sanitize=true))]
     fn new(
@@ -228,76 +275,96 @@ impl RemoveHsParams {
             },
         }
     }
+    /// Whether isolated hydrogen atoms are eligible for removal.
     #[getter]
     fn remove_degree_zero(&self) -> bool {
         self.inner.remove_degree_zero
     }
+    /// Whether hydrogen atoms bonded to more than one atom are eligible for removal.
     #[getter]
     fn remove_higher_degrees(&self) -> bool {
         self.inner.remove_higher_degrees
     }
+    /// Whether hydrogens attached only to other hydrogens are eligible for removal.
     #[getter]
     fn remove_only_h_neighbors(&self) -> bool {
         self.inner.remove_only_h_neighbors
     }
+    /// Whether isotope-labeled hydrogen atoms are eligible for removal.
     #[getter]
     fn remove_isotopes(&self) -> bool {
         self.inner.remove_isotopes
     }
+    /// Whether removed isotope-labeled hydrogens are tracked for later restoration.
     #[getter]
     fn remove_and_track_isotopes(&self) -> bool {
         self.inner.remove_and_track_isotopes
     }
+    /// Whether hydrogens attached to dummy atoms are eligible for removal.
     #[getter]
     fn remove_dummy_neighbors(&self) -> bool {
         self.inner.remove_dummy_neighbors
     }
+    /// Whether hydrogens needed to define bond stereochemistry may be removed.
     #[getter]
     fn remove_defining_bond_stereo(&self) -> bool {
         self.inner.remove_defining_bond_stereo
     }
+    /// Whether hydrogens attached by wedge-marked bonds may be removed.
     #[getter]
     fn remove_with_wedged_bond(&self) -> bool {
         self.inner.remove_with_wedged_bond
     }
+    /// Whether query-bearing hydrogen atoms may be removed.
     #[getter]
     fn remove_with_query(&self) -> bool {
         self.inner.remove_with_query
     }
+    /// Whether atom-mapped hydrogen atoms may be removed.
     #[getter]
     fn remove_mapped(&self) -> bool {
         self.inner.remove_mapped
     }
+    /// Whether hydrogen atoms referenced by substance groups may be removed.
     #[getter]
     fn remove_in_sgroups(&self) -> bool {
         self.inner.remove_in_sgroups
     }
+    /// Whether hydrogen-removal warnings are emitted.
     #[getter]
     fn show_warnings(&self) -> bool {
         self.inner.show_warnings
     }
+    /// Whether hydrogens not originating from implicit hydrogen expansion may be removed.
     #[getter]
     fn remove_nonimplicit(&self) -> bool {
         self.inner.remove_nonimplicit
     }
+    /// Whether parent-atom explicit hydrogen counts are updated after removal.
     #[getter]
     fn update_explicit_count(&self) -> bool {
         self.inner.update_explicit_count
     }
+    /// Whether negatively charged hydrogen atoms may be removed.
     #[getter]
     fn remove_hydrides(&self) -> bool {
         self.inner.remove_hydrides
     }
+    /// Whether hydrogens defining non-tetrahedral stereochemistry may be removed.
     #[getter]
     fn remove_nontetrahedral_neighbors(&self) -> bool {
         self.inner.remove_nontetrahedral_neighbors
     }
+    /// Return a new result that will perform the selected chemical sanitization stages. The source molecule is unchanged.
     #[getter]
     fn sanitize(&self) -> bool {
         self.inner.sanitize
     }
 }
 
+/// Aromaticity assignment model selected for chemical perception.
+///
+/// Declared values: ``Rdkit``, ``Simple``, ``Mdl``, ``Mmff94``, ``Custom``.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
@@ -329,6 +396,10 @@ impl AromaticityModel {
         }
     }
 }
+/// Writable configuration for aromaticity assignment.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AromaticityParams {
@@ -338,6 +409,7 @@ pub(crate) struct AromaticityParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AromaticityParams {
+    /// Configure aromaticity assignment; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (model=AromaticityModel::Rdkit))]
     fn new(model: AromaticityModel) -> Self {
@@ -347,12 +419,17 @@ impl AromaticityParams {
             },
         }
     }
+    /// AromaticityModel selecting the aromaticity assignment rules.
     #[getter]
     fn model(&self) -> AromaticityModel {
         AromaticityModel::from_core(self.inner.model)
     }
 }
 
+/// Writable configuration for explicit hydrogen addition.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct AddHsParams {
@@ -362,6 +439,7 @@ pub(crate) struct AddHsParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AddHsParams {
+    /// Configure explicit hydrogen addition; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, explicit_only=false, add_coords=false, add_residue_info=false, skip_queries=false, only_on_atoms=None))]
     fn new(
@@ -382,22 +460,27 @@ impl AddHsParams {
             },
         }
     }
+    /// Whether only atom-stored explicit hydrogens are expanded into graph vertices.
     #[getter]
     fn explicit_only(&self) -> bool {
         self.inner.explicit_only
     }
+    /// Whether coordinates for newly added hydrogens are generated from stored conformers.
     #[getter]
     fn add_coords(&self) -> bool {
         self.inner.add_coords
     }
+    /// Whether added hydrogens inherit suitable residue metadata.
     #[getter]
     fn add_residue_info(&self) -> bool {
         self.inner.add_residue_info
     }
+    /// Whether query atoms are excluded from hydrogen addition.
     #[getter]
     fn skip_queries(&self) -> bool {
         self.inner.skip_queries
     }
+    /// Optional atom indices restricting hydrogen addition.
     #[getter]
     fn only_on_atoms(&self) -> Option<Vec<usize>> {
         self.inner
@@ -407,6 +490,7 @@ impl AddHsParams {
     }
 }
 
+/// Square dense numeric matrix with atom-indexed rows and columns; values retain the algorithm-defined order.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct DenseMatrix {
@@ -415,12 +499,15 @@ pub(crate) struct DenseMatrix {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl DenseMatrix {
+    /// Return the number of rows and columns in this square matrix.
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
+    /// Return flattened matrix values in row-major order.
     fn values(&self) -> Vec<f64> {
         self.inner.values().to_vec()
     }
+    /// Return the value at the supplied row and column indices.
     fn get(&self, row: usize, column: usize) -> Option<f64> {
         self.inner.get(row, column)
     }
@@ -452,13 +539,29 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-pyo3::create_exception!(cosmolkit, SanitizeError, pyo3::exceptions::PyValueError);
-pyo3::create_exception!(cosmolkit, MatrixError, pyo3::exceptions::PyValueError);
-pyo3::create_exception!(cosmolkit, KekulizeError, pyo3::exceptions::PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    SanitizeError,
+    pyo3::exceptions::PyValueError,
+    "Chemical sanitization failed; the message identifies the failing chemical condition."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    MatrixError,
+    pyo3::exceptions::PyValueError,
+    "A molecular distance or adjacency matrix could not be constructed."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    KekulizeError,
+    pyo3::exceptions::PyValueError,
+    "A valid Kekule bond assignment could not be found for the requested aromatic graph."
+);
 pyo3::create_exception!(
     cosmolkit,
     ChemistryProblemError,
-    pyo3::exceptions::PyValueError
+    pyo3::exceptions::PyValueError,
+    "Chemical problem detection could not inspect or prepare the supplied molecule."
 );
 
 pub(crate) fn sanitize_pyerr(py: Python<'_>, source: ck::SanitizeError) -> PyErr {
@@ -615,6 +718,9 @@ pub(crate) fn matrix_pyerr(py: Python<'_>, source: ck::MatrixError) -> PyErr {
     }
 }
 
+/// Exact sanitization stage used for source-compatible failure reporting.
+///
+/// Declared values: .
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
@@ -765,6 +871,7 @@ impl From<ck::SanitizeStage> for SanitizeStage {
         }
     }
 }
+/// Bit mask selecting chemical sanitization stages. Combine stage values with bitwise OR; NONE disables all stages and ALL selects all supported stages.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen, eq)]
 #[derive(PartialEq)]
@@ -774,18 +881,22 @@ pub(crate) struct SanitizeOperations {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SanitizeOperations {
+    /// Construct a flag value from an integer mask using the declared flag validation.
     #[staticmethod]
     fn from_bits(py: Python<'_>, bits: u32) -> PyResult<Self> {
         ck::SanitizeOperations::from_bits(bits)
             .map(|inner| Self { inner })
             .map_err(|e| sanitize_pyerr(py, e))
     }
+    /// Return the underlying unsigned integer bit mask.
     fn bits(&self) -> u32 {
         self.inner.bits()
     }
+    /// Return whether every bit in the supplied flag value is included in this mask.
     fn contains(&self, operation: &Self) -> bool {
         self.inner.contains(operation.inner)
     }
+    /// Return whether there are no stored entries.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -799,6 +910,7 @@ impl SanitizeOperations {
             inner: self.inner & other.inner,
         }
     }
+    /// SanitizeOperations value selecting none. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "NONE")]
     fn flag_none() -> SanitizeOperations {
@@ -806,6 +918,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::NONE,
         }
     }
+    /// SanitizeOperations value selecting cleanup. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "CLEANUP")]
     fn flag_cleanup() -> SanitizeOperations {
@@ -813,6 +926,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::CLEANUP,
         }
     }
+    /// SanitizeOperations value selecting properties. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "PROPERTIES")]
     fn flag_properties() -> SanitizeOperations {
@@ -820,6 +934,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::PROPERTIES,
         }
     }
+    /// SanitizeOperations value selecting symm rings. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "SYMM_RINGS")]
     fn flag_symm_rings() -> SanitizeOperations {
@@ -827,6 +942,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::SYMM_RINGS,
         }
     }
+    /// SanitizeOperations value selecting kekulize. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "KEKULIZE")]
     fn flag_kekulize() -> SanitizeOperations {
@@ -834,6 +950,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::KEKULIZE,
         }
     }
+    /// SanitizeOperations value selecting find radicals. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "FIND_RADICALS")]
     fn flag_find_radicals() -> SanitizeOperations {
@@ -841,6 +958,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::FIND_RADICALS,
         }
     }
+    /// SanitizeOperations value selecting set aromaticity. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "SET_AROMATICITY")]
     fn flag_set_aromaticity() -> SanitizeOperations {
@@ -848,6 +966,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::SET_AROMATICITY,
         }
     }
+    /// SanitizeOperations value selecting set conjugation. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "SET_CONJUGATION")]
     fn flag_set_conjugation() -> SanitizeOperations {
@@ -855,6 +974,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::SET_CONJUGATION,
         }
     }
+    /// SanitizeOperations value selecting set hybridization. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "SET_HYBRIDIZATION")]
     fn flag_set_hybridization() -> SanitizeOperations {
@@ -862,6 +982,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::SET_HYBRIDIZATION,
         }
     }
+    /// SanitizeOperations value selecting cleanup chirality. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "CLEANUP_CHIRALITY")]
     fn flag_cleanup_chirality() -> SanitizeOperations {
@@ -869,6 +990,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::CLEANUP_CHIRALITY,
         }
     }
+    /// SanitizeOperations value selecting adjust hs. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "ADJUST_HS")]
     fn flag_adjust_hs() -> SanitizeOperations {
@@ -876,6 +998,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::ADJUST_HS,
         }
     }
+    /// SanitizeOperations value selecting cleanup organometallics. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "CLEANUP_ORGANOMETALLICS")]
     fn flag_cleanup_organometallics() -> SanitizeOperations {
@@ -883,6 +1006,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::CLEANUP_ORGANOMETALLICS,
         }
     }
+    /// SanitizeOperations value selecting cleanup atropisomers. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "CLEANUP_ATROPISOMERS")]
     fn flag_cleanup_atropisomers() -> SanitizeOperations {
@@ -890,6 +1014,7 @@ impl SanitizeOperations {
             inner: ck::SanitizeOperations::CLEANUP_ATROPISOMERS,
         }
     }
+    /// SanitizeOperations value selecting all. Combine bit-mask flags with bitwise OR when supported by this type.
     #[classattr]
     #[pyo3(name = "ALL")]
     fn flag_all() -> SanitizeOperations {
@@ -898,6 +1023,10 @@ impl SanitizeOperations {
         }
     }
 }
+/// Writable configuration for chemical sanitization stages.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct SanitizeParams {
@@ -907,6 +1036,7 @@ pub(crate) struct SanitizeParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SanitizeParams {
+    /// Configure chemical sanitization stages; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (operations=None))]
     fn new(operations: Option<&SanitizeOperations>) -> Self {
@@ -916,6 +1046,7 @@ impl SanitizeParams {
             },
         }
     }
+    /// Sanitization stage bit mask; combine SanitizeOperations values with bitwise OR.
     #[getter]
     fn operations(&self) -> SanitizeOperations {
         SanitizeOperations {
@@ -923,6 +1054,7 @@ impl SanitizeParams {
         }
     }
 }
+/// One chemical problem recorded during validation, with its sanitization stage and typed error.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ChemistryProblem {
@@ -932,10 +1064,12 @@ pub(crate) struct ChemistryProblem {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ChemistryProblem {
+    /// Sanitization stage in which this chemical problem was detected.
     #[getter]
     fn operation(&self) -> SanitizeStage {
         self.inner.operation.into()
     }
+    /// Return the typed exception describing this detected chemistry problem.
     #[getter]
     #[gen_stub(override_return_type(type_repr = "ChemistryProblemError"))]
     fn error(&self, py: Python<'_>) -> Py<PyAny> {
@@ -962,6 +1096,7 @@ impl ChemistryProblem {
         error.value(py).clone().into_any().unbind()
     }
 }
+/// Ordered chemical problems found while inspecting a molecular graph.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct ChemistryProblemReport {
@@ -970,6 +1105,7 @@ pub(crate) struct ChemistryProblemReport {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ChemistryProblemReport {
+    /// Return all detected chemistry problems in report order.
     #[getter]
     fn problems(&self) -> Vec<ChemistryProblem> {
         self.inner

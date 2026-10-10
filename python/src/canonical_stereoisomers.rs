@@ -7,8 +7,18 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::sync::{Arc, Mutex};
 
-pyo3::create_exception!(cosmolkit, EnumerationError, PyValueError);
-pyo3::create_exception!(cosmolkit, EnumerationRunError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    EnumerationError,
+    PyValueError,
+    "Stereoisomer enumeration failed for the graph or enumeration options."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    EnumerationRunError,
+    PyValueError,
+    "Stereoisomer enumeration could not prepare or process the supplied molecule."
+);
 
 // Private binding failures retain their category, reason and boundary context.
 // They are not the chemistry owner's shared-provider RandomSourcePoisoned.
@@ -204,6 +214,10 @@ fn iterator_error(
     error
 }
 
+/// Source-defined seed or shared random-bits provider.
+///
+/// Cloning a seed does not share an advanced generator. Cloning a provider
+/// retains its identity and state without locking or drawing any bits.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "StereoisomerRandomSource", frozen, skip_from_py_object)]
 pub(crate) struct StereoisomerRandomSource {
@@ -214,6 +228,7 @@ pub(crate) struct StereoisomerRandomSource {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl StereoisomerRandomSource {
+    /// Construct a reproducible stereoisomer random source from an integer seed.
     #[staticmethod]
     fn from_integer_seed(
         #[gen_stub(override_type(type_repr = "builtins.int", imports = ("builtins")))]
@@ -224,6 +239,7 @@ impl StereoisomerRandomSource {
             errors: None,
         }
     }
+    /// Construct a stereoisomer random source from a callable accepting a bit count and returning a nonnegative integer.
     #[staticmethod]
     fn from_random_bits(value: Py<PyAny>) -> Self {
         let (inner, errors) = python_bits_source(value, false);
@@ -237,6 +253,10 @@ impl StereoisomerRandomSource {
     }
 }
 
+/// Writable configuration for stereoisomer enumeration and sampling.
+///
+/// Set fields in the constructor or assign them afterward. Omitted values use the
+/// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "StereoisomerOptions", skip_from_py_object, dict, weakref)]
 pub(crate) struct StereoisomerOptions {
@@ -293,6 +313,7 @@ impl StereoisomerOptions {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl StereoisomerOptions {
+    /// Configure stereoisomer enumeration and sampling; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (try_embedding=false, only_unassigned=true, max_isomers=1024, random_source=None, unique=true, only_stereo_groups=false))]
     fn new(
@@ -315,11 +336,13 @@ impl StereoisomerOptions {
             original_random_source: random_source,
         }
     }
+    /// Return a new StereoisomerOptions value with the standard enumeration defaults.
     #[staticmethod]
     #[pyo3(name = "default")]
     fn default_options() -> Self {
         <Self as Default>::default()
     }
+    /// Whether candidate stereoisomers are embedded to reject infeasible configurations.
     #[getter]
     fn try_embedding(&self) -> bool {
         self.inner.try_embedding()
@@ -328,6 +351,7 @@ impl StereoisomerOptions {
     fn set_try_embedding(&mut self, value: bool) {
         self.inner.set_try_embedding(value);
     }
+    /// Whether enumeration changes only currently unspecified stereocenters.
     #[getter]
     fn only_unassigned(&self) -> bool {
         self.inner.only_unassigned()
@@ -336,6 +360,7 @@ impl StereoisomerOptions {
     fn set_only_unassigned(&mut self, value: bool) {
         self.inner.set_only_unassigned(value);
     }
+    /// Whether enumeration is restricted to enhanced stereo groups.
     #[getter]
     fn only_stereo_groups(&self) -> bool {
         self.inner.only_stereo_groups()
@@ -344,6 +369,7 @@ impl StereoisomerOptions {
     fn set_only_stereo_groups(&mut self, value: bool) {
         self.inner.set_only_stereo_groups(value);
     }
+    /// Maximum number of stereoisomers to produce; zero requests exhaustive enumeration.
     #[getter]
     fn max_isomers(&self) -> usize {
         self.inner.max_isomers()
@@ -352,6 +378,7 @@ impl StereoisomerOptions {
     fn set_max_isomers(&mut self, value: usize) {
         self.inner.set_max_isomers(value);
     }
+    /// Seeded or callback-based random source used when stereoisomer sampling is required.
     #[getter]
     fn random_source(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.original_random_source
@@ -362,6 +389,7 @@ impl StereoisomerOptions {
     fn set_random_source(&mut self, value: Option<Py<PyAny>>) {
         self.original_random_source = value;
     }
+    /// Whether equivalent stereoisomers are deduplicated.
     #[getter]
     fn unique(&self) -> bool {
         self.inner.unique()
@@ -387,6 +415,11 @@ impl StereoisomerOptions {
     }
 }
 
+/// Lazy iterator over source-ordered stereoisomers.
+///
+/// Construction performs the source-defined preprocessing and candidate
+/// discovery. Configuration application, uniqueness, optional embedding, and
+/// their errors are deferred until ``next()`` requests an output.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "StereoisomerIterator", skip_from_py_object)]
 pub(crate) struct StereoisomerIterator {
@@ -404,6 +437,7 @@ impl StereoisomerIterator {
     fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Molecule>> {
         self.next(py)
     }
+    /// Return the next stereoisomer, or None when enumeration is exhausted.
     fn next(&mut self, py: Python<'_>) -> PyResult<Option<Molecule>> {
         self.inner
             .get_mut()
@@ -413,6 +447,7 @@ impl StereoisomerIterator {
             .map(|row| row.map(Molecule::from_inner))
             .map_err(|error| iterator_error(py, error, self.errors.as_ref()))
     }
+    /// Number of stereoisomers already yielded by this iterator.
     #[getter]
     fn yielded_count(&self, py: Python<'_>) -> PyResult<usize> {
         self.inner

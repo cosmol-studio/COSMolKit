@@ -18,21 +18,23 @@ import cosmolkit as ck
 OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "edit_pipeline"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-base = ck.Molecule.from_smiles("c1ccccc1", sanitize=True)
-editor = base.edit()
-oxygen = editor.add_atom("O")
-editor.add_bond(0, oxygen, order="single")
-phenol = editor.commit(sanitize=True)
+base = ck.mol_from_smiles("c1ccccc1", sanitize=True)
+builder = base.to_builder()
+oxygen = builder.add_atom(ck.AtomSpec(ck.Element.O))
+_ = builder.add_bond(ck.BondSpec(0, oxygen, ck.BondOrder.SINGLE))
+phenol = builder.build().sanitize()
 
-payload = phenol.mol_to_binary()
-restored = ck.Molecule.mol_from_binary(payload)
+payload = phenol.to_binary()
+restored = ck.mol_from_binary(payload)
 prepared = restored.with_2d_coordinates()
 
 print("base smiles:", base.to_smiles())
 print("edited smiles:", phenol.to_smiles())
 print("restored smiles:", restored.to_smiles())
 print("binary bytes:", len(payload))
-print("2d coords shape:", prepared.coordinates_2d().shape)
+coordinates = prepared.coordinates_2d()
+assert coordinates is not None
+print("2d coords shape:", coordinates.shape)
 
 atoms = prepared.atoms()
 bonds = prepared.bonds()
@@ -40,9 +42,9 @@ print("atom table:")
 for atom in atoms:
     print(
         "  atom",
-        atom.idx(),
+        atom.id(),
         "Z=",
-        atom.atomic_num(),
+        atom.atomic_number(),
         "charge=",
         atom.formal_charge(),
         "aromatic=",
@@ -53,19 +55,23 @@ print("bond table:")
 for bond in bonds:
     print(
         "  bond",
-        bond.idx(),
-        bond.begin_atom_idx(),
-        bond.end_atom_idx(),
-        bond.bond_type_name(),
+        bond.id(),
+        bond.begin(),
+        bond.end(),
+        bond.order_name(),
         "aromatic=",
         bond.is_aromatic(),
     )
 
-fp_result = prepared.fingerprint_morgan_with_output(radius=2, n_bits=512)
-additional = fp_result.additional_output()
-print("fingerprint bits:", fp_result.fingerprint().on_bits()[:12])
+additional = ck.FingerprintAdditionalOutput()
+additional.allocate_atom_counts()
+additional.allocate_bit_info_map()
+fingerprint = prepared.fingerprint_morgan(radius=2, fp_size=512, additional_output=additional)
+print("fingerprint bits:", fingerprint.on_bits()[:12])
 print("atom counts:", additional.atom_counts())
-print("bit info size:", len(additional.bit_info_map()))
+bit_info = additional.bit_info_map()
+assert bit_info is not None
+print("bit info size:", len(bit_info))
 
 svg_path = OUTPUT_DIR / "phenol.svg"
 png_path = OUTPUT_DIR / "phenol.png"

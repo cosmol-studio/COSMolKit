@@ -43,8 +43,8 @@ cargo run -p cosmolkit-inchi --example inchi_to_neutral_graph
 
 ## Behavior Boundary
 
-The four public operations reproduce pinned official InChI v1.07.5 and RDKit
-2026.03.1 behavior exactly where the official C source defines behavior. The
+The four public operations target pinned official InChI v1.07.5 and RDKit
+2026.03.6 behavior where the official C source defines behavior. The
 audited `NormalizeAndCompare` initial-buffer allocation-failure path executes
 undefined C behavior; the Rust API returns a deterministic structured
 allocation error for that path.
@@ -84,6 +84,8 @@ cargo test -p cosmolkit-inchi --release \
 
 ## Validation Status
 
+Million-scale COSMolKit 0.5.0 parity validation is pending; see
+[VALIDATION.md](../../VALIDATION.md) for current status and historical 0.3.0 results.
 Focused source-port tests cover the active official-engine call graph, and
 independent official-C oracle tests compare observable output fields at the
 function boundaries. The public COSMolKit adapter is also compared exactly
@@ -104,7 +106,8 @@ The official engine source is pinned to IUPAC InChI `v1.07.5`:
 - approved production target:
   `INCHI-1-SRC/INCHI_API/libinchi/src/CMakeLists.txt`
 
-The COSMolKit adapter is aligned with RDKit `Release_2026.03.1`, independently
+The COSMolKit adapter targets RDKit `2026.03.6`, revision
+`0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`, independently
 traceable to `third_party/rdkit/External/INCHI-API/inchi.cpp` and `inchi.h`.
 Official engine and RDKit adapter source frames remain separately attributed.
 

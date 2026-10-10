@@ -4,7 +4,12 @@ use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use std::error::Error;
-pyo3::create_exception!(cosmolkit, TopologicalTorsionPathScoreError, PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    TopologicalTorsionPathScoreError,
+    PyValueError,
+    "A topological-torsion atom path could not be encoded or scored."
+);
 
 pub(crate) fn score_pyerr(py: Python<'_>, source: ck::TopologicalTorsionPathScoreError) -> PyErr {
     use ck::TopologicalTorsionPathScoreError as E;
@@ -60,6 +65,7 @@ pub(crate) fn score_pyerr(py: Python<'_>, source: ck::TopologicalTorsionPathScor
     );
     err
 }
+/// Complete source decoding, including size zero and zero chunks after u64 ends.
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]

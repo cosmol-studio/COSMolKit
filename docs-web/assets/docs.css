@@ -231,7 +231,7 @@
    signature visually distinct from its description without importing the
    documentation theme's global layout rules into the Dioxus shell. */
 .sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) {
-    margin: 1.25rem 0;
+    margin: 0;
 }
 
 .sphinx-content dl.py.class {
@@ -239,7 +239,8 @@
     margin-bottom: 0 !important;
 }
 
-.sphinx-content dl.py.method {
+.sphinx-content dl.py.method,
+.sphinx-content dl:is(.class, .interface) > dd > dl[class]:not(.field-list):not(.option-list):not(.simple) {
     margin-bottom: 0 !important;
 }
 
@@ -283,20 +284,35 @@
     margin-bottom: 0.5rem;
 }
 
-/* A method definition is nested inside its owning class description. Extend
-   the final method guide line through the class description's bottom padding
+/* Every API member uses the same block styling, regardless of its kind.
+   Extend the final member guide line through the class description's bottom padding
    so it meets the next top-level signature without changing the content gap. */
-.sphinx-content dl.py.class > dd > dl.py.method:last-child {
+.sphinx-content dl.py.class > dd > dl.py.method:last-child,
+.sphinx-content :is(dl:is(.class, .interface) > dd, .api-member-list) > dl[class]:not(.field-list):not(.option-list):not(.simple):last-child {
     position: relative;
 }
 
-.sphinx-content dl.py.class > dd > dl.py.method:last-child::after {
+.sphinx-content dl.py.class > dd > dl.py.method:last-child::after,
+.sphinx-content :is(dl:is(.class, .interface) > dd, .api-member-list) > dl[class]:not(.field-list):not(.option-list):not(.simple):last-child::after {
     position: absolute;
     top: 100%;
     bottom: -1rem;
     left: 1rem;
     border-left: 2px solid #263a54;
     content: "";
+}
+
+.sphinx-content .api-members {
+    margin: 0;
+    padding: 0;
+}
+
+.sphinx-content .api-members > summary {
+    padding: 0.4rem 0;
+    color: #7ab5ff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .sphinx-content .sig-name {
@@ -584,4 +600,12 @@
 
 .docs-search-more[hidden] {
     display: none;
+}
+
+/* Adapt sphinx-js markup to the established Python API spacing above.
+   These selectors cannot affect Python pages. */
+.sphinx-content dl.js.class,
+.sphinx-content dl.js.interface {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
 }

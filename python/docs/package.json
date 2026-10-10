@@ -1,0 +1,8 @@
+{
+  "name": "cosmolkit-documentation-tools",
+  "private": true,
+  "devDependencies": {
+    "typedoc": "~0.28.0",
+    "typescript": "~5.9.0"
+  }
+}

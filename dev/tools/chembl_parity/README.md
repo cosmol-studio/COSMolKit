@@ -1,18 +1,22 @@
 # ChEMBL 37 Parity Audit
 
-This directory is the repository-owned entrypoint for COSMolKit's large
-ChEMBL 37 differential parity audit. It replaces the original ad hoc scripts
-under ignored `tmp/parity-audit/` without committing the externally
-distributed corpus or
-multi-gigabyte run output.
+COSMolKit 0.5.0 uses [the standard parity runner](../../../parity-tests_fixed/README.md)
+with RDKit `2026.03.6`. Million-scale 0.5.0 parity validation is pending; historical
+validation results remain in [VALIDATION.md](../../../VALIDATION.md).
 
-Complete 0.5.0 validation is pending. Published completed-audit results are
-0.3.0 evidence; running the commands here must produce new receipts before
-the same claims can be made for 0.5.0.
+This directory retains the historical ChEMBL 37 audit tooling and its original
+reference identities. It is not the current 0.5.0 prepare/test entrypoint.
+The old scripts and profiles still require RDKit `2026.03.1`; they must not
+be run in the current reference environment or treated as 0.5.0 acceptance.
+Changing their version strings alone would not update their API or result
+contracts. Their source pins are retained to keep the original evidence
+traceable, not to select the current chemistry reference.
 
-The audit compares the installed COSMolKit Python extension with pinned RDKit
-`2026.03.1`. It is release evidence, not an ordinary per-commit test. The
-committed 152- and 5,000-record suites remain the fast and maintained gates.
+## Historical 0.3.0 audit
+
+The remaining workflow and receipts describe the audit against RDKit
+`2026.03.1`. They are historical reproduction instructions, not current
+per-commit commands or a claim that 0.5.0 passes this audit.
 
 ## Prerequisites
 

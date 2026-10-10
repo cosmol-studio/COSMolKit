@@ -1,9 +1,13 @@
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath("../.."))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 project = "COSMolKit"
+version = "0.5.0"
+release = "0.5.0"
 author = "COSMolKit Contributors"
 html_title = "COSMolKit — Rust-native cheminformatics toolkit"
 
@@ -13,7 +17,26 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_sitemap",
+    "sphinx_js",
+    "api_layout",
 ]
+
+# Primary classes follow the top-level functions; remaining classes sort by name.
+api_class_order = ["Molecule", "BioStructure", "Protein"]
+
+js_language = "typescript"
+# Only the generated public entry point, never wasm-bindgen's raw ABI exports.
+js_source_path = str(Path(__file__).resolve().parents[3] / "target/docs-js-package/wasm_wasm.d.ts")
+if not Path(js_source_path).is_file():
+    raise RuntimeError(
+        "Generate the full WASM declarations first: python3 "
+        "wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract "
+        "--out-dir target/docs-js-package"
+    )
+root_for_relative_js_paths = str(Path(js_source_path).parent)
+jsdoc_tsconfig_path = "../tsconfig.json"
+jsdoc_config_path = "../typedoc.json"
+ts_sphinx_js_config = str(Path(__file__).resolve().parent.parent / "sphinx-js.config.ts")
 
 autosummary_generate = True
 autodoc_typehints = "signature"
@@ -23,6 +46,7 @@ templates_path = ["_templates"]
 exclude_patterns = []
 
 html_theme = "furo"
+html_domain_indices = False
 html_baseurl = "https://kit.cosmol.org/"
 html_extra_path = [
     "robots.txt",
@@ -36,7 +60,6 @@ sitemap_locales = [None]
 sitemap_excludes = [
     "search.html",
     "genindex.html",
-    "py-modindex.html",
     "_modules/*",
 ]
 sitemap_indent = 2

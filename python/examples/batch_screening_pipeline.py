@@ -30,17 +30,17 @@ SMILES = [
 
 
 def first_valid_fingerprint(batch: ck.MoleculeBatch):
-    for fingerprint in batch.fingerprint_morgan_list(radius=2, n_bits=1024):
+    for fingerprint in batch.fingerprint_morgan_list(radius=2, fp_size=1024):
         if fingerprint is not None:
             return fingerprint
     raise RuntimeError("batch does not contain any valid molecules")
 
 
-query = ck.Molecule.from_smiles("c1ccccc1O", sanitize=True)
-query_fp = query.fingerprint_morgan(radius=2, n_bits=1024)
+query = ck.mol_from_smiles("c1ccccc1O", sanitize=True)
+query_fp = query.fingerprint_morgan(radius=2, fp_size=1024)
 
 batch = (
-    ck.MoleculeBatch.from_smiles_list(
+    ck.mols_from_smiles_list(
         SMILES,
         sanitize=True,
         errors=ck.BatchErrorMode.KEEP,
@@ -55,7 +55,7 @@ prepared = (
     .with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
 )
 
-fingerprints = prepared.fingerprint_morgan_list(radius=2, n_bits=1024)
+fingerprints = prepared.fingerprint_morgan_list(radius=2, fp_size=1024)
 ranked: list[tuple[float, int, str]] = []
 for index, (fingerprint, smiles) in enumerate(
     zip(fingerprints, prepared.to_smiles_list(), strict=True)
@@ -83,7 +83,8 @@ print("hit smiles:", hits.to_smiles_list())
 image_report = hits.write_images(
     str(OUTPUT_DIR / "hits"),
     format="svg",
-    size=(360, 260),
+    width=360,
+    height=260,
     filenames=[f"hit_{index}" for index in hit_indices],
     errors=ck.BatchErrorMode.KEEP,
 )

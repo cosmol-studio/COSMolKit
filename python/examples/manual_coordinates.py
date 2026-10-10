@@ -3,7 +3,7 @@ import numpy as np
 import cosmolkit as ck
 
 
-mol = ck.Molecule.from_smiles("CCO")
+mol = ck.mol_from_smiles("CCO")
 
 coords_2d = np.array(
     [
@@ -13,7 +13,7 @@ coords_2d = np.array(
     ],
     dtype=np.float64,
 )
-mol_2d = mol.with_2d_coordinates(coords_2d)
+mol_2d = mol.with_2d_coordinate_block(coords_2d)
 
 coords_3d = np.array(
     [
@@ -28,15 +28,15 @@ shifted = mol_3d.with_3d_coordinates(coords_3d + [0.0, 0.0, 1.0])
 single = mol_3d.with_only_3d_conformer(coords_3d + [0.0, 0.0, 2.0])
 cleared = mol_3d.with_cleared_3d_conformers()
 
-editable = mol.with_2d_coordinates(coords_2d)
+editable = mol.with_2d_coordinate_block(coords_2d)
 conf_id = editable.add_3d_conformer_(coords_3d)
-editable.set_3d_coordinates_(coords_3d + [0.0, 0.0, 2.0], conformer_index=conf_id)
+editable.set_3d_coordinates_(coords_3d + [0.0, 0.0, 2.0], conformer_id=conf_id)
 editable.clear_3d_conformers_()
 only_conf_id = editable.set_only_3d_conformer_(coords_3d)
 
 print(mol_2d.coordinates_2d())
-print(mol_3d.num_conformers())
+print(mol_3d.num_3d_conformers())
 print(shifted.coordinates_3d())
-print(single.num_conformers())
-print(cleared.num_conformers())
+print(single.num_3d_conformers())
+print(cleared.num_3d_conformers())
 print(editable.coordinates_3d(only_conf_id))

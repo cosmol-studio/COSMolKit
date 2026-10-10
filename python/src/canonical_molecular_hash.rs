@@ -1,8 +1,18 @@
 //! Thin canonical native hash and legacy CIP error projections.
 use ::cosmolkit as ck;
 use pyo3::prelude::*;
-pyo3::create_exception!(cosmolkit, MoleculeHashError, pyo3::exceptions::PyValueError);
-pyo3::create_exception!(cosmolkit, CipRankError, pyo3::exceptions::PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    MoleculeHashError,
+    pyo3::exceptions::PyValueError,
+    "A molecular hash could not be computed for the requested hash function."
+);
+pyo3::create_exception!(
+    cosmolkit,
+    CipRankError,
+    pyo3::exceptions::PyValueError,
+    "CIP atom ranking failed for the supplied molecule."
+);
 fn cip_error_pyerr(py: Python<'_>, source: &ck::CipRankError) -> PyErr {
     use ck::CipRankError as E;
     let kind = match source {

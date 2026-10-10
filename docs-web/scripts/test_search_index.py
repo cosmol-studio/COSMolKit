@@ -40,6 +40,19 @@ class SearchIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "absent from routes.toml"):
             generate_index(self.root, self.output)
 
+    def test_javascript_symbols_keep_their_own_binding_destination(self):
+        self.index = {"docnames": ["javascript-api"], "titles": ["JavaScript API"],
+                      "objects": {"wasm_wasm.d": [[0, 0, 0, "Molecule", "Molecule"]]},
+                      "objnames": {"0": ["js", "class", "JavaScript class"]},
+                      "alltitles": {}}
+        (self.root / "javascript-api.html").write_text(
+            '<article id="furo-main-content">Molecule.fromSmiles</article>', encoding="utf-8")
+        self.write_index()
+        self.assertEqual(generate_index(self.root, self.output), 2)
+        records = json.loads(self.output.read_text())
+        self.assertEqual(records[0]["url"], "/javascript/api")
+        self.assertEqual(records[1]["url"], "/javascript/api#Molecule")
+
     def test_forcefields_document_has_a_declared_destination(self):
         self.index = {"docnames": ["forcefields"], "titles": ["Force Fields"],
                       "objects": {}, "objnames": {}, "alltitles": {}}

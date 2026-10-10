@@ -2,7 +2,12 @@
 use ::cosmolkit as ck;
 use pyo3::prelude::*;
 
-pyo3::create_exception!(cosmolkit, PickleError, pyo3::exceptions::PyValueError);
+pyo3::create_exception!(
+    cosmolkit,
+    PickleError,
+    pyo3::exceptions::PyValueError,
+    "Invalid, unsupported or inconsistent native molecular archive data."
+);
 
 pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::PickleError) -> PyErr {
     use ck::PickleError as E;

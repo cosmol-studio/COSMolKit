@@ -3,11 +3,6 @@ use dioxus::prelude::*;
 use crate::{component::Seo, route::Route};
 
 #[component]
-pub fn JavaScript() -> Element {
-    rsx! { Placeholder { eyebrow: "JAVASCRIPT API", title: "JavaScript documentation is reserved", body: "This route is reserved for the future JavaScript and WebAssembly API. The current browser tools remain available at tools.cosmol.org." } }
-}
-
-#[component]
 pub fn Benchmarks() -> Element {
     rsx! { Placeholder { eyebrow: "BENCHMARKS", title: "Benchmark reports are reserved", body: "Reproducible benchmark reports will be published here as browser and native measurements are promoted into the maintained documentation surface." } }
 }
