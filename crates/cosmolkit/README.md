@@ -67,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.23", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
