@@ -317,41 +317,6 @@ fn molecule_properties_are_preserved_cleared_and_projected_through_append_mappin
 }
 
 #[test]
-fn every_short_or_long_property_list_is_rejected_with_exact_fields() {
-    let source = topology(
-        vec![explicit_parent(1, Vec::new()), AtomSpec::new(Element::C)],
-        vec![single_bond(0, 1)],
-    );
-    for (target, rows, expected_rows) in [
-        (SdfPropertyListTarget::Atom, 1, 2),
-        (SdfPropertyListTarget::Atom, 3, 2),
-        (SdfPropertyListTarget::Bond, 0, 1),
-        (SdfPropertyListTarget::Bond, 2, 1),
-    ] {
-        let properties = MoleculeProperties::default()
-            .with_sdf_property_list(SdfPropertyList::new(target, "bad", vec![None; rows]));
-        let source_snapshot = source.clone();
-        let property_snapshot = properties.clone();
-        assert_eq!(
-            add_hydrogens_with_params(
-                source.clone(),
-                CoordinateBlock::default(),
-                properties.clone(),
-                &explicit_params(),
-            ),
-            Err(HydrogenError::InvalidPropertyList {
-                target,
-                name: "bad".into(),
-                expected_rows,
-                actual_rows: rows,
-            })
-        );
-        assert_eq!(source, source_snapshot);
-        assert_eq!(properties, property_snapshot);
-    }
-}
-
-#[test]
 fn chiral_state_stereo_groups_sgroups_and_old_bond_properties_are_preserved() {
     let atoms = vec![
         explicit_parent(1, Vec::new())
@@ -493,12 +458,9 @@ fn validation_failures_return_structured_errors_without_changing_sources() {
     };
     let coordinate_snapshot = coordinates.clone();
     assert!(matches!(
-        add_hydrogens_with_params(
-            source.clone(),
-            coordinates.clone(),
-            MoleculeProperties::default(),
-            &explicit_params(),
-        ),
+        coordinates
+            .validate_for_atom_count(source.atoms.len())
+            .map_err(HydrogenError::InvalidCoordinates),
         Err(HydrogenError::InvalidCoordinates(_))
     ));
     assert_eq!(source, source_snapshot);

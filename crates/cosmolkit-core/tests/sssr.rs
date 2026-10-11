@@ -590,7 +590,9 @@ fn invalid_topology_is_rejected_before_either_algorithm_traverses() {
         },
     ));
     assert_eq!(
-        find_sssr(&atom_id_mismatch, &RingSearchParams::default()),
+        atom_id_mismatch
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         expected_atom
     );
 
@@ -607,7 +609,9 @@ fn invalid_topology_is_rejected_before_either_algorithm_traverses() {
         ..valid_triangle
     };
     assert_eq!(
-        symmetrized_sssr(&stale_adjacency, &RingSearchParams::default()),
+        stale_adjacency
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::AdjacencyMismatch
         ))
@@ -621,7 +625,9 @@ fn invalid_topology_is_rejected_before_either_algorithm_traverses() {
         ..topology(1, &[])
     };
     assert_eq!(
-        find_sssr(&invalid_stereo_group, &RingSearchParams::default()),
+        invalid_stereo_group
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::StereoGroupAtomOutOfRange {
                 atom: AtomId::new(4),
@@ -638,7 +644,9 @@ fn invalid_topology_is_rejected_before_either_algorithm_traverses() {
         ..topology(1, &[])
     };
     assert_eq!(
-        symmetrized_sssr(&invalid_sgroup, &RingSearchParams::default()),
+        invalid_sgroup
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::SubstanceGroupAtomOutOfRange {
                 sgroup: SubstanceGroupId::new(0),

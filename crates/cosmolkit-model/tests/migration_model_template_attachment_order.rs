@@ -235,6 +235,7 @@ fn batch_delete_rejects_a_surviving_carrier_with_a_removed_target_atomically() {
         source, snapshot,
         "detached edit failure cannot alter the source"
     );
+    #[cfg(feature = "runtime-invariants")]
     source.validate().unwrap();
 }
 
@@ -268,6 +269,7 @@ fn batch_delete_of_the_carrier_drops_its_attachment_state_with_the_row() {
             .iter()
             .all(|atom| atom.template_attachment_order().is_none())
     );
+    #[cfg(feature = "runtime-invariants")]
     result.validate().unwrap();
 }
 

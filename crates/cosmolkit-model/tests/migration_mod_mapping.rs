@@ -46,7 +46,9 @@ fn mapping(
     }
 }
 
+#[cfg(feature = "op-contracts")]
 fn assert_valid(mapping: &TopologyMapping, counts: (usize, usize, usize, usize)) {
+    #[cfg(feature = "op-contracts")]
     assert_eq!(
         mapping.validate_for_counts(counts.0, counts.1, counts.2, counts.3),
         Ok(())
@@ -73,6 +75,7 @@ fn identity_and_append_constructors_cover_independent_zero_and_nonzero_counts() 
             identity.retained_atom_indices(),
             (0..atoms).collect::<Vec<_>>()
         );
+        #[cfg(feature = "op-contracts")]
         assert_valid(&identity, (atoms, atoms, bonds, bonds));
     }
 
@@ -99,6 +102,7 @@ fn identity_and_append_constructors_cover_independent_zero_and_nonzero_counts() 
             appended.retained_atom_indices(),
             (0..old_atoms).collect::<Vec<_>>()
         );
+        #[cfg(feature = "op-contracts")]
         assert_valid(
             &appended,
             (
@@ -119,6 +123,7 @@ fn deletion_reorder_and_mixed_none_rows_validate_and_preserve_new_row_order() {
         vec![None, Some(0), None],
         vec![Some(1)],
     );
+    #[cfg(feature = "op-contracts")]
     assert_valid(&deleted, (4, 2, 3, 1));
     assert_eq!(deleted.retained_atom_indices(), vec![0, 2]);
 
@@ -128,6 +133,7 @@ fn deletion_reorder_and_mixed_none_rows_validate_and_preserve_new_row_order() {
         vec![Some(1), Some(0)],
         vec![Some(1), Some(0)],
     );
+    #[cfg(feature = "op-contracts")]
     assert_valid(&reordered, (3, 3, 2, 2));
     assert_eq!(reordered.retained_atom_indices(), vec![2, 0, 1]);
 
@@ -137,11 +143,13 @@ fn deletion_reorder_and_mixed_none_rows_validate_and_preserve_new_row_order() {
         vec![None, Some(0)],
         vec![Some(1), None],
     );
+    #[cfg(feature = "op-contracts")]
     assert_valid(&mixed, (3, 3, 2, 2));
     assert_eq!(mixed.retained_atom_indices(), vec![2, 0]);
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn every_atom_and_bond_direction_reports_exact_length_error_fields() {
     let cases = [
         (
@@ -187,6 +195,7 @@ fn every_atom_and_bond_direction_reports_exact_length_error_fields() {
     ];
 
     for (candidate, counts, expected) in cases {
+        #[cfg(feature = "op-contracts")]
         assert_eq!(
             candidate.validate_for_counts(counts.0, counts.1, counts.2, counts.3),
             Err(expected)
@@ -195,6 +204,7 @@ fn every_atom_and_bond_direction_reports_exact_length_error_fields() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn every_atom_and_bond_direction_reports_exact_range_error_fields() {
     let cases = [
         (
@@ -244,6 +254,7 @@ fn every_atom_and_bond_direction_reports_exact_range_error_fields() {
     ];
 
     for (candidate, counts, expected) in cases {
+        #[cfg(feature = "op-contracts")]
         assert_eq!(
             candidate.validate_for_counts(counts.0, counts.1, counts.2, counts.3),
             Err(expected)
@@ -252,6 +263,7 @@ fn every_atom_and_bond_direction_reports_exact_range_error_fields() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn every_atom_and_bond_direction_reports_exact_inverse_error_fields() {
     let cases = [
         (
@@ -297,6 +309,7 @@ fn every_atom_and_bond_direction_reports_exact_inverse_error_fields() {
     ];
 
     for (candidate, counts, expected) in cases {
+        #[cfg(feature = "op-contracts")]
         assert_eq!(
             candidate.validate_for_counts(counts.0, counts.1, counts.2, counts.3),
             Err(expected)
@@ -305,8 +318,10 @@ fn every_atom_and_bond_direction_reports_exact_inverse_error_fields() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn duplicate_targets_missing_reverse_links_and_error_precedence_are_deterministic() {
     let duplicate = mapping(vec![Some(0), Some(0)], vec![Some(0), None], vec![], vec![]);
+    #[cfg(feature = "op-contracts")]
     assert_eq!(
         duplicate.validate_for_counts(2, 2, 0, 0),
         Err(MappingValidationError::InverseMismatch {
@@ -318,6 +333,7 @@ fn duplicate_targets_missing_reverse_links_and_error_precedence_are_deterministi
     );
 
     let atom_before_bond = mapping(vec![], vec![Some(0)], vec![], vec![Some(9)]);
+    #[cfg(feature = "op-contracts")]
     assert_eq!(
         atom_before_bond.validate_for_counts(1, 1, 1, 1),
         Err(MappingValidationError::Length {
@@ -329,6 +345,7 @@ fn duplicate_targets_missing_reverse_links_and_error_precedence_are_deterministi
     );
 
     let direction_before_row = mapping(vec![Some(0), Some(3)], vec![None, Some(4)], vec![], vec![]);
+    #[cfg(feature = "op-contracts")]
     assert_eq!(
         direction_before_row.validate_for_counts(2, 2, 0, 0),
         Err(MappingValidationError::InverseMismatch {
@@ -347,6 +364,8 @@ fn guarded_project(
     properties: &mut MoleculeProperties,
     projection_ran: &Cell<bool>,
 ) -> Result<(), MappingValidationError> {
+    #[cfg(feature = "op-contracts")]
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(counts.0, counts.1, counts.2, counts.3)?;
     projection_ran.set(true);
     coordinates.remap_topology(&mapping.retained_atom_indices());
@@ -355,6 +374,7 @@ fn guarded_project(
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn validation_guard_rejects_invalid_some_before_dangerous_projection() {
     let invalid = mapping(
         vec![Some(0), None, None],
@@ -453,6 +473,7 @@ fn valid_reorder_and_deletion_project_coordinates_and_properties_without_conflat
     assert_eq!(lists[1].values(), &[Some("b1".into())]);
 
     let append = TopologyMapping::with_appended(1, 0, 1, 0);
+    #[cfg(feature = "op-contracts")]
     assert_valid(&append, (1, 2, 0, 0));
     let mut appended_properties = MoleculeProperties::default().with_sdf_property_list(
         SdfPropertyList::new(SdfPropertyListTarget::Atom, "atoms", vec![None]),
@@ -513,6 +534,7 @@ fn removal_mapping_covers_bonds_sgroups_stereo_and_adjacency_references() {
             .expect("valid distinct stereo members"),
         ],
     };
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(topology.validate(), Ok(()));
 
     let mut edit = topology
@@ -520,6 +542,7 @@ fn removal_mapping_covers_bonds_sgroups_stereo_and_adjacency_references() {
         .expect("valid detached topology");
     edit.remove_atom(atom_id(0)).expect("valid atom removal");
     let (topology, topology_mapping) = edit.finish().expect("valid detached edit");
+    #[cfg(feature = "op-contracts")]
     assert_valid(&topology_mapping, (5, 4, 2, 1));
     assert_eq!(
         topology_mapping.atoms().old_to_new(),
@@ -545,6 +568,7 @@ fn removal_mapping_covers_bonds_sgroups_stereo_and_adjacency_references() {
         &[Some(bond_id(0)), None]
     );
     assert_eq!(topology_mapping.bonds().new_to_old(), &[Some(bond_id(0))]);
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(topology.validate(), Ok(()));
     assert_eq!(
         topology.bonds[0].stereo_atoms(),

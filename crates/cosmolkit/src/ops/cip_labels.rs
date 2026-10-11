@@ -3,7 +3,7 @@
 use cosmolkit_macros::mol_op_body;
 
 use super::OperationError;
-use crate::{CipLabelOptions, DerivedState, PreservationProof, TopologyEditKind};
+use crate::{CipLabelOptions, DerivedState, PreservationProof};
 
 #[mol_op_body(with_cip_labels, parts)]
 pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), OperationError> {
@@ -12,7 +12,6 @@ pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), Op
             .map(|pair| ((), Some(pair)))
             .map_err(OperationError::CipLabeler)
     })?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(
         DerivedState::STEREO
             .union(DerivedState::DRAWING)

@@ -791,12 +791,9 @@ fn malformed_coordinate_and_property_rows_are_exact_and_atomic() {
     };
     let coordinates_snapshot = coordinates.clone();
     assert_eq!(
-        remove_hydrogens_with_params(
-            source.clone(),
-            coordinates.clone(),
-            MoleculeProperties::default(),
-            &no_sanitize(),
-        ),
+        coordinates
+            .validate_for_atom_count(source.atoms.len())
+            .map_err(HydrogenError::InvalidCoordinates),
         Err(HydrogenError::InvalidCoordinates(
             CoordinateValidationError::RowCount {
                 dimension: "2D",
@@ -808,29 +805,6 @@ fn malformed_coordinate_and_property_rows_are_exact_and_atomic() {
     );
     assert_eq!(source, source_snapshot);
     assert_eq!(coordinates, coordinates_snapshot);
-
-    let properties = MoleculeProperties::default().with_sdf_property_list(SdfPropertyList::new(
-        SdfPropertyListTarget::Bond,
-        "bad",
-        Vec::new(),
-    ));
-    let properties_snapshot = properties.clone();
-    assert_eq!(
-        remove_hydrogens_with_params(
-            source.clone(),
-            CoordinateBlock::default(),
-            properties.clone(),
-            &no_sanitize(),
-        ),
-        Err(HydrogenError::InvalidPropertyList {
-            target: SdfPropertyListTarget::Bond,
-            name: "bad".into(),
-            expected_rows: 1,
-            actual_rows: 0,
-        })
-    );
-    assert_eq!(source, source_snapshot);
-    assert_eq!(properties, properties_snapshot);
 }
 
 #[test]

@@ -15,9 +15,9 @@ _shared = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_shared)
 
 
-def compiled_contract(api_root: Path, active: set[str], destination: Path) -> dict:
+def compiled_contract(api_root: Path, active: set[str], destination: Path, profile: str = "dev-test") -> dict:
     command = [
-        "cargo", "run", "--quiet", "--locked", "--profile", "dev-test",
+        "cargo", "run", "--quiet", "--locked", "--profile", profile,
         "-p", "cosmolkit", "--example", "binding_contract_manifest",
         "--no-default-features", "--features", ",".join(sorted(active)),
     ]
@@ -26,6 +26,7 @@ def compiled_contract(api_root: Path, active: set[str], destination: Path) -> di
     # The only platform exclusion comes from the canonical export, not names
     # or a distribution-local list of missing methods.
     document["entries"] = [row for row in document["entries"] if row["platform"] != "native"]
+    document["javascript_aliases"] = [row for row in document["javascript_aliases"] if row["platform"] != "native"]
     configuration_fields(document)
     destination.write_text(json.dumps(document), encoding="utf-8")
     return document
@@ -46,6 +47,29 @@ def configuration_fields(document: dict) -> None:
 
 def camel(name: str) -> str:
     return re.sub(r"_([a-z0-9])", lambda match: match[1].upper(), name)
+
+
+def generate_conveniences(package: Path, library_name: str, document: dict) -> None:
+    """Export the actual static factories; retain their exact TypeScript types."""
+    javascript, declarations = [], []
+    for row in document["javascript_aliases"]:
+        name, target = camel(row["name"]), row["target"]
+        comment = f"/** Alias of `{target}`. */\n"
+        javascript.append(f"{comment}export const {name} = {target};\n")
+        declarations.append(f"{comment}export const {name}: typeof {target};\n")
+    for suffix, lines in [("js", javascript), ("d.ts", declarations)]:
+        with (package / f"{library_name}.{suffix}").open("a", encoding="utf-8") as output:
+            output.write("\n" + "".join(lines))
+
+
+def convenience_typescript_probe(document: dict) -> str:
+    lines = []
+    for index, row in enumerate(document.get("javascript_aliases", [])):
+        name, target = camel(row["name"]), row["target"]
+        # Check both directions: no lost overload, parameter, default or result.
+        lines.append(f"const alias{index}: typeof ck.{target} = ck.{name};")
+        lines.append(f"const original{index}: typeof ck.{name} = ck.{target};")
+    return "\n".join(lines)
 
 
 def typescript_probe(document: dict) -> str:
@@ -97,4 +121,5 @@ def typescript_probe(document: dict) -> str:
             objects.append("{" + options + "}")
         lines.append(f"{call}({prefix}{', '.join(instances)});")
         lines.append(f"{call}({prefix}{', '.join(objects)});")
+    lines.append(convenience_typescript_probe(document))
     return "\n".join(lines) + "\n"

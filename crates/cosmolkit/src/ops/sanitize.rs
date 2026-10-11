@@ -5,9 +5,10 @@ use cosmolkit_macros::mol_op_body;
 use super::OperationError;
 use crate::{
     ChemistryProblemReport, DerivedState, Molecule, PreservationProof, SanitizeError,
-    SanitizeParams, TopologyEditKind,
+    SanitizeParams,
 };
 
+#[cfg(feature = "op-contracts")]
 fn preserves_sanitize_bond_identity(source: &crate::Bond, candidate: &crate::Bond) -> bool {
     let same_direction = candidate.begin() == source.begin() && candidate.end() == source.end();
     // RDKit✔️✔️:         bond->setBondType(RDKit::Bond::BondType::DATIVE);
@@ -35,85 +36,82 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
         }
     };
 
-    if assignment.topology.atoms.len() != topology.atoms.len() {
-        let actual = assignment.topology.atoms.len();
-        let expected = topology.atoms.len();
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "atom",
-            actual,
-            expected,
-        });
-    }
-    if assignment.topology.bonds.len() != topology.bonds.len() {
-        let actual = assignment.topology.bonds.len();
-        let expected = topology.bonds.len();
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "bond",
-            actual,
-            expected,
-        });
-    }
-    if let Some((candidate, source)) = assignment
-        .topology
-        .atoms
-        .iter()
-        .zip(&topology.atoms)
-        .find(|(candidate, source)| candidate.id() != source.id())
+    #[cfg(feature = "op-contracts")]
     {
-        let actual = candidate.id().index();
-        let expected = source.id().index();
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "atom identity",
-            actual,
-            expected,
-        });
+        if assignment.topology.atoms.len() != topology.atoms.len() {
+            let actual = assignment.topology.atoms.len();
+            let expected = topology.atoms.len();
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "atom",
+                actual,
+                expected,
+            });
+        }
+        if assignment.topology.bonds.len() != topology.bonds.len() {
+            let actual = assignment.topology.bonds.len();
+            let expected = topology.bonds.len();
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "bond",
+                actual,
+                expected,
+            });
+        }
+        if let Some((candidate, source)) = assignment
+            .topology
+            .atoms
+            .iter()
+            .zip(&topology.atoms)
+            .find(|(candidate, source)| candidate.id() != source.id())
+        {
+            let actual = candidate.id().index();
+            let expected = source.id().index();
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "atom identity",
+                actual,
+                expected,
+            });
+        }
+        if assignment
+            .topology
+            .bonds
+            .iter()
+            .zip(&topology.bonds)
+            .any(|(candidate, source)| !preserves_sanitize_bond_identity(source, candidate))
+        {
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "bond identity or endpoints",
+                actual: 1,
+                expected: 0,
+            });
+        }
+        if assignment.topology.adjacency != topology.adjacency {
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "adjacency",
+                actual: 1,
+                expected: 0,
+            });
+        }
+        if assignment.topology.substance_groups != topology.substance_groups {
+            parts.install_topology(topology)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "sanitize",
+                field: "substance groups",
+                actual: 1,
+                expected: 0,
+            });
+        }
     }
-    if assignment
-        .topology
-        .bonds
-        .iter()
-        .zip(&topology.bonds)
-        .any(|(candidate, source)| !preserves_sanitize_bond_identity(source, candidate))
-    {
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "bond identity or endpoints",
-            actual: 1,
-            expected: 0,
-        });
-    }
-    if assignment.topology.adjacency != topology.adjacency {
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "adjacency",
-            actual: 1,
-            expected: 0,
-        });
-    }
-    if assignment.topology.substance_groups != topology.substance_groups {
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "sanitize",
-            field: "substance groups",
-            actual: 1,
-            expected: 0,
-        });
-    }
-    if let Err(error) = assignment.topology.validate() {
-        parts.install_topology(topology)?;
-        return Err(OperationError::InvalidTopology(error));
-    }
-
     parts.install_topology(assignment.topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     // RDKit✔️✔️:     mol.updatePropertyCache(true);
     // RDKit✔️✔️:     mol.updatePropertyCache(false);
     // Both source branches leave actual atom scalar fields. Move the already
@@ -172,7 +170,7 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "op-contracts"))]
 mod bond_identity_tests {
     use super::*;
     use crate::{AtomId, Bond, BondId, BondOrder, BondSpec};

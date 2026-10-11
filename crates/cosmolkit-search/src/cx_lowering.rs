@@ -3879,9 +3879,7 @@ pub fn apply_cx_to_query_graph(
         }
     }
     finish_cx_smiles_labels(graph)?;
-    graph
-        .validate()
-        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
+    Ok(())
 }
 
 #[cfg(test)]

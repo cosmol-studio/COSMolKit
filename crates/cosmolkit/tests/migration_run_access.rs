@@ -9,7 +9,7 @@ pub use cosmolkit::ops::{
 };
 pub use cosmolkit::{
     BlockAccess, BlockSet, FeatureSpec, FunctionStatus, MoleculeOpKind, MoleculeOpOutput,
-    MoleculeOpSpec, OperationDomain, OperationError, TopologyEditKind, UnsupportedFeatureError,
+    MoleculeOpSpec, OperationDomain, OperationError, UnsupportedFeatureError,
 };
 
 mod ops {
@@ -17,7 +17,7 @@ mod ops {
         BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus,
         MappingRequirement, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain,
         OperationError, OperationInvariantEntry, ParityMatrixEntry, ParityPolicy,
-        SemanticPreconditionSet, SupportMatrixEntry, TopologyEditKind, UnsupportedFeatureError,
+        SemanticPreconditionSet, SupportMatrixEntry, UnsupportedFeatureError,
     };
 }
 
@@ -60,7 +60,6 @@ molecule_ops! {
         impl_fn: crate::synthetic_access_impl,
         domain: coordinate,
         kind: weak,
-        topology_edit: none,
         access: { read: [topology], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],

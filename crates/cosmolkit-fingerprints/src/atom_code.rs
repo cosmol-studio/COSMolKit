@@ -44,7 +44,6 @@ impl AtomCodeInput<'static> {
         topology: TopologyBlock,
         properties: MoleculeProperties,
     ) -> Result<Self, TopologyValidationError> {
-        topology.validate()?;
         Ok(Self {
             topology: Cow::Owned(topology),
             properties: Cow::Owned(properties),
@@ -57,7 +56,6 @@ impl<'a> AtomCodeInput<'a> {
         topology: Cow<'a, TopologyBlock>,
         properties: Cow<'a, MoleculeProperties>,
     ) -> Result<Self, TopologyValidationError> {
-        topology.validate()?;
         Ok(Self {
             topology,
             properties,
@@ -68,7 +66,6 @@ impl<'a> AtomCodeInput<'a> {
         topology: &'a TopologyBlock,
         properties: &'a MoleculeProperties,
     ) -> Result<Self, TopologyValidationError> {
-        topology.validate()?;
         Ok(Self {
             topology: Cow::Borrowed(topology),
             properties: Cow::Borrowed(properties),

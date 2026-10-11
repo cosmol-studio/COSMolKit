@@ -2,8 +2,8 @@
 //! Shared by Python argument projection, stub generation and WASM checks; never parse source
 //! text or maintain another list of API names here.
 use cosmolkit::{
-    BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
-    BINDING_CONTRACT_PYTHON_ADAPTERS, BINDING_CONTRACT_PYTHON_ALIASES,
+    BINDING_CONTRACT, BINDING_CONTRACT_CONVENIENCES, BINDING_CONTRACT_KEYWORDS,
+    BINDING_CONTRACT_PROPERTIES, BINDING_CONTRACT_PYTHON_ADAPTERS,
     BINDING_CONTRACT_PYTHON_COLLECTIONS, BindingDefault, BindingItem, BindingOwner,
     BindingPropertyAccess, BindingTypeRole,
 };
@@ -111,8 +111,15 @@ pub fn manifest() -> Value {
             "name": row.name,
             "targets": row.targets,
         })).collect::<Vec<_>>(),
-        "python_aliases": BINDING_CONTRACT_PYTHON_ALIASES.iter().map(|(name, target)| json!({
-            "name": name, "target": target,
+        "python_aliases": BINDING_CONTRACT_CONVENIENCES.iter().map(|row| json!({
+            "name": row.name, "target": row.python_target,
         })).collect::<Vec<_>>(),
+        "javascript_aliases": BINDING_CONTRACT_CONVENIENCES.iter().filter_map(|row| {
+            row.javascript_target.map(|target| json!({
+                "name": row.name, "target": target,
+                "platform": entries.iter().find(|entry| entry["semantic_id"].as_str() == Some(row.target))
+                    .expect("convenience target is registered")["platform"],
+            }))
+        }).collect::<Vec<_>>(),
     })
 }

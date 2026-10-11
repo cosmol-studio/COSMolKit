@@ -9,8 +9,8 @@ use cosmolkit::{
     Element, FunctionStatus, HydrogenError, Molecule, MoleculeOpKind, MoleculeOpOutput,
     MoleculeProperties, OperationDomain, OperationError, ParityPolicy, SdfPropertyList,
     SdfPropertyListTarget, StateModel, StereoGroup, StereoGroupKind, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    SubstanceGroupId, SubstanceGroupKind, TopologyBlock, feature_spec, operation_invariant,
+    operation_parity, operation_spec, support_matrix,
 };
 
 fn atom(index: usize, spec: AtomSpec) -> Atom {
@@ -210,7 +210,6 @@ fn generated_registry_and_four_matrices_share_the_strong_append_operation() {
     let spec = operation_spec("with_hydrogens_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Strong);
-    assert_eq!(spec.topology_edit, TopologyEditKind::Appending);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(

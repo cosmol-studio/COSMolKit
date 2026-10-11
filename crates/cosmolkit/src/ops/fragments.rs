@@ -1,5 +1,5 @@
 //! Component chemistry belongs to core; runtime validates every mapped output.
-use crate::{DerivedState, OperationError, TopologyEditKind};
+use crate::{DerivedState, OperationError};
 use cosmolkit_macros::{mol_multi_op_body, mol_op_body};
 
 #[mol_multi_op_body(fragments, parts)]
@@ -39,7 +39,6 @@ pub(crate) fn largest_fragment_impl() -> Result<(), OperationError> {
             }
             Ok((mapping, has_prepared))
         })?;
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(mapping)?;
     parts.clear_cache(
         DerivedState::RING_FAMILIES

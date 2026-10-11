@@ -168,7 +168,6 @@ pub(crate) fn with_uff_optimized_impl(
             .id();
         let topology = parts.topology()?;
         let cache = parts.derived_cache()?;
-        cache.validate_for_atom_count(topology.atoms.len())?;
         let valence = cache
             .valence_assignment()
             .ok_or(OperationError::InvalidDerivedCache {
@@ -272,7 +271,6 @@ pub(crate) fn with_uff_optimized_conformers_impl(
     let conformers = (|| {
         let topology = parts.topology()?;
         let cache = parts.derived_cache()?;
-        cache.validate_for_atom_count(topology.atoms.len())?;
         let valence = cache
             .valence_assignment()
             .ok_or(OperationError::InvalidDerivedCache {
@@ -638,7 +636,6 @@ impl Molecule {
         })?;
         let topology = self.topology();
         let cache = self.derived_cache_runtime();
-        cache.validate_for_atom_count(topology.atoms.len())?;
         let valence = cache
             .valence_assignment()
             .ok_or(OperationError::InvalidDerivedCache {

@@ -3,7 +3,7 @@
 use cosmolkit_macros::mol_op_body;
 
 use super::OperationError;
-use crate::{DerivedState, KekulizeParams, PreservationProof, TopologyEditKind};
+use crate::{DerivedState, KekulizeParams, PreservationProof};
 
 #[mol_op_body(with_kekulized_bonds, parts)]
 pub(crate) fn kekulize_bonds_impl(params: &KekulizeParams) -> Result<(), OperationError> {
@@ -29,48 +29,44 @@ pub(crate) fn kekulize_bonds_impl(params: &KekulizeParams) -> Result<(), Operati
         }
     };
 
-    if assignment.topology.atoms.len() != topology.atoms.len() {
-        let actual = assignment.topology.atoms.len();
-        let expected = topology.atoms.len();
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_kekulized_bonds",
-            field: "atom",
-            actual,
-            expected,
-        });
+    #[cfg(feature = "op-contracts")]
+    {
+        if assignment.topology.atoms.len() != topology.atoms.len() {
+            let actual = assignment.topology.atoms.len();
+            let expected = topology.atoms.len();
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_kekulized_bonds",
+                field: "atom",
+                actual,
+                expected,
+            });
+        }
+        if assignment.topology.bonds.len() != topology.bonds.len() {
+            let actual = assignment.topology.bonds.len();
+            let expected = topology.bonds.len();
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_kekulized_bonds",
+                field: "bond",
+                actual,
+                expected,
+            });
+        }
+        if assignment.topology.adjacency != topology.adjacency {
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_kekulized_bonds",
+                field: "adjacency",
+                actual: 1,
+                expected: 0,
+            });
+        }
     }
-    if assignment.topology.bonds.len() != topology.bonds.len() {
-        let actual = assignment.topology.bonds.len();
-        let expected = topology.bonds.len();
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_kekulized_bonds",
-            field: "bond",
-            actual,
-            expected,
-        });
-    }
-    if assignment.topology.adjacency != topology.adjacency {
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_kekulized_bonds",
-            field: "adjacency",
-            actual: 1,
-            expected: 0,
-        });
-    }
-    if let Err(error) = assignment.topology.validate() {
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidTopology(error));
-    }
-
     parts.install_topology(assignment.topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     // ring_update None => the old ordinary state is unchanged, explicitly
     // handled (validity reaffirmed when previously valid, explicit clear
     // when absent); Some(initialized) => move replacement; Some(reset) =>

@@ -265,10 +265,6 @@ pub fn write_cx_smiles_with_params<'record>(
     params: &CxSmilesWriteParams,
 ) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
-    record
-        .coordinates
-        .validate_for_atom_count(record.topology.atoms.len())
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
 
     // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles copy and kekulization order
     // RDKit❗✔️:   RWMol trwmol(romol);
@@ -5060,7 +5056,7 @@ mod tests {
     }
 
     #[test]
-    fn cx_post_base_cache_preparation_propagates_owner_errors() {
+    fn cx_detached_model_audit_preserves_input() {
         // This malformed detached topology is not a valid source ROMol; this
         // owner-boundary test only verifies that the existing typed valence
         // validation error is not replaced with a guessed assignment.
@@ -5068,9 +5064,13 @@ mod tests {
         record.topology.atoms.swap(0, 1);
         let before = record.clone();
 
-        let error = prepare_cx_post_base_valence(&record, true)
-            .expect_err("invalid detached row identities must propagate");
-        assert!(matches!(error, SmilesParseError::WriterValence(_)));
+        assert_eq!(
+            record.topology.validate(),
+            Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+                position: 0,
+                id: AtomId::new(1),
+            })
+        );
         assert_eq!(
             record, before,
             "failed cache preparation must not mutate input"

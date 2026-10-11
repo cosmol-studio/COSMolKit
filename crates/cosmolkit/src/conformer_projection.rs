@@ -110,6 +110,7 @@ mod tests {
             bonds,
             ..Default::default()
         };
+        #[cfg(feature = "runtime-invariants")]
         topology
             .validate()
             .expect("original checked fixed topology");

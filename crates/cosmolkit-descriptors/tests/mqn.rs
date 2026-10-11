@@ -423,14 +423,14 @@ fn mqn_invalid_prepared_shapes_and_topology() {
     }
     let mut f = valid.clone();
     f.topology.atoms[0] = f.topology.atoms[0].clone().with_id(AtomId::new(7));
-    let source = f.topology.validate().unwrap_err();
     assert_eq!(
-        error(&f),
-        DescriptorError::Search {
-            function: "mqns",
-            source: DescriptorSearchCause::Context(QueryMatchContextError::InvalidTopology(source))
-        }
+        f.topology.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(7),
+        })
     );
+
     for (atoms, bonds, field, actual, expected) in [(1, 1, "atoms", 1, 2), (2, 0, "bonds", 0, 1)] {
         f = valid.clone();
         f.rings = RingInfo::new(RingFindType::OtherOrUnknown, atoms, bonds);

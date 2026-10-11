@@ -1637,7 +1637,6 @@ pub fn maccs_fingerprint_raw(
     // symmetrized SSSR/valence pass, explicitly worse than source initialized caches.
     // CORE component enumeration additionally owns component lists besides source mapping.
     // SEARCH performs all VF2 matching; no local matcher or duplicate graph algorithm.
-    topology.validate()?;
     let pattern_matchers = cached_maccs_queries()?;
     let mut fp = Fingerprint::new(167);
     if topology.atoms.is_empty() {

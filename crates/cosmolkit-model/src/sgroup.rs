@@ -2302,6 +2302,7 @@ mod recovery_chem29_model {
         assert_eq!((valid.id(), valid.write_id()), (Some(7), 9));
     }
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn private_invalid_fixture_reaches_both_model_validators_as_typed_leaf() {
         // Only this defining model module can fabricate the invalid private state.
         // No unchecked constructor, exported helper or unsafe operation exists.

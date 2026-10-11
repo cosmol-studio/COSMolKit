@@ -390,6 +390,7 @@ impl PartialEq for CoordinateBlock {
 }
 
 impl CoordinateBlock {
+    #[cfg(any(feature = "runtime-invariants", feature = "op-contracts"))]
     pub fn validate_for_atom_count(
         &self,
         atom_count: usize,
@@ -470,6 +471,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn validate_rejects_coordinate_row_mismatch() {
         let block = CoordinateBlock {
             conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0]])],
@@ -485,6 +487,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn validate_preserves_duplicate_source_ids_per_dimension() {
         let block = CoordinateBlock {
             conformers_3d: vec![
@@ -722,6 +725,7 @@ mod source_order_tests {
         block
             .conformers_3d
             .push(Conformer3D::new(0, vec![[5.0, 6.0, 7.0]], true));
+        #[cfg(feature = "runtime-invariants")]
         block.validate_for_atom_count(1).unwrap();
         assert_eq!(block.source_conformer_order, None);
         assert!(matches!(
@@ -757,6 +761,7 @@ mod source_order_tests {
         block
             .conformers_3d
             .push(Conformer3D::new(0, vec![[6.0, 7.0, 8.0]], true));
+        #[cfg(feature = "runtime-invariants")]
         block.validate_for_atom_count(1).unwrap();
         match block.first_source_conformer().unwrap().unwrap() {
             CoordinateSourceConformer::ThreeD(conformer) => {
@@ -788,8 +793,10 @@ mod source_order_tests {
             ]),
             ..Default::default()
         };
+        #[cfg(feature = "runtime-invariants")]
         block.validate_for_atom_count(2).unwrap();
         block.remap_topology(&[1]);
+        #[cfg(feature = "runtime-invariants")]
         block.validate_for_atom_count(1).unwrap();
         assert_eq!(
             block.source_conformer_order,
@@ -797,6 +804,7 @@ mod source_order_tests {
         );
         assert_eq!(block.conformers_3d[0].coordinates(), &[[7.0, 8.0, 9.0]]);
         block.source_conformer_order = Some(vec![CoordinateDimension::TwoD]);
+        #[cfg(feature = "runtime-invariants")]
         assert!(matches!(
             block.validate_for_atom_count(1),
             Err(CoordinateValidationError::SourceConformerOrder { .. })

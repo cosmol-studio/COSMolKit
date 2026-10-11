@@ -124,7 +124,6 @@ output
 result_type
 domain
 kind
-topology_edit
 access
 may_mutate
 auto_remap
@@ -140,7 +139,7 @@ The `molecule_ops!` entry must explicitly provide `method`, `impl_fn`, `kind`,
 `access`, `derived_effects`, `feature`, `parity`, and `invariant_profile`.
 Every parity policy other than `not_applicable` also requires
 `parity_profile`. The macro supplies defined defaults for optional inputs such
-as `domain`, `topology_edit`, `may_mutate`, `auto_remap`,
+as `domain`, `may_mutate`, `auto_remap`,
 `semantic_preconditions`, `requires_mapping`, and `io_roundtrip`; entries
 should still spell out behaviorally meaningful values when omission would make
 review ambiguous.
@@ -195,10 +194,10 @@ new block permissions and is not available to in-place or multiple-output
 operations; their existing lifecycles are unchanged. Validation feature gates
 do not disable pending ownership, single-use, or module-privacy enforcement.
 
-Strong topology operations must also define their migration surface, including fields such as:
+Strong topology operations must declare their mapping and remap requirements:
 
 ```text
-topology_edit
+requires_mapping
 auto_remap
 ```
 
@@ -268,10 +267,11 @@ atom identity mapping
 bond identity mapping
 ```
 
-Strong operations must record topology edits through operation-system APIs such as:
+Strong operations must record an actual topology mapping, or use the declared
+reconstruction mapping path for independently validated multiple outputs.
+Block changes use the operation-system APIs:
 
 ```text
-record_topology_edit(...)
 record_topology_mapping(...)
 begin_topology_mut() / commit_topology(...)
 begin_coordinates_mut() / commit_coordinates(...)
@@ -428,10 +428,10 @@ the architecture's capability projection, not an independent handwritten list.
 
 Block lifecycle machinery remains internal, materializes only write-owned
 blocks, and keeps access, remapping, and finalization under runtime control.
-A strong operation records its declared appending, compacting, renumbering,
-or merge edit and required mapping; a weak topology edit records only local
-stable-identity changes. The domain owner computes row changes and detached
-mappings, while the thin body stages them and records the required artifacts.
+A strong operation supplies its required mapping or validated reconstruction
+origins. A weak operation preserves row identity. The domain owner computes
+row changes and detached mappings, while the thin body stages them and records
+the required artifacts. No separate edit-category label is declared or recorded.
 
 ---
 
@@ -449,8 +449,8 @@ Rules:
   view
 - a block declared `none` must not be accessible
 - direct `topology_mut()` is not an operation-body API
-- strong topology edits must record their declared edit kind and required
-  topology mapping artifact before `finish()`
+- strong topology edits must supply their required topology mapping artifact
+  or validated reconstruction origins before `finish()`
 
 If more mutation authority is needed, update the registry and framework API first.
 
@@ -501,7 +501,7 @@ mapping artifact was recorded.
 Operation bodies return `Result<(), OperationError>` and do not classify a
 successful source execution as changed or unchanged. Contract obligations are
 derived from structural trace facts such as claimed and committed writable
-blocks, recorded topology edits, mappings, remaps, and derived-state effects.
+blocks, mappings, reconstruction origins, remaps, and derived-state effects.
 Whether the source algorithm happened to produce an equal value is not a
 generic operation-contract dimension and belongs in source-parity tests when it
 is externally observable.

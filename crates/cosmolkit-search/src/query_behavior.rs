@@ -123,7 +123,6 @@ pub fn build_prepared_query_match_context<'a>(
     ring_info: &'a RingInfo,
     valence: &'a ValenceAssignment,
 ) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
-    topology.validate()?;
     let atom_count = topology.atoms.len();
     let bond_count = topology.bonds.len();
     validate_valence_row_counts(atom_count, valence)?;
@@ -266,7 +265,6 @@ pub fn build_ring_query_match_context<'a>(
             return build_prepared_query_match_context(topology, ring_info, valence);
         }
     }
-    topology.validate()?;
     if let Some(valence) = valence {
         validate_valence_row_counts(atom_count, valence)?;
     }
@@ -333,7 +331,6 @@ pub fn build_ring_query_match_context<'a>(
 pub fn build_topology_query_match_context<'a>(
     topology: &'a cosmolkit_model::TopologyBlock,
 ) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
-    topology.validate()?;
     Ok(QueryMatchContext {
         adj: Cow::Borrowed(&topology.adjacency),
         ring_info: None,
@@ -374,7 +371,6 @@ pub fn build_valence_query_match_context<'a>(
     topology: &'a cosmolkit_model::TopologyBlock,
     valence: &'a ValenceAssignment,
 ) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
-    topology.validate()?;
     let atom_count = topology.atoms.len();
     validate_valence_row_counts(atom_count, valence)?;
     Ok(QueryMatchContext {
@@ -548,13 +544,14 @@ mod prepared_query_context_tests {
     }
 
     #[test]
-    fn prepared_query_context_preserves_topology_error_source() {
+    fn explicit_model_audit_preserves_topology_error_source() {
         let mut topology = chain(&[Element::C, Element::C]);
         let (rings, valence) = prepare(&topology);
         topology.adjacency = AdjacencyList::default();
-        let error = build_prepared_query_match_context(&topology, &rings, &valence)
-            .err()
-            .unwrap();
+        let error = topology
+            .validate()
+            .map_err(QueryMatchContextError::InvalidTopology)
+            .unwrap_err();
         assert_eq!(
             error,
             QueryMatchContextError::InvalidTopology(
@@ -7910,7 +7907,7 @@ mod descriptor_topology_context_tests {
     }
 
     #[test]
-    fn descriptor_topology_context_rejects_malformed_topology() {
+    fn explicit_model_audit_rejects_malformed_topology() {
         // An atom-ID misalignment fails validation (row 0 carries id 1).
         let atoms = vec![Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C))];
         let bonds = vec![Bond::from_spec(
@@ -7923,10 +7920,10 @@ mod descriptor_topology_context_tests {
             ..TopologyBlock::default()
         };
         let whole_before = topology.clone();
-        let error = match build_topology_query_match_context(&topology) {
-            Err(error) => error,
-            Ok(_) => panic!("malformed topology must be rejected"),
-        };
+        let error = topology
+            .validate()
+            .map_err(QueryMatchContextError::InvalidTopology)
+            .unwrap_err();
         assert!(
             matches!(error, QueryMatchContextError::InvalidTopology(_)),
             "got {error:?}"
@@ -8088,7 +8085,7 @@ mod descriptor_hbd_context_tests {
     /// ONE genuinely malformed adjacency topology (atom-ID misalignment)
     /// with a matching-length assignment = 1 structural typed error.
     #[test]
-    fn descriptor_hbd_context_rejects_malformed_topology() {
+    fn explicit_model_audit_preserves_borrowed_valence() {
         let atoms = vec![Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C))];
         let bonds = vec![Bond::from_spec(
             BondId::new(0),
@@ -8105,9 +8102,10 @@ mod descriptor_hbd_context_tests {
         };
         let topology_before = topology.clone();
         let valence_before = valence.clone();
-        let error = build_valence_query_match_context(&topology, &valence)
-            .err()
-            .expect("malformed topology must be rejected");
+        let error = topology
+            .validate()
+            .map_err(QueryMatchContextError::InvalidTopology)
+            .unwrap_err();
         assert!(
             matches!(error, QueryMatchContextError::InvalidTopology(_)),
             "got {error:?}"
@@ -8235,7 +8233,6 @@ pub fn build_ring_only_query_match_context<'a>(
     topology: &'a cosmolkit_model::TopologyBlock,
     rings: &'a RingInfo,
 ) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
-    topology.validate()?;
     for (field, actual, expected) in [
         ("atoms", rings.atom_row_count(), topology.atoms.len()),
         ("bonds", rings.bond_row_count(), topology.bonds.len()),

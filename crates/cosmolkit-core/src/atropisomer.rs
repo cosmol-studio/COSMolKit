@@ -442,9 +442,6 @@ pub fn atropisomer_carriers(
     topology: &TopologyBlock,
     axial_bond: BondId,
 ) -> Result<Option<[AtropisomerCarrierEnd; 2]>, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     let bond =
         topology
             .bonds
@@ -463,7 +460,7 @@ pub fn atropisomer_carriers(
         }))
 }
 
-/// Returns carrier ends for requested axial bonds after validating topology once.
+/// Returns carrier ends for requested axial bonds using local source checks.
 pub fn atropisomer_carriers_for_bonds(
     topology: &TopologyBlock,
     axial_bonds: &[BondId],
@@ -471,9 +468,6 @@ pub fn atropisomer_carriers_for_bonds(
     // Validate once, then reuse the source-shaped `atropisomer_ends` owner
     // helper for each requested bond instead of repeating a whole-topology
     // scan for every atropisomer neighbor in the CX bond-config writer.
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     axial_bonds
         .iter()
         .copied()
@@ -1241,9 +1235,6 @@ pub fn detect_atropisomer_chirality(
     topology: &TopologyBlock,
     conformer: Option<AtropisomerConformer<'_>>,
 ) -> Result<AtropisomerAssignment, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
     }
@@ -1365,9 +1356,6 @@ impl<'a> SourceAtropisomerCandidateTraversal<'a> {
         topology: &'a TopologyBlock,
         candidates: &'a [BondId],
     ) -> Result<Self, AtropisomerError> {
-        topology
-            .validate()
-            .map_err(|source| AtropisomerError::InvalidTopology { source })?;
         let membership = source_atropisomer_candidate_membership(topology);
         let mut seen = vec![false; membership.len()];
         for &bond in candidates {
@@ -1670,9 +1658,6 @@ pub fn cleanup_atropisomer_stereo_groups(
     topology: &TopologyBlock,
     detected: &AtropisomerAssignment,
 ) -> Result<StereoGroupAssignment, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     for update in &detected.bond_updates {
         if update.bond.index() >= topology.bonds.len() {
             return Err(AtropisomerError::AssignmentBondOutOfRange {
@@ -1759,7 +1744,6 @@ pub fn stereo_group_atom_ids(
     group: &StereoGroup,
     wedges: &AtropisomerWedgeAssignment,
 ) -> Result<Vec<AtomId>, AtropisomerError> {
-    validate_stereo_group_topology(topology)?;
     validate_stereo_group_members(topology, group)?;
     let source_map = WedgeAssignments::from_atropisomer_wedge_parts_source(
         &wedges.bond_updates,
@@ -1775,7 +1759,6 @@ pub fn get_all_atom_ids_for_stereo_group(
     group: &StereoGroup,
     wedge_bonds: &WedgeAssignments,
 ) -> Result<Vec<AtomId>, AtropisomerError> {
-    validate_stereo_group_topology(topology)?;
     validate_stereo_group_members(topology, group)?;
     let mut atom_ids = Vec::new();
     collect_stereo_group_atom_ids_source(topology, group, &mut atom_ids, wedge_bonds)?;
@@ -1791,8 +1774,6 @@ pub fn get_all_atom_ids_for_stereo_groups(
     groups: &[StereoGroup],
     wedge_bonds: &WedgeAssignments,
 ) -> Result<Vec<Vec<AtomId>>, AtropisomerError> {
-    validate_stereo_group_topology(topology)?;
-
     let mut atom_ids_by_group = Vec::with_capacity(groups.len());
     for group in groups {
         validate_stereo_group_members(topology, group)?;
@@ -1801,22 +1782,6 @@ pub fn get_all_atom_ids_for_stereo_groups(
         atom_ids_by_group.push(atom_ids);
     }
     Ok(atom_ids_by_group)
-}
-
-#[cfg(test)]
-std::thread_local! {
-    static STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-}
-
-fn validate_stereo_group_topology(topology: &TopologyBlock) -> Result<(), AtropisomerError> {
-    #[cfg(test)]
-    STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(|calls| calls.set(calls.get() + 1));
-
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })
 }
 
 fn validate_stereo_group_members(
@@ -2164,14 +2129,6 @@ mod stereo_group_batch_tests {
             .expect("valid tetrahedral wedge topology")
     }
 
-    fn reset_validation_count() {
-        STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(|calls| calls.set(0));
-    }
-
-    fn validation_count() -> usize {
-        STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(std::cell::Cell::get)
-    }
-
     #[test]
     fn cf_smi_groups_batch_preserves_member_order_duplicates_and_overlaps() {
         let topology = group_topology([
@@ -2343,54 +2300,19 @@ mod stereo_group_batch_tests {
             BondId::new(0),
             BondSpec::new(AtomId::new(99), AtomId::new(1), BondOrder::Single),
         );
-        assert!(matches!(
-            get_all_atom_ids_for_stereo_groups(
-                &invalid_topology,
-                &[StereoGroup::new(
-                    StereoGroupKind::Absolute,
-                    vec![AtomId::new(0)],
-                    Vec::new(),
-                ).expect("valid distinct stereo members")],
-                &WedgeAssignments::default(),
-            ),
-            Err(AtropisomerError::InvalidTopology {
-                source: TopologyValidationError::BondEndpointOutOfRange {
-                    bond,
-                    ..
+        // Whole-state corruption is rejected by the explicit model/runtime
+        // audit, not by the chemistry algorithm being exercised above.
+        assert_eq!(
+            invalid_topology.validate(),
+            Err(
+                cosmolkit_model::TopologyValidationError::BondEndpointOutOfRange {
+                    bond: BondId::new(0),
+                    endpoint: "begin",
+                    atom: AtomId::new(99),
+                    atom_count: invalid_topology.atoms.len()
                 }
-            })
-                if bond == BondId::new(0)
-        ));
-    }
-
-    #[test]
-    fn cf_smi_groups_batch_validates_topology_once_per_call() {
-        let topology = group_topology([BondDirection::None; 3]);
-        let groups = (0..12)
-            .map(|index| {
-                StereoGroup::new(
-                    StereoGroupKind::Or,
-                    vec![AtomId::new(index % 4)],
-                    Vec::new(),
-                )
-                .expect("valid distinct stereo members")
-            })
-            .collect::<Vec<_>>();
-
-        reset_validation_count();
-        get_all_atom_ids_for_stereo_groups(&topology, &groups, &WedgeAssignments::default())
-            .expect("batch of twelve groups");
-        assert_eq!(validation_count(), 1);
-
-        reset_validation_count();
-        get_all_atom_ids_for_stereo_group(&topology, &groups[0], &WedgeAssignments::default())
-            .expect("checked singular group");
-        assert_eq!(validation_count(), 1);
-
-        reset_validation_count();
-        get_all_atom_ids_for_stereo_groups(&topology, &[], &WedgeAssignments::default())
-            .expect("empty checked batch still validates the topology");
-        assert_eq!(validation_count(), 1);
+            ),
+        );
     }
 }
 
@@ -2990,9 +2912,6 @@ pub fn wedge_atropisomer_no_conformer_source(
     axial_bond: BondId,
     wedges: &mut WedgeAssignments,
 ) -> Result<bool, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if axial_bond.index() >= topology.bonds.len() {
         return Err(AtropisomerError::AxialBondOutOfRange {
             bond: axial_bond,
@@ -3406,9 +3325,6 @@ pub fn wedge_atropisomer_two_d_source(
     conformer: AtropisomerConformer<'_>,
     wedges: &mut WedgeAssignments,
 ) -> Result<bool, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if axial_bond.index() >= topology.bonds.len() {
         return Err(AtropisomerError::AxialBondOutOfRange {
             bond: axial_bond,
@@ -3766,9 +3682,6 @@ pub fn wedge_atropisomer_three_d_source(
     conformer: AtropisomerConformer<'_>,
     wedges: &mut WedgeAssignments,
 ) -> Result<bool, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if axial_bond.index() >= topology.bonds.len() {
         return Err(AtropisomerError::AxialBondOutOfRange {
             bond: axial_bond,
@@ -3883,9 +3796,6 @@ pub fn cleanup_invalid_atropisomers(
     hybridization: &HybridizationAssignment,
     rings: &RingInfo,
 ) -> Result<TopologyBlock, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     validate_rings(topology, rings)?;
     if hybridization.values.len() != topology.atoms.len() {
         return Err(AtropisomerError::HybridizationAssignmentLength {
@@ -3956,9 +3866,6 @@ where
                 .map_err(E::from)?
                 .groups;
     }
-    result
-        .validate()
-        .map_err(|source| E::from(AtropisomerError::InvalidTopology { source }))?;
     Ok(result)
 }
 
@@ -4045,9 +3952,6 @@ pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
     hybridization: &HybridizationAssignment,
     rings: Option<RingInfo>,
 ) -> Result<(TopologyBlock, Option<RingInfo>), AtropisomerCleanupError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if hybridization.values.len() != topology.atoms.len() {
         return Err(AtropisomerError::HybridizationAssignmentLength {
             actual: hybridization.values.len(),
@@ -4231,9 +4135,6 @@ pub fn wedge_bonds_from_atropisomers_source(
     conformer: Option<AtropisomerConformer<'_>>,
     wedges: &mut WedgeAssignments,
 ) -> Result<(), AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
     }
@@ -4294,9 +4195,6 @@ pub fn wedge_bonds_from_atropisomers_projected_source(
     conformer: Option<AtropisomerConformer<'_>>,
     occupied_bonds: &BTreeSet<BondId>,
 ) -> Result<AtropisomerWedgeAssignment, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
     }
@@ -4334,9 +4232,6 @@ pub fn wedge_bonds_from_atropisomers(
     conformer: Option<AtropisomerConformer<'_>>,
     occupied_bonds: &BTreeSet<BondId>,
 ) -> Result<AtropisomerWedgeAssignment, AtropisomerError> {
-    topology
-        .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
     validate_rings(topology, rings)?;
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
@@ -4691,16 +4586,12 @@ mod cleanup_ring_state_tests {
             adjacency: cosmolkit_model::AdjacencyList::from_topology(0, &[]),
             ..tagged.clone()
         };
-        assert!(matches!(
-            cleanup_invalid_atropisomers_with_ring_state(
-                &invalid,
-                &hybs(all(6, Hybridization::Sp2)),
-                None
-            ),
-            Err(super::AtropisomerCleanupError::Algorithm(
-                AtropisomerError::InvalidTopology { .. }
-            ))
-        ));
+        // Whole-state corruption is rejected by the explicit model/runtime
+        // audit, not by the chemistry algorithm being exercised above.
+        assert_eq!(
+            invalid.validate(),
+            Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+        );
         // A CONSUMED SSSR with wrong membership dimensions is rejected by
         // the existing validate_rings causes.
         let atom_rows_wrong = RingInfo::new(RingFindType::Sssr, 7, 6);

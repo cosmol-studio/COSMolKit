@@ -9,7 +9,7 @@ use cosmolkit_model::{
 use super::*;
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet,
 };
 
 struct FailureAccess;
@@ -36,7 +36,6 @@ fn spec(
         result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
-        topology_edit: TopologyEditKind::None,
         access,
         may_mutate: access.write(),
         auto_remap: BlockSet::NONE,
@@ -263,7 +262,6 @@ fn abort_clears_all_staged_blocks_and_contract_evidence() {
         let mut cache = parts.checkout_derived_cache_runtime().unwrap();
         cache.mark_valid(DerivedState::RINGS);
         parts.install_derived_cache_runtime(cache).unwrap();
-        parts.topology_edit = Some(TopologyEditKind::Local);
         parts.topology_mapping = Some(TopologyMapping::identity(2, 1));
         parts.remapped_blocks = BlockSet::COORDINATES.union(BlockSet::PROPERTIES);
         parts.effect_trace = EffectTrace {
@@ -278,7 +276,6 @@ fn abort_clears_all_staged_blocks_and_contract_evidence() {
         assert!(matches!(parts.coordinates, WorkingBlock::Shared));
         assert!(matches!(parts.properties, WorkingBlock::Shared));
         assert!(matches!(parts.derived_cache, WorkingBlock::Shared));
-        assert_eq!(parts.topology_edit, None);
         assert_eq!(parts.topology_mapping, None);
         assert!(parts.remapped_blocks.is_empty());
         assert_eq!(parts.effect_trace, EffectTrace::default());

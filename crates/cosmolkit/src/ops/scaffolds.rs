@@ -1,6 +1,6 @@
 //! Thin generated scaffold transactions; all chemistry is in cosmolkit-core.
 use super::OperationError;
-use crate::{DerivedState, TopologyEditKind};
+use crate::DerivedState;
 use cosmolkit_macros::mol_op_body;
 
 #[mol_op_body(murcko_scaffold, parts)]
@@ -26,7 +26,6 @@ pub(crate) fn murcko_scaffold_impl() -> Result<(), OperationError> {
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(
@@ -63,7 +62,6 @@ pub(crate) fn net_scaffold_impl() -> Result<(), OperationError> {
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(
@@ -96,7 +94,6 @@ pub(crate) fn murcko_decompose_impl() -> Result<(), OperationError> {
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(

@@ -8,14 +8,14 @@ pub use cosmolkit::ops::{
 };
 pub use cosmolkit::{
     BlockAccess, BlockSet, FunctionStatus, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec,
-    OperationDomain, OperationError, TopologyEditKind,
+    OperationDomain, OperationError,
 };
 
 mod ops {
     pub use crate::{
         BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus,
         MappingRequirement, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain,
-        OperationError, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+        OperationError, ParityPolicy, SemanticPreconditionSet,
     };
 }
 

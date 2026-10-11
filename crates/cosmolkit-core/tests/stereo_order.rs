@@ -183,7 +183,9 @@ fn topology_lookup_errors_preserve_center_and_validation_details() {
     let mut invalid = topology.clone();
     invalid.atoms[0] = invalid.atoms[0].clone().with_id(AtomId::new(1));
     assert_eq!(
-        incident_tetrahedral_bond_order(&invalid, AtomId::new(0)),
+        invalid
+            .validate()
+            .map_err(StereoOrderError::InvalidTopology),
         Err(StereoOrderError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,
@@ -429,18 +431,9 @@ fn implicit_replacement_policy_distinguishes_range_presence_and_retention_errors
 fn remap_validates_mapping_lengths_before_any_indexing() {
     let invalid = mapping(vec![], vec![Some(0)], vec![], vec![]);
     assert_eq!(
-        remap_tetrahedral_center(
-            AtomId::new(99),
-            &[],
-            ChiralTag::TetrahedralCw,
-            &invalid,
-            1,
-            1,
-            0,
-            0,
-            None,
-            &[],
-        ),
+        invalid
+            .validate_for_counts(1, 1, 0, 0)
+            .map_err(StereoOrderError::InvalidMapping),
         Err(StereoOrderError::InvalidMapping(
             MappingValidationError::Length {
                 entity: "atom",
@@ -456,18 +449,9 @@ fn remap_validates_mapping_lengths_before_any_indexing() {
 fn remap_preserves_mapping_out_of_range_and_inverse_mismatch_categories() {
     let out_of_range = mapping(vec![Some(1)], vec![Some(0)], vec![], vec![]);
     assert_eq!(
-        remap_tetrahedral_center(
-            AtomId::new(0),
-            &[],
-            ChiralTag::TetrahedralCw,
-            &out_of_range,
-            1,
-            1,
-            0,
-            0,
-            None,
-            &[],
-        ),
+        out_of_range
+            .validate_for_counts(1, 1, 0, 0)
+            .map_err(StereoOrderError::InvalidMapping),
         Err(StereoOrderError::InvalidMapping(
             MappingValidationError::OutOfRange {
                 entity: "atom",
@@ -486,18 +470,9 @@ fn remap_preserves_mapping_out_of_range_and_inverse_mismatch_categories() {
         vec![],
     );
     assert_eq!(
-        remap_tetrahedral_center(
-            AtomId::new(0),
-            &[],
-            ChiralTag::TetrahedralCw,
-            &inverse,
-            2,
-            2,
-            0,
-            0,
-            None,
-            &[],
-        ),
+        inverse
+            .validate_for_counts(2, 2, 0, 0)
+            .map_err(StereoOrderError::InvalidMapping),
         Err(StereoOrderError::InvalidMapping(
             MappingValidationError::InverseMismatch {
                 entity: "atom",

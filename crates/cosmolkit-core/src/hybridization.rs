@@ -309,7 +309,6 @@ fn assign_hybridization_with_projection(
     // END RDKIT CPP FUNCTION MolOps::setHybridization
     // Returning a detached assignment keeps source mutation outside this
     // algorithm owner but allocates O(V) output storage that RDKit does not.
-    topology.validate()?;
     validate_valence(topology, valence)?;
     let mut values = Vec::with_capacity(topology.atoms.len());
     for atom_index in 0..topology.atoms.len() {

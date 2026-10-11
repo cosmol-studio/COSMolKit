@@ -938,7 +938,6 @@ pub fn read_pdb_detached_with_params(
         bonds,
         ..TopologyBlock::default()
     };
-    topology.validate()?;
     let coordinate_block = CoordinateBlock {
         conformers_2d: Vec::new(),
         conformers_3d: conformers
@@ -949,7 +948,6 @@ pub fn read_pdb_detached_with_params(
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         source_conformer_order: None,
     };
-    coordinate_block.validate_for_atom_count(topology.atoms.len())?;
     crate::postprocess_pdb_detached(
         &mut topology,
         &coordinate_block,
@@ -1556,8 +1554,6 @@ pub fn write_pdb_detached_with_params(
     properties: &MoleculeProperties,
     params: PdbWriteParams,
 ) -> Result<PropertyText, PdbWriteError> {
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     if topology
         .bonds
         .iter()

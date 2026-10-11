@@ -44,6 +44,7 @@ pub(crate) fn potential_stereo_impl(
     let mut assignment = cosmolkit_core::potential_stereo(&topology, &valence, &rings, params)
         .map_err(OperationError::PotentialStereo)?;
 
+    #[cfg(feature = "op-contracts")]
     if assignment.atom_ranks.len() != topology.atoms.len() {
         return Err(OperationError::InvalidAlgorithmResult {
             operation: "potential_stereo_with_params",
@@ -73,9 +74,6 @@ pub(crate) fn potential_stereo_impl(
             });
         }
     };
-    installed_topology
-        .validate()
-        .map_err(OperationError::InvalidTopology)?;
     parts.install_topology(installed_topology)?;
     parts.clear_cache(
         DerivedState::STEREO

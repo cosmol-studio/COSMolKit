@@ -188,7 +188,6 @@ impl<'a> CrossedBondContext<'a> {
     ) -> Result<Self, WedgeError> {
         // Validate once when creating this reusable view; callers probing many
         // bonds should share it instead of repeating the topology walk.
-        topology.validate()?;
         Ok(Self {
             topology,
             valence,
@@ -1875,7 +1874,6 @@ pub fn pick_bonds_to_wedge_source(
     rings: &mut RingInfo,
     properties: Option<&mut cosmolkit_model::MoleculeProperties>,
 ) -> Result<WedgeAssignments, WedgeError> {
-    topology.validate()?;
     pick_bonds_to_wedge_kernel(
         &mut SourceWedgeGraph::Mutable(topology),
         conformer,
@@ -1889,7 +1887,6 @@ pub fn pick_bonds_to_wedge_with_existing_ring_info(
     conformer: Option<AtropisomerConformer<'_>>,
     rings: Option<RingInfo>,
 ) -> Result<(WedgeAssignments, RingInfo), WedgeError> {
-    topology.validate()?;
     let mut rings = rings.unwrap_or_else(|| {
         RingInfo::new(
             RingFindType::Fast,

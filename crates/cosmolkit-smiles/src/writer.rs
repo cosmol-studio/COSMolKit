@@ -713,10 +713,6 @@ pub fn write_fragment_smiles_output<'record>(
     // selected rank owner; per-component DFS uses the same full-size state
     // vectors and adjacency scans as the existing writer. No subgraph remap is
     // built, at the cost of retaining the original topology for the call.
-    record
-        .topology
-        .validate()
-        .map_err(|error| FragmentWriteInputError::InvalidTopology(error.to_string()))?;
     validate_fragment_write_inputs(
         &record.topology,
         params,
@@ -1008,10 +1004,6 @@ fn write_smiles_output_with_random_stream<'record>(
     // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles root validation
     // Detached records need structural validation before indexed access; this
     // adds an O(V + E) pass before the source's constant-time root precondition.
-    record
-        .topology
-        .validate()
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     if record.topology.atoms.is_empty() {
         return Ok(SmilesWriteOutput {
             text: PropertyText::new(),

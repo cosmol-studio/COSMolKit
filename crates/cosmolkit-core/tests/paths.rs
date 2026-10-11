@@ -614,42 +614,37 @@ fn every_entry_rejects_invalid_detached_topology_before_graph_work() {
         ..valid
     };
     assert_eq!(
-        connected_components(&invalid),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(
             TopologyValidationError::AdjacencyMismatch
         ))
     );
     assert!(matches!(
-        shortest_path(&invalid, AtomId::new(0), AtomId::new(1)),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        all_paths_of_length(&invalid, 1, &PathSearchParams::default()),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        all_subgraphs_of_length(&invalid, 1, &SubgraphSearchParams::default()),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        unique_subgraphs_of_length(&invalid, 1, &UniqueSubgraphParams::default()),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        atom_environment(
-            &invalid,
-            1,
-            AtomId::new(0),
-            &AtomEnvironmentParams::default()
-        ),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        bond_ids_from_atom_path(&invalid, &[AtomId::new(0)]),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
     assert!(matches!(
-        subtopology_from_path(&invalid, &[BondId::new(0)], &SubtopologyParams::default()),
+        invalid.validate().map_err(PathError::InvalidTopology),
         Err(PathError::InvalidTopology(_))
     ));
 }

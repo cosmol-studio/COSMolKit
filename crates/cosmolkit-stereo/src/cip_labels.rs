@@ -748,7 +748,6 @@ fn assign_cip_labels_for_masks<'a>(
     if !labels.is_empty() {
         cip_apply_primary_labels(topology.to_mut(), labels)?;
     }
-    topology.validate()?;
     properties
         .to_mut()
         .set_computed_prop("_CIPComputed", cosmolkit_model::PropertyValue::Bool(true))?;
@@ -795,7 +794,6 @@ pub fn assign_cip_labels_cow<'a>(
     // Existing explicit selection/error adapters feed the same mask owner.
     // Full detached validation scans the graph, unlike upstream's direct
     // molecule access. Keep that known cost separate from lazy block copying.
-    topology.validate()?;
     if topology.atoms.len() > u32::MAX as usize {
         return Err(CipLabelerError::SourceIndexWidthExceeded {
             kind: "atom count",

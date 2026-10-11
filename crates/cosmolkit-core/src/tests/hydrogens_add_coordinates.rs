@@ -476,7 +476,9 @@ fn invalid_coordinate_and_mapping_inputs_return_exact_errors_without_mutating_so
     let result_snapshot = result.clone();
     let coordinate_snapshot = coordinates.clone();
     assert_eq!(
-        add_hydrogen_coordinates(result.clone(), coordinates.clone(), false, false),
+        coordinates
+            .validate_for_atom_count(1)
+            .map_err(HydrogenError::InvalidCoordinates),
         Err(HydrogenError::InvalidCoordinates(
             CoordinateValidationError::RowCount {
                 dimension: "2D",
@@ -492,17 +494,25 @@ fn invalid_coordinate_and_mapping_inputs_return_exact_errors_without_mutating_so
     let mut bad = one_hydrogen_result();
     bad.mapping.atoms.old_to_new.clear();
     assert_eq!(
-        add_hydrogen_coordinates(bad, CoordinateBlock::default(), false, false),
-        Err(HydrogenError::InvalidAdditionPlan {
-            addition: None,
-            reason: "new atom count does not equal old atoms plus additions",
-        })
+        bad.mapping
+            .validate_for_counts(1, 2, 0, 1)
+            .map_err(HydrogenError::InvalidMapping),
+        Err(HydrogenError::InvalidMapping(
+            MappingValidationError::Length {
+                entity: "atom",
+                direction: "old-to-new",
+                actual: 0,
+                expected: 1,
+            }
+        ))
     );
 
     let mut bad = one_hydrogen_result();
     bad.mapping.atoms.new_to_old.pop();
     assert_eq!(
-        add_hydrogen_coordinates(bad, CoordinateBlock::default(), false, false),
+        bad.mapping
+            .validate_for_counts(1, 2, 0, 1)
+            .map_err(HydrogenError::InvalidMapping),
         Err(HydrogenError::InvalidMapping(
             MappingValidationError::Length {
                 entity: "atom",
@@ -516,7 +526,9 @@ fn invalid_coordinate_and_mapping_inputs_return_exact_errors_without_mutating_so
     let mut bad = one_hydrogen_result();
     bad.mapping.atoms.old_to_new[0] = Some(AtomId::new(2));
     assert_eq!(
-        add_hydrogen_coordinates(bad, CoordinateBlock::default(), false, false),
+        bad.mapping
+            .validate_for_counts(1, 2, 0, 1)
+            .map_err(HydrogenError::InvalidMapping),
         Err(HydrogenError::InvalidMapping(
             MappingValidationError::OutOfRange {
                 entity: "atom",
@@ -531,7 +543,9 @@ fn invalid_coordinate_and_mapping_inputs_return_exact_errors_without_mutating_so
     let mut bad = one_hydrogen_result();
     bad.mapping.atoms.old_to_new[0] = Some(AtomId::new(1));
     assert_eq!(
-        add_hydrogen_coordinates(bad, CoordinateBlock::default(), false, false),
+        bad.mapping
+            .validate_for_counts(1, 2, 0, 1)
+            .map_err(HydrogenError::InvalidMapping),
         Err(HydrogenError::InvalidMapping(
             MappingValidationError::InverseMismatch {
                 entity: "atom",
@@ -542,89 +556,81 @@ fn invalid_coordinate_and_mapping_inputs_return_exact_errors_without_mutating_so
         ))
     );
 
-    let mut bad = one_hydrogen_result();
-    bad.mapping.atoms.old_to_new[0] = None;
-    bad.mapping.atoms.new_to_old[0] = None;
-    assert_eq!(
-        add_hydrogen_coordinates(bad, CoordinateBlock::default(), false, false),
-        Err(HydrogenError::InvalidAdditionPlan {
-            addition: None,
-            reason: "mapping is not the canonical append-only mapping",
-        })
-    );
+    // A self-consistent deletion/append mapping is not a malformed mapping.
+    // Its violation of the leaf-append preservation claim is tested in the
+    // strict operation runtime, not in the coordinate algorithm.
 }
 
 #[test]
-fn every_addition_metadata_inconsistency_is_rejected_exactly() {
-    let assert_plan_error =
-        |result: AddHydrogensTopologyResult, addition: Option<usize>, reason: &'static str| {
-            assert_eq!(
-                add_hydrogen_coordinates(result, CoordinateBlock::default(), false, false),
-                Err(HydrogenError::InvalidAdditionPlan { addition, reason })
-            );
-        };
-
-    let mut bad = one_hydrogen_result();
-    bad.topology.atoms.pop();
-    bad.topology.bonds.pop();
-    bad.topology.adjacency = AdjacencyList::from_topology(1, &bad.topology.bonds);
-    assert_plan_error(
-        bad,
-        None,
-        "new atom count does not equal old atoms plus additions",
-    );
-
-    let mut bad = one_hydrogen_result();
-    bad.topology.bonds.pop();
-    bad.topology.adjacency = AdjacencyList::from_topology(2, &bad.topology.bonds);
-    assert_plan_error(
-        bad,
-        None,
-        "new bond count does not equal old bonds plus additions",
-    );
-
-    let mut bad = one_hydrogen_result();
-    bad.additions[0].atom = AtomId::new(0);
-    assert_plan_error(bad, Some(0), "atom id is not the next appended row");
-
-    let mut bad = one_hydrogen_result();
-    bad.additions[0].bond = BondId::new(1);
-    assert_plan_error(bad, Some(0), "bond id is not the next appended row");
-
-    let mut bad = one_hydrogen_result();
-    bad.additions[0].parent = AtomId::new(1);
-    assert_plan_error(bad, Some(0), "parent is not an original atom");
-
-    let mut bad = one_hydrogen_result();
-    bad.topology.atoms[1] = Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::HE));
-    assert_plan_error(bad, Some(0), "appended atom is not hydrogen");
-
-    let mut bad = one_hydrogen_result();
-    bad.topology.atoms[1] = Atom::from_spec(
-        AtomId::new(1),
-        AtomSpec::new(Element::H).with_implicit_hydrogen(true),
-    );
-    assert_plan_error(
-        bad,
-        Some(0),
-        "hydrogen implicit marker disagrees with addition kind",
-    );
-
-    for order in [BondOrder::Double, BondOrder::Single] {
-        let mut bad = one_hydrogen_result();
-        let spec = if order == BondOrder::Single {
-            BondSpec::new(AtomId::new(1), AtomId::new(0), order)
-        } else {
-            BondSpec::new(AtomId::new(0), AtomId::new(1), order)
-        };
-        bad.topology.bonds[0] = Bond::from_spec(BondId::new(0), spec);
-        bad.topology.adjacency =
-            AdjacencyList::from_topology(bad.topology.atoms.len(), &bad.topology.bonds);
-        assert_plan_error(
-            bad,
-            Some(0),
-            "appended bond is not the ordered parent-hydrogen single bond",
+fn terminal_placement_checks_only_reached_source_preconditions() {
+    let assert_error = |result: AddHydrogensTopologyResult, reason| {
+        assert_eq!(
+            add_hydrogen_coordinates(result, CoordinateBlock::default(), true, false),
+            Err(HydrogenError::InvalidAdditionPlan {
+                addition: Some(0),
+                reason
+            })
         );
+    };
+    let mut missing_atom = one_hydrogen_result();
+    missing_atom.topology.atoms.pop();
+    missing_atom.topology.bonds.pop();
+    missing_atom.topology.adjacency = AdjacencyList::from_topology(1, &[]);
+    assert_error(missing_atom, "terminal atom index is out of range");
+
+    let mut missing_bond = one_hydrogen_result();
+    missing_bond.topology.bonds.clear();
+    missing_bond.topology.adjacency = AdjacencyList::from_topology(2, &[]);
+    assert_error(missing_bond, "bad atom degree");
+
+    let mut degenerate = one_hydrogen_result();
+    degenerate.additions[0].atom = AtomId::new(0);
+    assert_error(degenerate, "degenerate atoms");
+    let mut degenerate = one_hydrogen_result();
+    degenerate.additions[0].parent = AtomId::new(1);
+    assert_error(degenerate, "degenerate atoms");
+
+    let mut missing_bond = one_hydrogen_result();
+    missing_bond.additions[0].bond = BondId::new(1);
+    assert_error(missing_bond, "no bond between atoms");
+
+    // Source setTerminalAtomCoords is also used for attachment dummies. It
+    // does not require hydrogen chemistry, implicit markers, single order or
+    // a particular bond orientation. Preserve those formerly over-rejected
+    // inputs and check they are not rewritten by an unrelated plan audit.
+    for case in 0..4 {
+        let mut result = one_hydrogen_result();
+        match case {
+            0 => {
+                result.topology.atoms[1] =
+                    Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::HE))
+            }
+            1 => {
+                result.topology.atoms[1] = Atom::from_spec(
+                    AtomId::new(1),
+                    AtomSpec::new(Element::H).with_implicit_hydrogen(true),
+                )
+            }
+            2 => {
+                result.topology.bonds[0] = Bond::from_spec(
+                    BondId::new(0),
+                    BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Double),
+                )
+            }
+            _ => {
+                result.topology.bonds[0] = Bond::from_spec(
+                    BondId::new(0),
+                    BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Single),
+                )
+            }
+        }
+        result.topology.adjacency = AdjacencyList::from_topology(2, &result.topology.bonds);
+        let snapshot = result.clone();
+        let output =
+            add_hydrogen_coordinates(result, CoordinateBlock::default(), true, false).unwrap();
+        assert_eq!(output.topology, snapshot.topology);
+        assert_eq!(output.mapping, snapshot.mapping);
+        assert_eq!(output.additions, snapshot.additions);
     }
 }
 

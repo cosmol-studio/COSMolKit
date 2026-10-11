@@ -45,9 +45,6 @@ impl crate::Molecule {
         }
 
         let cache = self.derived_cache_runtime();
-        cache
-            .validate_for_atom_count(atom_count)
-            .map_err(UffParameterQueryError::Cache)?;
         let assignment = cache.valence_assignment().ok_or_else(|| {
             UffParameterQueryError::Cache(OperationError::InvalidDerivedCache {
                 state: "valence",

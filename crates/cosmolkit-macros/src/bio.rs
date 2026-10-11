@@ -241,6 +241,7 @@ pub fn expand(registry: Registry) -> TokenStream {
                     pub fn #value(&self, #(#an: #at),*) -> Result<Self, crate::BioOperationError> {
                         let mut working = self.clone();
                         #execute
+                        #[cfg(feature = "runtime-invariants")]
                         working.validate_operation()?;
                         Ok(working)
                     }
@@ -276,6 +277,12 @@ mod tests {
         assert_eq!(output.matches("super :: translate").count(), 2);
         assert_eq!(output.matches("Arc :: make_mut").count(), 2);
         assert_eq!(output.matches("validate_operation").count(), 2);
+        assert_eq!(
+            output
+                .matches("cfg (feature = \"runtime-invariants\")")
+                .count(),
+            2
+        );
     }
     #[test]
     fn invalid_permissions_names_and_duplicate_targets_are_rejected() {

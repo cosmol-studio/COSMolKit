@@ -87,6 +87,7 @@ mod enabled {
 
     fn parse(text: &str) -> QueryGraph {
         let graph = parse_smarts(text, &SmartsParseParams::default()).unwrap();
+        #[cfg(feature = "runtime-invariants")]
         graph.validate().unwrap();
         graph
     }
@@ -188,6 +189,7 @@ mod enabled {
         assert_eq!(text, text_before);
         let empty = parse_smarts("", &params).unwrap();
         assert_eq!((empty.num_atoms(), empty.num_bonds()), (0, 0));
+        #[cfg(feature = "runtime-invariants")]
         empty.validate().unwrap();
     }
 
@@ -479,6 +481,7 @@ mod enabled {
         assert_eq!(graph.atom(1).unwrap().id(), AtomId::new(1));
         assert_eq!(graph.bond(0).unwrap().id(), BondId::new(0));
         assert_eq!(graph.bond(0).unwrap().endpoints(), (0, 1));
+        #[cfg(feature = "runtime-invariants")]
         graph.validate().unwrap();
         assert_eq!(parse_smarts("[C][#1,#17]", &params).unwrap().num_atoms(), 2);
         let recursive = parse_smarts("[$([C][H])_7]", &params).unwrap();

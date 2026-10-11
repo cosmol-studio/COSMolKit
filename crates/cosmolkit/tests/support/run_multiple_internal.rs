@@ -10,8 +10,7 @@ use crate::molecule::DerivedCacheBlock;
 use crate::strict::{OPERATION_CONTRACTS_ENABLED, RUNTIME_INVARIANTS_ENABLED};
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
-};
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, };
 
 struct MultipleAccess;
 
@@ -21,7 +20,7 @@ struct SpecFields {
     access: BlockAccess,
     effects: DerivedEffects,
     cip: CipStatePolicy,
-    edit: TopologyEditKind,
+    kind: MoleculeOpKind,
     mapping: MappingRequirement,
 }
 
@@ -47,7 +46,7 @@ fn base_fields() -> SpecFields {
         access: BlockAccess::new(all_blocks(), BlockSet::NONE),
         effects: no_effects(),
         cip: CipStatePolicy::Preserve,
-        edit: TopologyEditKind::None,
+        kind: MoleculeOpKind::Weak,
         mapping: MappingRequirement::None,
     }
 }
@@ -59,12 +58,7 @@ fn spec(method: &'static str, fields: SpecFields) -> &'static MoleculeOpSpec {
         output: fields.output,
         result_type: "Vec<Molecule>",
         domain: OperationDomain::Topology,
-        kind: if fields.edit == TopologyEditKind::None {
-            MoleculeOpKind::Weak
-        } else {
-            MoleculeOpKind::Strong
-        },
-        topology_edit: fields.edit,
+        kind: fields.kind,
         access: fields.access,
         may_mutate: fields.access.write(),
         auto_remap: BlockSet::NONE,
@@ -160,6 +154,7 @@ fn constructor_rejects_single_output_before_preconditions_with_exact_fields() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn source_reads_enforce_each_declared_block_independently() {
     let source = molecule();
     for (allowed, denied_name) in [
@@ -291,6 +286,7 @@ fn one_many_order_and_duplicate_candidates_are_preserved() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn invalid_topology_coordinate_and_property_rows_remain_structured() {
     let source = molecule();
     let operation = spec("invalid-candidate", base_fields());
@@ -352,6 +348,7 @@ fn invalid_topology_coordinate_and_property_rows_remain_structured() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn nonidentity_rows_fail_closed_without_mapping_payload() {
     let source = molecule();
     let mut fields = base_fields();
@@ -359,7 +356,7 @@ fn nonidentity_rows_fail_closed_without_mapping_payload() {
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES),
         BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
     );
-    fields.edit = TopologyEditKind::Renumbering;
+    fields.kind = MoleculeOpKind::Strong;
     fields.mapping = MappingRequirement::Required;
     fields.effects = DerivedEffects::new(
         DerivedState::NONE,
@@ -389,6 +386,7 @@ fn nonidentity_rows_fail_closed_without_mapping_payload() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn changed_block_without_write_authority_is_rejected() {
     let source = molecule();
     let operation = spec("property-denied", base_fields());
@@ -546,6 +544,7 @@ fn cip_clear_and_tautomer_transition_are_applied_per_candidate() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn invalid_candidate_at_each_position_rejects_all_and_preserves_source() {
     let source = molecule();
     let before = source.clone();
@@ -798,6 +797,7 @@ fn lazy_callback_error_is_deferred_retains_success_count_and_fuses() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn lazy_invalid_candidate_at_each_position_rejects_before_counting_and_fuses() {
     let source = molecule();
     let before = source.clone();
@@ -871,6 +871,7 @@ fn lazy_declared_write_preserves_order_duplicates_and_shares_other_blocks() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn lazy_access_mapping_and_preservation_contracts_fail_closed_per_candidate() {
     let source = molecule();
     let changed = (source.topology().clone(), None, properties("changed"));
@@ -897,7 +898,7 @@ fn lazy_access_mapping_and_preservation_contracts_fail_closed_per_candidate() {
             .union(BlockSet::PROPERTIES)
             .union(BlockSet::DERIVED_CACHE),
     );
-    fields.edit = TopologyEditKind::Renumbering;
+    fields.kind = MoleculeOpKind::Strong;
     fields.mapping = MappingRequirement::Required;
     let mut topology = source.topology().clone();
     topology.atoms.swap(0, 1);
@@ -921,7 +922,7 @@ fn lazy_access_mapping_and_preservation_contracts_fail_closed_per_candidate() {
     assert_eq!(outputs.yielded_count(), 0);
     assert!(outputs.next().is_none());
 
-    fields.edit = TopologyEditKind::None;
+    fields.kind = MoleculeOpKind::Weak;
     fields.mapping = MappingRequirement::None;
     fields.effects = DerivedEffects::new(
         DerivedState::NONE,
@@ -1187,6 +1188,7 @@ fn source_stereoisomer_callback_failure_is_deferred_structured_atomic_and_fused(
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_accepts_valid_blocks_without_manufacturing_cache_facts() {
     let source = molecule();
     let before = source.derived_cache_runtime().clone();
@@ -1195,6 +1197,7 @@ fn reconstruction_input_accepts_valid_blocks_without_manufacturing_cache_facts()
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_rejects_topology_before_coordinates_or_property_lists() {
     let mut graph = topology();
     graph.atoms[0] = atom(7, Element::C);
@@ -1202,6 +1205,7 @@ fn reconstruction_input_rejects_topology_before_coordinates_or_property_lists() 
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_checks_every_coordinate_frame() {
     let mut frames = coordinates();
     frames.conformers_2d.push(Conformer2D::new(12, vec![[0.0, 0.0]]));
@@ -1209,6 +1213,7 @@ fn reconstruction_input_checks_every_coordinate_frame() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_rejects_both_property_list_target_length_errors() {
     for (target, label, expected) in [(SdfPropertyListTarget::Atom, "atom", 2), (SdfPropertyListTarget::Bond, "bond", 1)] {
         let props = MoleculeProperties::default().with_sdf_property_list(SdfPropertyList::new(target, "bad_rows", vec![]));
@@ -1218,6 +1223,7 @@ fn reconstruction_input_rejects_both_property_list_target_length_errors() {
 
 #[cfg(feature = "cap-valence")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_rejects_cache_validity_without_assignment() {
     let mut cache = DerivedCacheBlock::default();
     cache.mark_valid(DerivedState::VALENCE);
@@ -1226,6 +1232,7 @@ fn reconstruction_input_rejects_cache_validity_without_assignment() {
 
 #[cfg(feature = "cap-valence")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_rejects_assignment_without_cache_validity() {
     let mut cache = DerivedCacheBlock::default();
     cache.install_valence_assignment(cosmolkit_core::ValenceAssignment { explicit_valence: vec![1, 1], implicit_hydrogens: vec![3, 2] });
@@ -1234,6 +1241,7 @@ fn reconstruction_input_rejects_assignment_without_cache_validity() {
 
 #[cfg(feature = "cap-valence")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_checks_both_source_valence_row_counts() {
     for (explicit_valence, implicit_hydrogens, field) in [(vec![1], vec![3, 2], "explicit_valence"), (vec![1, 1], vec![3], "implicit_hydrogens")] {
         let mut cache = DerivedCacheBlock::default();
@@ -1245,6 +1253,7 @@ fn reconstruction_input_checks_both_source_valence_row_counts() {
 
 #[cfg(feature = "cap-rings")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_rejects_missing_ring_storage() {
     let mut cache = DerivedCacheBlock::default();
     cache.mark_valid(DerivedState::RINGS);
@@ -1253,6 +1262,7 @@ fn reconstruction_input_rejects_missing_ring_storage() {
 
 #[cfg(feature = "cap-valence")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_input_preserves_actual_valid_source_facts() {
     let mut cache = DerivedCacheBlock::default();
     cache.install_valence_assignment(cosmolkit_core::ValenceAssignment { explicit_valence: vec![1, 1], implicit_hydrogens: vec![3, 2] });
@@ -1281,6 +1291,7 @@ fn typed_reconstruction_product() -> cosmolkit_reaction::ReactionProduct {
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn receiver_reconstruction_validates_inputs_origins_facts_and_complete_output() {
     let source = molecule();
     let peer = source.clone();
@@ -1378,6 +1389,7 @@ fn reconstruction_typed_candidate_accepts_repeated_origins_and_none_rows() {
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_typed_candidate_checks_later_product_before_returning_any_molecule() {
     let source = molecule();
     let observer = source.clone();
@@ -1397,6 +1409,7 @@ fn reconstruction_typed_candidate_checks_later_product_before_returning_any_mole
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_typed_candidate_checks_actual_derived_fact_lengths() {
     let source = molecule();
     let mut bad = typed_reconstruction_product();
@@ -1408,6 +1421,7 @@ fn reconstruction_typed_candidate_checks_actual_derived_fact_lengths() {
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reconstruction_typed_candidate_checks_actual_property_rows() {
     let source = molecule();
     let mut bad = typed_reconstruction_product();
@@ -1442,6 +1456,7 @@ fn reconstruction_typed_grouping_rejects_incomplete_or_oversized_metadata() {
     }
 }
 
+#[cfg(feature = "op-contracts")]
 fn reconstruction_check(
     inputs: &[(usize, usize)],
     topology: &TopologyBlock,
@@ -1453,7 +1468,7 @@ fn reconstruction_check(
 ) -> Result<(), OperationError> {
     let mut fields = base_fields();
     fields.mapping = MappingRequirement::Reconstruction;
-    fields.edit = TopologyEditKind::Reconstruction;
+    fields.kind = MoleculeOpKind::Strong;
     validate_reconstruction_rows(
         spec("reconstruction", fields),
         inputs,
@@ -1467,6 +1482,7 @@ fn reconstruction_check(
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_accept_one_to_many_and_independent_source_inputs() {
     assert_eq!(
         reconstruction_check(
@@ -1483,6 +1499,7 @@ fn reconstruction_origins_accept_one_to_many_and_independent_source_inputs() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_accept_new_atom_and_bond_rows_without_sources() {
     assert_eq!(
         reconstruction_check(
@@ -1499,6 +1516,7 @@ fn reconstruction_origins_accept_new_atom_and_bond_rows_without_sources() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_accept_empty_product_and_actual_zero_row_facts() {
     assert_eq!(
         reconstruction_check(
@@ -1515,6 +1533,7 @@ fn reconstruction_origins_accept_empty_product_and_actual_zero_row_facts() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_atom_input_index_with_destination_and_no_row_count() {
     assert_eq!(
         reconstruction_check(
@@ -1539,6 +1558,7 @@ fn reconstruction_origins_reject_atom_input_index_with_destination_and_no_row_co
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_atom_row_at_exact_source_length() {
     assert_eq!(
         reconstruction_check(
@@ -1563,6 +1583,7 @@ fn reconstruction_origins_reject_atom_row_at_exact_source_length() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_bond_input_index_with_actual_input_count() {
     assert_eq!(
         reconstruction_check(
@@ -1587,6 +1608,7 @@ fn reconstruction_origins_reject_bond_input_index_with_actual_input_count() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_bond_row_at_exact_source_length() {
     assert_eq!(
         reconstruction_check(
@@ -1611,6 +1633,7 @@ fn reconstruction_origins_reject_bond_row_at_exact_source_length() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_check_source_bond_counts_independently_of_atom_counts() {
     assert_eq!(
         reconstruction_check(
@@ -1635,6 +1658,7 @@ fn reconstruction_origins_check_source_bond_counts_independently_of_atom_counts(
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_all_four_destination_and_valence_length_mismatches() {
     for (atoms, bonds, valence, field, actual, expected) in [
         (vec![None], vec![None], (2, 2), "atom origins", 1, 2),
@@ -1677,6 +1701,7 @@ fn reconstruction_origins_reject_all_four_destination_and_valence_length_mismatc
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_length_error_precedes_invalid_source_origin() {
     assert_eq!(
         reconstruction_check(
@@ -1698,6 +1723,7 @@ fn reconstruction_origins_length_error_precedes_invalid_source_origin() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_first_atom_error_precedes_bond_error_and_ring_rows() {
     assert_eq!(
         reconstruction_check(
@@ -1722,6 +1748,7 @@ fn reconstruction_origins_first_atom_error_precedes_bond_error_and_ring_rows() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_both_optional_ring_membership_row_mismatches() {
     for (rings, field, actual, expected) in [
         ((1, 1), "ring atom membership", 1, 2),
@@ -1748,6 +1775,7 @@ fn reconstruction_origins_reject_both_optional_ring_membership_row_mismatches() 
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_reject_invalid_physical_topology_before_coordinate_rows() {
     let mut broken = topology();
     broken.atoms[0] = atom(7, Element::C);
@@ -1775,6 +1803,7 @@ fn reconstruction_origins_reject_invalid_physical_topology_before_coordinate_row
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_validate_later_physical_coordinate_frames() {
     let coordinates = CoordinateBlock {
         conformers_2d: vec![
@@ -1805,6 +1834,7 @@ fn reconstruction_origins_validate_later_physical_coordinate_frames() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_allow_absent_rings_and_exact_present_rows() {
     for rings in [None, Some((2, 1))] {
         assert_eq!(
@@ -1823,6 +1853,7 @@ fn reconstruction_origins_allow_absent_rings_and_exact_present_rows() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reconstruction_origins_leave_all_borrowed_values_unchanged_after_success_and_failure() {
     let topology = topology();
     let coordinates = coordinates();

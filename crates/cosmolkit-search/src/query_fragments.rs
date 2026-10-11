@@ -52,14 +52,6 @@ pub fn query_graph_fragments(graph: &QueryGraph) -> Result<Vec<QueryGraph>, Smar
                 new_to_old: source_bonds.iter().copied().map(Some).collect(),
             },
         };
-        mapping
-            .validate_for_counts(
-                graph.num_atoms(),
-                source_atoms.len(),
-                graph.num_bonds(),
-                source_bonds.len(),
-            )
-            .map_err(|e| SmartsParseError::Parse(e.to_string()))?;
         // RDKit❗✔️: if (comp.size() == 1 ||
         // RDKit❗✔️:     (nFrags > 3 && !fragmentHasChallengingFeatures(comp, atomsInFrag))) {
         // RDKit❗✔️:   SubsetOptions opts{.sanitize = sanitizeFrags,

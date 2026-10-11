@@ -25,7 +25,7 @@ pub enum AdjacencyError {
     },
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "runtime-invariants"))]
 mod validation_tests {
     use super::*;
     use crate::{BondOrder, BondSpec};
@@ -192,6 +192,7 @@ pub struct AdjacencyList {
 impl AdjacencyList {
     /// Compare with the canonical CSR representation without rebuilding it.
     /// The caller has already checked dense bond IDs, endpoints and self-loops.
+    #[cfg(feature = "runtime-invariants")]
     pub(crate) fn matches_validated_topology(&self, atom_count: usize, bonds: &[Bond]) -> bool {
         if self.offsets.len().checked_sub(1) != Some(atom_count)
             || self.offsets.first() != Some(&0)

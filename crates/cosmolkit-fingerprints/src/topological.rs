@@ -217,12 +217,6 @@ fn bond(graph: GraphInput<'_>, index: usize) -> &Bond {
         GraphInput::Query(q) => q.bonds()[index].bond(),
     }
 }
-fn validate_graph(graph: GraphInput<'_>) -> Result<(), TopologicalFingerprintError> {
-    match graph {
-        GraphInput::Concrete(t) => t.validate().map_err(Into::into),
-        GraphInput::Query(q) => q.validate().map_err(Into::into),
-    }
-}
 fn rdkit_fp_atom_invariants(graph: GraphInput<'_>) -> Vec<u32> {
     // RDKit❗✔️: std::vector<std::uint32_t> *RDKitFPAtomInvGenerator::getAtomInvariants(
     // RDKit❗✔️:     const ROMol &mol) const {
@@ -845,7 +839,6 @@ fn fingerprint_for_graph(
             reason: "bad atomInvariants size",
         });
     }
-    validate_graph(graph)?;
     let atoms = match params.atom_invariants.as_deref() {
         Some(a) => Cow::Borrowed(a),
         None => Cow::Owned(rdkit_fp_atom_invariants(graph)),

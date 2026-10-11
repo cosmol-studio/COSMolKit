@@ -4711,9 +4711,6 @@ pub fn write_smarts(
     graph: &QueryGraph,
     params: &SmartsWriteParams,
 ) -> Result<PropertyText, SmartsWriteError> {
-    graph
-        .validate()
-        .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
     query_graph_to_smarts(graph, params)
 }
 
@@ -4927,9 +4924,6 @@ pub fn atom_to_smarts(
     atom_id: AtomId,
     params: &SmartsWriteParams,
 ) -> Result<PropertyText, SmartsWriteError> {
-    graph
-        .validate()
-        .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
     let atom =
         graph
             .atom(atom_id.index())
@@ -5000,9 +4994,6 @@ pub fn bond_to_smarts(
     graph: &QueryGraph,
     bond_id: BondId,
 ) -> Result<PropertyText, SmartsWriteError> {
-    graph
-        .validate()
-        .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
     let bond =
         graph
             .bond(bond_id.index())

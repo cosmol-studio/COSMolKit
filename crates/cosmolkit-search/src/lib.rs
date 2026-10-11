@@ -93,10 +93,6 @@ pub struct CompiledQuery {
 impl CompiledQuery {
     /// Compile a query graph into a deterministic plan.
     pub fn compile(query: QueryGraph) -> Result<Self, QueryCompileError> {
-        query
-            .validate()
-            .map_err(|error| QueryCompileError::InvalidGraph(error.to_string()))?;
-
         let compiled_graph = matcher::compile_query_graph(&query);
         let atom_order = matcher::compile_query_order_from_graph(&compiled_graph);
 
@@ -130,9 +126,6 @@ impl CompiledQuery {
     /// Match this immutable plan against a detached topology without
     /// rebuilding the query-side order or adjacency view.
     pub fn matches(&self, topology: &TopologyBlock) -> Result<Vec<MatchResult>, MatchError> {
-        topology
-            .validate()
-            .map_err(|error| MatchError::InvalidTarget(error.to_string()))?;
         let coordinates = CoordinateBlock::default();
         let target = SearchTarget::new(topology, &coordinates, &topology.stereo_groups, None, None);
         self.matches_target(&target)
@@ -309,9 +302,6 @@ pub fn match_query(
     query: &QueryGraph,
     topology: &TopologyBlock,
 ) -> Result<Vec<MatchResult>, MatchError> {
-    query
-        .validate()
-        .map_err(|error| MatchError::InvalidQuery(error.to_string()))?;
     let plan = compile_query(query).map_err(|error| MatchError::InvalidQuery(error.to_string()))?;
     plan.matches(topology)
 }
@@ -321,9 +311,6 @@ pub fn match_query_target(
     query: &QueryGraph,
     target: &SearchTarget<'_>,
 ) -> Result<Vec<MatchResult>, MatchError> {
-    query
-        .validate()
-        .map_err(|error| MatchError::InvalidQuery(error.to_string()))?;
     let plan = compile_query(query).map_err(|error| MatchError::InvalidQuery(error.to_string()))?;
     plan.matches_target(target)
 }

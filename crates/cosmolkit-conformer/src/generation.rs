@@ -5590,8 +5590,6 @@ pub fn generate_conformers(
             "Only version 1 and 2 of the experimental torsion-angle preferences (ETversion) supported",
         ));
     }
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let original_valence = cosmolkit_core::assign_valence_for_topology(
         topology,
         cosmolkit_core::ValenceModel::RdkitLike,

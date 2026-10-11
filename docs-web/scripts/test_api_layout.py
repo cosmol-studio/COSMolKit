@@ -134,6 +134,27 @@ class ApiLayoutTests(unittest.TestCase):
         format_javascript_signature(self.app, "py", "function", entry[1])
         self.assertEqual(entry.pformat(), before)
 
+    def test_javascript_public_namespace_preserves_link_targets(self):
+        for kind, name in (("function", "bioFromMmcif"), ("class", "Molecule"),
+                           ("attribute", "SdfCoordinateMode")):
+            with self.subTest(kind=kind):
+                entry = declaration(kind, name)
+                signature = entry[0]
+                signature["module"] = "wasm_wasm.d"
+                signature["ids"] = [f"wasm_wasm.d.{name}"]
+                signature.insert(0, addnodes.desc_addname("", "wasm_wasm.d."))
+                format_javascript_signature(self.app, "js", kind, entry[1])
+                self.assertEqual(signature.astext(), f"cosmolkit.{name}")
+                self.assertEqual(signature["ids"], [f"wasm_wasm.d.{name}"])
+                self.assertEqual(signature["module"], "wasm_wasm.d")
+
+    def test_javascript_class_member_prefix_is_preserved(self):
+        entry = declaration("function", "Molecule.toSmiles")
+        entry[0]["module"] = "wasm_wasm.d"
+        entry[0].insert(0, addnodes.desc_addname("", "Molecule."))
+        format_javascript_signature(self.app, "js", "function", entry[1])
+        self.assertEqual(entry[0][0].astext(), "Molecule.")
+
     def test_javascript_void_result_removes_empty_field_list(self):
         entry = declaration("function", "free")
         entry[0] += addnodes.desc_parameterlist()

@@ -11,8 +11,8 @@ use cosmolkit::{
     CoordinateBlock, Element, FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput,
     MoleculeProperties, OperationDomain, OperationError, ParityPolicy, PotentialStereoCenter,
     PotentialStereoError, PotentialStereoParams, PotentialStereoResult, PotentialStereoSpecified,
-    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, feature_spec, operation_invariant,
+    operation_parity, operation_spec, support_matrix,
 };
 use cosmolkit_core::{
     RingSearchParams, ValenceModel, ValenceParams, assign_valence, potential_stereo,
@@ -259,7 +259,6 @@ fn generated_registry_and_all_four_matrices_share_one_single_result_operation() 
     assert_eq!(spec.result_type, "crate :: PotentialStereoResult");
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(
         spec.access.write(),

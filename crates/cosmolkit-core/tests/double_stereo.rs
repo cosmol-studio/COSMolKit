@@ -354,7 +354,9 @@ fn topology_and_lookup_errors_retain_exact_ids() {
     let mut invalid = topology.clone();
     invalid.atoms[0] = invalid.atoms[0].clone().with_id(AtomId::new(1));
     assert_eq!(
-        neighboring_directed_bond(&invalid, AtomId::new(0)),
+        invalid
+            .validate()
+            .map_err(DoubleBondStereoError::InvalidTopology),
         Err(DoubleBondStereoError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,

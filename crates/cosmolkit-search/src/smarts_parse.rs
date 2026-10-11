@@ -3373,16 +3373,6 @@ fn merge_query_hs_in_place(
             new_to_old: bond_new_to_old,
         },
     };
-    mapping
-        .validate_for_counts(
-            molecule.num_atoms(),
-            next_index,
-            molecule.num_bonds(),
-            mapping.bonds().new_to_old().len(),
-        )
-        .map_err(|error| {
-            SmartsParseError::Parse(format!("query-H removal produced invalid mapping: {error}"))
-        })?;
 
     // Second pass: every predicate edit and remap is applied to a clone. The
     // caller's graph is assigned only after the whole rebuild succeeds, so a

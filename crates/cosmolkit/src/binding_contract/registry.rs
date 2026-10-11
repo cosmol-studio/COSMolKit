@@ -9,43 +9,6 @@ pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[
     ("FingerprintBatch", "Vec<Option<crate::Fingerprint>>"),
 ];
 
-/// Explicitly approved Python conveniences, not additional Rust callables.
-/// Both runtime publication and stub generation reference the existing method;
-/// signatures, configuration, defaults and errors remain owned by that method.
-pub static BINDING_CONTRACT_PYTHON_ALIASES: &[(&str, &str)] = &[
-    #[cfg(feature = "cap-smiles")]
-    ("mol_from_smiles", "Molecule.from_smiles"),
-    #[cfg(feature = "cap-io")]
-    ("mol_from_mol", "Molecule.from_mol"),
-    #[cfg(feature = "cap-io")]
-    ("mol_from_sdf", "Molecule.from_sdf"),
-    #[cfg(feature = "cap-io")]
-    ("mol_from_mol2", "Molecule.from_mol2"),
-    #[cfg(feature = "cap-io")]
-    ("mol_from_xyz_block", "Molecule.from_xyz_block"),
-    #[cfg(feature = "cap-inchi")]
-    ("mol_from_inchi", "Molecule.from_inchi"),
-    #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
-    ("mol_from_binary", "Molecule.from_binary"),
-    ("mol_from_rdkit", "Molecule.from_rdkit"),
-    #[cfg(feature = "cap-batch")]
-    ("mols_from_smiles_list", "MoleculeBatch.from_smiles_list"),
-    #[cfg(feature = "cap-io")]
-    ("mols_from_sdf_records", "MoleculeBatch.from_sdf_records"),
-    #[cfg(feature = "cap-batch")]
-    ("mols_from_records", "MoleculeBatch.from_records"),
-    #[cfg(feature = "cap-reaction")]
-    ("reaction_from_smirks", "Reaction.from_smirks"),
-    #[cfg(feature = "cap-bio")]
-    ("bio_from_pdb", "BioStructure.from_pdb"),
-    #[cfg(feature = "cap-bio")]
-    ("bio_from_mmcif", "BioStructure.from_mmcif"),
-    #[cfg(feature = "cap-bio")]
-    ("protein_from_pdb", "Protein.from_pdb"),
-    #[cfg(feature = "cap-bio")]
-    ("protein_from_mmcif", "Protein.from_mmcif"),
-];
-
 binding_contract! {
     pub static BINDING_CONTRACT = [
         {
@@ -1881,7 +1844,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-bio")]
         {
-            semantic_id: "BioStructure.from_pdb", item: callable, owner: type_,
+            semantic_id: "BioStructure.from_pdb", convenience: bio_from_pdb, item: callable, owner: type_,
             rust: crate::BioStructure::from_pdb, python: "from_pdb", javascript: "fromPdb",
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: text, type: &str, default: required }],
@@ -1899,7 +1862,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-bio")]
         {
-            semantic_id: "BioStructure.from_mmcif", item: callable, owner: type_,
+            semantic_id: "BioStructure.from_mmcif", convenience: bio_from_mmcif, item: callable, owner: type_,
             rust: crate::BioStructure::from_mmcif, python: "from_mmcif", javascript: "fromMmcif",
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: text, type: &str, default: required }],
@@ -1908,7 +1871,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-bio")]
         {
-            semantic_id: "Protein.from_pdb", item: callable, owner: type_,
+            semantic_id: "Protein.from_pdb", convenience: protein_from_pdb, item: callable, owner: type_,
             rust: crate::Protein::from_pdb, python: "from_pdb", javascript: "fromPdb",
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: text, type: &str, default: required }],
@@ -1926,7 +1889,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-bio")]
         {
-            semantic_id: "Protein.from_mmcif", item: callable, owner: type_,
+            semantic_id: "Protein.from_mmcif", convenience: protein_from_mmcif, item: callable, owner: type_,
             rust: crate::Protein::from_mmcif, python: "from_mmcif", javascript: "fromMmcif",
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: text, type: &str, default: required }],
@@ -2792,7 +2755,7 @@ binding_contract! {
             javascript: "Molecule",
             feature: "runtime", status: experimental,
             role: value,
-            python_adapters: [{name: from_rdkit, targets: [
+            python_adapters: [{name: from_rdkit, convenience: mol_from_rdkit, targets: [
                 "MoleculeBuilder.from_parts",
                 "MoleculeBuilder.add_3d_conformer", "MoleculeBuilder.build",
                 "Molecule.with_assigned_valence", "Molecule.sanitize",
@@ -9259,7 +9222,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-io")]
         {
-            semantic_id: "Molecule.from_sdf",
+            semantic_id: "Molecule.from_sdf", convenience: mol_from_sdf,
             item: callable,
             owner: molecule,
             rust: crate::Molecule::from_sdf,
@@ -9344,7 +9307,7 @@ binding_contract! {
         },
         #[cfg(feature = "cap-smiles")]
         {
-            semantic_id: "Molecule.from_smiles",
+            semantic_id: "Molecule.from_smiles", convenience: mol_from_smiles,
             item: callable,
             owner: molecule,
             rust: crate::Molecule::from_smiles,
@@ -10147,7 +10110,7 @@ binding_contract! {
           state:read_only, operation:none,
           signature:fn(&crate::Molecule)->Result<Vec<u8>,crate::PickleError>, },
         #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
-        { semantic_id:"Molecule.from_binary", item:callable, owner:molecule,
+        { semantic_id:"Molecule.from_binary", convenience: mol_from_binary, item:callable, owner:molecule,
           rust:crate::Molecule::from_binary, python:"from_binary", javascript:"fromBinary",
           feature:"cap-serialization", status:experimental, kind:static_,
           parameters:[{name:data,type:&[u8],default:required}], output:crate::Molecule, error:crate::PickleError,
@@ -10788,11 +10751,11 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"types.SdfRecordStream",item:type,owner:type_,rust:crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,python:"SdfRecordStream",javascript:"SdfRecordStream",feature:"cap-io",status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.from_xyz_block",item:callable,owner:molecule,rust:crate::Molecule::from_xyz_block,python:"from_xyz_block",javascript:"fromXyzBlock",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.from_xyz_block", convenience: mol_from_xyz_block,item:callable,owner:molecule,rust:crate::Molecule::from_xyz_block,python:"from_xyz_block",javascript:"fromXyzBlock",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.read_xyz",item:callable,owner:molecule,rust:crate::Molecule::read_xyz,python:"read_xyz",javascript:"readXyz",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.from_mol2",item:callable,owner:molecule,rust:crate::Molecule::from_mol2,python:"from_mol2",javascript:"fromMol2",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.from_mol2", convenience: mol_from_mol2,item:callable,owner:molecule,rust:crate::Molecule::from_mol2,python:"from_mol2",javascript:"fromMol2",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.read_mol2",item:callable,owner:molecule,rust:crate::Molecule::read_mol2,python:"read_mol2",javascript:"readMol2",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
@@ -10808,7 +10771,7 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.read_sdf_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_sdf_with_params,python:"read_sdf_with_params",javascript:"readSdfWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.from_mol",item:callable,owner:molecule,rust:crate::Molecule::from_mol,python:"from_mol",javascript:"fromMol",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::SdfError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::SdfError>,},
+        {semantic_id:"Molecule.from_mol", convenience: mol_from_mol,item:callable,owner:molecule,rust:crate::Molecule::from_mol,python:"from_mol",javascript:"fromMol",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::SdfError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::SdfError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.from_mol_with_params",item:callable,owner:molecule,rust:crate::Molecule::from_mol_with_params,python:"from_mol_with_params",javascript:"fromMolWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::SdfError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::SdfError>,},
         #[cfg(feature = "cap-io")]
@@ -10876,7 +10839,7 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"types.SdfReaderBatchIterator",item:type,owner:type_,rust:crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,python:"SdfReaderBatchIterator",javascript:"SdfReaderBatchIterator",feature:"cap-io",requires:["cap-batch"],status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.from_sdf_records",item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records,python:"from_sdf_records",javascript:"fromSdfRecords",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.from_sdf_records", convenience: mols_from_sdf_records,item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records,python:"from_sdf_records",javascript:"fromSdfRecords",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.from_sdf_records_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records_with_params,python:"from_sdf_records_with_params",javascript:"fromSdfRecordsWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
@@ -11028,9 +10991,9 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.with_progress_bar",item:callable,owner:type_,rust:crate::MoleculeBatch::with_progress_bar,python:"with_progress_bar",javascript:"withProgressBar",feature:"cap-batch",status:native,kind:instance,receiver:owned,parameters:[{name:progress_bar,type:Option<bool>,default:required}],output:crate::MoleculeBatch,error:none,state:value_returning,operation:none,signature:fn(crate::MoleculeBatch,Option<bool>)->crate::MoleculeBatch,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.from_records",item:callable,owner:type_,rust:crate::MoleculeBatch::from_records,python:"from_records",javascript:"fromRecords",feature:"cap-batch",status:native,kind:static_,parameters:[{name:records,type:Vec<crate::BatchRecord>,default:required},{name:mode,type:crate::BatchErrorMode,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(Vec<crate::BatchRecord>,crate::BatchErrorMode)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.from_records", convenience: mols_from_records,item:callable,owner:type_,rust:crate::MoleculeBatch::from_records,python:"from_records",javascript:"fromRecords",feature:"cap-batch",status:native,kind:static_,parameters:[{name:records,type:Vec<crate::BatchRecord>,default:required},{name:mode,type:crate::BatchErrorMode,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(Vec<crate::BatchRecord>,crate::BatchErrorMode)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.from_smiles_list",item:callable,owner:type_,rust:crate::MoleculeBatch::from_smiles_list,python:"from_smiles_list",javascript:"fromSmilesList",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:static_,parameters:[{name:smiles,type:&[String],default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a [String])->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.from_smiles_list", convenience: mols_from_smiles_list,item:callable,owner:type_,rust:crate::MoleculeBatch::from_smiles_list,python:"from_smiles_list",javascript:"fromSmilesList",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:static_,parameters:[{name:smiles,type:&[String],default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a [String])->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.from_smiles_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::from_smiles_list_with_params,python:"from_smiles_list_with_params",javascript:"fromSmilesListWithParams",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:static_,parameters:[{name:smiles,type:&[String],default:required},{name:parse,type:&crate::SmilesParseParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a [String],&'b crate::SmilesParseParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
@@ -11376,7 +11339,7 @@ binding_contract! {
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.from_templates",item:callable,owner:type_,rust:crate::Reaction::from_templates,python:"from_templates",javascript:"fromTemplates",feature:"cap-reaction",status:experimental,kind:static_,parameters:[{name:reactants,type:Vec<crate::QueryGraph>,default:required},{name:products,type:Vec<crate::QueryGraph>,default:required},{name:agents,type:Vec<crate::QueryGraph>,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(Vec<crate::QueryGraph>,Vec<crate::QueryGraph>,Vec<crate::QueryGraph>)->Result<crate::Reaction,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.from_smirks",item:callable,owner:type_,rust:crate::Reaction::from_smirks,python:"from_smirks",javascript:"fromSmirks",feature:"cap-reaction",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Reaction,error:crate::ReactionParseError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'b str)->Result<crate::Reaction,crate::ReactionParseError>,},
+{semantic_id:"Reaction.from_smirks", convenience: reaction_from_smirks,item:callable,owner:type_,rust:crate::Reaction::from_smirks,python:"from_smirks",javascript:"fromSmirks",feature:"cap-reaction",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Reaction,error:crate::ReactionParseError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'b str)->Result<crate::Reaction,crate::ReactionParseError>,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.from_smirks_with_params",item:callable,owner:type_,rust:crate::Reaction::from_smirks_with_params,python:"from_smirks_with_params",javascript:"fromSmirksWithParams",feature:"cap-reaction",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::ReactionParseParams,default:required}],output:crate::Reaction,error:crate::ReactionParseError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'b str,&'b crate::ReactionParseParams)->Result<crate::Reaction,crate::ReactionParseError>,},
 #[cfg(feature="cap-reaction")]
@@ -11491,7 +11454,7 @@ binding_contract! {
                 { name: options, python_type: "builtins.str", default: "''" },
             ], role:parameter,},
         #[cfg(feature = "cap-inchi")]
-        {semantic_id:"Molecule.from_inchi",item:callable,owner:molecule,rust:crate::Molecule::from_inchi,python:"from_inchi",javascript:"fromInchi",feature:"cap-inchi",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::InchiError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::Molecule,crate::InchiError>,},
+        {semantic_id:"Molecule.from_inchi", convenience: mol_from_inchi,item:callable,owner:molecule,rust:crate::Molecule::from_inchi,python:"from_inchi",javascript:"fromInchi",feature:"cap-inchi",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::InchiError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::Molecule,crate::InchiError>,},
         #[cfg(feature = "cap-inchi")]
         {semantic_id:"Molecule.from_inchi_with_params",item:callable,owner:molecule,rust:crate::Molecule::from_inchi_with_params,python:"from_inchi_with_params",javascript:"fromInchiWithParams",feature:"cap-inchi",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::InchiReadParams,default:required}],output:crate::Molecule,error:crate::InchiError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a str,&'b crate::InchiReadParams)->Result<crate::Molecule,crate::InchiError>,},
         #[cfg(feature = "cap-inchi")]

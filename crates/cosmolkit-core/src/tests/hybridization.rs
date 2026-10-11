@@ -462,8 +462,13 @@ fn invalid_inputs_return_exact_structured_errors_without_mutation() {
 
     let mut malformed = graph.clone();
     malformed.atoms[0] = Atom::from_spec(AtomId::new(9), AtomSpec::new(Element::C));
-    assert!(matches!(
-        assign_hybridization(&malformed, &valence(&[1, 1], &[3, 1])),
-        Err(HybridizationError::InvalidTopology(_))
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        malformed.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(9)
+        }),
+    );
 }

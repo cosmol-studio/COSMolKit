@@ -919,7 +919,6 @@ pub fn compute_2d_coordinates(
     // alone applies dimension-separated clear/append semantics.
     // Complexity review: one temporary topology clone and final coordinate
     // allocation match source clone/copy shape; helper costs are unchanged.
-    topology.validate().map_err(DepictError::InvalidTopology)?;
     let valence = assign_valence(
         topology,
         &ValenceParams {

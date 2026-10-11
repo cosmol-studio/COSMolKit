@@ -7,7 +7,7 @@
 
 pub(super) use super::{
     BlockSet, CipStatePolicy, DerivedState, FeatureSpec, MappingRequirement, MoleculeOpOutput,
-    MoleculeOpSpec, OperationError, TopologyEditKind,
+    MoleculeOpSpec, OperationError,
 };
 
 #[path = "../context.rs"]

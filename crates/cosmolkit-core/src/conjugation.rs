@@ -309,9 +309,7 @@ pub fn atom_has_conjugated_bond(
     // RDKit✔️❌:   return false;
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION MolOps::atomHasConjugatedBond
-    // The detached predicate validates the complete topology before trusting
-    // adjacency, adding O(V + E) work to the source's O(degree) scan.
-    topology.validate()?;
+    // The source PRECONDITION checks this atom, not the complete graph.
     atom(topology, atom_id)?;
     Ok(atom_has_conjugated_bond_from_validated(topology, atom_id))
 }
@@ -332,13 +330,11 @@ pub fn assign_conjugation(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<TopologyBlock, ConjugationError> {
-    topology.validate()?;
     validate_valence(topology, valence)?;
     let mut working = topology.clone();
     assign_conjugation_with_writer(topology, valence, &mut |index, value| {
         working.bonds[index].set_conjugated(value)
     })?;
-    working.validate()?;
     Ok(working)
 }
 /// Detached bond flags for consumers that do not mutate topology.
@@ -347,7 +343,6 @@ pub fn assign_conjugation_flags(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<Vec<bool>, ConjugationError> {
-    topology.validate()?;
     validate_valence(topology, valence)?;
     let mut flags = vec![false; topology.bonds.len()];
     assign_conjugation_with_writer(topology, valence, &mut |index, value| flags[index] = value)?;

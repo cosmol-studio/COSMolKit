@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const pdb='ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nEND\n';
+test('BIO constructor conveniences preserve their factory identity and result types',()=>{
+ assert.equal(b.bioFromPdb,b.BioStructure.fromPdb);
+ assert.equal(b.bioFromMmcif,b.BioStructure.fromMmcif);
+ assert.equal(b.proteinFromPdb,b.Protein.fromPdb);
+ assert.equal(b.proteinFromMmcif,b.Protein.fromMmcif);
+ const structure=b.bioFromPdb(pdb),cif=structure.toMmcif();
+ const parsed=b.bioFromMmcif(cif),protein=b.proteinFromMmcif(cif);
+ assert.ok(parsed instanceof b.BioStructure);assert.ok(protein instanceof b.Protein);
+ assert.equal(parsed.numAtoms(),structure.numAtoms());
+ assert.equal(protein.numAtoms(),b.Protein.fromMmcif(cif).numAtoms());
+ structure.free();parsed.free();protein.free();
+});
 const incompleteCif='data_test\n_entry.id test\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.B_iso_or_equiv\nATOM 1 C CA ALA A 1 1.000 2.000 3.000 1.00 20.00\n';
 const cif='data_test\n_entry.id test\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_alt_id\n_atom_site.label_asym_id\n_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.B_iso_or_equiv\nATOM 1 C CA ALA . A A 1 1.000 2.000 3.000 1.00 20.00\n';
 test('BIO complete read options preserve defaults, source context and checked flag/width boundaries',()=>{

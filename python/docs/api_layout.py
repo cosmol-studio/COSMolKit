@@ -35,7 +35,16 @@ def _entries(doctree):
 
 def format_javascript_signature(app, domain, objtype, content):
     """Move TypeDoc's types into signatures, retaining authored field prose."""
-    if domain != "js" or objtype not in {"function", "class"}:
+    if domain != "js":
+        return
+    # automodule uses the declaration filename as its internal module name.
+    # Present the public package namespace without changing cross-reference IDs.
+    for signature in content.parent.findall(addnodes.desc_signature):
+        for prefix in signature.findall(addnodes.desc_addname):
+            if prefix.astext() == f"{signature.get('module')}.":
+                prefix[:] = [addnodes.desc_sig_name("", "cosmolkit"),
+                             addnodes.desc_sig_punctuation("", ".")]
+    if objtype not in {"function", "class"}:
         return
     signature = next(child for child in content.parent
                      if isinstance(child, addnodes.desc_signature))

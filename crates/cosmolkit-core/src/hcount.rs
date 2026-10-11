@@ -70,9 +70,6 @@ pub fn adjust_hs(
     topology: &TopologyBlock,
     original_valence: &ValenceAssignment,
 ) -> Result<AdjustHsAssignment, AdjustHsError> {
-    topology
-        .validate()
-        .map_err(|source| AdjustHsError::InvalidTopology { source })?;
     validate_adjust_hs_valence(topology, original_valence)?;
 
     // BEGIN RDKIT CPP FUNCTION MolOps::adjustHs
@@ -176,9 +173,6 @@ pub fn adjust_hs(
         implicit_hydrogens.push(recalculated_implicit_valence);
     }
 
-    working
-        .validate()
-        .map_err(|source| AdjustHsError::InvalidTopology { source })?;
     Ok(AdjustHsAssignment {
         topology: working,
         valence: ValenceAssignment {
@@ -258,9 +252,6 @@ pub fn total_hydrogen_count(
     atom_id: AtomId,
     include_neighbors: bool,
 ) -> Result<u32, ValenceError> {
-    topology
-        .validate()
-        .map_err(|source| ValenceError::InvalidTopology { source })?;
     total_hydrogen_count_from_validated(topology, valence, atom_id, include_neighbors)
 }
 
@@ -293,9 +284,8 @@ pub fn total_hydrogen_count_from_validated<G: StereoGraphAccess>(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::getTotalNumHs
-    // Validation is owned by the public wrapper or the already-validating
-    // chemistry phase; this inner composition retains the source O(degree)
-    // shape without duplicating the hydrogen algorithm.
+    // Atom and cache access below enforce the source getter's local
+    // preconditions; complete topology auditing belongs to the ops boundary.
     let explicit = explicit_hydrogen_count(atom);
     let implicit = implicit_hydrogen_count(atom, valence)?;
     let neighbor_hydrogens = if include_neighbors {

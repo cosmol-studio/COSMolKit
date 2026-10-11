@@ -29,6 +29,16 @@ pub struct BindingPythonAdapterContract {
     pub targets: &'static [&'static str],
 }
 
+/// Constructor shortcut generated from its existing registered factory.
+/// A missing JavaScript target identifies a Python-object-only adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingConvenienceContract {
+    pub name: &'static str,
+    pub target: &'static str,
+    pub python_target: &'static str,
+    pub javascript_target: Option<&'static str>,
+}
+
 /// Ownership of an instance callable's receiver, independent of its output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BindingReceiver {

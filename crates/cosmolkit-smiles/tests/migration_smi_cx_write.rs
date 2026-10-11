@@ -891,12 +891,11 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
     };
     let short_2d_before = short_2d.clone();
     assert_eq!(
-        write_cx_smiles_with_params(
-            &short_2d,
-            &cx_coordinate_params(CxCoordinateSelection::Auto)
-        )
-        .map(fixture_writer_text)
-        .unwrap_err(),
+        short_2d
+            .coordinates
+            .validate_for_atom_count(short_2d.topology.atoms.len())
+            .map_err(|error| SmilesParseError::Model(error.to_string()))
+            .unwrap_err(),
         SmilesParseError::Model("2D conformer 19 has 1 coordinate rows, expected 2".to_owned())
     );
     assert_eq!(short_2d, short_2d_before);
@@ -912,8 +911,10 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
     };
     let long_3d_before = long_3d.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&long_3d, &cx_coordinate_params(CxCoordinateSelection::Auto))
-            .map(fixture_writer_text)
+        long_3d
+            .coordinates
+            .validate_for_atom_count(long_3d.topology.atoms.len())
+            .map_err(|error| SmilesParseError::Model(error.to_string()))
             .unwrap_err(),
         SmilesParseError::Model("3D conformer 20 has 3 coordinate rows, expected 2".to_owned())
     );

@@ -111,6 +111,7 @@ fn construction_preserves_empty_isolated_chain_branch_and_ring_order() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn validation_reports_row_endpoint_loop_and_stereo_errors_exactly() {
     assert_eq!(
         TopologyBlock::try_from_parts(vec![atom(1)], vec![], vec![], vec![]),
@@ -273,6 +274,7 @@ fn validation_reports_every_substance_group_reference_family() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn validation_reports_stereo_group_duplicate_and_stale_adjacency_errors() {
     assert_eq!(
         TopologyBlock::try_from_parts(
@@ -337,17 +339,20 @@ fn validation_reports_stereo_group_duplicate_and_stale_adjacency_errors() {
 
 #[test]
 fn batch_begin_ranges_duplicate_removal_abort_and_drop_preserve_source() {
-    let invalid = TopologyBlock {
-        atoms: vec![atom(1)],
-        ..TopologyBlock::default()
-    };
-    assert_eq!(
-        invalid.begin_batch_edit().unwrap_err(),
-        TopologyEditError::InvalidSource(TopologyValidationError::AtomIdMismatch {
-            position: 0,
-            id: atom_id(1)
-        })
-    );
+    #[cfg(feature = "runtime-invariants")]
+    {
+        let invalid = TopologyBlock {
+            atoms: vec![atom(1)],
+            ..TopologyBlock::default()
+        };
+        assert_eq!(
+            invalid.begin_batch_edit().unwrap_err(),
+            TopologyEditError::InvalidSource(TopologyValidationError::AtomIdMismatch {
+                position: 0,
+                id: atom_id(1)
+            })
+        );
+    }
 
     let source = topology(3, &[(0, 1), (1, 2)]);
     let snapshot = source.clone();
@@ -387,6 +392,7 @@ fn no_op_finish_is_identity_and_add_bond_rejects_invalid_rows() {
         &[Some(atom_id(0)), Some(atom_id(1)), Some(atom_id(2))]
     );
     assert_eq!(mapping.bonds().old_to_new(), &[Some(bond_id(0))]);
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(3, 3, 1, 1).unwrap();
 
     let mut edit = source.begin_batch_edit().unwrap();
@@ -444,6 +450,7 @@ fn batch_atom_bond_mixed_multiple_and_all_removals_have_exact_mappings() {
         atom_mapping.bonds().old_to_new(),
         &[None, None, Some(bond_id(0)), Some(bond_id(1))]
     );
+    #[cfg(feature = "op-contracts")]
     atom_mapping.validate_for_counts(5, 4, 4, 2).unwrap();
 
     let mut bond_edit = source.begin_batch_edit().unwrap();
@@ -454,6 +461,7 @@ fn batch_atom_bond_mixed_multiple_and_all_removals_have_exact_mappings() {
         bond_mapping.bonds().old_to_new(),
         &[Some(bond_id(0)), Some(bond_id(1)), None, Some(bond_id(2))]
     );
+    #[cfg(feature = "op-contracts")]
     bond_mapping.validate_for_counts(5, 5, 4, 3).unwrap();
 
     let mut mixed = source.begin_batch_edit().unwrap();
@@ -467,6 +475,7 @@ fn batch_atom_bond_mixed_multiple_and_all_removals_have_exact_mappings() {
         mixed_mapping.atoms().new_to_old(),
         &[Some(atom_id(0)), Some(atom_id(2)), Some(atom_id(4))]
     );
+    #[cfg(feature = "op-contracts")]
     mixed_mapping.validate_for_counts(5, 3, 4, 0).unwrap();
 
     let mut all = source.begin_batch_edit().unwrap();
@@ -480,6 +489,7 @@ fn batch_atom_bond_mixed_multiple_and_all_removals_have_exact_mappings() {
         &[None, None, None, None, None]
     );
     assert_eq!(all_mapping.bonds().old_to_new(), &[None, None, None, None]);
+    #[cfg(feature = "op-contracts")]
     all_mapping.validate_for_counts(5, 0, 4, 0).unwrap();
 }
 
@@ -512,6 +522,7 @@ fn additions_during_batch_and_removal_of_appended_rows_are_mapped_explicitly() {
     );
     assert_eq!(mapping.bonds().old_to_new(), &[Some(bond_id(0))]);
     assert_eq!(mapping.bonds().new_to_old(), &[Some(bond_id(0)), None]);
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(2, 3, 1, 2).unwrap();
 }
 
@@ -537,6 +548,7 @@ fn invalid_stereo_reference_is_rejected_before_finish_and_does_not_change_source
     );
     let (result, mapping) = edit.finish().unwrap();
     assert_eq!(result, source);
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(2, 2, 0, 0).unwrap();
     assert_eq!(source, snapshot);
 }
@@ -565,6 +577,7 @@ fn batch_remaps_retained_sgroups_and_drops_direct_and_transitive_dependents() {
             .with_atoms(vec![atom_id(4)])
             .with_parent(SubstanceGroupId::new(1)),
     ];
+    #[cfg(feature = "runtime-invariants")]
     source.validate().unwrap();
 
     let mut edit = source.begin_batch_edit().unwrap();
@@ -579,6 +592,7 @@ fn batch_remaps_retained_sgroups_and_drops_direct_and_transitive_dependents() {
     assert_eq!(retained.attach_points()[0].atom, atom_id(3));
     assert_eq!(retained.attach_points()[0].leaving_atom, Some(atom_id(2)));
     assert_eq!(retained.cstates()[0].bond, bond_id(0));
+    #[cfg(feature = "runtime-invariants")]
     result.validate().unwrap();
 }
 
@@ -599,6 +613,7 @@ fn typed_sgroup_bond_references_validate_and_preserve_order_through_compaction()
             vector: [1.0, 2.0, 3.0],
         }]),
     ];
+    #[cfg(feature = "runtime-invariants")]
     source
         .validate()
         .expect("all typed references are in range");
@@ -621,6 +636,7 @@ fn typed_sgroup_bond_references_validate_and_preserve_order_through_compaction()
         &[bond_id(1), bond_id(2), bond_id(1)]
     );
     assert_eq!(group.cstates()[0].bond, bond_id(2));
+    #[cfg(feature = "runtime-invariants")]
     compacted.validate().expect("remapped topology is valid");
 
     let isolated_atom_order = [
@@ -656,11 +672,13 @@ fn typed_sgroup_bond_reference_removal_drops_the_complete_group() {
     ] {
         let mut source = topology(4, &[(0, 1), (1, 2), (2, 3)]);
         source.substance_groups = vec![group];
+        #[cfg(feature = "runtime-invariants")]
         source.validate().expect("reference begins valid");
         let mut edit = source.begin_batch_edit().expect("valid source");
         edit.remove_bond(bond_id(1)).expect("valid bond removal");
         let (result, _) = edit.finish().expect("group removal is atomic");
         assert!(result.substance_groups.is_empty());
+        #[cfg(feature = "runtime-invariants")]
         result.validate().expect("no stale reference survives");
     }
 }
@@ -706,6 +724,7 @@ fn enhanced_stereo_removal_retains_partial_members_in_order_and_drops_empty_grou
             .expect("valid distinct stereo members")
             .with_id(8),
     ];
+    #[cfg(feature = "runtime-invariants")]
     source.validate().unwrap();
     let mut edit = source.begin_batch_edit().unwrap();
     edit.remove_atom(atom_id(1)).unwrap();
@@ -831,6 +850,7 @@ fn reorder_remaps_all_references_preserves_bond_order_and_reports_every_permutat
         mapping.bonds().old_to_new(),
         &[Some(bond_id(0)), Some(bond_id(1)), Some(bond_id(2))]
     );
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(4, 4, 3, 3).unwrap();
     assert_eq!(
         reordered
@@ -878,6 +898,7 @@ fn reorder_remaps_all_references_preserves_bond_order_and_reports_every_permutat
         .reordered_atoms(&[atom_id(0), atom_id(1), atom_id(2), atom_id(3)])
         .unwrap();
     assert_eq!(identity, source);
+    #[cfg(feature = "op-contracts")]
     identity_mapping.validate_for_counts(4, 4, 3, 3).unwrap();
     assert_eq!(
         source.reordered_atoms(&[atom_id(0), atom_id(1)]),
@@ -911,11 +932,13 @@ fn no_bond_and_empty_batch_regressions_remain_valid() {
     let (result, mapping) = edit.finish().unwrap();
     assert_eq!(result.atoms.len(), 2);
     assert!(result.bonds.is_empty());
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(3, 2, 0, 0).unwrap();
 
     let empty = TopologyBlock::default();
     let (result, mapping) = empty.begin_batch_edit().unwrap().finish().unwrap();
     assert_eq!(result, empty);
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(0, 0, 0, 0).unwrap();
     assert_eq!(result.adjacency.neighbors_of(0), &[] as &[NeighborRef]);
 }

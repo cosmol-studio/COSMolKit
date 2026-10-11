@@ -357,7 +357,6 @@ pub fn murcko_scaffold(
     // Source MolHash first normalizes implicit Hs; deletion uses the shared
     // batch-edit kernel. Mapping composition adds O(V+E) rows per round but
     // never clones the surviving graph. Radical-owner allocation is qualified.
-    topology.validate()?;
     let mut value = result(topology, coordinates, properties);
     sanitize_hydrogens(&mut value.topology, source_valence)?;
     let mut deleted = false;
@@ -547,7 +546,6 @@ pub fn net_scaffold(
     // RDKit❌❌:   }
     // RDKit❌❌:   return result;
     // RDKit✔️❌: }
-    topology.validate()?;
     let mut value = result(topology, coordinates, properties);
     sanitize_hydrogens(&mut value.topology, source_valence)?;
     let found = if source_rings
@@ -779,7 +777,6 @@ pub fn murcko_decompose(
     // RDKit✔️❌: }
     // Unlike the MolHash transforms this function does not normalize Hs,
     // assign radicals, sanitize or assign stereo after deletion.
-    topology.validate()?;
     let mut value = result(topology, coordinates, properties);
     let n = value.topology.atoms.len();
     if n == 0 {

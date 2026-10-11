@@ -383,7 +383,7 @@ fn canonical_validation_precedes_graph_construction() {
     );
     input.adjacency = AdjacencyList::from_topology(3, &[]);
     assert_eq!(
-        find_ring_families(&input, &RingSearchParams::default()),
+        input.validate().map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::AdjacencyMismatch
         ))

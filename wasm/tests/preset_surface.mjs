@@ -34,6 +34,11 @@ test("preset exports exactly its selected optional domains", () => {
         }
         assert.equal(typeof ck.Reaction, ["full", "core-reaction"].includes(preset) ? "function" : "undefined");
         assert.equal(typeof ck.BioStructure, ["full", "core-bio"].includes(preset) ? "function" : "undefined");
+        assert.equal(typeof ck.reactionFromSmirks, typeof ck.Reaction);
+        assert.equal(typeof ck.bioFromMmcif, typeof ck.BioStructure);
+        assert.equal(typeof ck.proteinFromMmcif, typeof ck.Protein);
+        assert.equal(typeof ck.molFromInchi, ["full", "core-inchi"].includes(preset) ? "function" : "undefined");
+        assert.equal(typeof ck.molFromBinary, "undefined");
         assert.equal(typeof ck.Molecule.fromBinary, "undefined");
         assert.equal(typeof ck.PickleError, "undefined");
         const batch = ck.MoleculeBatch.fromSmilesList(["CCO"]);

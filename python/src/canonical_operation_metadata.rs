@@ -141,10 +141,6 @@ impl MoleculeOpSpec {
         format!("{:?}", self.inner.kind)
     }
     /// Declared topology-edit category of this operation.
-    #[getter]
-    fn topology_edit(&self) -> String {
-        format!("{:?}", self.inner.topology_edit)
-    }
     /// Exact read/write block bit masks from the generated declaration.
     #[getter]
     fn access(&self) -> BTreeMap<String, u8> {

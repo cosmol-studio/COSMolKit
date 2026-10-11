@@ -3,7 +3,7 @@
 use cosmolkit_macros::mol_op_body;
 
 use super::OperationError;
-use crate::{AddHsParams, DerivedState, PreservationProof, TopologyEditKind};
+use crate::{AddHsParams, DerivedState, PreservationProof};
 
 #[mol_op_body(with_hydrogens, parts)]
 pub(crate) fn add_hydrogens_impl(params: &AddHsParams) -> Result<(), OperationError> {
@@ -29,7 +29,6 @@ pub(crate) fn add_hydrogens_impl(params: &AddHsParams) -> Result<(), OperationEr
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
-    parts.record_topology_edit(TopologyEditKind::Appending)?;
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(
@@ -290,7 +289,6 @@ pub(crate) fn remove_hydrogens_impl(
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
 

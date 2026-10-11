@@ -136,12 +136,8 @@ impl<'a> PatternGraphInput<'a> {
     }
     fn matching_topology(self) -> Result<Cow<'a, TopologyBlock>, PatternFingerprintError> {
         match self {
-            Self::Concrete(t) => {
-                t.validate()?;
-                Ok(Cow::Borrowed(t))
-            }
+            Self::Concrete(t) => Ok(Cow::Borrowed(t)),
             Self::Query(q) => {
-                q.validate()?;
                 // Fixed queries use only Any, ring membership and bond order,
                 // with source useQueryQueryMatches=false. Their target access
                 // needs carrier attributes, never target ASTs or atomic number.

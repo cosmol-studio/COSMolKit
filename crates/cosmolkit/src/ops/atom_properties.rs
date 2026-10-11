@@ -1,9 +1,9 @@
 //! Thin typed user-property operations over the canonical detached Atom store.
 #[cfg(feature = "cap-transforms")]
 use super::PreservationProof;
-use crate::{AtomId, Molecule, OperationError, PropertyValue};
 #[cfg(feature = "cap-transforms")]
-use crate::{DerivedState, TopologyEditKind};
+use crate::DerivedState;
+use crate::{AtomId, Molecule, OperationError, PropertyValue};
 #[cfg(feature = "cap-transforms")]
 use cosmolkit_macros::mol_op_body;
 
@@ -63,7 +63,6 @@ pub(crate) fn with_atom_property_impl(
     })();
     parts.install_topology(topology)?;
     result?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(DerivedState::DRAWING.union(DerivedState::FINGERPRINT))?;
     parts.prove_preserved(
         DerivedState::RINGS

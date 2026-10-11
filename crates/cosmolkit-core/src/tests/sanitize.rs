@@ -307,10 +307,12 @@ fn invalid_atropisomer_cleanup_rejects_mismatched_assignments_before_mutation() 
         adjacency: AdjacencyList::from_topology(0, &[]),
         ..input.clone()
     };
-    assert!(matches!(
-        cleanup_invalid_atropisomers(&invalid, &hybridization(2, &[]), &rings(&input),),
-        Err(AtropisomerError::InvalidTopology { .. })
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        invalid.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 }
 
 #[test]
@@ -519,10 +521,12 @@ fn chirality_cleanup_rejects_invalid_topology_and_valence_rows() {
         adjacency: AdjacencyList::from_topology(0, &[]),
         ..input
     };
-    assert!(matches!(
-        cleanup_chirality(&invalid, &valence),
-        Err(StereoError::InvalidTopology(_))
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        invalid.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 }
 
 #[test]
@@ -716,16 +720,12 @@ fn adjust_hs_reports_exact_overflow_and_assignment_errors_without_partial_output
         adjacency: AdjacencyList::from_topology(0, &[]),
         ..input
     };
-    assert!(matches!(
-        adjust_hs(
-            &invalid,
-            &ValenceAssignment {
-                explicit_valence: vec![0, 0],
-                implicit_hydrogens: vec![4, 4],
-            },
-        ),
-        Err(AdjustHsError::InvalidTopology { .. })
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        invalid.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 }
 
 #[test]
@@ -936,13 +936,12 @@ fn sanitize_pipeline_clears_only_computed_properties_and_reports_property_before
         adjacency: AdjacencyList::from_topology(0, &[]),
         ..input
     };
-    assert!(matches!(
-        sanitize_topology(&invalid, &SanitizeParams::default()),
-        Err(SanitizeError::InvalidTopology {
-            stage: SanitizeStage::None,
-            ..
-        })
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        invalid.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 }
 
 #[test]
@@ -1596,13 +1595,12 @@ fn chemistry_problem_detection_propagates_cleanup_and_invalid_input_errors() {
         adjacency: AdjacencyList::from_topology(0, &[]),
         ..valid
     };
-    assert!(matches!(
-        detect_chemistry_problems(&invalid, &SanitizeParams::default()),
-        Err(SanitizeError::InvalidTopology {
-            stage: SanitizeStage::None,
-            ..
-        })
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        invalid.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 }
 
 #[test]

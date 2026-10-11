@@ -462,12 +462,8 @@ pub fn atom_nonzero_degree(
     // RDKit✔️❌:   return res;
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION Chirality::detail::getAtomNonzeroDegree
-    // The detached boundary validates the full topology before the source
-    // degree scan, changing O(degree) to O(V+E); behavior is preserved but the
-    // second marker is intentionally negative.
-    topology
-        .validate()
-        .map_err(StereoOrderError::InvalidTopology)?;
+    // Source pointer/owner preconditions become a local center bounds check;
+    // the incident-bond loop does not audit unrelated graph rows.
     if center.index() >= topology.atoms.len() {
         return Err(StereoOrderError::CenterOutOfRange {
             center,
@@ -502,13 +498,8 @@ pub fn incident_tetrahedral_bond_order(
     // RDKit✔️❌:   }
     // RDKit✔️❌:   return static_cast<int>(countSwapsToInterconvert(probe, ref));
     // END RDKIT CPP FUNCTION Atom::getPerturbationOrder incident storage order
-    // The detached topology validation adds O(V+E) work before retaining the
-    // source incident-bond order, so the second marker is intentionally
-    // negative. Non-chirality-affecting bonds are then removed by the separate
-    // source-backed predicate above.
-    topology
-        .validate()
-        .map_err(StereoOrderError::InvalidTopology)?;
+    // Retain only this center's source incident-bond order; full graph
+    // auditing is an operation-runtime responsibility.
     if center.index() >= topology.atoms.len() {
         return Err(StereoOrderError::CenterOutOfRange {
             center,
@@ -586,17 +577,9 @@ pub fn remap_tetrahedral_center(
     // RDKit✔️❌:         heavyAtom->invertChirality();
     // RDKit✔️❌:       }
     // END RDKIT CPP FUNCTION AddHs remove-H tetrahedral order adjustment
-    // The complete detached mapping validation is O(V+E), while the source
-    // adjustment only scans one center's incident bonds. This intentional
-    // fail-closed boundary accounts for the negative performance marker.
-    mapping
-        .validate_for_counts(
-            old_atom_count,
-            new_atom_count,
-            old_bond_count,
-            new_bond_count,
-        )
-        .map_err(StereoOrderError::InvalidMapping)?;
+    // Inspect only this center and its at-most-four ligands. Mapping lookups
+    // are indexed; full bidirectional mapping audits belong to the runtime.
+    // No graph-sized scan or allocation is performed here.
     validate_tetrahedral_tag(source_tag)?;
     validate_ligand_order(source_ligands)?;
     validate_ligand_order(target_ligands)?;

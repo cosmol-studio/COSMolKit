@@ -331,7 +331,6 @@ pub fn read_xyz_detached(
         substance_groups: Vec::new(),
         stereo_groups: Vec::new(),
     };
-    topology.validate()?;
     let mut properties = MoleculeProperties::default();
     if atom_count > 0 && !comment.is_empty() {
         properties = properties.with_prop("_FileComments", comment)?;
@@ -347,7 +346,6 @@ pub fn read_xyz_detached(
             .then_some(cosmolkit_model::CoordinateDimension::ThreeD),
         source_conformer_order: None,
     };
-    coordinates.validate_for_atom_count(atom_count)?;
     let result = Ok((topology, coordinates, properties));
     // END RDKIT CPP FUNCTION
     result
@@ -369,9 +367,6 @@ pub fn write_xyz_detached_with_params(
     properties: &MoleculeProperties,
     params: XyzWriteParams,
 ) -> Result<PropertyText, XyzWriteError> {
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
-
     // BEGIN RDKIT CPP FUNCTION MolToXYZBlock
     // RDKit✔️✔️: if (!mol.getNumConformers()) {
     // RDKit✔️✔️:   BOOST_LOG(rdErrorLog)

@@ -871,7 +871,6 @@ pub fn align_conformers(
     // RDKit✔️✔️: }
     // END VERBATIM CPP alignMolConformers
 
-    coordinates.validate_for_atom_count(atom_count)?;
     if coordinates.conformers_3d.is_empty() {
         return Ok(Vec::new());
     }

@@ -155,17 +155,8 @@ impl Reaction {
         agents: Vec<QueryGraph>,
     ) -> Result<Self, ReactionModelError> {
         // RDKit❗✔️: ChemicalReaction() : RDProps() {}
-        // CK structural boundary: each canonical query validates before storage;
-        // this does not execute ChemicalReaction::validate or change needsInit.
-        for (role, templates) in [
-            (ReactionRole::Reactant, &reactants),
-            (ReactionRole::Product, &products),
-            (ReactionRole::Agent, &agents),
-        ] {
-            for (index, graph) in templates.iter().enumerate() {
-                validate_template(graph, role, index)?;
-            }
-        }
+        // QueryGraph construction owns incoming row checks. Storing source
+        // templates does not re-audit their adjacency or initialize a reaction.
         Ok(Self {
             reactants,
             products,
@@ -220,9 +211,8 @@ impl Reaction {
     }
 
     pub fn with_reactant_template(&self, template: QueryGraph) -> Result<Self, ReactionModelError> {
-        // Existing checked immutable value projection owns structural checks
-        // and the full reaction copy; the source mutation below is shared.
-        validate_template(&template, ReactionRole::Reactant, self.reactants.len())?;
+        // The immutable value projection owns the reaction copy; structural
+        // audits belong to the operation boundary, not the source append.
         let mut result = self.clone();
         result.add_reactant_template_source(template);
         Ok(result)
@@ -269,7 +259,6 @@ impl Reaction {
 
     pub fn with_product_template(&self, template: QueryGraph) -> Result<Self, ReactionModelError> {
         // The checked immutable projection owns validation and reaction copy.
-        validate_template(&template, ReactionRole::Product, self.products.len())?;
         let mut result = self.clone();
         result.add_product_template_source(template);
         Ok(result)
@@ -316,7 +305,6 @@ impl Reaction {
 
     pub fn with_agent_template(&self, template: QueryGraph) -> Result<Self, ReactionModelError> {
         // The checked immutable projection owns validation and reaction copy.
-        validate_template(&template, ReactionRole::Agent, self.agents.len())?;
         let mut result = self.clone();
         result.add_agent_template_source(template);
         Ok(result)
@@ -510,20 +498,6 @@ impl Reaction {
         result.match_params_mut_source().clone_from(params);
         Ok(result)
     }
-}
-
-fn validate_template(
-    graph: &QueryGraph,
-    role: ReactionRole,
-    template: usize,
-) -> Result<(), ReactionModelError> {
-    graph
-        .validate()
-        .map_err(|source| ReactionModelError::Template {
-            role,
-            template,
-            source,
-        })
 }
 
 #[cfg(test)]
@@ -764,18 +738,14 @@ mod complete_add_reactant_template_tests {
         assert_eq!(result.agents, source.agents);
     }
     #[test]
-    fn structural_validation_stays_in_checked_projection_without_becoming_a_source_precondition() {
+    fn explicit_model_audit_does_not_become_a_source_append_precondition() {
         let mut source = Reaction::new();
         source.needs_init = false;
         let mut graph = template("invalid");
         graph.atoms_mut()[0] = QueryAtom::new(AtomId::new(99), AtomSpec::new(Element::C));
         assert!(matches!(
-            source.with_reactant_template(graph.clone()),
-            Err(ReactionModelError::Template {
-                role: ReactionRole::Reactant,
-                template: 0,
-                source: QueryGraphError::AtomIdMismatch { .. }
-            })
+            graph.validate(),
+            Err(QueryGraphError::AtomIdMismatch { .. })
         ));
         assert!(!source.needs_init);
         assert!(source.reactants.is_empty());
@@ -859,18 +829,14 @@ mod complete_add_agent_template_tests {
         assert_eq!(result.agents[0], source.agents[0]);
     }
     #[test]
-    fn checked_projection_validates_without_adding_source_preconditions() {
+    fn explicit_model_audit_does_not_become_a_source_append_precondition() {
         let mut source = Reaction::new();
         source.needs_init = false;
         let mut graph = template("invalid");
         graph.atoms_mut()[0] = QueryAtom::new(AtomId::new(99), AtomSpec::new(Element::C));
         assert!(matches!(
-            source.with_agent_template(graph.clone()),
-            Err(ReactionModelError::Template {
-                role: ReactionRole::Agent,
-                template: 0,
-                source: QueryGraphError::AtomIdMismatch { .. }
-            })
+            graph.validate(),
+            Err(QueryGraphError::AtomIdMismatch { .. })
         ));
         assert!(!source.needs_init);
         assert!(source.agents.is_empty());
@@ -954,18 +920,14 @@ mod complete_add_product_template_tests {
         assert_eq!(result.products[0], source.products[0]);
     }
     #[test]
-    fn checked_projection_validates_without_adding_source_preconditions() {
+    fn explicit_model_audit_does_not_become_a_source_append_precondition() {
         let mut source = Reaction::new();
         source.needs_init = false;
         let mut graph = template("invalid");
         graph.atoms_mut()[0] = QueryAtom::new(AtomId::new(99), AtomSpec::new(Element::C));
         assert!(matches!(
-            source.with_product_template(graph.clone()),
-            Err(ReactionModelError::Template {
-                role: ReactionRole::Product,
-                template: 0,
-                source: QueryGraphError::AtomIdMismatch { .. }
-            })
+            graph.validate(),
+            Err(QueryGraphError::AtomIdMismatch { .. })
         ));
         assert!(!source.needs_init);
         assert!(source.products.is_empty());

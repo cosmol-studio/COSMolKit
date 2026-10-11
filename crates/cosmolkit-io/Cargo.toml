@@ -46,6 +46,7 @@ name = "migration_io_bio_rows"
 required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
+cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 tempfile = "3"
 
 [[test]]

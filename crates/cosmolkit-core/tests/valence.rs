@@ -154,7 +154,9 @@ fn canonical_assignment_preserves_structured_topology_error() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        assign_valence(&input, &ValenceParams::default()),
+        input
+            .validate()
+            .map_err(|source| ValenceError::InvalidTopology { source }),
         Err(ValenceError::InvalidTopology {
             source: TopologyValidationError::AtomIdMismatch {
                 position: 0,

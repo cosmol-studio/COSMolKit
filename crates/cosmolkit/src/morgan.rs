@@ -502,6 +502,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn morgan_public_preparation_rejects_each_malformed_valence_cache_shape() {
         let cases = [
             (

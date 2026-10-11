@@ -809,13 +809,11 @@ pub fn assign_chiral_types_from_bond_dirs(
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION MolOps::assignChiralTypesFromBondDirs complete source
     // The caller supplies the selected, present native conformer. Borrowing
-    // preserves its rows without the native auto conf copy. Structural input
-    // validation adds O(V+E) work; no chemical cache is eagerly recomputed.
+    // preserves its rows without the native auto conf copy. The selected
+    // conformer's row-count precondition is O(1); no whole-topology audit or
+    // eager chemical-cache recomputation is performed.
     conformer
         .validate_for_atom_count(topology.atoms.len())
-        .map_err(|error| BondDirectionStereoError::InvalidState(error.to_string()))?;
-    topology
-        .validate()
         .map_err(|error| BondDirectionStereoError::InvalidState(error.to_string()))?;
     let mut assigned = vec![false; topology.atoms.len()];
     for bond_index in 0..topology.bonds.len() {

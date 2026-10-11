@@ -139,6 +139,7 @@ impl TopologyMapping {
 
     /// Validate both directions against the authoritative old and new table
     /// sizes before any dependent-state projection or runtime commit.
+    #[cfg(feature = "op-contracts")]
     pub fn validate_for_counts(
         &self,
         old_atom_count: usize,
@@ -151,6 +152,7 @@ impl TopologyMapping {
     }
 }
 
+#[cfg(feature = "op-contracts")]
 fn validate_atom_mapping(
     mapping: &AtomMapping,
     old_count: usize,
@@ -219,6 +221,7 @@ fn validate_atom_mapping(
     Ok(())
 }
 
+#[cfg(feature = "op-contracts")]
 fn validate_bond_mapping(
     mapping: &BondMapping,
     old_count: usize,

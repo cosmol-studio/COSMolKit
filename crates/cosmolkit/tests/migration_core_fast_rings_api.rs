@@ -5,8 +5,8 @@ use cosmolkit::{
     Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
     BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
     MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
-    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind,
-    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
+    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, TopologyBlock, feature_spec,
+    operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn ring_molecule() -> Molecule {
@@ -110,7 +110,6 @@ fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
     let spec = operation_spec("with_assigned_rings").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::TOPOLOGY);
     assert_eq!(spec.access.write(), BlockSet::DERIVED_CACHE);

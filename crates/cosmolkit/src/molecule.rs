@@ -430,6 +430,7 @@ impl DerivedCacheBlock {
         self.ring_families.as_ref()
     }
 
+    #[cfg(feature = "runtime-invariants")]
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
             feature = "cap-inchi",
@@ -491,6 +492,7 @@ impl DerivedCacheBlock {
         Ok(())
     }
 
+    #[cfg(feature = "runtime-invariants")]
     pub(crate) fn validate_for_topology(
         &self,
         topology: &TopologyBlock,
@@ -696,6 +698,7 @@ struct MoleculeState {
 }
 
 impl MoleculeState {
+    #[cfg(feature = "runtime-invariants")]
     fn validate_parts(
         topology: &TopologyBlock,
         coordinates: &CoordinateBlock,
@@ -736,6 +739,7 @@ impl MoleculeState {
                 Some(CoordinateDimension::ThreeD)
             };
         }
+        #[cfg(feature = "runtime-invariants")]
         Self::validate_parts(&topology, &coordinates, &properties)?;
 
         Ok(Self {
@@ -752,8 +756,11 @@ impl MoleculeState {
         properties: Arc<MoleculeProperties>,
         derived_cache: Arc<DerivedCacheBlock>,
     ) -> Result<Self, OperationError> {
-        Self::validate_parts(&topology, &coordinates, &properties)?;
-        derived_cache.validate_for_topology(&topology)?;
+        #[cfg(feature = "runtime-invariants")]
+        {
+            Self::validate_parts(&topology, &coordinates, &properties)?;
+            derived_cache.validate_for_topology(&topology)?;
+        }
         Ok(Self {
             topology,
             coordinates,
@@ -909,7 +916,9 @@ impl Molecule {
         .expect("the statically empty molecule blocks are valid")
     }
 
-    /// Constructs a live molecule after validating all local block invariants.
+    /// Constructs a live molecule from detached blocks.
+    ///
+    /// Whole-state invariant auditing requires `runtime-invariants`.
     pub fn from_parts(
         topology: TopologyBlock,
         coordinates: CoordinateBlock,
@@ -985,6 +994,7 @@ impl Molecule {
                 cache.clear(DerivedState::RINGS);
             }
         }
+        #[cfg(feature = "runtime-invariants")]
         cache.validate_for_topology(&state.topology)?;
         state.derived_cache = Arc::new(cache);
         Ok(Self {
@@ -1561,6 +1571,7 @@ mod ring_live_lifecycle_tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn ring_live_lifecycle_malformed_cache_rejected_at_construction() {
         // Malformed paired rows / out-of-range IDs are UNREACHABLE through
         // public or seam construction (RingInfo exposes no row-level API);
@@ -1833,6 +1844,7 @@ mod valence_cache_tests {
                     Some(&expected)
                 );
             }
+            #[cfg(feature = "runtime-invariants")]
             cache.validate_for_atom_count(output.num_atoms()).unwrap();
             let mut in_place = source.clone();
             in_place.remove_hydrogens_with_params_(&params).unwrap();
@@ -1845,6 +1857,7 @@ mod valence_cache_tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn valence_payload_and_validity_bit_are_one_validated_cache_state() {
         let mut cache = DerivedCacheBlock::default();
         cache.install_valence_assignment(cosmolkit_core::ValenceAssignment {
@@ -1860,6 +1873,7 @@ mod valence_cache_tests {
             })
         ));
         cache.mark_valid(DerivedState::VALENCE);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
         assert_eq!(
             cache.valence_assignment().unwrap().explicit_valence,
@@ -1876,6 +1890,7 @@ mod valence_cache_tests {
         ));
         cache.clear(DerivedState::VALENCE);
         assert_eq!(cache.valence_assignment(), None);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
     }
 }
@@ -1887,6 +1902,7 @@ mod forcefields_valence_cache_tests {
     #[test]
     fn uff_param_p04_forcefields_stores_reads_validates_and_clears_assignment() {
         let mut cache = DerivedCacheBlock::default();
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
         assert!(!cache.valid_states().contains(DerivedState::VALENCE));
         assert_eq!(cache.valence_assignment(), None);
@@ -1903,15 +1919,18 @@ mod forcefields_valence_cache_tests {
             .expect("forcefields-only cache keeps the detached assignment");
         assert_eq!(stored.explicit_valence, [1, 2]);
         assert_eq!(stored.implicit_hydrogens, [3, 2]);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
 
         cache.clear(DerivedState::VALENCE);
         assert!(!cache.valid_states().contains(DerivedState::VALENCE));
         assert_eq!(cache.valence_assignment(), None);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn uff_param_p04_forcefields_rejects_inconsistent_cache_pairs() {
         let mut missing_validity = DerivedCacheBlock::default();
         missing_validity.install_valence_assignment(cosmolkit_core::ValenceAssignment {

@@ -1496,12 +1496,6 @@ fn copy_full_molecule_remove_atoms_outside_component_with_view(
         }
     }
     let (mut topology, mapping) = edit.finish()?;
-    mapping.validate_for_counts(
-        source_topology.atoms.len(),
-        topology.atoms.len(),
-        source_topology.bonds.len(),
-        topology.bonds.len(),
-    )?;
     let coordinates = copy_full_copy_coordinates(
         source_coordinates,
         mapping.atoms().new_to_old(),
@@ -1685,12 +1679,6 @@ fn copy_full_molecule_remove_atoms_outside_component_with_source_metadata(
             new_to_old: bond_new_to_old,
         },
     };
-    mapping.validate_for_counts(
-        source_topology.atoms.len(),
-        topology.atoms.len(),
-        source_topology.bonds.len(),
-        topology.bonds.len(),
-    )?;
     // Existing typed row projections follow the returned structural mapping;
     // native generic property dictionaries remain the canonical property owner.
     // This extra modeled row transport remains an explicit source-boundary gap.
@@ -1981,12 +1969,6 @@ fn topology_mapping_from_subset_info(
             new_to_old: bond_new_to_old,
         },
     };
-    mapping.validate_for_counts(
-        source_atom_count,
-        selection_info.atom_mapping.len(),
-        source_bond_count,
-        selection_info.bond_mapping.len(),
-    )?;
     Ok(mapping)
 }
 

@@ -3,7 +3,7 @@
 use cosmolkit_macros::mol_op_body;
 
 use super::OperationError;
-use crate::{AromaticityParams, DerivedState, PreservationProof, TopologyEditKind};
+use crate::{AromaticityParams, DerivedState, PreservationProof};
 
 #[mol_op_body(with_assigned_aromaticity, parts)]
 pub(crate) fn assign_aromaticity_impl(params: &AromaticityParams) -> Result<(), OperationError> {
@@ -53,48 +53,44 @@ pub(crate) fn assign_aromaticity_impl(params: &AromaticityParams) -> Result<(), 
         }
     };
 
-    if assignment.topology.atoms.len() != topology.atoms.len() {
-        let actual = assignment.topology.atoms.len();
-        let expected = topology.atoms.len();
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_assigned_aromaticity",
-            field: "atom",
-            actual,
-            expected,
-        });
+    #[cfg(feature = "op-contracts")]
+    {
+        if assignment.topology.atoms.len() != topology.atoms.len() {
+            let actual = assignment.topology.atoms.len();
+            let expected = topology.atoms.len();
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_assigned_aromaticity",
+                field: "atom",
+                actual,
+                expected,
+            });
+        }
+        if assignment.topology.bonds.len() != topology.bonds.len() {
+            let actual = assignment.topology.bonds.len();
+            let expected = topology.bonds.len();
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_assigned_aromaticity",
+                field: "bond",
+                actual,
+                expected,
+            });
+        }
+        if assignment.topology.adjacency != topology.adjacency {
+            parts.install_topology(topology)?;
+            parts.install_derived_cache(cache)?;
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_assigned_aromaticity",
+                field: "adjacency",
+                actual: 1,
+                expected: 0,
+            });
+        }
     }
-    if assignment.topology.bonds.len() != topology.bonds.len() {
-        let actual = assignment.topology.bonds.len();
-        let expected = topology.bonds.len();
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_assigned_aromaticity",
-            field: "bond",
-            actual,
-            expected,
-        });
-    }
-    if assignment.topology.adjacency != topology.adjacency {
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_assigned_aromaticity",
-            field: "adjacency",
-            actual: 1,
-            expected: 0,
-        });
-    }
-    if let Err(error) = assignment.topology.validate() {
-        parts.install_topology(topology)?;
-        parts.install_derived_cache(cache)?;
-        return Err(OperationError::InvalidTopology(error));
-    }
-
     parts.install_topology(assignment.topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     // Borrowed rows stay exactly as supplied (validity explicitly
     // reaffirmed); acquired rows are MOVED into the cache and marked valid.
     if let Some(rings) = acquired {

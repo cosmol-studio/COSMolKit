@@ -1026,7 +1026,6 @@ pub fn cleanup_chirality(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<TopologyBlock, StereoError> {
-    topology.validate()?;
     validate_valence(topology, valence)?;
 
     // Complete pinned source: Chirality.cpp::cleanupChirality.
@@ -1156,7 +1155,6 @@ pub fn cleanup_chirality(
     if need_cleanup_stereo_groups {
         cleanup_stereo_groups(&mut result)?;
     }
-    result.validate()?;
     Ok(result)
 }
 
@@ -1440,7 +1438,6 @@ pub fn assign_chiral_tags_from_structure(
     // The detached assignment clones topology before computing changes so an
     // error has no committable partial result. That adds O(atoms + bonds +
     // properties) work versus RDKit's in-place mutation, hence ✔️❌.
-    topology.validate()?;
     if coordinates.conformers_3d.is_empty() {
         return Ok(StructureTagAssignment {
             topology: topology.clone(),

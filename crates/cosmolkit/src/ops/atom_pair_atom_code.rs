@@ -1,5 +1,5 @@
 //! Thin guarded atom-code assignment transport, using the sole fingerprint owner.
-use crate::{AtomId, DerivedState, Molecule, OperationError, PreservationProof, TopologyEditKind};
+use crate::{AtomId, DerivedState, Molecule, OperationError, PreservationProof};
 use cosmolkit_fingerprints::{AtomCodeInput, AtomCodeOptions, atom_code};
 use cosmolkit_macros::{MoleculeResult, mol_op_body};
 
@@ -52,7 +52,6 @@ pub(crate) fn with_atom_pair_atom_code_impl(
     })?;
     // The declared weak identity discipline requires its trace even on a no-op.
     // Recording it does not detach or replace any shared block.
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     if changed {
         parts.clear_cache(
             DerivedState::STEREO

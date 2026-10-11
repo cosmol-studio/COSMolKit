@@ -2610,16 +2610,6 @@ fn apply_cx_to_smiles_record_in_place(
     record.topology.adjacency =
         AdjacencyList::from_topology(record.topology.atoms.len(), &record.topology.bonds);
     normalize_source_coordinate_dimension(record);
-    record
-        .coordinates
-        .validate_for_atom_count(record.topology.atoms.len())
-        .map_err(model_failure)?;
-    record.topology.validate().map_err(|error| match error {
-        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
-            SmilesParseError::StereoGroup(cause)
-        }
-        other => SmilesParseError::Model(other.to_string()),
-    })?;
     Ok(())
 }
 

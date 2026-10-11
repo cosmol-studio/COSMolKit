@@ -71,8 +71,8 @@ pub use metadata::{
     BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, FeatureSpec,
     FeatureSpecIter, MappingRequirement, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec,
     OperationDomain, OperationInvariantEntry, ParityMatrixEntry, ParityPolicy,
-    SemanticPreconditionSet, SupportMatrixEntry, TopologyEditKind, UnsupportedFeatureError,
-    feature_spec, feature_specs, operation_invariant, operation_invariant_matrix, operation_parity,
+    SemanticPreconditionSet, SupportMatrixEntry, UnsupportedFeatureError, feature_spec,
+    feature_specs, operation_invariant, operation_invariant_matrix, operation_parity,
     operation_spec, operation_specs, parity_matrix, support_matrix,
 };
 #[cfg(feature = "cap-stereo")]

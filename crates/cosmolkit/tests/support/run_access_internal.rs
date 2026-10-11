@@ -6,7 +6,7 @@ use cosmolkit_model::{
 use super::*;
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet,
 };
 
 struct TestAccess;
@@ -230,7 +230,6 @@ fn spec(
         result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
-        topology_edit: TopologyEditKind::None,
         access,
         may_mutate: access.write(),
         auto_remap: BlockSet::NONE,
@@ -309,6 +308,7 @@ fn conditional_cow_source_borrows_keep_shared_blocks() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn conditional_cow_still_validates_owned_and_foreign_candidates() {
     let source = molecule();
     let operation = spec(
@@ -451,6 +451,7 @@ fn constructors_are_lazy_and_reject_multiple_output_before_exposure() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn topology_permissions_and_lifecycle_are_exact() {
     let source = molecule();
     let none = spec(
@@ -514,6 +515,7 @@ fn topology_permissions_and_lifecycle_are_exact() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn coordinate_permissions_and_lifecycle_are_exact() {
     let source = molecule();
     let none = spec(
@@ -603,6 +605,7 @@ fn coordinate_permissions_and_lifecycle_are_exact() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn property_permissions_and_lifecycle_are_exact() {
     let source = molecule();
     let none = spec(
@@ -692,6 +695,7 @@ fn property_permissions_and_lifecycle_are_exact() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn derived_cache_permissions_and_lifecycle_are_exact() {
     let source = molecule();
     let none = spec(
@@ -818,6 +822,7 @@ fn checkout_bookkeeping_is_independent_and_sources_stay_unchanged() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn invalid_replacements_are_rejected_without_replacing_working_or_live_state() {
     let source = molecule();
     let topology_write = spec(

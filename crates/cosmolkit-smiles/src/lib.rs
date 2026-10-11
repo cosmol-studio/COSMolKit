@@ -1876,12 +1876,6 @@ fn parse_smiles_stages(
         bonds,
         ..TopologyBlock::default()
     };
-    topology.validate().map_err(|error| match error {
-        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
-            SmilesParseError::StereoGroup(cause)
-        }
-        other => SmilesParseError::Model(other.to_string()),
-    })?;
     let mut record = SmilesRecord {
         topology,
         coordinates: CoordinateBlock::default(),
@@ -2064,16 +2058,6 @@ fn parse_smiles_stages(
     if !name.is_empty() {
         record.properties = record.properties.with_name(&name);
     }
-    record.topology.validate().map_err(|error| match error {
-        cosmolkit_model::TopologyValidationError::StereoGroup(cause) => {
-            SmilesParseError::StereoGroup(cause)
-        }
-        other => SmilesParseError::Model(other.to_string()),
-    })?;
-    record
-        .coordinates
-        .validate_for_atom_count(record.topology.atoms.len())
-        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     Ok(record)
 }
 

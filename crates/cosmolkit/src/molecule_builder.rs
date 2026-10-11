@@ -1,4 +1,4 @@
-//! Checked construction of the single runtime-owned [`Molecule`](crate::Molecule).
+//! Detached construction of the runtime-owned [`Molecule`](crate::Molecule).
 //!
 //! The builder owns detached model blocks only. It has no live-state, cache,
 //! parser, chemistry, or operation-runtime authority.
@@ -40,7 +40,9 @@ impl MoleculeBuilder {
         }
     }
 
-    /// Validates every detached block before publishing one live value.
+    /// Publishes the detached blocks as one live value.
+    ///
+    /// Whole-state invariant auditing requires `runtime-invariants`.
     pub fn build(self) -> Result<Molecule, OperationError> {
         Molecule::from_validated_parts(self.topology, self.coordinates, self.properties)
     }
@@ -68,7 +70,7 @@ impl MoleculeBuilder {
             Err(_) => {
                 // `from_parts` deliberately accepts invalid detached input and
                 // `add_atom` has an infallible canonical signature. Preserve
-                // that invalid state for the structured final `build` error.
+                // that state for the `runtime-invariants` audit at `build`.
                 self.topology.atoms.push(atom);
             }
         }
@@ -97,6 +99,7 @@ impl MoleculeBuilder {
         atom_id: AtomId,
         formal_charge: i8,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate_topology()?;
         let atom_count = self.topology.atoms.len();
         let Some(atom) = self.topology.atoms.get(atom_id.index()) else {
@@ -126,6 +129,7 @@ impl MoleculeBuilder {
         bond_id: BondId,
         order: BondOrder,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate_topology()?;
         let bond_count = self.topology.bonds.len();
         let Some(bond) = self.topology.bonds.get(bond_id.index()) else {
@@ -283,6 +287,7 @@ impl MoleculeBuilder {
         &mut self,
         mut group: SubstanceGroup,
     ) -> Result<SubstanceGroupId, OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate_topology()?;
         let id = SubstanceGroupId::new(self.topology.substance_groups.len());
         group.set_id(id);
@@ -300,6 +305,7 @@ impl MoleculeBuilder {
 
     /// Appends a checked enhanced-stereo group.
     pub fn add_stereo_group(&mut self, group: StereoGroup) -> Result<usize, OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate_topology()?;
         let id = self.topology.stereo_groups.len();
         let mut groups = self.topology.stereo_groups.clone();
@@ -339,6 +345,7 @@ impl MoleculeBuilder {
         self
     }
 
+    #[cfg(feature = "runtime-invariants")]
     fn validate_topology(&self) -> Result<(), OperationError> {
         self.topology
             .validate()
@@ -346,6 +353,7 @@ impl MoleculeBuilder {
     }
 
     fn validate_atom_id(&self, atom: AtomId) -> Result<(), OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate_topology()?;
         if atom.index() >= self.topology.atoms.len() {
             return Err(OperationError::InvalidTopologyEdit(

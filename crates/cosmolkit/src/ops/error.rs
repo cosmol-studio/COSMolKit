@@ -9,7 +9,7 @@ use cosmolkit_model::{
 
 use super::{
     CipStatePolicy, DerivedState, MappingRequirement, MoleculeOpOutput, MoleculeOpSpec,
-    TopologyEditKind, UnsupportedFeatureError,
+    UnsupportedFeatureError,
 };
 
 /// Structured failure used while a capability is not yet implemented.
@@ -66,12 +66,6 @@ pub enum OperationError {
     IncompleteCommit {
         operation: &'static str,
         block: &'static str,
-    },
-    TopologyEditContract {
-        operation: &'static str,
-        issue: &'static str,
-        expected: TopologyEditKind,
-        actual: Option<TopologyEditKind>,
     },
     MappingContract {
         operation: &'static str,
@@ -256,15 +250,6 @@ impl fmt::Display for OperationError {
             Self::IncompleteCommit { operation, block } => {
                 write!(formatter, "operation `{operation}` did not commit {block}")
             }
-            Self::TopologyEditContract {
-                operation,
-                issue,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "operation `{operation}` has invalid topology-edit evidence ({issue}): expected {expected:?}, got {actual:?}"
-            ),
             Self::MappingContract {
                 operation,
                 issue,

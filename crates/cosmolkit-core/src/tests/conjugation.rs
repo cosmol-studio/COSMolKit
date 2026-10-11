@@ -475,10 +475,15 @@ fn invalid_inputs_report_exact_fields_without_mutating_sources() {
 
     let mut malformed = graph.clone();
     malformed.atoms[0] = Atom::from_spec(AtomId::new(9), AtomSpec::new(Element::C));
-    assert!(matches!(
-        assign_conjugation(&malformed, &valence(&[2, 2], &[0, 0])),
-        Err(ConjugationError::InvalidTopology(_))
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        malformed.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(9)
+        }),
+    );
 }
 
 #[test]

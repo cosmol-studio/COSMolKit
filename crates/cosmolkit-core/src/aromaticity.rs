@@ -191,7 +191,6 @@ impl Default for CandidateOptions {
 }
 
 fn validate_inputs(topology: &TopologyBlock, rings: &RingInfo) -> Result<(), AromaticityError> {
-    topology.validate()?;
     if !rings.is_initialized() {
         return Err(AromaticityError::RingInfoNotInitialized);
     }
@@ -1868,7 +1867,6 @@ fn aromaticity_helper_with_query_state(
                 })?;
         }
     }
-    working.validate()?;
     Ok(AromaticityAssignment {
         topology: working,
         aromatic_ring_count,
@@ -2100,7 +2098,6 @@ fn mdl_aromaticity_helper_with_query_state(
                 field: "aromatic ring count",
             })?;
     }
-    working.validate()?;
     Ok(AromaticityAssignment {
         topology: working,
         aromatic_ring_count,
@@ -2578,7 +2575,6 @@ fn mmff94_aromaticity_helper_with_query_state(
                     })?;
         }
     }
-    working.validate()?;
     Ok(AromaticityAssignment {
         topology: working,
         aromatic_ring_count,
@@ -2680,9 +2676,6 @@ fn assign_aromaticity_impl(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolOps::setAromaticity
     validate_inputs(topology, rings)?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology)?;
-    }
     let assignment = match params.model {
         AromaticityModel::Rdkit => aromaticity_helper_with_query_state(
             topology,
@@ -2716,7 +2709,6 @@ fn assign_aromaticity_impl(
         }
     };
 
-    assignment.topology.validate()?;
     if assignment.topology.atoms.len() != topology.atoms.len()
         || assignment.topology.bonds.len() != topology.bonds.len()
     {

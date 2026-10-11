@@ -91,10 +91,6 @@ impl MoleculeOpSpec {
     pub fn kind(&self) -> String {
         format!("{:?}", self.inner.kind)
     }
-    #[wasm_bindgen(getter, js_name=topologyEdit)]
-    pub fn topology_edit(&self) -> String {
-        format!("{:?}", self.inner.topology_edit)
-    }
     #[wasm_bindgen(getter, unchecked_return_type = "{ read: number; write: number }")]
     pub fn access(&self) -> Result<JsValue, JsValue> {
         let value = js_sys::Object::new();

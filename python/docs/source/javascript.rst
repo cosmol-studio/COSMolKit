@@ -98,6 +98,12 @@ For a smaller package, change that import's module name, for example to
 appear in its exports and declarations. Keep the generated JavaScript and
 ``.wasm`` asset from the same package version together.
 
+Top-level constructors such as ``ck.molFromSmiles(text)`` and
+``ck.bioFromMmcif(text)`` directly reference the corresponding class factories
+(``ck.Molecule.fromSmiles`` and ``ck.BioStructure.fromMmcif``). They accept the
+same options, return the same types and preserve the same errors. Their
+availability follows the selected package's features.
+
 In Node.js, supply the WebAssembly bytes instead of relying on browser fetching:
 
 .. code-block:: javascript

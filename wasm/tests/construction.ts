@@ -16,3 +16,12 @@ atom.withFormalCharge('1');
 // @ts-expect-error coordinate row contains a number
 molecule.with2dCoordinateBlock([['1',2]]);
 void coordinates;
+
+import {molFromSmiles,molsFromSmilesList,MoleculeBatch} from 'cosmolkit-generated';
+const convenient:Molecule=molFromSmiles('CCO',{sanitize:false});
+const convenientBatch:MoleculeBatch=molsFromSmilesList(['C','CC']);
+// @ts-expect-error the alias preserves the original text input type
+molFromSmiles(42);
+// @ts-expect-error native binary constructors are absent from WASM
+import {molFromBinary} from 'cosmolkit-generated';
+void [convenient,convenientBatch];

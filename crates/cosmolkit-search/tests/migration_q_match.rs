@@ -2022,15 +2022,9 @@ fn q86_query_target_remap_and_attachment_errors_are_typed() {
     assert_eq!(matches[0].atom_mapping, [1]);
 
     let short_topology = topology(&[Element::C], &[]);
-    let count_error = SearchTarget::new(
-        &short_topology,
-        &coordinates,
-        &short_topology.stereo_groups,
-        None,
-        None,
-    )
-    .try_with_query_state(old_state)
-    .expect_err("attachment must revalidate row counts before matching");
+    let count_error = old_state
+        .validate_for_topology(&short_topology)
+        .expect_err("explicit query-state audit checks row counts");
     assert_eq!(
         count_error,
         QueryStateError::AtomCount {
@@ -2057,15 +2051,9 @@ fn q86_query_target_remap_and_attachment_errors_are_typed() {
     )
     .expect("reverse-endpoint rows align with their source topology");
     let forward_topology = topology(&[Element::C, Element::C], &[(0, 1)]);
-    let endpoint_error = SearchTarget::new(
-        &forward_topology,
-        &coordinates,
-        &forward_topology.stereo_groups,
-        None,
-        None,
-    )
-    .try_with_query_state(reverse_state)
-    .expect_err("attachment must revalidate bond endpoints before matching");
+    let endpoint_error = reverse_state
+        .validate_for_topology(&forward_topology)
+        .expect_err("explicit query-state audit checks bond endpoints");
     assert_eq!(
         endpoint_error,
         QueryStateError::BondEndpoints {

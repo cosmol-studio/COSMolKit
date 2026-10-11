@@ -238,14 +238,14 @@ fn malformed_topology_error_stays_typed_and_nested() {
         ..TopologyBlock::default()
     };
 
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
     assert_eq!(
-        assign_property_cache(&input, &PropertyCacheParams::default()),
-        Err(PropertyCacheError::Valence(ValenceError::InvalidTopology {
-            source: TopologyValidationError::AtomIdMismatch {
-                position: 0,
-                id: AtomId::new(1),
-            },
-        }))
+        input.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(1)
+        }),
     );
 }
 

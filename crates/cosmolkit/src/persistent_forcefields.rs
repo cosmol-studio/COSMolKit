@@ -448,11 +448,6 @@ impl Molecule {
         }
         let topology = self.topology();
         let cache = self.derived_cache_runtime();
-        cache
-            .validate_for_atom_count(topology.atoms.len())
-            .map_err(|source| {
-                UffForceFieldError::cause(MolecularForceFieldErrorKind::Preparation, source)
-            })?;
         let valence = cache.valence_assignment().ok_or_else(|| {
             UffForceFieldError::cause(
                 MolecularForceFieldErrorKind::Preparation,

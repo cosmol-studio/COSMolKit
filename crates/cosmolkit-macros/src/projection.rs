@@ -12,7 +12,6 @@ use syn::{FnArg, Ident, ItemFn, Pat, Token, Type, parse::Parse, parse::ParseStre
 use crate::declaration::{
     BioBlock, BioDerivedState, BioOperation, BioRegistry, BioState, DerivedState,
     MappingRequirement, MoleculeBlock, MoleculeOperation, MoleculeOutput, MoleculeRegistry,
-    TopologyEditKind,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -426,13 +425,6 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
         });
     }
 
-    if operation.fields.topology_edit != TopologyEditKind::None {
-        methods.push(quote! {
-            pub(crate) fn record_topology_edit(&mut self, edit: crate::TopologyEditKind) -> Result<(), crate::OperationError> {
-                self.record_topology_edit_runtime(edit)
-            }
-        });
-    }
     if operation.fields.requires_mapping != MappingRequirement::None {
         methods.push(quote! {
             pub(crate) fn record_topology_mapping(&mut self, mapping: cosmolkit_model::TopologyMapping) -> Result<(), crate::OperationError> {

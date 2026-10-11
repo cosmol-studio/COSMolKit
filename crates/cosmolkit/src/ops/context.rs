@@ -9,11 +9,12 @@ use cosmolkit_model::{
 
 use super::{
     BlockSet, CipStatePolicy, DerivedState, MappingRequirement, MoleculeOpOutput, MoleculeOpSpec,
-    OperationError, TopologyEditKind,
+    OperationError,
 };
 use crate::Molecule;
 use crate::molecule::DerivedCacheBlock;
-use crate::strict::{OPERATION_CONTRACTS_ENABLED, RUNTIME_INVARIANTS_ENABLED};
+#[cfg(feature = "op-contracts")]
+use crate::strict::OPERATION_CONTRACTS_ENABLED;
 
 enum WorkingBlock<T> {
     Shared,
@@ -167,6 +168,7 @@ struct EffectTrace {
 }
 
 impl EffectTrace {
+    #[cfg(feature = "op-contracts")]
     fn handled(self) -> DerivedState {
         self.updated.union(self.cleared).union(self.preserved)
     }
@@ -184,7 +186,6 @@ pub(crate) struct OpParts<'a, Access> {
     coordinates: WorkingBlock<CoordinateBlock>,
     properties: WorkingBlock<MoleculeProperties>,
     derived_cache: WorkingBlock<DerivedCacheBlock>,
-    topology_edit: Option<TopologyEditKind>,
     topology_mapping: Option<TopologyMapping>,
     // Only the multiple runtime sets this after checking actual input counts
     // against every typed origin. An ordinary operation cannot manufacture it.
@@ -248,7 +249,6 @@ impl<'a, Access> OpParts<'a, Access> {
             coordinates: WorkingBlock::Shared,
             properties: WorkingBlock::Shared,
             derived_cache: WorkingBlock::Shared,
-            topology_edit: None,
             topology_mapping: None,
             reconstruction_validated: false,
             remapped_blocks: BlockSet::NONE,
@@ -318,37 +318,40 @@ impl<'a, Access> OpParts<'a, Access> {
         })
     }
 
+    #[cfg(feature = "op-contracts")]
     fn ensure_read_access(
         &self,
         block: BlockSet,
         name: &'static str,
     ) -> Result<(), OperationError> {
-        if self.spec.access.can_read(block) {
-            Ok(())
-        } else {
-            Err(OperationError::AccessDenied {
+        #[cfg(feature = "op-contracts")]
+        if !self.spec.access.can_read(block) {
+            return Err(OperationError::AccessDenied {
                 operation: self.spec.method,
                 block: name,
-            })
+            });
         }
+        Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn ensure_write_access(
         &self,
         block: BlockSet,
         name: &'static str,
     ) -> Result<(), OperationError> {
-        if self.spec.access.can_write(block) {
-            Ok(())
-        } else {
-            Err(OperationError::AccessDenied {
+        #[cfg(feature = "op-contracts")]
+        if !self.spec.access.can_write(block) {
+            return Err(OperationError::AccessDenied {
                 operation: self.spec.method,
                 block: name,
-            })
+            });
         }
+        Ok(())
     }
 
     pub(super) fn read_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::TOPOLOGY, "topology")?;
         match &self.topology {
             WorkingBlock::Shared => Ok(self.source.topology()),
@@ -361,6 +364,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn read_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         match &self.coordinates {
             WorkingBlock::Shared => Ok(self.source.coordinate_block_runtime()),
@@ -373,6 +377,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn read_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
         match &self.properties {
             WorkingBlock::Shared => Ok(self.source.properties()),
@@ -385,6 +390,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn read_derived_cache_runtime(&self) -> Result<&DerivedCacheBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         match &self.derived_cache {
             WorkingBlock::Shared => Ok(self.source.derived_cache_runtime()),
@@ -397,6 +403,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn checkout_topology_runtime(&mut self) -> Result<TopologyBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
         match std::mem::replace(&mut self.topology, WorkingBlock::CheckedOut) {
             WorkingBlock::Shared => Ok(self.source.topology().clone()),
@@ -453,8 +460,11 @@ impl<'a, Access> OpParts<'a, Access> {
         >,
     ) -> Result<(R, bool), OperationError> {
         self.ensure_unsealed_runtime()?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         if !matches!(self.topology, WorkingBlock::Shared)
             || !matches!(self.properties, WorkingBlock::Shared)
@@ -481,21 +491,12 @@ impl<'a, Access> OpParts<'a, Access> {
         )?;
         let changed = pair.is_some();
         if let Some((topology, properties)) = pair {
-            // Only the unchanged source borrow carries the live molecule's
-            // existing validity. Owned and foreign borrowed values still need
-            // validation, preserving their errors before borrow rejection.
+            // Whole-state audits belong to the runtime feature boundary.
+            // Borrow ownership is enforced independently below.
             #[cfg(feature = "runtime-invariants")]
-            let audit_topology = true;
-            #[cfg(not(feature = "runtime-invariants"))]
-            let audit_topology = !matches!(
-                &topology,
-                Cow::Borrowed(value) if std::ptr::eq(*value, self.source.topology())
-            );
-            if audit_topology {
-                topology
-                    .validate()
-                    .map_err(OperationError::InvalidTopology)?;
-            }
+            topology
+                .validate()
+                .map_err(OperationError::InvalidTopology)?;
             // A borrow must be the supplied source block, not an unrelated
             // detached value. Check both before installing either candidate.
             if let Cow::Borrowed(value) = &topology
@@ -527,6 +528,7 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn checkout_coordinates_runtime(
         &mut self,
     ) -> Result<CoordinateBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         match std::mem::replace(&mut self.coordinates, WorkingBlock::CheckedOut) {
             WorkingBlock::Shared => Ok(self.source.coordinate_block_runtime().clone()),
@@ -544,6 +546,7 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn checkout_properties_runtime(
         &mut self,
     ) -> Result<MoleculeProperties, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
         match std::mem::replace(&mut self.properties, WorkingBlock::CheckedOut) {
             WorkingBlock::Shared => Ok(self.source.properties().clone()),
@@ -561,6 +564,7 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn checkout_derived_cache_runtime(
         &mut self,
     ) -> Result<DerivedCacheBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         match std::mem::replace(&mut self.derived_cache, WorkingBlock::CheckedOut) {
             WorkingBlock::Shared => Ok(self.source.derived_cache_runtime().clone()),
@@ -595,20 +599,25 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn reaction_input_runtime(
         &self,
     ) -> Result<cosmolkit_reaction::ReactionInput<'_>, OperationError> {
+        #[cfg(feature = "op-contracts")]
         for (block, name) in [
             (BlockSet::TOPOLOGY, "topology"),
             (BlockSet::COORDINATES, "coordinates"),
             (BlockSet::PROPERTIES, "properties"),
             (BlockSet::DERIVED_CACHE, "derived_cache"),
         ] {
+            #[cfg(feature = "op-contracts")]
             self.ensure_read_access(block, name)?;
         }
         let topology = self.current_topology_candidate()?;
         let coordinates = self.current_coordinates_candidate()?;
         let properties = self.current_properties_candidate()?;
         let cache = self.current_cache_candidate()?;
-        Self::validate_detached_candidate_invariants(topology, coordinates, properties)?;
-        cache.validate_for_topology(topology)?;
+        #[cfg(feature = "runtime-invariants")]
+        {
+            Self::validate_detached_candidate_invariants(topology, coordinates, properties)?;
+            cache.validate_for_topology(topology)?;
+        }
         Ok(cosmolkit_reaction::ReactionInput {
             topology,
             coordinates,
@@ -627,9 +636,13 @@ impl<'a, Access> OpParts<'a, Access> {
             &mut DerivedCacheBlock,
         ) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         // The source coordinate block is borrowed; the Arc clone only keeps
         // that one immutable allocation alive across restoration/unwind.
@@ -673,9 +686,13 @@ impl<'a, Access> OpParts<'a, Access> {
             &mut DerivedCacheBlock,
         ) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         let mut topology = self.checkout_topology_runtime()?;
         let mut coordinates = match self.checkout_coordinates_runtime() {
@@ -721,8 +738,10 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         topology: TopologyBlock,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
         Self::require_checkout(self.spec, "topology", &mut self.topology)?;
+        #[cfg(feature = "runtime-invariants")]
         topology
             .validate()
             .map_err(OperationError::InvalidTopology)?;
@@ -734,22 +753,26 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         mut coordinates: CoordinateBlock,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         Self::require_checkout(self.spec, "coordinates", &mut self.coordinates)?;
-        let local_row_count = coordinates
-            .conformers_2d
-            .first()
-            .map(|conformer| conformer.coordinates().len())
-            .or_else(|| {
-                coordinates
-                    .conformers_3d
-                    .first()
-                    .map(|conformer| conformer.coordinates().len())
-            })
-            .unwrap_or(0);
-        coordinates
-            .validate_for_atom_count(local_row_count)
-            .map_err(OperationError::InvalidCoordinates)?;
+        #[cfg(feature = "runtime-invariants")]
+        {
+            let local_row_count = coordinates
+                .conformers_2d
+                .first()
+                .map(|conformer| conformer.coordinates().len())
+                .or_else(|| {
+                    coordinates
+                        .conformers_3d
+                        .first()
+                        .map(|conformer| conformer.coordinates().len())
+                })
+                .unwrap_or(0);
+            coordinates
+                .validate_for_atom_count(local_row_count)
+                .map_err(OperationError::InvalidCoordinates)?;
+        }
         if coordinates.source_coordinate_dim.is_none() {
             coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
                 (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
@@ -765,6 +788,7 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         properties: MoleculeProperties,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
         Self::require_checkout(self.spec, "properties", &mut self.properties)?;
         self.properties = WorkingBlock::Installed(properties);
@@ -775,33 +799,10 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         cache: DerivedCacheBlock,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         Self::require_checkout(self.spec, "derived_cache", &mut self.derived_cache)?;
         self.derived_cache = WorkingBlock::Installed(cache);
-        Ok(())
-    }
-
-    pub(super) fn record_topology_edit_runtime(
-        &mut self,
-        edit: TopologyEditKind,
-    ) -> Result<(), OperationError> {
-        if self.topology_edit.is_some() {
-            return Err(OperationError::TopologyEditContract {
-                operation: self.spec.method,
-                issue: "duplicate-record",
-                expected: self.spec.topology_edit,
-                actual: Some(edit),
-            });
-        }
-        if edit != self.spec.topology_edit || edit == TopologyEditKind::None {
-            return Err(OperationError::TopologyEditContract {
-                operation: self.spec.method,
-                issue: "declaration-mismatch",
-                expected: self.spec.topology_edit,
-                actual: Some(edit),
-            });
-        }
-        self.topology_edit = Some(edit);
         Ok(())
     }
 
@@ -809,6 +810,7 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         mapping: TopologyMapping,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         if self.topology_mapping.is_some() {
             return Err(OperationError::MappingContract {
                 operation: self.spec.method,
@@ -816,6 +818,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 requirement: self.spec.requires_mapping,
             });
         }
+        #[cfg(feature = "op-contracts")]
         if self.spec.requires_mapping == MappingRequirement::None {
             return Err(OperationError::MappingContract {
                 operation: self.spec.method,
@@ -827,6 +830,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "runtime-invariants")]
     fn validate_property_lists(
         properties: &MoleculeProperties,
         atom_count: usize,
@@ -849,29 +853,14 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_mapping_obligation(
         spec: &'static MoleculeOpSpec,
         before: &TopologyBlock,
         after: &TopologyBlock,
-        actual_edit: Option<TopologyEditKind>,
         mapping: Option<&TopologyMapping>,
         reconstruction_validated: bool,
     ) -> Result<(), OperationError> {
-        let expected_edit = spec.topology_edit;
-        let expected_actual = (expected_edit != TopologyEditKind::None).then_some(expected_edit);
-        if actual_edit != expected_actual {
-            return Err(OperationError::TopologyEditContract {
-                operation: spec.method,
-                issue: if actual_edit.is_none() {
-                    "missing-record"
-                } else {
-                    "declaration-mismatch"
-                },
-                expected: expected_edit,
-                actual: actual_edit,
-            });
-        }
-
         let row_identity_unchanged = before.atoms.len() == after.atoms.len()
             && before.bonds.len() == after.bonds.len()
             && before
@@ -884,12 +873,11 @@ impl<'a, Access> OpParts<'a, Access> {
                 .iter()
                 .zip(&after.bonds)
                 .all(|(source, candidate)| source.id() == candidate.id());
-        if expected_edit == TopologyEditKind::None && !row_identity_unchanged {
-            return Err(OperationError::TopologyEditContract {
+        if spec.kind == crate::MoleculeOpKind::Weak && !row_identity_unchanged {
+            return Err(OperationError::MappingContract {
                 operation: spec.method,
-                issue: "undeclared-topology-change",
-                expected: expected_edit,
-                actual: actual_edit,
+                issue: "weak operation changed atom or bond row identity",
+                requirement: spec.requires_mapping,
             });
         }
 
@@ -901,7 +889,7 @@ impl<'a, Access> OpParts<'a, Access> {
             MappingRequirement::Reconstruction => {
                 if !reconstruction_validated
                     || mapping.is_some()
-                    || expected_edit != TopologyEditKind::Reconstruction
+                    || spec.kind != crate::MoleculeOpKind::Strong
                     || spec.output != MoleculeOpOutput::Multiple
                 {
                     return Err(OperationError::MappingContract {
@@ -988,18 +976,15 @@ impl<'a, Access> OpParts<'a, Access> {
                 });
             }
         };
-        // A shared candidate is that same source, not a new detached result.
-        // Installed candidates retain their mandatory structural check.
-        if RUNTIME_INVARIANTS_ENABLED || !matches!(&self.topology, WorkingBlock::Shared) {
-            candidate_topology
-                .validate()
-                .map_err(OperationError::InvalidTopology)?;
-        }
+        #[cfg(feature = "runtime-invariants")]
+        candidate_topology
+            .validate()
+            .map_err(OperationError::InvalidTopology)?;
+        #[cfg(feature = "op-contracts")]
         Self::validate_mapping_obligation(
             self.spec,
             source_topology,
             candidate_topology,
-            self.topology_edit,
             self.topology_mapping.as_ref(),
             self.reconstruction_validated,
         )?;
@@ -1032,6 +1017,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 (BlockSet::PROPERTIES, "properties"),
             ] {
                 if self.spec.auto_remap.contains(block) {
+                    #[cfg(feature = "op-contracts")]
                     self.ensure_write_access(block, name)?;
                     if self.remapped_blocks.contains(block) {
                         return Err(OperationError::AutoRemapContract {
@@ -1047,6 +1033,7 @@ impl<'a, Access> OpParts<'a, Access> {
         }
 
         let coordinate_candidate = if self.spec.auto_remap.contains(BlockSet::COORDINATES) {
+            #[cfg(feature = "op-contracts")]
             self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
             if self.remapped_blocks.contains(BlockSet::COORDINATES) {
                 return Err(OperationError::AutoRemapContract {
@@ -1058,6 +1045,7 @@ impl<'a, Access> OpParts<'a, Access> {
             let mut coordinates = match &self.coordinates {
                 WorkingBlock::Shared => self.source.coordinate_block_runtime().clone(),
                 WorkingBlock::Installed(coordinates) => {
+                    #[cfg(feature = "runtime-invariants")]
                     coordinates
                         .validate_for_atom_count(new_atom_count)
                         .map_err(OperationError::InvalidCoordinates)?;
@@ -1086,6 +1074,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
                 coordinates.remap_topology(&mapping.retained_atom_indices());
             }
+            #[cfg(feature = "runtime-invariants")]
             coordinates
                 .validate_for_atom_count(new_atom_count)
                 .map_err(OperationError::InvalidCoordinates)?;
@@ -1095,6 +1084,7 @@ impl<'a, Access> OpParts<'a, Access> {
         };
 
         let property_candidate = if self.spec.auto_remap.contains(BlockSet::PROPERTIES) {
+            #[cfg(feature = "op-contracts")]
             self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
             if self.remapped_blocks.contains(BlockSet::PROPERTIES) {
                 return Err(OperationError::AutoRemapContract {
@@ -1122,6 +1112,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 properties
                     .remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
             }
+            #[cfg(feature = "runtime-invariants")]
             Self::validate_property_lists(&properties, new_atom_count, new_bond_count)?;
             Some(properties)
         } else {
@@ -1153,6 +1144,7 @@ impl<'a, Access> OpParts<'a, Access> {
         }
     }
 
+    #[cfg(feature = "op-contracts")]
     pub(super) fn validate_effect_contract(
         spec: &'static MoleculeOpSpec,
     ) -> Result<(), OperationError> {
@@ -1197,7 +1189,6 @@ impl<'a, Access> OpParts<'a, Access> {
         let canonical_add_hs = spec.method == "with_hydrogens_with_params"
             && spec.output == MoleculeOpOutput::Single
             && spec.kind == crate::MoleculeOpKind::Strong
-            && spec.topology_edit == TopologyEditKind::Appending
             && spec.requires_mapping == MappingRequirement::Required
             && spec.cip_state == CipStatePolicy::ClearComputed
             && spec.access.read().is_empty()
@@ -1209,7 +1200,6 @@ impl<'a, Access> OpParts<'a, Access> {
             && effects.operation_defined == DerivedState::VALENCE;
         // USER approval ROOT CK-4b988 repeats the exact generated Weak shapes.
         let canonical_weak_source = spec.kind == crate::MoleculeOpKind::Weak
-            && spec.topology_edit == TopologyEditKind::Local
             && spec.output == MoleculeOpOutput::Single
             && spec.requires_mapping == MappingRequirement::None
             && spec.access.read().is_empty()
@@ -1269,7 +1259,6 @@ impl<'a, Access> OpParts<'a, Access> {
                     ("fragments", MoleculeOpOutput::Multiple)
                         | ("largest_fragment", MoleculeOpOutput::Single)
                 ) || spec.kind != crate::MoleculeOpKind::Strong
-                    || spec.topology_edit != TopologyEditKind::Compacting
                     || spec.requires_mapping != MappingRequirement::Required
                     || !spec.access.read().is_empty()
                     || spec.access.write() != blocks
@@ -1279,7 +1268,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     return Err(OperationError::CipStateContract {
                         operation: spec.method,
                         policy: spec.cip_state,
-                        issue: "fragment source transition requires exact mapped compacting fragment authority",
+                        issue: "fragment source transition requires exact mapped strong fragment authority",
                     });
                 }
             }
@@ -1293,7 +1282,6 @@ impl<'a, Access> OpParts<'a, Access> {
                     "murcko_scaffold" | "net_scaffold" | "murcko_decompose"
                 ) || spec.kind != crate::MoleculeOpKind::Strong
                     || spec.output != MoleculeOpOutput::Single
-                    || spec.topology_edit != TopologyEditKind::Compacting
                     || spec.requires_mapping != MappingRequirement::Required
                     || !spec.access.read().is_empty()
                     || spec.access.write() != blocks
@@ -1303,7 +1291,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     return Err(OperationError::CipStateContract {
                         operation: spec.method,
                         policy: spec.cip_state,
-                        issue: "scaffold source transition requires an exact strong compacting scaffold operation and four write-owned blocks",
+                        issue: "scaffold source transition requires an exact mapped strong scaffold operation and four write-owned blocks",
                     });
                 }
             }
@@ -1316,12 +1304,10 @@ impl<'a, Access> OpParts<'a, Access> {
                     spec.method,
                     "reaction_products_with_params" | "reaction_products_from_inputs" | "run"
                 ) && spec.output == MoleculeOpOutput::Multiple
-                    && spec.topology_edit == TopologyEditKind::Reconstruction
                     && spec.requires_mapping == MappingRequirement::Reconstruction
                     && spec.auto_remap.is_empty();
                 let apply = spec.method == "apply_reaction_with_params"
                     && spec.output == MoleculeOpOutput::Single
-                    && spec.topology_edit == TopologyEditKind::Compacting
                     && spec.requires_mapping == MappingRequirement::Required
                     && spec.auto_remap == BlockSet::COORDINATES.union(BlockSet::PROPERTIES);
                 if !(product || apply)
@@ -1333,7 +1319,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     return Err(OperationError::CipStateContract {
                         operation: spec.method,
                         policy: spec.cip_state,
-                        issue: "reaction source transition requires an exact reaction operation with strong reconstruction or compacting mapping and four write-owned blocks",
+                        issue: "reaction source transition requires an exact strong reaction operation with reconstruction or required mapping and four write-owned blocks",
                     });
                 }
             }
@@ -1369,7 +1355,6 @@ impl<'a, Access> OpParts<'a, Access> {
                             .union(BlockSet::DERIVED_CACHE)
                     || spec.output != MoleculeOpOutput::LazyMultiple
                     || spec.kind != crate::MoleculeOpKind::Weak
-                    || spec.topology_edit != TopologyEditKind::None
                     || spec.requires_mapping != MappingRequirement::None
                     || !spec.access.read().is_empty()
                     || spec.access.write()
@@ -1404,6 +1389,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_effect_action(
         &self,
         action: &'static str,
@@ -1457,12 +1443,15 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         states: DerivedState,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         let allowed = self
             .spec
             .derived_effects
             .recompute
             .union(self.spec.derived_effects.operation_defined);
+        #[cfg(feature = "op-contracts")]
         self.validate_effect_action("update", states, allowed)?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         // An already-Installed cache mutates IN PLACE: a previously moved
         // ring cache keeps its row-buffer allocations across later validity
@@ -1493,13 +1482,16 @@ impl<'a, Access> OpParts<'a, Access> {
         &mut self,
         states: DerivedState,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         let allowed = self
             .spec
             .derived_effects
             .recompute
             .union(self.spec.derived_effects.invalidate)
             .union(self.spec.derived_effects.operation_defined);
+        #[cfg(feature = "op-contracts")]
         self.validate_effect_action("clear", states, allowed)?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         // Same Installed-versus-Shared discipline as mark_cache_updated_
         // runtime: in-place mutation for the owned cache, the existing
@@ -1577,6 +1569,7 @@ impl<'a, Access> OpParts<'a, Access> {
         states: DerivedState,
         proof: PreservationProof,
     ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.validate_effect_action("preserve", states, self.spec.derived_effects.preserve)?;
         // Preservation proofs are diagnostics, not chemistry or cache updates.
         // Compile their scans and comparison-only clones out of ordinary builds.
@@ -2764,6 +2757,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn cip_properties_equal(&self) -> Result<bool, OperationError> {
         const ATOM_KEYS: [&str; 3] = ["_CIPCode", "_CIPNeighborOrder", "_CIPRank"];
         const BOND_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
@@ -2837,7 +2831,9 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn apply_cip_policy_runtime(&mut self) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
         Self::validate_effect_contract(self.spec)?;
+        #[cfg(feature = "op-contracts")]
         if self.effect_trace.cip_applied {
             return Err(OperationError::CipStateContract {
                 operation: self.spec.method,
@@ -2846,7 +2842,9 @@ impl<'a, Access> OpParts<'a, Access> {
             });
         }
         match self.spec.cip_state {
-            CipStatePolicy::Preserve => {
+            CipStatePolicy::Preserve =>
+            {
+                #[cfg(feature = "op-contracts")]
                 if !self.cip_properties_equal()? {
                     return Err(OperationError::CipStateContract {
                         operation: self.spec.method,
@@ -2856,7 +2854,9 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
             CipStatePolicy::ClearComputed => {
+                #[cfg(feature = "op-contracts")]
                 self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+                #[cfg(feature = "op-contracts")]
                 self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
                 // Move existing installed blocks; shared inputs materialize
                 // once through the canonical COW lifecycle. Always return both
@@ -2888,21 +2888,24 @@ impl<'a, Access> OpParts<'a, Access> {
                 result?;
             }
             CipStatePolicy::Assign => {
-                let properties = self.current_properties_candidate()?;
-                if properties.prop("_CIPComputed").is_none()
-                    || !properties
-                        .is_prop_computed("_CIPComputed")
-                        .map_err(|error| {
-                            OperationError::InvalidProperty(
-                                cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
-                            )
-                        })?
+                #[cfg(feature = "op-contracts")]
                 {
-                    return Err(OperationError::CipStateContract {
-                        operation: self.spec.method,
-                        policy: self.spec.cip_state,
-                        issue: "assignment did not install computed _CIPComputed evidence",
-                    });
+                    let properties = self.current_properties_candidate()?;
+                    if properties.prop("_CIPComputed").is_none()
+                        || !properties
+                            .is_prop_computed("_CIPComputed")
+                            .map_err(|error| {
+                                OperationError::InvalidProperty(
+                                    cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
+                                )
+                            })?
+                    {
+                        return Err(OperationError::CipStateContract {
+                            operation: self.spec.method,
+                            policy: self.spec.cip_state,
+                            issue: "assignment did not install computed _CIPComputed evidence",
+                        });
+                    }
                 }
             }
             CipStatePolicy::ScaffoldSourceTransition => {
@@ -2910,6 +2913,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 // or MurckoDecompose's clearComputedProps. No generic CIP clear
                 // may erase the former's freshly assigned labels. The exact
                 // declaration allow-list above grants no new storage authority.
+                #[cfg(feature = "op-contracts")]
                 if self.spec.method != "murcko_decompose" {
                     let properties = self.current_properties_candidate()?;
                     if !properties
@@ -2966,6 +2970,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn has_staged_state(&self) -> bool {
         !matches!(self.topology, WorkingBlock::Shared)
             || !matches!(self.coordinates, WorkingBlock::Shared)
@@ -2974,6 +2979,7 @@ impl<'a, Access> OpParts<'a, Access> {
             || !self.effect_trace.handled().is_empty()
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_effect_completion(&self) -> Result<(), OperationError> {
         Self::validate_effect_contract(self.spec)?;
         if !self.has_staged_state() {
@@ -3018,10 +3024,12 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_operation_contract(&self) -> Result<(), OperationError> {
         Self::validate_operation_spec(self.spec)
     }
 
+    #[cfg(feature = "op-contracts")]
     pub(super) fn validate_operation_spec(
         spec: &'static MoleculeOpSpec,
     ) -> Result<(), OperationError> {
@@ -3086,13 +3094,13 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_mapping_completion(&self) -> Result<(), OperationError> {
         let candidate_topology = self.current_topology_candidate()?;
         Self::validate_mapping_obligation(
             self.spec,
             self.source.topology(),
             candidate_topology,
-            self.topology_edit,
             self.topology_mapping.as_ref(),
             self.reconstruction_validated,
         )?;
@@ -3120,6 +3128,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
+    #[cfg(feature = "runtime-invariants")]
     pub(super) fn validate_detached_candidate_invariants(
         topology: &TopologyBlock,
         coordinates: &CoordinateBlock,
@@ -3134,6 +3143,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Self::validate_property_lists(properties, topology.atoms.len(), topology.bonds.len())
     }
 
+    #[cfg(feature = "runtime-invariants")]
     fn validate_candidate_invariants(&self) -> Result<(), OperationError> {
         Self::validate_detached_candidate_invariants(
             self.current_topology_candidate()?,
@@ -3144,14 +3154,16 @@ impl<'a, Access> OpParts<'a, Access> {
             .validate_for_topology(self.current_topology_candidate()?)
     }
 
+    #[cfg(any(feature = "runtime-invariants", feature = "op-contracts"))]
     fn validate_candidate(&self) -> Result<(), OperationError> {
-        self.ensure_complete_blocks()?;
-        if OPERATION_CONTRACTS_ENABLED {
+        #[cfg(feature = "op-contracts")]
+        {
             self.validate_operation_contract()?;
             self.validate_mapping_completion()?;
             self.validate_effect_completion()?;
         }
-        if RUNTIME_INVARIANTS_ENABLED {
+        #[cfg(feature = "runtime-invariants")]
+        {
             self.validate_candidate_invariants()?;
         }
         Ok(())
@@ -3201,6 +3213,8 @@ impl<'a, Access> OpParts<'a, Access> {
         ),
         OperationError,
     > {
+        self.ensure_complete_blocks()?;
+        #[cfg(any(feature = "runtime-invariants", feature = "op-contracts"))]
         self.validate_candidate()?;
         let operation = self.spec.method;
         let topology = Self::materialize(
@@ -3246,7 +3260,6 @@ impl<'a, Access> OpParts<'a, Access> {
         self.coordinates = WorkingBlock::Shared;
         self.properties = WorkingBlock::Shared;
         self.derived_cache = WorkingBlock::Shared;
-        self.topology_edit = None;
         self.topology_mapping = None;
         self.remapped_blocks = BlockSet::NONE;
         self.effect_trace = EffectTrace::default();
@@ -3284,13 +3297,16 @@ pub(super) fn validate_multiple_candidate(
     ),
     OperationError,
 > {
+    #[cfg(feature = "op-contracts")]
     OpParts::<()>::validate_operation_spec(spec)?;
     let coordinate_view = coordinates
         .as_ref()
         .unwrap_or_else(|| source.coordinate_block_runtime());
 
-    let row_identity_unchanged = source.topology().atoms.len() == topology.atoms.len()
-        && source.topology().bonds.len() == topology.bonds.len()
+    let row_counts_unchanged = source.topology().atoms.len() == topology.atoms.len()
+        && source.topology().bonds.len() == topology.bonds.len();
+    #[cfg(feature = "op-contracts")]
+    let row_identity_unchanged = row_counts_unchanged
         && source
             .topology()
             .atoms
@@ -3303,7 +3319,10 @@ pub(super) fn validate_multiple_candidate(
             .iter()
             .zip(&topology.bonds)
             .all(|(before, after)| before.id() == after.id());
+    #[cfg(not(feature = "op-contracts"))]
+    let row_identity_unchanged = row_counts_unchanged;
     let mapping = if let Some(mapping) = mapping_evidence {
+        #[cfg(feature = "op-contracts")]
         if spec.requires_mapping != MappingRequirement::Required {
             return Err(OperationError::MappingContract {
                 operation: spec.method,
@@ -3311,6 +3330,7 @@ pub(super) fn validate_multiple_candidate(
                 requirement: spec.requires_mapping,
             });
         }
+        #[cfg(feature = "op-contracts")]
         mapping
             .validate_for_counts(
                 source.num_atoms(),
@@ -3326,6 +3346,7 @@ pub(super) fn validate_multiple_candidate(
     } else {
         match spec.requires_mapping {
             MappingRequirement::Reconstruction => {
+                #[cfg(feature = "op-contracts")]
                 if !reconstruction_validated {
                     return Err(OperationError::MappingContract {
                         operation: spec.method,
@@ -3358,7 +3379,8 @@ pub(super) fn validate_multiple_candidate(
     // inspecting the candidate's local row ids because the tuple carries no
     // non-identity mapping evidence. All other malformed detached tuples keep
     // the shared runtime's exact invariant error ahead of write projection.
-    if RUNTIME_INVARIANTS_ENABLED {
+    #[cfg(feature = "runtime-invariants")]
+    {
         OpParts::<()>::validate_detached_candidate_invariants(
             &topology,
             coordinate_view,
@@ -3366,6 +3388,7 @@ pub(super) fn validate_multiple_candidate(
         )?;
     }
 
+    #[cfg(feature = "op-contracts")]
     for (changed, block, name) in [
         (
             topology != *source.topology(),
@@ -3409,7 +3432,6 @@ pub(super) fn validate_multiple_candidate(
             WorkingBlock::Installed(properties)
         },
         derived_cache: WorkingBlock::Shared,
-        topology_edit: (spec.topology_edit != TopologyEditKind::None).then_some(spec.topology_edit),
         topology_mapping: mapping,
         reconstruction_validated,
         remapped_blocks: spec.auto_remap,
@@ -3419,6 +3441,7 @@ pub(super) fn validate_multiple_candidate(
         pending_identity: None,
     };
 
+    #[cfg(feature = "op-contracts")]
     OpParts::<()>::validate_effect_contract(spec)?;
     let mut prepared_states = DerivedState::NONE;
     #[cfg(any(
@@ -3477,7 +3500,7 @@ pub(super) fn validate_multiple_candidate(
 #[path = "../../tests/support/run_access_internal.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "op-contracts", feature = "runtime-invariants"))]
 #[path = "../../tests/support/run_mapping_internal.rs"]
 mod mapping_tests;
 
@@ -3580,6 +3603,7 @@ impl Molecule {
                 cache.mark_valid(state);
             }
         }
+        #[cfg(feature = "runtime-invariants")]
         cache
             .validate_for_topology(&record.topology)
             .map_err(|error| crate::PickleError::InvalidMolecule(error.to_string()))?;
@@ -3646,5 +3670,55 @@ mod original_binary_live_tests {
             data,
             restored.to_binary().expect("re-encode restored molecule")
         );
+    }
+}
+
+// Property-list alignment is a cross-block runtime audit, not a hydrogen
+// algorithm precondition. Retain exact short/long cases at its owning boundary.
+#[cfg(all(test, feature = "runtime-invariants"))]
+mod property_list_audit_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element};
+
+    #[test]
+    fn short_and_long_atom_and_bond_lists_report_exact_payloads() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+                Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+            ],
+            vec![Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            )],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        for (target, name, rows, expected) in [
+            (SdfPropertyListTarget::Atom, "atom", 1, 2),
+            (SdfPropertyListTarget::Atom, "atom", 3, 2),
+            (SdfPropertyListTarget::Bond, "bond", 0, 1),
+            (SdfPropertyListTarget::Bond, "bond", 2, 1),
+        ] {
+            let properties = MoleculeProperties::default().with_sdf_property_list(
+                cosmolkit_model::SdfPropertyList::new(target, "bad", vec![None; rows]),
+            );
+            let before = properties.clone();
+            assert_eq!(
+                OpParts::<()>::validate_detached_candidate_invariants(
+                    &topology,
+                    &CoordinateBlock::default(),
+                    &properties
+                ),
+                Err(OperationError::InvalidPropertyList {
+                    target: name,
+                    name: "bad".into(),
+                    values: rows,
+                    expected,
+                })
+            );
+            assert_eq!(properties, before);
+        }
     }
 }

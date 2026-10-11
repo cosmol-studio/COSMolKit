@@ -1,6 +1,6 @@
 //! Generated capabilities delegate TAU chemistry to its unique detached owner.
 use crate::tautomer::{CallbackAdapter, EnumerationMetadata};
-use crate::{DerivedState, OperationError, PreservationProof, TautomerParams, TopologyEditKind};
+use crate::{DerivedState, OperationError, PreservationProof, TautomerParams};
 use cosmolkit_macros::{mol_multi_op_body, mol_op_body};
 use cosmolkit_tautomer::TautomerRecordView;
 
@@ -101,7 +101,6 @@ pub(crate) fn canonical_tautomer_impl(params: &TautomerParams) -> Result<(), Ope
             cache.install_ring_info(record.rings);
             Ok(rows)
         })?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.record_topology_mapping(cosmolkit_model::TopologyMapping::identity(atoms, bonds))?;
     parts.clear_cache(
         DerivedState::AROMATICITY

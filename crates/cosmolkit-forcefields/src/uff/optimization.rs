@@ -84,13 +84,13 @@ pub(super) fn optimize_prepared_uff_single(
 
     // Behavior review — RDKit❗❌: this boundary creates one borrowed
     // Cached { topology, assignment } input after the existing cache length,
-    // signed-byte/noImplicit, then topology checks. The shared typer reads
+    // signed-byte/noImplicit preconditions. The shared typer reads
     // total valence from those rows and requests ordered incident-bond state
     // only at the source SP2 expression after its aromatic short-circuit. The
     // selected conformer ID and existing construction/initialize/minimize/
     // energy order and typed outcomes remain unchanged.
-    // Complexity review — RDKit❗❌: cache validation is O(V); topology
-    // validation remains O(V+E) and constructs expected adjacency temporarily.
+    // Complexity review: cache preconditions are O(V); there is no whole-
+    // topology audit or temporary expected adjacency in this chemistry path.
     // Neither the total-valence nor conjugation projection Vec is created.
     // Typing reads total valence in O(1) and scans incident bonds lazily only
     // when the source branch evaluates the conjugation predicate. The existing
@@ -161,9 +161,9 @@ pub(super) fn optimize_prepared_uff_serial(
     // reaches the conjugation call after the aromatic short-circuit. The owner
     // still constructs once, resizes after success, visits stored 3D rows in
     // order, and runs initialize/minimize/final-energy with the same outcomes.
-    // Complexity review — RDKit❗❌: cached-row validation remains O(V), and
-    // topology validation remains O(V+E) with temporary expected adjacency;
-    // neither chemistry projection Vec is allocated. Total valence is read in
+    // Complexity review: cached-row preconditions remain O(V), without a
+    // whole-topology audit or expected-adjacency allocation. Neither chemistry
+    // projection Vec is allocated. Total valence is read in
     // O(1), while the source-triggered conjugation scan stays branch-lazy. The
     // serial row adapter is O(1), and the owner reuses its O(A) position-handle
     // Vec. Native worker dispatch separately retains O(C) borrowed-row
@@ -266,8 +266,8 @@ pub(super) fn optimize_prepared_uff_dispatch_with_observer(
     // source SP2 expression reaches the conjugation call after its aromatic
     // short-circuit. Requested threads, observed hardware, source-mode flag,
     // and every nested raw Serial/Workers result or panic payload are retained.
-    // Complexity review — RDKit❗❌: cache validation remains O(V); topology
-    // validation remains O(V+E) with temporary expected adjacency. No total-
+    // Complexity review: cache preconditions remain O(V), without whole-
+    // topology auditing or temporary expected adjacency. No total-
     // valence or conjugation output Vec is allocated; typing uses O(1) valence
     // reads and a source-branch-lazy incident scan. Serial routing keeps the
     // O(1) row adapter and reused O(A) position handles. Worker routing keeps

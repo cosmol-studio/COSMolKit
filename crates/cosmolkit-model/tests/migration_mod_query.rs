@@ -74,6 +74,7 @@ fn query_overlay_remap_uses_current_carriers_without_rewriting_explicit_predicat
     let state = QueryStateRef::try_for_topology(&atoms, &bonds, &current).unwrap();
     current.atoms[0].set_formal_charge(1);
     current.bonds[0].set_order(BondOrder::Double);
+    #[cfg(feature = "runtime-invariants")]
     state.validate_for_topology(&current).unwrap();
     assert_eq!(state.atom_predicate(AtomId::new(0)), atoms[0].predicate());
     assert_eq!(state.bond_predicate(BondId::new(0)), bonds[0].predicate());
@@ -312,6 +313,7 @@ fn q05_query_state_transport_mapping_baseline_preserves_surviving_typed_rows() {
     assert_eq!(remapped.bond(1).unwrap().predicate(), &compound);
     assert!(!remapped.bond(1).unwrap().predicate_is_carrier_derived());
     assert_eq!(remapped.bond(1).unwrap().endpoints(), (1, 2));
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(remapped.validate(), Ok(()));
 }
 
@@ -710,6 +712,7 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
         .clear_prop("mutable")
         .expect("original fixture graph property mutation succeeds");
     assert_eq!(graph.prop("mutable"), None);
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(graph.validate(), Ok(()));
 }
 
@@ -753,6 +756,7 @@ fn query_graph_reports_canonical_id_and_endpoint_errors() {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn query_graph_reports_exact_endpoint_error_after_detached_mutation() {
     let mut mutated = graph(2, vec![single_bond(0, 0, 1)]);
     mutated.bonds_mut()[0]
@@ -864,6 +868,7 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
     stale.bonds_mut()[0]
         .bond_mut()
         .set_endpoints(AtomId::new(1), AtomId::new(2));
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(stale.validate(), Err(QueryGraphError::AdjacencyMismatch));
 }
 

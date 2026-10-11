@@ -19,6 +19,24 @@ use crate::{OpParts, OperationError};
 
 use super::runtime::registry::{PreserveCacheNoneProbeAccess, PreserveCacheReadProbeAccess};
 
+#[cfg(cosmolkit_runtime_privacy_case = "model_local_preconditions")]
+fn model_local_preconditions() {
+    // Source/input checks remain available without operation audit features.
+    let _ = cosmolkit_model::BondSpec::validate;
+    let _ = cosmolkit_model::Conformer2D::validate_for_atom_count;
+    let _ = cosmolkit_model::Conformer3D::validate_for_atom_count;
+    let _ = cosmolkit_model::TopologyBlock::try_from_parts;
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "audit_definitions")]
+fn audit_definitions() {
+    let _ = cosmolkit_model::TopologyBlock::validate;
+    let _ = cosmolkit_model::QueryGraph::validate;
+    let _ = cosmolkit_model::QueryStateRef::validate_for_topology;
+    let _ = cosmolkit_model::CoordinateBlock::validate_for_atom_count;
+    let _ = cosmolkit_model::TopologyMapping::validate_for_counts;
+}
+
 #[cfg(cosmolkit_runtime_privacy_case = "cip_cow_allowed")]
 fn cip_cow_allowed(
     parts: &mut OpParts<'_, crate::WithCipLabelsAccess>,
@@ -237,7 +255,6 @@ fn declaration_generated_capabilities_are_visible(
     parts.install_properties(properties)?;
     let cache = parts.checkout_derived_cache()?;
     parts.install_derived_cache(cache)?;
-    parts.record_topology_edit(crate::TopologyEditKind::Appending)?;
     parts.record_topology_mapping(cosmolkit_model::TopologyMapping::identity(0, 0))?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(crate::DerivedState::RINGS)?;
@@ -300,7 +317,6 @@ fn sanitize_declaration_generated_capabilities_are_visible(
 ) -> Result<(), OperationError> {
     let topology = parts.checkout_topology()?;
     parts.install_topology(topology)?;
-    parts.record_topology_edit(crate::TopologyEditKind::Local)?;
     parts.clear_cache(
         crate::DerivedState::RINGS
             .union(crate::DerivedState::RING_FAMILIES)

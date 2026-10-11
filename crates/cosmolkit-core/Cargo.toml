@@ -23,5 +23,8 @@ cosmolkit-types = { version = "0.5.0", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 
 [dev-dependencies]
+# Fixed fixtures may explicitly audit their detached outputs. Production
+# algorithms have no check features and cannot depend on these methods.
+cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

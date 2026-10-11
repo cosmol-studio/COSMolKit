@@ -6,8 +6,7 @@ use cosmolkit::{
     BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
     MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
     ParityPolicy, RingSearchParams, StateModel, StereoGroup, StereoGroupKind, TopologyBlock,
-    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
-    support_matrix,
+    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn molecule_with_bond_orders(orders: [BondOrder; 4]) -> Molecule {
@@ -140,7 +139,6 @@ fn generated_registry_and_all_four_matrices_share_the_family_operation() {
     let spec = operation_spec("with_assigned_ring_families_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::TOPOLOGY);
     assert_eq!(spec.access.write(), BlockSet::DERIVED_CACHE);

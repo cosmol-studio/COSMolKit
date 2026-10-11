@@ -5,6 +5,23 @@ import {pathToFileURL} from 'node:url';
 const ck=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
 ck.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 
+test('Top-level constructors retain the original callable, configuration and errors',()=>{
+ assert.equal(ck.molFromSmiles,ck.Molecule.fromSmiles);
+ const direct=ck.molFromSmiles('CN(=O)=O',{sanitize:false});
+ const original=ck.Molecule.fromSmiles('CN(=O)=O',{sanitize:false});
+ assert.equal(direct.toSmiles({canonical:false}),original.toSmiles({canonical:false}));
+ const errors=[ck.molFromSmiles,ck.Molecule.fromSmiles].map(factory=>{
+  try{factory('C1CC');assert.fail('invalid SMILES must fail');}
+  catch(error){return [error.name,error.message,error.kind];}
+ });
+ assert.deepEqual(errors[0],errors[1]);
+ assert.equal('molFromBinary' in ck,false);
+ assert.equal(ck.molsFromSmilesList,ck.MoleculeBatch.fromSmilesList);
+ const batch=ck.molsFromSmilesList(['C','CC']);
+ assert.deepEqual(batch.toSmilesList(),['C','CC']);
+ direct.free();original.free();batch.free();
+});
+
 test('Detached builder validates topology and returns independent molecule and block snapshots',()=>{
  const carbon=ck.Element.fromSymbol('C'),oxygen=ck.Element.fromSymbol('O');
  const atom=new ck.AtomSpec(carbon),builder=new ck.MoleculeBuilder();

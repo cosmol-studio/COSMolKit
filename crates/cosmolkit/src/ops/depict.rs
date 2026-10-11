@@ -40,7 +40,6 @@ fn next_2d_conformer_id(
 pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<(), OperationError> {
     let topology = parts.topology()?;
     let properties = parts.properties()?;
-    let atom_count = topology.atoms.len();
     let conformer = cosmolkit_depict::compute_2d_coordinates(topology, properties, params)
         .map_err(OperationError::Coordinate2D)?;
 
@@ -69,9 +68,6 @@ pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<()
         .record_source_conformer_append(crate::CoordinateDimension::TwoD)
         .map_err(OperationError::InvalidCoordinates)?;
     coordinates.conformers_2d.push(conformer.with_id(id));
-    coordinates
-        .validate_for_atom_count(atom_count)
-        .map_err(OperationError::InvalidCoordinates)?;
     parts.install_coordinates(coordinates)?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
     parts.prove_preserved(
@@ -247,27 +243,31 @@ mod prepared_property_tests {
 
     #[test]
     fn d2_prepared_property_two_typed_errors_preserve_inputs_and_peer() {
-        // Invalid detached topology cannot enter a valid live Molecule. Test
-        // that existing domain boundary directly, without bypassing runtime
-        // construction; the second control is the real public map error.
-        let mut invalid = TopologyBlock::default();
-        invalid
-            .atoms
-            .push(Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)));
-        let peer_topology = invalid.clone();
-        let properties = MoleculeProperties::default();
-        let before_properties = properties.clone();
-        let params = Coordinate2DParams::default();
-        let before_params = params.clone();
-        let result = cosmolkit_depict::compute_2d_coordinates(&invalid, &properties, &params);
-        assert_eq!(invalid, peer_topology);
-        assert_eq!(properties, before_properties);
-        assert_eq!(params, before_params);
-        assert!(
-            matches!(result, Err(crate::Coordinate2DError::InvalidTopology(
+        // Whole-state corruption belongs to the explicit model/runtime audit;
+        // the second control exercises the real public coordinate-map error.
+        #[cfg(feature = "runtime-invariants")]
+        {
+            let mut invalid = TopologyBlock::default();
+            invalid
+                .atoms
+                .push(Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)));
+            let peer_topology = invalid.clone();
+            let properties = MoleculeProperties::default();
+            let before_properties = properties.clone();
+            let params = Coordinate2DParams::default();
+            let before_params = params.clone();
+            let result = invalid
+                .validate()
+                .map_err(crate::Coordinate2DError::InvalidTopology);
+            assert_eq!(invalid, peer_topology);
+            assert_eq!(properties, before_properties);
+            assert_eq!(params, before_params);
+            assert!(
+                matches!(result, Err(crate::Coordinate2DError::InvalidTopology(
             cosmolkit_model::TopologyValidationError::AtomIdMismatch { position: 0, id })
         ) if id == AtomId::new(1))
-        );
+            );
+        }
 
         let source = Molecule::from_smiles("CC").unwrap();
         let peer = source.clone();

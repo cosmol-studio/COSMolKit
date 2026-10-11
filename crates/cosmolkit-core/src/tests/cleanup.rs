@@ -114,7 +114,11 @@ fn owned_cleanup_preserves_exact_errors_and_sanitize_discards_failed_attempts() 
     let mut malformed = nitro();
     malformed.adjacency = AdjacencyList::default();
     let bad_bond = topology(vec![atom(6), atom(6)], vec![bond(0, 1, BondOrder::Other)]);
-    for input in [malformed, bad_bond.clone()] {
+    assert_eq!(
+        malformed.validate(),
+        Err(TopologyValidationError::AdjacencyMismatch),
+    );
+    for input in [bad_bond.clone()] {
         let snapshot = input.clone();
         let mut working = input.clone();
         let selected = CleanupParams::default();
@@ -701,12 +705,12 @@ fn malformed_topology_and_bad_valence_bond_return_exact_structured_errors() {
         adjacency: AdjacencyList::from_topology(valid.atoms.len(), &[]),
         ..valid
     };
-    assert!(matches!(
-        cleanup(&stale_adjacency, &CleanupParams::default()),
-        Err(CleanupError::InvalidTopology(
-            TopologyValidationError::AdjacencyMismatch
-        ))
-    ));
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
+    assert_eq!(
+        stale_adjacency.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+    );
 
     let bad_bond = topology(vec![atom(6), atom(6)], vec![bond(0, 1, BondOrder::Other)]);
     assert!(matches!(

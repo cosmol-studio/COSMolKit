@@ -8,8 +8,8 @@ use cosmolkit::{
     BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId, BondOrder, BondSpec,
     Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule, MoleculeOpKind,
     MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, feature_spec, operation_invariant,
+    operation_parity, operation_spec, support_matrix,
 };
 
 fn carbon_cycle(size: usize) -> TopologyBlock {
@@ -146,7 +146,6 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     let spec = operation_spec("with_assigned_aromaticity_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(
@@ -316,7 +315,6 @@ fn single_output_local_edit_makes_multi_candidate_ordering_not_applicable() {
     let spec = operation_spec("with_assigned_aromaticity_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.result_type, "Molecule");
-    assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
     assert_eq!(spec.auto_remap, BlockSet::NONE);
 }

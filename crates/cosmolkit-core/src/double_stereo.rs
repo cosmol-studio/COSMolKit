@@ -144,10 +144,9 @@ where
     // constraints versus native owning pointers and INT_VECT. Native logger
     // global filtering/stream state and signed source index width are separate
     // unmodeled boundaries, not reasons to infer rank or suppress errors.
-    // Cost: source endpoint scans are O(d), but whole topology validation adds
-    // O(V+E) and the retained diagnostic report can allocate. Warning delivery
+    // Cost: source endpoint scans are O(d), with local index checks. The
+    // retained diagnostic report can allocate. Warning delivery
     // occurs at the source statement, including before a later reader error.
-    topology.validate().map_err(DoubleBondStereoError::from)?;
     let bond_value = require_double_bond(topology, bond)?;
     if matches!(bond_value.stereo(), BondStereo::None | BondStereo::Any) {
         return Err(DoubleBondStereoError::UndefinedStereo {
@@ -416,13 +415,8 @@ pub fn neighboring_directed_bond(
     topology: &TopologyBlock,
     atom: AtomId,
 ) -> Result<Option<BondId>, DoubleBondStereoError> {
-    // Existing detached entry validates all model rows before native traversal.
-    // This adds O(V+E) work and a non-native validation/error-order boundary to
-    // the source O(degree) neighbor helper, so neither source axis is promoted.
-    // Preserve this existing local invariant contract/coverage during the first
-    // complete port; its source-facing boundary is explicitly deferred along
-    // with other differences until after all source functions are processed.
-    topology.validate()?;
+    // Check only the requested atom before the source O(degree) neighbor
+    // traversal. Whole-model auditing is the operation runtime's responsibility.
     check_atom(topology, atom)?;
     // BEGIN RDKIT CPP FUNCTION getNeighboringDirectedBond
     // RDKit❗❌: const Bond *getNeighboringDirectedBond(const ROMol &mol, const Atom *atom) {
@@ -482,7 +476,6 @@ pub fn find_double_bond_stereo_atoms(
     // Existing explicit rank-table input adapter retains its structural and
     // reference-neighbor validation contract. The source discovery behavior
     // has one owner: the lazy reader above, with immediate diagnostics.
-    topology.validate()?;
     validate_ranks(topology, ranks)?;
     let bond_value = require_double_bond(topology, bond)?;
     if let Some(references) = bond_value.stereo_atoms() {
@@ -600,7 +593,6 @@ pub fn double_bond_stereo_info(
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION getStereoInfo double-bond branch
-    topology.validate()?;
     let bond_value = require_double_bond(topology, bond)?;
     let begin_controls = controlling_slots(topology, bond_value, bond_value.begin(), "begin")?;
     let end_controls = controlling_slots(topology, bond_value, bond_value.end(), "end")?;
@@ -672,11 +664,9 @@ pub fn with_double_bond_stereo_reference(
     stereo: BondStereo,
     use_cx_ordering: bool,
 ) -> Result<DoubleBondStereoUpdate, DoubleBondStereoError> {
-    topology.validate()?;
     require_double_bond(&topology, bond)?;
     let needs_detect_bond_stereo =
         set_stereo_for_bond(&mut topology, bond, stereo, use_cx_ordering)?;
-    topology.validate()?;
     Ok(DoubleBondStereoUpdate {
         topology,
         needs_detect_bond_stereo,
@@ -687,7 +677,6 @@ pub fn with_double_bond_stereo_reference(
 pub fn assign_double_bond_stereo_from_directions(
     mut topology: TopologyBlock,
 ) -> Result<TopologyBlock, DoubleBondStereoError> {
-    topology.validate()?;
     let assignments = topology
         .bonds
         .iter()
@@ -762,7 +751,6 @@ pub fn assign_double_bond_stereo_from_directions(
         topology.bonds[bond.index()].set_stereo_atoms(Some(references));
         topology.bonds[bond.index()].set_stereo(stereo)?;
     }
-    topology.validate()?;
     Ok(topology)
 }
 
@@ -1008,7 +996,6 @@ pub fn assign_directional_double_bond_stereo_source(
         topology.bonds[bond.index()].set_stereo_atoms(Some(references));
         topology.bonds[bond.index()].set_stereo(stereo)?;
     }
-    topology.validate()?;
     Ok((unassigned_bonds > 0, assigned_any))
 }
 
@@ -1239,7 +1226,6 @@ pub fn set_double_bond_neighbor_directions(
             &mut needs_detect_bond_stereo,
         )?;
     }
-    topology.validate()?;
     Ok(DoubleBondStereoUpdate {
         topology,
         needs_detect_bond_stereo,
@@ -1264,7 +1250,6 @@ pub fn clear_single_bond_directions(
     mut topology: TopologyBlock,
     only_wedge_flags: bool,
 ) -> Result<TopologyBlock, DoubleBondStereoError> {
-    topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION clearSingleBondDirFlags
     // RDKit✔️✔️: void clearSingleBondDirFlags(ROMol &mol, bool onlyWedgeFlags) {
     // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
@@ -1300,7 +1285,6 @@ pub fn clear_bond_directions(
     mut topology: TopologyBlock,
     only_wedge_type_bond_directions: bool,
 ) -> Result<TopologyBlock, DoubleBondStereoError> {
-    topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION clearDirFlags
     // RDKit✔️✔️: void clearDirFlags(ROMol &mol, bool onlyWedgeTypeBondDirs) {
     // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
@@ -1338,7 +1322,6 @@ fn validate_ring_inputs(
     topology: &TopologyBlock,
     rings: &RingInfo,
 ) -> Result<(), DoubleBondStereoError> {
-    topology.validate()?;
     if !rings.is_initialized() {
         return Err(DoubleBondStereoError::RingInfoNotInitialized);
     }

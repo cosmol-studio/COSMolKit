@@ -601,20 +601,6 @@ pub fn sanitize_topology_with_query_state(
     {
         hybridizations_probe::record_selected_entry();
     }
-    topology
-        .validate()
-        .map_err(|source| SanitizeError::InvalidTopology {
-            stage: SanitizeStage::None,
-            source,
-        })?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology).map_err(|source| {
-            SanitizeError::InvalidQueryState {
-                stage: SanitizeStage::None,
-                source,
-            }
-        })?;
-    }
 
     // Complete pinned source: MolOps.cpp::sanitizeMol(RWMol &, unsigned int &, unsigned int).
     // RDKit✔️❌: void sanitizeMol(RWMol &mol, unsigned int &operationThatFailed,
@@ -965,12 +951,6 @@ pub fn sanitize_topology_with_query_state(
         (None, Some(valence))
     };
 
-    working
-        .validate()
-        .map_err(|source| SanitizeError::InvalidTopology {
-            stage: SanitizeStage::None,
-            source,
-        })?;
     // RDKit✔️✔️:   operationThatFailed = 0;
     // Behavior review: the source leaves the mol's RingInfo in whatever state
     // the executed stages produced (entry clearComputedProps reset it first);
@@ -1117,13 +1097,6 @@ pub fn detect_chemistry_problems(
     topology: &TopologyBlock,
     params: &SanitizeParams,
 ) -> Result<ChemistryProblemReport, SanitizeError> {
-    topology
-        .validate()
-        .map_err(|source| SanitizeError::InvalidTopology {
-            stage: SanitizeStage::None,
-            source,
-        })?;
-
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: detectChemistryProblems (2026.03.6 complete)
     // RDKit❗❌: std::vector<std::unique_ptr<MolSanitizeException>> detectChemistryProblems(
     // RDKit❗❌:     const ROMol &imol, unsigned int sanitizeOps) {

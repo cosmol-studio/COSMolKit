@@ -376,11 +376,11 @@ fn invalid_topology_returns_structured_error_without_touching_source_value() {
         ..TopologyBlock::default()
     };
     let snapshot = source.clone();
+    // Whole-state corruption is rejected by the explicit model/runtime
+    // audit, not by the chemistry algorithm being exercised above.
     assert_eq!(
-        add_hydrogens_topology(source.clone(), &AddHsParams::default()),
-        Err(HydrogenError::InvalidTopology(
-            TopologyValidationError::AdjacencyMismatch
-        ))
+        source.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
     );
     assert_eq!(source, snapshot);
 }

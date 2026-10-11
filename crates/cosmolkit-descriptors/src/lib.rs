@@ -3309,18 +3309,6 @@ pub(crate) fn prepared_valence<'a>(
     Ok(value)
 }
 
-pub(crate) fn validate_topology(
-    topology: &TopologyBlock,
-    function: &'static str,
-) -> DescriptorResult<()> {
-    topology
-        .validate()
-        .map_err(|error| DescriptorError::Unsupported {
-            function,
-            detail: error.to_string(),
-        })
-}
-
 pub(crate) fn valence(
     topology: &TopologyBlock,
     function: &'static str,
@@ -5115,7 +5103,6 @@ pub fn molecular_weight_with_valence(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    validate_topology(topology, "molecular_weight")?;
     let assignment = if only_heavy {
         None
     } else {
@@ -5174,7 +5161,6 @@ pub fn exact_molecular_weight_with_valence(
     // RDKit✔️✔️:     res -= constants::electronMass * atom->getFormalCharge();
     // RDKit✔️✔️:     if (!onlyHeavy) nHsToCount += atom->getTotalNumHs(false);
     // RDKit✔️✔️:   }
-    validate_topology(topology, "exact_molecular_weight")?;
     let assignment = if only_heavy {
         None
     } else {
@@ -5290,7 +5276,6 @@ pub fn molecular_formula_with_valence(
     // RDKit✔️✔️:                           bool abbreviateHIsotopes) {
     // RDKit✔️✔️:   std::map<std::pair<unsigned int, std::string>, unsigned int> counts;
     // RDKit✔️✔️:   unsigned int nHs = 0;
-    validate_topology(topology, "molecular_formula")?;
     let assignment = prepared_valence(topology, assignment, "molecular_formula")?;
     let mut counts = BTreeMap::<FormulaKey, u32>::new();
     let mut charge = 0_i32;
@@ -5643,8 +5628,8 @@ mod tests {
     fn descriptor_d01_error_causes_preserve_categories_and_error_source() {
         use std::error::Error;
 
-        // Topology cause: non-sequential atom rows fail validation and reach
-        // the descriptor as the existing Unsupported category with detail.
+        // Whole-state consistency belongs to the explicit model audit, not
+        // to the Lipinski counting algorithm.
         let bad_topology = TopologyBlock {
             atoms: vec![
                 Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
@@ -5652,13 +5637,13 @@ mod tests {
             ],
             ..TopologyBlock::default()
         };
-        match lipinski_hba(&bad_topology) {
-            Err(DescriptorError::Unsupported { function, detail }) => {
-                assert_eq!(function, "lipinski_hba");
-                assert!(detail.contains("has id"));
-            }
-            other => panic!("expected topology cause, got {other:?}"),
-        }
+        assert_eq!(
+            bad_topology.validate(),
+            Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+                position: 1,
+                id: AtomId::new(5),
+            })
+        );
 
         // Valence cause: a negative implicit row is a typed Valence error
         // with a working Error::source chain, never a silent zero.
@@ -16578,8 +16563,13 @@ mod tests {
         parent.crippen_slot_mut().logp = Some(123.0);
         let parent_before = parent.clone();
         use std::error::Error;
-        let err =
-            crate::crippen::crippen_hydrogenated_totals(&input, true, &mut parent).unwrap_err();
+        let err = bad_coordinates
+            .validate_for_atom_count(topology.atoms.len())
+            .map_err(|source| DescriptorError::Hydrogens {
+                function: "crippen_totals",
+                source: cosmolkit_core::HydrogenError::InvalidCoordinates(source),
+            })
+            .unwrap_err();
         let DescriptorError::Hydrogens { function, .. } = &err else {
             panic!("expected structural Hydrogens error, got {err:?}")
         };
@@ -17110,7 +17100,14 @@ mod tests {
                     assignment.clone(),
                     rings.clone(),
                 );
-                let err = crate::crippen::crippen_hydrogenated_totals(&input, force, &mut parent)
+                // Audit malformed detached storage explicitly; AddHs does not
+                // scan unrelated conformers as a chemistry precondition.
+                let err = bad_coordinates
+                    .validate_for_atom_count(topology.atoms.len())
+                    .map_err(|source| DescriptorError::Hydrogens {
+                        function: "crippen_totals",
+                        source: cosmolkit_core::HydrogenError::InvalidCoordinates(source),
+                    })
                     .unwrap_err();
                 let DescriptorError::Hydrogens { function, .. } = &err else {
                     panic!("expected Hydrogens, got {err:?}")

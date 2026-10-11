@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use crate::{
     DerivedState, Molecule, OperationError, Reaction, ReactionApplyParams, ReactionRunParams,
-    ReactionSingleRunParams, TopologyEditKind,
+    ReactionSingleRunParams,
 };
 use cosmolkit_macros::{mol_multi_op_body, mol_op_body};
 
@@ -76,7 +76,6 @@ pub(crate) fn apply_reaction_impl(
     } else {
         cosmolkit_model::TopologyMapping::identity(rows.0, rows.1)
     };
-    parts.record_topology_edit(TopologyEditKind::Compacting)?;
     parts.record_topology_mapping(mapping)?;
     parts.apply_runtime_remap()?;
     if changes.clears_computed_properties {

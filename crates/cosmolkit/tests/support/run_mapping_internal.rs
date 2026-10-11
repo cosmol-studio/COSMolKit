@@ -7,21 +7,21 @@ use cosmolkit_model::{
 use super::*;
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet,
 };
 
 struct MappingAccess;
 
 fn spec(
     method: &'static str,
-    edit: TopologyEditKind,
+    kind: MoleculeOpKind,
     requirement: MappingRequirement,
     access: BlockAccess,
     auto_remap: BlockSet,
 ) -> &'static MoleculeOpSpec {
     spec_with_cip(
         method,
-        edit,
+        kind,
         requirement,
         access,
         auto_remap,
@@ -31,7 +31,7 @@ fn spec(
 
 fn spec_with_cip(
     method: &'static str,
-    edit: TopologyEditKind,
+    kind: MoleculeOpKind,
     requirement: MappingRequirement,
     access: BlockAccess,
     auto_remap: BlockSet,
@@ -43,17 +43,7 @@ fn spec_with_cip(
         output: MoleculeOpOutput::Single,
         result_type: "Molecule",
         domain: OperationDomain::Topology,
-        kind: if matches!(
-            edit,
-            TopologyEditKind::Compacting
-                | TopologyEditKind::Appending
-                | TopologyEditKind::Renumbering
-        ) {
-            MoleculeOpKind::Strong
-        } else {
-            MoleculeOpKind::Weak
-        },
-        topology_edit: edit,
+        kind,
         access,
         may_mutate: access.write(),
         auto_remap,
@@ -114,7 +104,7 @@ fn remap_trusts_shared_source_but_still_rejects_invalid_installed_topology() {
     .unwrap();
     let operation = spec(
         "remap-source-audit",
-        TopologyEditKind::None,
+        MoleculeOpKind::Weak,
         MappingRequirement::None,
         all_write(),
         BlockSet::NONE,
@@ -238,13 +228,13 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
     let one = topology(&[Element::C]);
     let none = spec(
         "none",
-        TopologyEditKind::None,
+        MoleculeOpKind::Weak,
         MappingRequirement::None,
         BlockAccess::new(BlockSet::TOPOLOGY, BlockSet::NONE),
         BlockSet::NONE,
     );
     assert_eq!(
-        OpParts::<MappingAccess>::validate_mapping_obligation(none, &one, &one, None, None, false),
+        OpParts::<MappingAccess>::validate_mapping_obligation(none, &one, &one, None, false),
         Ok(())
     );
     assert!(matches!(
@@ -252,7 +242,6 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             none,
             &one,
             &one,
-            None,
             Some(&TopologyMapping::identity(1, 0)),
             false
         ),
@@ -265,20 +254,13 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
 
     let identity = spec(
         "identity",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Identity,
         all_write(),
         BlockSet::NONE,
     );
     assert!(matches!(
-        OpParts::<MappingAccess>::validate_mapping_obligation(
-            identity,
-            &one,
-            &one,
-            Some(TopologyEditKind::Local),
-            None,
-            false
-        ),
+        OpParts::<MappingAccess>::validate_mapping_obligation(identity, &one, &one, None, false),
         Err(OperationError::MappingContract {
             issue: "required mapping was not recorded",
             ..
@@ -289,7 +271,6 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             identity,
             &one,
             &one,
-            Some(TopologyEditKind::Local),
             Some(&TopologyMapping::identity(1, 0)),
             false
         ),
@@ -301,7 +282,6 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             identity,
             &one,
             &one,
-            Some(TopologyEditKind::Local),
             Some(&nonidentity),
             false
         ),
@@ -313,35 +293,42 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
 }
 
 #[test]
-fn topology_edit_and_mapping_records_are_exact_and_at_most_once() {
+fn weak_operations_reject_changed_row_identity_without_an_edit_label() {
+    let before = topology(&[Element::C]);
+    let operation = spec(
+        "weak-row-identity",
+        MoleculeOpKind::Weak,
+        MappingRequirement::None,
+        all_write(),
+        BlockSet::NONE,
+    );
+    let mut changed_id = before.clone();
+    changed_id.atoms[0] = changed_id.atoms[0].clone().with_id(AtomId::new(7));
+    for after in [topology(&[Element::C, Element::N]), changed_id] {
+        assert_eq!(
+            OpParts::<MappingAccess>::validate_mapping_obligation(
+                operation, &before, &after, None, false
+            ),
+            Err(OperationError::MappingContract {
+                operation: "weak-row-identity",
+                issue: "weak operation changed atom or bond row identity",
+                requirement: MappingRequirement::None,
+            })
+        );
+    }
+}
+
+#[test]
+fn mapping_records_are_at_most_once_without_edit_labels() {
     let source = molecule_with_rows(false);
-    let compact = spec(
-        "edit",
-        TopologyEditKind::Compacting,
+    let operation = spec(
+        "mapped",
+        MoleculeOpKind::Strong,
         MappingRequirement::Required,
         all_write(),
         BlockSet::NONE,
     );
-    let mut parts = OpParts::<MappingAccess>::new(&source, compact).unwrap();
-    assert!(matches!(
-        parts.record_topology_edit_runtime(TopologyEditKind::Appending),
-        Err(OperationError::TopologyEditContract {
-            issue: "declaration-mismatch",
-            expected: TopologyEditKind::Compacting,
-            actual: Some(TopologyEditKind::Appending),
-            ..
-        })
-    ));
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Compacting)
-        .unwrap();
-    assert!(matches!(
-        parts.record_topology_edit_runtime(TopologyEditKind::Compacting),
-        Err(OperationError::TopologyEditContract {
-            issue: "duplicate-record",
-            ..
-        })
-    ));
+    let mut parts = OpParts::<MappingAccess>::new(&source, operation).unwrap();
     parts
         .record_topology_mapping_runtime(TopologyMapping::identity(3, 0))
         .unwrap();
@@ -359,7 +346,7 @@ fn atom_mapping_failures_preserve_exact_direction_and_fields() {
     let topology = topology(&[Element::C]);
     let required = spec(
         "atom-errors",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Required,
         all_write(),
         BlockSet::NONE,
@@ -428,7 +415,6 @@ fn atom_mapping_failures_preserve_exact_direction_and_fields() {
                 required,
                 &topology,
                 &topology,
-                Some(TopologyEditKind::Local),
                 Some(&candidate),
                 false
             ),
@@ -445,7 +431,7 @@ fn bond_mapping_failures_preserve_exact_direction_and_fields() {
     let topology = bonded_topology();
     let required = spec(
         "bond-errors",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Required,
         all_write(),
         BlockSet::NONE,
@@ -533,7 +519,6 @@ fn bond_mapping_failures_preserve_exact_direction_and_fields() {
                 required,
                 &topology,
                 &topology,
-                Some(TopologyEditKind::Local),
                 Some(&candidate),
                 false
             ),
@@ -552,7 +537,7 @@ fn malformed_mapping_is_rejected_before_projection_or_any_installation() {
     let original_properties = source.properties().clone();
     let compact = spec(
         "invalid-before-helper",
-        TopologyEditKind::Compacting,
+        MoleculeOpKind::Strong,
         MappingRequirement::Required,
         all_write(),
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES),
@@ -561,9 +546,6 @@ fn malformed_mapping_is_rejected_before_projection_or_any_installation() {
     let _ = parts.checkout_topology_runtime().unwrap();
     parts
         .install_topology_runtime(topology(&[Element::O, Element::C]))
-        .unwrap();
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Compacting)
         .unwrap();
     parts
         .record_topology_mapping_runtime(mapping(
@@ -598,7 +580,7 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
     let source = molecule_with_rows(true);
     let compact = spec_with_cip(
         "delete-reorder",
-        TopologyEditKind::Compacting,
+        MoleculeOpKind::Strong,
         MappingRequirement::Required,
         all_write(),
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES),
@@ -608,9 +590,6 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
     let _ = parts.checkout_topology_runtime().unwrap();
     parts
         .install_topology_runtime(topology(&[Element::O, Element::C]))
-        .unwrap();
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Compacting)
         .unwrap();
     parts
         .record_topology_mapping_runtime(mapping(
@@ -650,7 +629,7 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
 fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() {
     let append_spec = spec_with_cip(
         "append",
-        TopologyEditKind::Appending,
+        MoleculeOpKind::Strong,
         MappingRequirement::Required,
         all_write(),
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES),
@@ -662,9 +641,6 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
     let mut rejected = OpParts::<MappingAccess>::new(&source, append_spec).unwrap();
     let _ = rejected.checkout_topology_runtime().unwrap();
     rejected.install_topology_runtime(candidate()).unwrap();
-    rejected
-        .record_topology_edit_runtime(TopologyEditKind::Appending)
-        .unwrap();
     rejected
         .record_topology_mapping_runtime(TopologyMapping::with_appended(3, 0, 1, 0))
         .unwrap();
@@ -680,9 +656,6 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
     let mut empty = OpParts::<MappingAccess>::new(&source, append_spec).unwrap();
     let _ = empty.checkout_topology_runtime().unwrap();
     empty.install_topology_runtime(candidate()).unwrap();
-    empty
-        .record_topology_edit_runtime(TopologyEditKind::Appending)
-        .unwrap();
     empty
         .record_topology_mapping_runtime(TopologyMapping::with_appended(3, 0, 1, 0))
         .unwrap();
@@ -715,9 +688,6 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
         })
         .unwrap();
     supplied
-        .record_topology_edit_runtime(TopologyEditKind::Appending)
-        .unwrap();
-    supplied
         .record_topology_mapping_runtime(TopologyMapping::with_appended(3, 0, 1, 0))
         .unwrap();
     supplied.apply_runtime_remap_runtime().unwrap();
@@ -739,15 +709,12 @@ fn auto_remap_requires_write_authority_and_is_at_most_once() {
     let source = molecule_with_rows(false);
     let denied_spec = spec(
         "denied",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Identity,
         BlockAccess::new(BlockSet::TOPOLOGY, BlockSet::NONE),
         BlockSet::COORDINATES,
     );
     let mut denied = OpParts::<MappingAccess>::new(&source, denied_spec).unwrap();
-    denied
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
     denied
         .record_topology_mapping_runtime(TopologyMapping::identity(3, 0))
         .unwrap();
@@ -761,15 +728,12 @@ fn auto_remap_requires_write_authority_and_is_at_most_once() {
 
     let allowed_spec = spec(
         "once",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Identity,
         all_write(),
         BlockSet::COORDINATES,
     );
     let mut allowed = OpParts::<MappingAccess>::new(&source, allowed_spec).unwrap();
-    allowed
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
     allowed
         .record_topology_mapping_runtime(TopologyMapping::identity(3, 0))
         .unwrap();
@@ -789,7 +753,7 @@ fn invalid_candidate_property_rows_fail_before_any_auto_remap_is_retained() {
     let source = molecule_with_rows(false);
     let local = spec(
         "bad-property-candidate",
-        TopologyEditKind::Local,
+        MoleculeOpKind::Weak,
         MappingRequirement::Identity,
         all_write(),
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES),
@@ -798,9 +762,6 @@ fn invalid_candidate_property_rows_fail_before_any_auto_remap_is_retained() {
     let _ = parts.checkout_properties_runtime().unwrap();
     parts
         .install_properties_runtime(properties(vec![Some("only-one")], Vec::new()))
-        .unwrap();
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Local)
         .unwrap();
     parts
         .record_topology_mapping_runtime(TopologyMapping::identity(3, 0))

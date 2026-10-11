@@ -32,17 +32,6 @@ pub enum MoleculeOpKind {
     Strong,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TopologyEditKind {
-    None,
-    Local,
-    Compacting,
-    Appending,
-    Renumbering,
-    /// Complete detached products validated against typed row origins.
-    Reconstruction,
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BlockSet(u8);
 
@@ -271,7 +260,6 @@ pub struct MoleculeOpSpec {
     pub result_type: &'static str,
     pub domain: OperationDomain,
     pub kind: MoleculeOpKind,
-    pub topology_edit: TopologyEditKind,
     pub access: BlockAccess,
     pub may_mutate: BlockSet,
     pub auto_remap: BlockSet,

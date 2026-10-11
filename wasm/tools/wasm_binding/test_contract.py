@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location("_wasm_contract", ROOT / "wasm/tools/wasm_binding/contract.py")
@@ -26,6 +28,57 @@ def _document():
 
 
 class ContractTests(unittest.TestCase):
+    def test_compiled_conveniences_keep_canonical_platform_gates(self):
+        document = {"entries": [], "javascript_aliases": [
+            {"name": "mol_from_binary", "target": "Molecule.fromBinary", "platform": "native"},
+            {"name": "mol_from_smiles", "target": "Molecule.fromSmiles", "platform": "all"},
+        ]}
+        result = subprocess.CompletedProcess([], 0, json.dumps(document))
+        with tempfile.TemporaryDirectory() as directory, patch.object(_checker.subprocess, "run", return_value=result) as run:
+            projected = _checker.compiled_contract(ROOT, {"core"}, Path(directory) / "contract.json")
+        self.assertEqual(projected["javascript_aliases"], document["javascript_aliases"][1:])
+        self.assertIn("--no-default-features", run.call_args.args[0])
+        self.assertEqual(run.call_args.args[0][-1], "core")
+
+    def test_conveniences_are_direct_aliases_with_inherited_types(self):
+        document = {"entries": [], "javascript_aliases": [
+            {"name": "bio_from_mmcif", "target": "BioStructure.fromMmcif", "platform": "all"},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            for suffix in ["js", "d.ts"]:
+                (package / f"example.{suffix}").write_text("// generated\n")
+            _checker.generate_conveniences(package, "example", document)
+            self.assertIn("Alias of `BioStructure.fromMmcif`.", (package / "example.d.ts").read_text())
+            self.assertIn("export const bioFromMmcif = BioStructure.fromMmcif;", (package / "example.js").read_text())
+            self.assertIn("export const bioFromMmcif: typeof BioStructure.fromMmcif;", (package / "example.d.ts").read_text())
+        probe = _checker.typescript_probe(document)
+        self.assertIn("const alias0: typeof ck.BioStructure.fromMmcif = ck.bioFromMmcif;", probe)
+        self.assertIn("const original0: typeof ck.bioFromMmcif = ck.BioStructure.fromMmcif;", probe)
+
+    def test_local_contract_build_uses_unoptimized_profile(self):
+        document = {"entries": [], "javascript_aliases": []}
+        result = subprocess.CompletedProcess([], 0, json.dumps(document))
+        with tempfile.TemporaryDirectory() as directory, patch.object(_checker.subprocess, "run", return_value=result) as run:
+            _checker.compiled_contract(ROOT, {"core"}, Path(directory) / "contract.json", profile="dev")
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--profile") + 1], "dev")
+
+    def test_convenience_gate_rejects_missing_exports_and_wrappers(self):
+        executable = shutil.which("node") or shutil.which("bun")
+        self.assertIsNotNone(executable, "Install Node or Bun to check JavaScript bindings")
+        checker = (ROOT / "wasm/tools/wasm_binding/contract.mjs").as_uri()
+        script = f"""
+import {{checkConveniences}} from {json.dumps(checker)};
+import assert from 'node:assert/strict';
+class BioStructure {{static fromMmcif(text, options) {{return [text, options];}}}}
+const document = {{javascript_aliases:[{{name:'bio_from_mmcif',target:'BioStructure.fromMmcif'}}]}};
+assert.ok(checkConveniences({{BioStructure}}, document).some(error => error.includes('missing')));
+assert.ok(checkConveniences({{BioStructure,bioFromMmcif:(...args)=>BioStructure.fromMmcif(...args)}}, document).some(error => error.includes('directly reference')));
+assert.deepEqual(checkConveniences({{BioStructure,bioFromMmcif:BioStructure.fromMmcif}}, document), []);
+"""
+        subprocess.run([executable, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
+
     def test_static_configuration_call_uses_class_not_instance(self):
         document = _document()
         document["entries"] += [

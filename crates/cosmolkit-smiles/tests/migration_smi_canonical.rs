@@ -128,11 +128,14 @@ fn component_atom_selection_rejects_duplicate_and_out_of_range_indices() {
 }
 
 #[test]
-fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
+fn explicit_model_audit_rejects_duplicate_and_out_of_range_row_ids() {
     let mut duplicate_atom = record("CC");
     replace_atom_id(&mut duplicate_atom, 1, AtomId::new(0));
     assert_eq!(
-        write_smiles(&duplicate_atom).map(fixture_writer_text),
+        duplicate_atom
+            .topology
+            .validate()
+            .map_err(|error| SmilesParseError::Model(error.to_string())),
         Err(SmilesParseError::Model(
             "atom at position 1 has id 0, expected 1".to_owned()
         ))
@@ -141,7 +144,10 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut out_of_range_atom = record("CC");
     replace_atom_id(&mut out_of_range_atom, 1, AtomId::new(4));
     assert_eq!(
-        write_smiles(&out_of_range_atom).map(fixture_writer_text),
+        out_of_range_atom
+            .topology
+            .validate()
+            .map_err(|error| SmilesParseError::Model(error.to_string())),
         Err(SmilesParseError::Model(
             "atom at position 1 has id 4, expected 1".to_owned()
         ))
@@ -150,7 +156,10 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut duplicate_bond = record("CCC");
     replace_bond_id(&mut duplicate_bond, 1, BondId::new(0));
     assert_eq!(
-        write_smiles(&duplicate_bond).map(fixture_writer_text),
+        duplicate_bond
+            .topology
+            .validate()
+            .map_err(|error| SmilesParseError::Model(error.to_string())),
         Err(SmilesParseError::Model(
             "bond at position 1 has id 0, expected 1".to_owned()
         ))
@@ -159,7 +168,10 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut out_of_range_bond = record("CC");
     replace_bond_id(&mut out_of_range_bond, 0, BondId::new(4));
     assert_eq!(
-        write_smiles(&out_of_range_bond).map(fixture_writer_text),
+        out_of_range_bond
+            .topology
+            .validate()
+            .map_err(|error| SmilesParseError::Model(error.to_string())),
         Err(SmilesParseError::Model(
             "bond at position 0 has id 4, expected 0".to_owned()
         ))
@@ -167,7 +179,7 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
 }
 
 #[test]
-fn canonical_writer_rejects_duplicate_edges_before_fragment_mapping() {
+fn explicit_model_audit_rejects_stale_adjacency_before_fragment_mapping() {
     let mut duplicate_edge = record("CC");
     let original = duplicate_edge.topology.bonds[0].clone();
     duplicate_edge
@@ -180,7 +192,10 @@ fn canonical_writer_rejects_duplicate_edges_before_fragment_mapping() {
             original.stereo_atoms(),
         ));
     assert_eq!(
-        write_smiles(&duplicate_edge).map(fixture_writer_text),
+        duplicate_edge
+            .topology
+            .validate()
+            .map_err(|error| SmilesParseError::Model(error.to_string())),
         Err(SmilesParseError::Model(
             "adjacency does not match topology".to_owned()
         ))

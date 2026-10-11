@@ -44,8 +44,11 @@ class CoverageWorkflowTests(unittest.TestCase):
 
     def test_feature_matrix_uses_declared_leaf_capabilities_and_user_bundles(self):
         workflow = (ROOT / ".github/workflows/features.yml").read_text()
-        self.assertIn("cargo test -p cosmolkit --no-default-features --profile dev-test --features op-contracts-strict", workflow)
-        self.assertIn("cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict --test feature_selection", workflow)
+        self.assertIn("cargo test -p cosmolkit --no-default-features --features op-contracts-strict", workflow)
+        self.assertIn("cargo test -p cosmolkit --no-default-features --features core,op-contracts-strict --test feature_selection", workflow)
+        self.assertNotIn("--profile dev-test", workflow)
+        self.assertIn('CARGO_PROFILE_DEV_DEBUG: "0"', workflow)
+        self.assertIn('CARGO_PROFILE_TEST_DEBUG: "0"', workflow)
         loop = workflow.split("for feature in \\\n", 1)[1].split("                  do", 1)[0]
         selected = loop.replace("\\", "").split()
         features = tomllib.loads((ROOT / "crates/cosmolkit/Cargo.toml").read_text())["features"]

@@ -1,5 +1,5 @@
 //! Runtime commit adapter for source-backed detached MMFF optimization.
-use crate::{DerivedState, Molecule, OperationError, PreservationProof, TopologyEditKind};
+use crate::{DerivedState, Molecule, OperationError, PreservationProof};
 pub use cosmolkit_forcefields::{
     MmffConformerOptimizationParams, MmffOptimizationParams, MmffOptimizeMoleculeConfResult,
 };
@@ -120,7 +120,6 @@ pub(crate) fn with_mmff_optimized_impl(
             return Err(error);
         }
     };
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.mark_cache_updated(DerivedState::RINGS.union(DerivedState::AROMATICITY))?;
     parts.clear_cache(
         DerivedState::VALENCE
@@ -214,7 +213,6 @@ pub(crate) fn with_mmff_optimized_conformers_impl(
             return Err(error);
         }
     };
-    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.mark_cache_updated(DerivedState::RINGS.union(DerivedState::AROMATICITY))?;
     parts.clear_cache(
         DerivedState::VALENCE

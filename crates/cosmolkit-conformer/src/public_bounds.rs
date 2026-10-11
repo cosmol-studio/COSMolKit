@@ -16,7 +16,6 @@ pub enum BoundsQueryError {
     Bounds(#[from] crate::GraphBoundsError),
 }
 pub fn dg_bounds_matrix(topology: &TopologyBlock) -> Result<Vec<Vec<f64>>, BoundsQueryError> {
-    topology.validate()?;
     let valence = cosmolkit_core::assign_valence_for_topology(
         topology,
         cosmolkit_core::ValenceModel::RdkitLike,

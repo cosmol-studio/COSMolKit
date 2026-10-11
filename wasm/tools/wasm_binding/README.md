@@ -24,7 +24,7 @@ Alef can create toolchain and provenance files beside the input config.
 These commands validate the source crate without generating JavaScript:
 
 ```bash
-cargo test -p cosmolkit-wasm --release
+cargo test -p cosmolkit-wasm
 cargo check -p cosmolkit-wasm --target wasm32-unknown-unknown
 ```
 
@@ -41,12 +41,17 @@ python3 wasm/tools/wasm_binding/run.py
 When Alef and wasm-bindgen are already on `PATH`, the short form is:
 
 ```bash
-python3 -B wasm/tools/wasm_binding/run.py
+python3 -B wasm/tools/wasm_binding/run.py --profile dev
 ```
 
 Set `BUN_BIN` or `NODE_BIN` to select a specific runtime. The runner uses
 the pinned `typescript@5.8.3` package through `npx`; set `TSC_BIN` only
 to explicitly test another compiler.
+
+`--profile dev` uses Cargo's unoptimized development build for fast local
+checks. Set `CARGO_PROFILE_DEV_DEBUG=0` to omit debug information as well.
+The default profile remains `release`, including all package-export and
+publication examples below; distribution optimization is unchanged.
 
 All generated crates, WASM binaries, JavaScript glue, declarations, and
 TypeScript configuration are created below a temporary directory and removed
@@ -85,8 +90,13 @@ The release package follows the same isolated sequence:
    settings: `opt-level=3`, fat LTO, and `codegen-units=1`.
 3. `wasm-bindgen --target web` emits the JavaScript module, declarations, and
    background `.wasm` file.
-4. Runtime and TypeScript checks validate the package before export.
-5. [publish.yml](../../../.github/workflows/publish.yml) publishes the full artifact
+4. The compiled Rust binding registry adds constructor conveniences such as
+   `molFromSmiles` and `bioFromMmcif` as direct static-method aliases. Their
+   declarations use `typeof` to inherit the original options and result types;
+   feature and platform gates come from the same factory declarations that
+   generate Rust forwarding functions and Python aliases.
+5. Runtime and TypeScript checks validate the package before export.
+6. [publish.yml](../../../.github/workflows/publish.yml) publishes the full artifact
    as `@cosmol-studio/cosmolkit` and each smaller preset as
    `@cosmol-studio/cosmolkit-{preset}`, using npm Trusted Publisher (OIDC).
    Every package uses the same release version: RCs use `rc`, stable releases

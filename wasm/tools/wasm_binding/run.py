@@ -14,7 +14,7 @@ from pathlib import Path
 
 from presets import PRESETS, MODULE_GROUPS, TEST_GROUPS, active_features, npm_release, selected_names, source_modules
 from features import sync_manifest
-from contract import compiled_contract, typescript_probe
+from contract import compiled_contract, generate_conveniences, typescript_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -159,13 +159,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
     parser.add_argument("--preset", choices=PRESETS, default="full", help="Fixed distribution preset (default: full)")
+    parser.add_argument("--profile", choices=("dev", "release"), default="release", help="Use dev for fast local checks; release remains the distribution default")
     parser.add_argument(
         "--skip-binding-contract", action="store_true",
         help="Temporarily skip registry contract gates for publication-pipeline testing; keep compilation and JS/TS tests",
     )
     args = parser.parse_args()
     active = active_features(args.preset)
-    print(f"WASM preset: {args.preset}; features: {', '.join(sorted(active))}", flush=True)
+    print(f"WASM preset: {args.preset}; profile: {args.profile}; features: {', '.join(sorted(active))}", flush=True)
     alef = command("alef", "ALEF_BIN")
     wasm_bindgen = command("wasm-bindgen", "WASM_BINDGEN_BIN")
     bun = os.environ.get("BUN_BIN") or shutil.which("bun")
@@ -254,7 +255,8 @@ def main() -> None:
             str(manifest),
             "--target",
             "wasm32-unknown-unknown",
-            "--release",
+            "--profile",
+            args.profile,
             cwd=workspace,
             env=build_env,
         )
@@ -267,7 +269,7 @@ def main() -> None:
         wasm_binary = (
             target
             / "wasm32-unknown-unknown"
-            / "release"
+            / ("debug" if args.profile == "dev" else "release")
             / f"{library_name}.wasm"
         )
         package = generated / "pkg"
@@ -289,6 +291,9 @@ def main() -> None:
             if not path.is_file():
                 raise SystemExit(f"wasm-bindgen did not produce expected file: {path}")
         prepare_package(package, library_name, package_metadata, args.preset)
+        contract_path = workspace / "binding-contract.json"
+        contract = compiled_contract(api_root, active, contract_path, profile="dev" if args.profile == "dev" else "dev-test")
+        generate_conveniences(package, library_name, contract)
 
         runtime_env = build_env.copy()
         runtime_env.update(
@@ -299,15 +304,14 @@ def main() -> None:
             }
         )
         runtime_failure = None
-        contract_path = workspace / "binding-contract.json"
-        contract = None
+        contract_options = []
+        type_contract = contract
         if args.skip_binding_contract:
-            print("WARNING: registry binding contract gates skipped for publication-pipeline testing; binding completeness is NOT validated", flush=True)
-        else:
-            contract = compiled_contract(api_root, active, contract_path)
+            print("WARNING: full registry binding contract gates skipped for publication-pipeline testing; constructor conveniences are still generated and checked", flush=True)
+            contract_options = ["--conveniences-only"]
+            type_contract = {"entries": [], "javascript_aliases": contract["javascript_aliases"]}
         try:
-            if contract is not None:
-                run(bun or node, str(ROOT / "wasm/tools/wasm_binding/contract.mjs"), str(module), str(background_binary), str(contract_path), cwd=ROOT, env=runtime_env)
+            run(bun or node, str(ROOT / "wasm/tools/wasm_binding/contract.mjs"), str(module), str(background_binary), str(contract_path), *contract_options, cwd=ROOT, env=runtime_env)
             if bun:
                 run(bun, "test", *map(str, selected_tests(".mjs", active)), cwd=ROOT, env=runtime_env)
             else:
@@ -316,7 +320,7 @@ def main() -> None:
             # Still check TypeScript when runtime tests fail; retain failure.
             runtime_failure = error
 
-        check_typescript(workspace, declaration, active, contract)
+        check_typescript(workspace, declaration, active, type_contract)
         if runtime_failure is not None:
             raise runtime_failure
         if args.out_dir is not None:

@@ -600,10 +600,6 @@ fn prepare_layered_fingerprint<'a>(
         });
     }
 
-    match graph {
-        LayeredGraphInput::Concrete(topology) => topology.validate()?,
-        LayeredGraphInput::Query(query) => query.validate()?,
-    }
     let ring_info = match cached_rings.filter(|rings| rings.is_initialized()) {
         Some(rings) => Cow::Borrowed(rings),
         None => Cow::Owned(match graph {

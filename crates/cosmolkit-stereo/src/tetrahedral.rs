@@ -35,7 +35,6 @@ pub fn tetrahedral_stereo(
     // project ordered-ligand contract, not RDKit assignStereochemistry.
     // Cost review: borrow existing adjacency instead of cloning it; retain one
     // neighbor vector per tagged center and the same fixed 4^4 permutation walk.
-    topology.validate()?;
     // Detect tetrahedral stereo centers from the typed atom state.
     // Atoms with ChiralTag::TetrahedralCw or TetrahedralCcw are stereo
     // centers. The four ligands are the explicit neighbors plus an

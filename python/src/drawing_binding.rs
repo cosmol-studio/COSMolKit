@@ -129,7 +129,6 @@ pub(crate) fn operation_pyerr(
         E::BlockCheckedOut { .. } => "BlockCheckedOut",
         E::BlockNotCheckedOut { .. } => "BlockNotCheckedOut",
         E::IncompleteCommit { .. } => "IncompleteCommit",
-        E::TopologyEditContract { .. } => "TopologyEditContract",
         E::MappingContract { .. } => "MappingContract",
         E::InvalidTopologyMapping { .. } => "InvalidTopologyMapping",
         E::AutoRemapContract { .. } => "AutoRemapContract",

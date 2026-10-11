@@ -23,54 +23,53 @@ pub(crate) fn assign_chiral_tags_from_structure_impl(
         cosmolkit_core::assign_chiral_tags_from_structure(&topology, coordinates, &valence, params)
             .map_err(OperationError::Stereo)?;
 
-    let expected_conformer = if coordinates.conformers_3d.is_empty() {
-        None
-    } else if params.conformer_id < 0 {
-        Some(&coordinates.conformers_3d[0])
-    } else {
-        coordinates
-            .conformers_3d
-            .iter()
-            .find(|conformer| conformer.id() == params.conformer_id as usize)
-    };
-    let expected_conformer_id = expected_conformer.map(|conformer| conformer.id());
-    if assignment.selected_conformer_id != expected_conformer_id {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_chiral_tags_from_structure_with_params",
-            field: "selected-conformer-id",
-            actual: assignment.selected_conformer_id.unwrap_or(usize::MAX),
-            expected: expected_conformer_id.unwrap_or(usize::MAX),
-        });
+    #[cfg(feature = "op-contracts")]
+    {
+        let expected_conformer = if coordinates.conformers_3d.is_empty() {
+            None
+        } else if params.conformer_id < 0 {
+            Some(&coordinates.conformers_3d[0])
+        } else {
+            coordinates
+                .conformers_3d
+                .iter()
+                .find(|conformer| conformer.id() == params.conformer_id as usize)
+        };
+        let expected_conformer_id = expected_conformer.map(|conformer| conformer.id());
+        if assignment.selected_conformer_id != expected_conformer_id {
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_chiral_tags_from_structure_with_params",
+                field: "selected-conformer-id",
+                actual: assignment.selected_conformer_id.unwrap_or(usize::MAX),
+                expected: expected_conformer_id.unwrap_or(usize::MAX),
+            });
+        }
+        let expected_clear = expected_conformer.is_some_and(|conformer| conformer.is_3d());
+        if assignment.clear_stereochem_done != expected_clear {
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_chiral_tags_from_structure_with_params",
+                field: "clear-stereochem-done",
+                actual: usize::from(assignment.clear_stereochem_done),
+                expected: usize::from(expected_clear),
+            });
+        }
+        if assignment.topology.atoms.len() != topology.atoms.len() {
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_chiral_tags_from_structure_with_params",
+                field: "atom",
+                actual: assignment.topology.atoms.len(),
+                expected: topology.atoms.len(),
+            });
+        }
+        if assignment.topology.bonds.len() != topology.bonds.len() {
+            return Err(OperationError::InvalidAlgorithmResult {
+                operation: "with_chiral_tags_from_structure_with_params",
+                field: "bond",
+                actual: assignment.topology.bonds.len(),
+                expected: topology.bonds.len(),
+            });
+        }
     }
-    let expected_clear = expected_conformer.is_some_and(|conformer| conformer.is_3d());
-    if assignment.clear_stereochem_done != expected_clear {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_chiral_tags_from_structure_with_params",
-            field: "clear-stereochem-done",
-            actual: usize::from(assignment.clear_stereochem_done),
-            expected: usize::from(expected_clear),
-        });
-    }
-    if assignment.topology.atoms.len() != topology.atoms.len() {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_chiral_tags_from_structure_with_params",
-            field: "atom",
-            actual: assignment.topology.atoms.len(),
-            expected: topology.atoms.len(),
-        });
-    }
-    if assignment.topology.bonds.len() != topology.bonds.len() {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_chiral_tags_from_structure_with_params",
-            field: "bond",
-            actual: assignment.topology.bonds.len(),
-            expected: topology.bonds.len(),
-        });
-    }
-    assignment
-        .topology
-        .validate()
-        .map_err(OperationError::InvalidTopology)?;
     parts.install_topology(assignment.topology)?;
 
     if assignment.clear_stereochem_done {

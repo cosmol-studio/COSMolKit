@@ -94,8 +94,6 @@ pub fn write_mol_block_with_params(
         rings,
         allow_coordinate_generation,
     } = data;
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let input = MolWriteContext {
         topology: Cow::Borrowed(topology),
         coordinates: Cow::Borrowed(coordinates),
@@ -118,8 +116,6 @@ pub fn write_sdf_with_params(
         rings,
         allow_coordinate_generation,
     } = data;
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let input = MolWriteContext {
         topology: Cow::Borrowed(topology),
         coordinates: Cow::Borrowed(coordinates),
@@ -142,8 +138,6 @@ pub fn write_sdf_3d_with_params(
         rings,
         allow_coordinate_generation,
     } = data;
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let input = MolWriteContext {
         topology: Cow::Borrowed(topology),
         coordinates: Cow::Borrowed(coordinates),
@@ -181,7 +175,6 @@ fn query_write_context(data: QueryMolWriteInput<'_>) -> Result<MolWriteContext<'
     // detached carrier conversion retains the separately borrowed query AST;
     // it never constructs a concrete Molecule or installs live derived state.
     // One O(V+E) scratch allocation plus coordinate cloning matches that copy.
-    data.query.validate()?;
     let topology = TopologyBlock::try_from_parts(
         data.query
             .atoms()
@@ -202,7 +195,6 @@ fn query_write_context(data: QueryMolWriteInput<'_>) -> Result<MolWriteContext<'
         &topology,
     )?;
     let coordinates = data.query.coordinate_block(data.source_coordinate_dim);
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     Ok(MolWriteContext {
         topology: Cow::Owned(topology),
         coordinates: Cow::Owned(coordinates),
@@ -4330,8 +4322,6 @@ pub fn write_sdf_2d_with_params(
         || !matches!(params.coordinate_selection, MolCoordinateSelection::Auto)
         || !coordinates.conformers_2d.is_empty()
     {
-        topology.validate()?;
-        coordinates.validate_for_atom_count(topology.atoms.len())?;
         let input = MolWriteContext {
             topology: Cow::Borrowed(topology),
             coordinates: Cow::Borrowed(coordinates),

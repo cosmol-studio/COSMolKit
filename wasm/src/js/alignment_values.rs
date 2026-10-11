@@ -601,7 +601,6 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::BlockCheckedOut { .. } => "BlockCheckedOut",
         E::BlockNotCheckedOut { .. } => "BlockNotCheckedOut",
         E::IncompleteCommit { .. } => "IncompleteCommit",
-        E::TopologyEditContract { .. } => "TopologyEditContract",
         E::MappingContract { .. } => "MappingContract",
         E::InvalidTopologyMapping { .. } => "InvalidTopologyMapping",
         E::AutoRemapContract { .. } => "AutoRemapContract",

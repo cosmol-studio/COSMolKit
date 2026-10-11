@@ -441,7 +441,10 @@ fn atom_code_invalid_model_input_is_structurally_rejected() {
         BondOrder::Single,
     );
     t.bonds.clear();
-    assert!(AtomCodeInput::new(t, MoleculeProperties::default()).is_err());
+    assert_eq!(
+        t.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch)
+    );
 }
 #[test]
 fn atom_code_Source_postcondition_bound_all_fixed_numeric_observations() {

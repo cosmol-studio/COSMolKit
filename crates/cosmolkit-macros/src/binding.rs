@@ -1,7 +1,7 @@
 //! Private parser and generator for the canonical binding-contract registry.
 //!
-//! This module emits metadata and compile-time type assertions only. It does
-//! not generate public API methods, runtime behavior, or domain algorithms.
+//! This module emits metadata, type assertions and declared constructor
+//! conveniences. Generated conveniences only forward to existing public APIs.
 
 use std::collections::{HashMap, HashSet};
 
@@ -209,6 +209,7 @@ struct BindingEntry {
     properties: Vec<BindingProperty>,
     python_keywords: Option<BindingKeywordProjection>,
     python_adapters: Vec<PythonAdapter>,
+    convenience: Option<Ident>,
 }
 
 struct PythonConfigurationField {
@@ -284,6 +285,7 @@ impl Parse for PythonConfigurationField {
 struct PythonAdapter {
     name: Ident,
     targets: Vec<LitStr>,
+    convenience: Option<Ident>,
 }
 impl Parse for PythonAdapter {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
@@ -291,11 +293,13 @@ impl Parse for PythonAdapter {
         braced!(content in input);
         let mut name = None;
         let mut targets = None;
+        let mut convenience = None;
         while !content.is_empty() {
             let key = content.call(Ident::parse_any)?;
             content.parse::<Token![:]>()?;
             match key.to_string().as_str() {
                 "name" => set_once(&mut name, content.parse()?, &key)?,
+                "convenience" => set_once(&mut convenience, content.parse()?, &key)?,
                 "targets" => {
                     let values;
                     bracketed!(values in content);
@@ -314,6 +318,7 @@ impl Parse for PythonAdapter {
         Ok(Self {
             name: required(name, "adapter.name")?,
             targets: required(targets, "adapter.targets")?,
+            convenience,
         })
     }
 }
@@ -356,6 +361,7 @@ struct BindingEntryDraft {
     properties: Option<Vec<BindingProperty>>,
     python_keywords: Option<BindingKeywordProjection>,
     python_adapters: Option<Vec<PythonAdapter>>,
+    convenience: Option<Ident>,
 }
 
 impl Parse for BindingRegistry {
@@ -476,6 +482,7 @@ fn parse_binding_entry(
                     &key,
                 )?;
             }
+            "convenience" => set_once(&mut draft.convenience, input.parse()?, &key)?,
             other => return Err(unknown_field(&key, "binding entry", other)),
         }
         consume_comma(input)?;
@@ -607,11 +614,60 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         properties: draft.properties.unwrap_or_default(),
         python_keywords: draft.python_keywords,
         python_adapters: draft.python_adapters.unwrap_or_default(),
+        convenience: draft.convenience,
     })
 }
 
 fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
+    let mut conveniences = HashSet::new();
     for entry in entries {
+        if let Some(name) = &entry.convenience {
+            if entry.owner == Owner::Module
+                || !entry.callable.as_ref().is_some_and(|callable| {
+                    callable.kind == CallableKind::Static
+                        && callable.receiver.is_none()
+                        && callable.state == StateModel::ValueReturning
+                })
+            {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "convenience requires a static value-returning factory",
+                ));
+            }
+        }
+        for name in entry.convenience.iter().chain(
+            entry
+                .python_adapters
+                .iter()
+                .filter_map(|adapter| adapter.convenience.as_ref()),
+        ) {
+            let value = name.to_string();
+            if value.starts_with('_')
+                || value.ends_with('_')
+                || value.chars().any(char::is_uppercase)
+            {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "convenience must be a public snake_case name without a mutation suffix",
+                ));
+            }
+            insert_unique(
+                &mut conveniences,
+                value.clone(),
+                name,
+                "duplicate constructor convenience",
+            )?;
+            if entries.iter().any(|other| {
+                other.owner == Owner::Module
+                    && (other.python.value() == value
+                        || other.javascript.value() == snake_to_camel(&value))
+            }) {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "constructor convenience conflicts with a module callable",
+                ));
+            }
+        }
         if entry.exhaustive_configuration && entry.python_configuration.is_none() {
             return Err(syn::Error::new_spanned(
                 &entry.semantic_id,
@@ -1428,6 +1484,8 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     let mut property_values = Vec::new();
     let mut keyword_values = Vec::new();
     let mut adapter_values = Vec::new();
+    let mut convenience_values = Vec::new();
+    let mut convenience_functions = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         // The effective gate is generated once from the owning declaration;
         // registry rows and every signature/type assertion use the same value.
@@ -1461,6 +1519,21 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                     type_semantic_id: #semantic_id, name: #name, targets: &[#(#targets),*],
                 }},
             );
+            if let Some(convenience) = &adapter.convenience {
+                let convenience = convenience.to_string();
+                let target = format!(
+                    "{}.{}",
+                    entry.semantic_id.value().trim_start_matches("types."),
+                    name
+                );
+                let python_target = format!("{}.{}", entry.python.value(), name);
+                convenience_values.push(
+                    quote! { #(#adapter_cfg)* crate::BindingConvenienceContract {
+                        name: #convenience, target: #target, python_target: #python_target,
+                        javascript_target: None,
+                    }},
+                );
+            }
         }
         for property in &entry.properties {
             let property_name = property.name.to_string();
@@ -1486,6 +1559,60 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         let item = item_tokens(entry.item);
         let owner = owner_tokens(entry.owner);
         let rust = &entry.rust;
+        if let Some(convenience) = &entry.convenience {
+            let payload = entry
+                .callable
+                .as_ref()
+                .expect("validated convenience factory");
+            let names = payload
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.name)
+                .collect::<Vec<_>>();
+            let types = payload.signature.inputs.iter().map(|input| &input.ty);
+            let lifetimes = payload.signature.lifetimes.as_ref().map(|bound| {
+                let parameters = &bound.lifetimes;
+                quote!(<#parameters>)
+            });
+            let output = &payload.signature.output;
+            let target_path = rust.to_token_stream().to_string().replace(' ', "");
+            let doc = format!(
+                "Convenience entry point for [`{target_path}`].\n\nInputs, defaults, results and errors are unchanged."
+            );
+            convenience_functions.push(quote! {
+                #(#cfg)* #[doc = #doc] #[inline]
+                pub fn #convenience #lifetimes (#(#names: #types),*) #output {
+                    #rust(#(#names),*)
+                }
+            });
+            let owner_id = if entry.owner == Owner::Molecule {
+                "Molecule".to_owned()
+            } else {
+                entry
+                    .semantic_id
+                    .value()
+                    .rsplit_once('.')
+                    .expect("factory owner")
+                    .0
+                    .to_owned()
+            };
+            let owner = entries
+                .iter()
+                .find(|candidate| candidate.semantic_id.value() == format!("types.{owner_id}"));
+            let python_owner = owner
+                .map(|row| row.python.value())
+                .unwrap_or_else(|| owner_id.clone());
+            let javascript_owner = owner
+                .map(|row| row.javascript.value())
+                .unwrap_or_else(|| owner_id.clone());
+            let name = convenience.to_string();
+            let python_target = format!("{python_owner}.{}", entry.python.value());
+            let javascript_target = format!("{javascript_owner}.{}", entry.javascript.value());
+            convenience_values.push(quote! { #(#cfg)* crate::BindingConvenienceContract {
+                name: #name, target: #semantic_id, python_target: #python_target,
+                javascript_target: Some(#javascript_target),
+            }});
+        }
         let python = &entry.python;
         let python_native = match &entry.python_native {
             Some(value) => quote!(Some(#value)),
@@ -1655,6 +1782,15 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     let properties_name = format_ident!("{}_PROPERTIES", name);
     let keywords_name = format_ident!("{}_KEYWORDS", name);
     let adapters_name = format_ident!("{}_PYTHON_ADAPTERS", name);
+    let conveniences_name = format_ident!("{}_CONVENIENCES", name);
+    let conveniences = if convenience_values.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            #visibility static #conveniences_name: &[crate::BindingConvenienceContract] = &[#(#convenience_values),*];
+            #visibility mod conveniences { #(#convenience_functions)* }
+        }
+    };
     let adapters = if adapter_values.is_empty() {
         quote! {}
     } else {
@@ -1674,6 +1810,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         #properties
         #keywords
         #adapters
+        #conveniences
         #visibility static #name: &[crate::BindingContractEntry] = &[#(#values),*];
         #(#assertions)*
     })

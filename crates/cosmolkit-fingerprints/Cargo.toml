@@ -21,4 +21,5 @@ cosmolkit-stereo = { version = "0.5.0", path = "../cosmolkit-stereo", default-fe
 serde_json = { version = "1", features = ["raw_value"] }
 
 [dev-dependencies]
+cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 cosmolkit-smiles = { version = "0.5.0", path = "../cosmolkit-smiles" }

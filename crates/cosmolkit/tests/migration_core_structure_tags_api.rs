@@ -8,8 +8,7 @@ use cosmolkit::{
     BondOrder, BondSpec, ChiralTag, Conformer3D, CoordinateBlock, Element, FunctionStatus,
     Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain,
     OperationError, ParityPolicy, StateModel, StereoError, StructureTagParams, TopologyBlock,
-    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
-    support_matrix,
+    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 use cosmolkit_core::{
     ValenceModel, ValenceParams, assign_chiral_tags_from_structure, assign_valence,
@@ -251,7 +250,6 @@ fn generated_registry_and_all_four_matrices_describe_one_weak_operation() {
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.access.read(), BlockSet::COORDINATES);
     assert_eq!(
         spec.access.write(),

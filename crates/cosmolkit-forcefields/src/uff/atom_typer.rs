@@ -98,9 +98,6 @@ impl<'a> UffAtomStateRef<'a> {
         // Match prepare_parameter_query's old order: validate both cached rows
         // before the complete topology/adjacency validation.
         super::builder::validate_typing_valence_cache(topology, assignment)?;
-        topology
-            .validate()
-            .map_err(super::builder::UffBuilderError::TopologyValidation)?;
         Ok(Self::Cached {
             topology,
             assignment,

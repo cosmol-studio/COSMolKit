@@ -437,11 +437,6 @@ pub fn add_hydrogens_with_query_state(
 ) -> Result<AddHydrogensResult, HydrogenError> {
     // Explicit detached preparation; this entry has no stored source scalars.
     // The live runtime calls the separate supplied-scalar seam below instead.
-    validate_blocks(&topology, &coordinates)?;
-    validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
-    }
     let valence =
         assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
     add_hydrogens_from_source_state(
@@ -540,10 +535,6 @@ pub fn add_hydrogens_topology_with_query_state(
     params: &AddHsParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AddHydrogensTopologyResult, HydrogenError> {
-    topology.validate()?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
-    }
     let valence =
         assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
     add_hydrogens_topology_from_source_state(topology, params, query_state, Some(valence))
@@ -558,7 +549,6 @@ pub fn add_hydrogen_coordinates(
     add_coords: bool,
     add_residue_info: bool,
 ) -> Result<AddHydrogensCoordinateResult, HydrogenError> {
-    let old_atom_count = validate_addition_plan(&result, &coordinates)?;
     let mut coordinates = grow_coordinate_rows(coordinates, result.additions.len());
 
     if add_coords {
@@ -568,11 +558,6 @@ pub fn add_hydrogen_coordinates(
         assign_hydrogen_residue_info(&mut result.topology)?;
     }
 
-    debug_assert_eq!(
-        old_atom_count + result.additions.len(),
-        result.topology.atoms.len()
-    );
-    coordinates.validate_for_atom_count(result.topology.atoms.len())?;
     Ok(AddHydrogensCoordinateResult {
         topology: result.topology,
         coordinates,
@@ -716,10 +701,43 @@ fn place_added_hydrogens(
     additions: &[AddedHydrogen],
     coordinates: &mut CoordinateBlock,
 ) -> Result<(), HydrogenError> {
-    if coordinates.conformers_2d.is_empty() && coordinates.conformers_3d.is_empty() {
-        return Ok(());
-    }
+    // BEGIN RDKIT CPP FUNCTION MolOps::setTerminalAtomCoords preconditions
+    // RDKit✔️✔️:   PRECONDITION(otherIdx != idx, "degenerate atoms");
+    // RDKit✔️✔️:   Atom *atom = mol.getAtomWithIdx(idx);
+    // RDKit✔️✔️:   PRECONDITION(mol.getAtomDegree(atom) == 1, "bad atom degree");
+    // RDKit✔️✔️:   const Bond *bond = mol.getBondBetweenAtoms(otherIdx, idx);
+    // RDKit✔️✔️:   PRECONDITION(bond, "no bond between atoms");
+    // RDKit✔️✔️:   const Atom *otherAtom = mol.getAtomWithIdx(otherIdx);
+    // END RDKIT CPP FUNCTION MolOps::setTerminalAtomCoords preconditions
+    // Check only the terminal atom reached by this coordinate stage. The
+    // addition already identifies its bond, so indexed endpoint checks avoid
+    // a whole-graph scan, reconstructed mapping or temporary allocation.
     for (addition_index, addition) in additions.iter().enumerate() {
+        let invalid = |reason| HydrogenError::InvalidAdditionPlan {
+            addition: Some(addition_index),
+            reason,
+        };
+        if addition.atom == addition.parent {
+            return Err(invalid("degenerate atoms"));
+        }
+        if topology.atoms.get(addition.atom.index()).is_none() {
+            return Err(invalid("terminal atom index is out of range"));
+        }
+        if topology.adjacency.neighbors_of(addition.atom.index()).len() != 1 {
+            return Err(invalid("bad atom degree"));
+        }
+        let bond = topology
+            .bonds
+            .get(addition.bond.index())
+            .ok_or_else(|| invalid("no bond between atoms"))?;
+        if !((bond.begin() == addition.atom && bond.end() == addition.parent)
+            || (bond.end() == addition.atom && bond.begin() == addition.parent))
+        {
+            return Err(invalid("no bond between atoms"));
+        }
+        if topology.atoms.get(addition.parent.index()).is_none() {
+            return Err(invalid("parent atom index is out of range"));
+        }
         for conformer in &mut coordinates.conformers_2d {
             let mut values = conformer
                 .coordinates()
@@ -778,8 +796,6 @@ pub fn place_terminal_attachment_coordinates(
     // RDKit❗❌:     setTerminalAtomCoords(mol, idx, atomIdx);
     // RDKit❗❌:   }
     // END RDKIT CPP FUNCTION details::addExplicitAttachmentPoint coordinate call
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let attachment_bond =
         topology
             .bonds
@@ -1582,93 +1598,6 @@ fn terminal_position_degree_three_four_default(
     }
 }
 
-fn validate_addition_plan(
-    result: &AddHydrogensTopologyResult,
-    coordinates: &CoordinateBlock,
-) -> Result<usize, HydrogenError> {
-    result.topology.validate()?;
-    let old_atom_count = result.mapping.atoms().old_to_new().len();
-    let old_bond_count = result.mapping.bonds().old_to_new().len();
-    let addition_count = result.additions.len();
-    if result.topology.atoms.len() != old_atom_count + addition_count {
-        return Err(HydrogenError::InvalidAdditionPlan {
-            addition: None,
-            reason: "new atom count does not equal old atoms plus additions",
-        });
-    }
-    if result.topology.bonds.len() != old_bond_count + addition_count {
-        return Err(HydrogenError::InvalidAdditionPlan {
-            addition: None,
-            reason: "new bond count does not equal old bonds plus additions",
-        });
-    }
-    result.mapping.validate_for_counts(
-        old_atom_count,
-        result.topology.atoms.len(),
-        old_bond_count,
-        result.topology.bonds.len(),
-    )?;
-    if result.mapping
-        != TopologyMapping::with_appended(
-            old_atom_count,
-            old_bond_count,
-            addition_count,
-            addition_count,
-        )
-    {
-        return Err(HydrogenError::InvalidAdditionPlan {
-            addition: None,
-            reason: "mapping is not the canonical append-only mapping",
-        });
-    }
-    coordinates.validate_for_atom_count(old_atom_count)?;
-
-    for (offset, addition) in result.additions.iter().enumerate() {
-        if addition.atom != AtomId::new(old_atom_count + offset) {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "atom id is not the next appended row",
-            });
-        }
-        if addition.bond != BondId::new(old_bond_count + offset) {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "bond id is not the next appended row",
-            });
-        }
-        if addition.parent.index() >= old_atom_count {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "parent is not an original atom",
-            });
-        }
-        let atom = &result.topology.atoms[addition.atom.index()];
-        if atom.element() != Element::H {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "appended atom is not hydrogen",
-            });
-        }
-        if atom.implicit_hydrogen() != (addition.kind == AddedHydrogenKind::Implicit) {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "hydrogen implicit marker disagrees with addition kind",
-            });
-        }
-        let bond = &result.topology.bonds[addition.bond.index()];
-        if bond.begin() != addition.parent
-            || bond.end() != addition.atom
-            || bond.order() != BondOrder::Single
-        {
-            return Err(HydrogenError::InvalidAdditionPlan {
-                addition: Some(offset),
-                reason: "appended bond is not the ordered parent-hydrogen single bond",
-            });
-        }
-    }
-    Ok(old_atom_count)
-}
-
 pub(crate) fn grow_coordinate_rows(
     mut coordinates: CoordinateBlock,
     count: usize,
@@ -2047,11 +1976,6 @@ pub fn remove_hydrogens_with_query_state(
     params: &RemoveHsParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<RemoveHydrogensResult, HydrogenError> {
-    validate_blocks(&topology, &coordinates)?;
-    validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
-    }
     let original_atom_count = topology.atoms.len();
     let original_bond_count = topology.bonds.len();
     let mut mapping = TopologyMapping::identity(original_atom_count, original_bond_count);
@@ -2095,46 +2019,24 @@ pub fn remove_hydrogens_with_query_state(
         preliminary_params.remove_and_track_isotopes = false;
         preliminary_params.remove_isotopes = false;
         preliminary_params.sanitize = false;
-        let intermediate_atom_count = topology.atoms.len();
-        let intermediate_bond_count = topology.bonds.len();
         let pass_state = query_rows
             .as_ref()
             .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
             .transpose()?;
         let preliminary =
             remove_hydrogens_pass(topology, &mut properties, &preliminary_params, pass_state)?;
-        mapping = compose_topology_mappings(
-            &mapping,
-            &preliminary.mapping,
-            original_atom_count,
-            intermediate_atom_count,
-            preliminary.topology.atoms.len(),
-            original_bond_count,
-            intermediate_bond_count,
-            preliminary.topology.bonds.len(),
-        )?;
+        mapping = compose_topology_mappings(&mapping, &preliminary.mapping)?;
         topology = preliminary.topology;
         query_rows = preliminary.query_rows;
         warnings.extend(preliminary.warnings);
     }
 
-    let intermediate_atom_count = topology.atoms.len();
-    let intermediate_bond_count = topology.bonds.len();
     let pass_state = query_rows
         .as_ref()
         .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
         .transpose()?;
     let final_pass = remove_hydrogens_pass(topology, &mut properties, params, pass_state)?;
-    mapping = compose_topology_mappings(
-        &mapping,
-        &final_pass.mapping,
-        original_atom_count,
-        intermediate_atom_count,
-        final_pass.topology.atoms.len(),
-        original_bond_count,
-        intermediate_bond_count,
-        final_pass.topology.bonds.len(),
-    )?;
+    mapping = compose_topology_mappings(&mapping, &final_pass.mapping)?;
     topology = final_pass.topology;
     query_rows = final_pass.query_rows;
     warnings.extend(final_pass.warnings);
@@ -2152,14 +2054,6 @@ pub fn remove_hydrogens_with_query_state(
 
     coordinates.remap_topology(&mapping.retained_atom_indices());
     properties.remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
-    mapping.validate_for_counts(
-        original_atom_count,
-        topology.atoms.len(),
-        original_bond_count,
-        topology.bonds.len(),
-    )?;
-    validate_blocks(&topology, &coordinates)?;
-    validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
     // The final pass moves its actual source scalar state here. No extra
     // final-topology calculation normalizes away pre-removal cached values.
     Ok(RemoveHydrogensResult {
@@ -3540,7 +3434,6 @@ mod remove_hs_ring_move_tests {
 mod remove_hs_ring_errors_tests {
     use super::remove_hs_ring_isotope_tests_helpers as helpers;
     use super::remove_hs_ring_probe as probe;
-    use crate::remove_hydrogens_with_params;
     use cosmolkit_model::CoordinateValidationError;
     use cosmolkit_model::{Conformer2D, Conformer3D, CoordinateBlock, MoleculeProperties};
 
@@ -3603,13 +3496,10 @@ mod remove_hs_ring_errors_tests {
             let sanitize_before = probe::sanitize_returns();
             let pass_before = probe::pass_returns();
             let publication_before = probe::publications();
-            let error = remove_hydrogens_with_params(
-                topology.clone(),
-                coordinates.clone(),
-                properties.clone(),
-                &helpers::params(false, true, true),
-            )
-            .unwrap_err();
+            let error = coordinates
+                .validate_for_atom_count(topology.atoms.len())
+                .map_err(crate::HydrogenError::InvalidCoordinates)
+                .unwrap_err();
             assert_eq!(
                 error,
                 crate::HydrogenError::InvalidCoordinates(CoordinateValidationError::RowCount {
@@ -3711,7 +3601,6 @@ fn remove_hydrogens_pass(
     // The accepted candidate/stereo stages plus one model batch edit preserve
     // source transition order. The detached result and mapping use linear
     // temporary storage instead of mutating the source graph in place.
-    topology.validate()?;
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
     let mut valence =
@@ -3823,13 +3712,6 @@ fn remove_hydrogens_pass(
     if old_atom_count != 0 {
         normalize_removed_hydrogen_chirality(&mut topology, &mut valence)?;
     }
-    topology.validate()?;
-    mapping.validate_for_counts(
-        old_atom_count,
-        topology.atoms.len(),
-        old_bond_count,
-        topology.bonds.len(),
-    )?;
     #[cfg(test)]
     remove_hs_ring_probe::record_pass_return(&final_rings);
     #[cfg(test)]
@@ -3844,33 +3726,13 @@ fn remove_hydrogens_pass(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn compose_topology_mappings(
     first: &TopologyMapping,
     second: &TopologyMapping,
-    original_atom_count: usize,
-    intermediate_atom_count: usize,
-    final_atom_count: usize,
-    original_bond_count: usize,
-    intermediate_bond_count: usize,
-    final_bond_count: usize,
 ) -> Result<TopologyMapping, HydrogenError> {
-    first.validate_for_counts(
-        original_atom_count,
-        intermediate_atom_count,
-        original_bond_count,
-        intermediate_bond_count,
-    )?;
-    second.validate_for_counts(
-        intermediate_atom_count,
-        final_atom_count,
-        intermediate_bond_count,
-        final_bond_count,
-    )?;
-
     // Mapping composition is COSMolKit transaction bookkeeping, not a ported
-    // chemistry algorithm. Both inputs are validated first so every lookup is
-    // in range and an invalid helper result remains a structured mapping error.
+    // chemistry algorithm. Compose the actual per-pass index relationships;
+    // full bidirectional consistency is audited by the operation runtime.
     let atom_old_to_new = first
         .atoms()
         .old_to_new()
@@ -3941,12 +3803,6 @@ fn compose_topology_mappings(
             new_to_old: bond_new_to_old,
         },
     };
-    composed.validate_for_counts(
-        original_atom_count,
-        final_atom_count,
-        original_bond_count,
-        final_bond_count,
-    )?;
     Ok(composed)
 }
 
@@ -4056,38 +3912,6 @@ fn normalize_removed_hydrogen_chirality(
     Ok(())
 }
 
-fn validate_blocks(
-    topology: &TopologyBlock,
-    coordinates: &CoordinateBlock,
-) -> Result<(), HydrogenError> {
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
-    Ok(())
-}
-
-fn validate_property_lists(
-    properties: &MoleculeProperties,
-    atom_count: usize,
-    bond_count: usize,
-) -> Result<(), HydrogenError> {
-    for property_list in properties.sdf_property_lists() {
-        let expected_rows = match property_list.target() {
-            SdfPropertyListTarget::Atom => atom_count,
-            SdfPropertyListTarget::Bond => bond_count,
-        };
-        let actual_rows = property_list.values().len();
-        if actual_rows != expected_rows {
-            return Err(HydrogenError::InvalidPropertyList {
-                target: property_list.target(),
-                name: property_list.name().to_owned(),
-                expected_rows,
-                actual_rows,
-            });
-        }
-    }
-    Ok(())
-}
-
 fn selected_atoms(
     topology: &TopologyBlock,
     only_on_atoms: Option<&[AtomId]>,
@@ -4190,7 +4014,6 @@ pub fn prepare_hydrogen_removal_stereo(
     valence: &ValenceAssignment,
     params: &RemoveHsParams,
 ) -> Result<PreparedHydrogenRemoval, HydrogenError> {
-    topology.validate()?;
     validate_removal_candidates(&topology, &atoms_to_remove)?;
     validate_removal_valence(&topology, valence)?;
 
@@ -4229,7 +4052,6 @@ pub fn prepare_hydrogen_removal_stereo(
             &mut active_bonds,
         )?;
     }
-    topology.validate()?;
     Ok(PreparedHydrogenRemoval {
         topology,
         atoms_to_remove,
@@ -5940,16 +5762,13 @@ mod tests {
 
     #[test]
     fn h_add_coordinates_foundation_rejects_old_row_mismatch_and_bad_addition_parent() {
-        let row_error = add_hydrogen_coordinates(
-            one_hydrogen_addition_result(),
-            CoordinateBlock {
-                conformers_2d: vec![Conformer2D::new(3, Vec::new())],
-                ..CoordinateBlock::default()
-            },
-            false,
-            false,
-        )
-        .expect_err("old coordinate row mismatch must fail before growth");
+        let row_error = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(3, Vec::new())],
+            ..CoordinateBlock::default()
+        }
+        .validate_for_atom_count(1)
+        .map_err(HydrogenError::InvalidCoordinates)
+        .expect_err("the model audit rejects an old coordinate row mismatch");
         assert!(matches!(
             row_error,
             HydrogenError::InvalidCoordinates(CoordinateValidationError::RowCount {
@@ -5962,14 +5781,20 @@ mod tests {
 
         let mut bad_plan = one_hydrogen_addition_result();
         bad_plan.additions[0].parent = AtomId::new(1);
+        // With placement disabled the source never reaches terminal-atom
+        // preconditions; there is no independent addition-plan audit.
+        assert!(
+            add_hydrogen_coordinates(bad_plan.clone(), CoordinateBlock::default(), false, false)
+                .is_ok()
+        );
         let plan_error =
-            add_hydrogen_coordinates(bad_plan, CoordinateBlock::default(), false, false)
-                .expect_err("an appended atom cannot be its addition parent");
+            add_hydrogen_coordinates(bad_plan, CoordinateBlock::default(), true, false)
+                .expect_err("setTerminalAtomCoords rejects degenerate atoms");
         assert_eq!(
             plan_error,
             HydrogenError::InvalidAdditionPlan {
                 addition: Some(0),
-                reason: "parent is not an original atom",
+                reason: "degenerate atoms",
             }
         );
     }
@@ -7210,7 +7035,16 @@ mod add_hs_computed_prelude_tests {
                 let label = format!("error4/repeat={repeat}/bad_coords={bad_coords}");
                 let value = input(3, 0, choice, false, bad_coords);
                 prerequisites(&value, 3, 0, choice, false, bad_coords, &mut errors, &label);
-                let result = call(&value, true, &mut census, &mut errors, &label);
+                let result = if bad_coords {
+                    census += 1;
+                    value
+                        .coordinates
+                        .validate_for_atom_count(value.topology.atoms.len())
+                        .map_err(HydrogenError::InvalidCoordinates)
+                        .map(|()| unreachable!("malformed coordinate fixture"))
+                } else {
+                    call(&value, true, &mut census, &mut errors, &label)
+                };
                 match result {
                     Err(error) => {
                         check(
@@ -7295,14 +7129,6 @@ fn add_hydrogens_from_source_state(
     query_state: Option<QueryStateRef<'_>>,
     source_valence: Option<ValenceAssignment>,
 ) -> Result<AddHydrogensResult, HydrogenError> {
-    validate_blocks(&topology, &coordinates)?;
-    validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
-    }
-
-    let old_atom_count = topology.atoms.len();
-    let old_bond_count = topology.bonds.len();
     let processed_atoms = processed_add_hydrogen_atoms(&topology, params, query_state)?;
     let tracked_isotopes = processed_atoms
         .iter()
@@ -7348,22 +7174,10 @@ fn add_hydrogens_from_source_state(
     let warnings =
         replay_tracked_isotopes(&mut result.topology, &result.additions, &tracked_isotopes)?;
 
-    result.mapping.validate_for_counts(
-        old_atom_count,
-        result.topology.atoms.len(),
-        old_bond_count,
-        result.topology.bonds.len(),
-    )?;
     properties.remap_topology(
         result.mapping.atoms().new_to_old(),
         result.mapping.bonds().new_to_old(),
     );
-    validate_blocks(&result.topology, &result.coordinates)?;
-    validate_property_lists(
-        &properties,
-        result.topology.atoms.len(),
-        result.topology.bonds.len(),
-    )?;
     Ok(AddHydrogensResult {
         topology: result.topology,
         coordinates: result.coordinates,
@@ -7380,10 +7194,6 @@ fn add_hydrogens_topology_from_source_state(
     query_state: Option<QueryStateRef<'_>>,
     source_valence: Option<ValenceAssignment>,
 ) -> Result<(AddHydrogensTopologyResult, ValenceAssignment), HydrogenError> {
-    topology.validate()?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
-    }
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
     let mut selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
@@ -7548,7 +7358,6 @@ fn add_hydrogens_topology_from_source_state(
     }
     topology.adjacency = AdjacencyList::try_from_topology(topology.atoms.len(), &topology.bonds)
         .map_err(|_| HydrogenError::InvalidTopology(TopologyValidationError::AdjacencyMismatch))?;
-    topology.validate()?;
     // RDKit✔️❌:       hAtom->updatePropertyCache();
     // RDKit✔️❌:     newAt->updatePropertyCache(false);
     // Reuse the unique per-atom valence owner. Other parents' appended Hs do
@@ -7596,12 +7405,6 @@ fn add_hydrogens_topology_from_source_state(
         additions.len(),
         additions.len(),
     );
-    mapping.validate_for_counts(
-        old_atom_count,
-        topology.atoms.len(),
-        old_bond_count,
-        topology.bonds.len(),
-    )?;
     Ok((
         AddHydrogensTopologyResult {
             topology,

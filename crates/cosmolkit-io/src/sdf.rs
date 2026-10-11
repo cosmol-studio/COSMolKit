@@ -483,7 +483,6 @@ fn apply_sdf_coordinate_mode(
             ..
         } => {
             apply_coordinate_mode_to_block(coordinates, mode);
-            coordinates.validate_for_atom_count(topology.atoms.len())?;
         }
         MolBlockRecord::Query(query_record) => {
             let query = &query_record.query;
@@ -5774,7 +5773,6 @@ fn read_v2000_record_detached_with_progress(
     // and signed-zero Z exactly, independently of that interpretation.
     // Complexity review: the source scans Z once; losslessness makes one more
     // linear scan, with no additional coordinate block or whole-graph copy.
-    coordinates.validate_for_atom_count(atom_count)?;
     // RDKit❗✔️:   res->setProp(common_properties::_Name, tempStr);
     // MolFromMolDataStream stores the first line even when it is empty.
     // The present empty string is distinct from an absent live-value name;
@@ -5862,14 +5860,8 @@ fn read_v2000_record_detached_with_progress(
         .into_iter()
         .map(|parsed| parsed.bond)
         .collect::<Vec<_>>();
-    let topology = TopologyBlock {
-        adjacency: AdjacencyList::from_topology(atom_count, &concrete_bonds),
-        atoms,
-        bonds: concrete_bonds,
-        substance_groups,
-        stereo_groups: Vec::new(),
-    };
-    topology.validate()?;
+    let topology =
+        TopologyBlock::try_from_parts(atoms, concrete_bonds, substance_groups, Vec::new())?;
     // END RDKIT CPP FUNCTION
     Ok(MolBlockRecord::Concrete {
         topology,
@@ -8615,7 +8607,6 @@ fn read_v3000_record_detached_with_progress(
     // Complexity review: classification and losslessness checking are linear
     // scans; XY storage allocates once, while XYZ storage moves the parsed
     // rows without cloning. No extra conformer or sidecar state is introduced.
-    coordinates.validate_for_atom_count(atom_count)?;
     // RDKit❗✔️:   res->setProp(common_properties::_Name, tempStr);
     // MolFromMolDataStream stores the first line even when it is empty.
     // The present empty string is distinct from an absent live-value name;
@@ -8699,14 +8690,7 @@ fn read_v3000_record_detached_with_progress(
         .into_iter()
         .map(|parsed| parsed.bond)
         .collect::<Vec<_>>();
-    let topology = TopologyBlock {
-        adjacency: AdjacencyList::from_topology(atom_count, &bonds),
-        atoms,
-        bonds,
-        substance_groups,
-        stereo_groups,
-    };
-    topology.validate()?;
+    let topology = TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)?;
     Ok(MolBlockRecord::Concrete {
         topology,
         coordinates,
@@ -9214,8 +9198,6 @@ pub fn write_v2000_detached(
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
 ) -> Result<PropertyText, SdfWriteError> {
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     if topology.atoms.len() > 999
         || topology.bonds.len() > 999
         || topology.substance_groups.len() > 999
@@ -9922,8 +9904,6 @@ pub fn write_v3000_detached(
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
 ) -> Result<PropertyText, SdfWriteError> {
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let title = properties
         .name()
         .map(PropertyText::as_bytes)

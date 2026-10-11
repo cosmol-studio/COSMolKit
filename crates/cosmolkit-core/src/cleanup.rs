@@ -40,10 +40,8 @@ pub fn cleanup(
     topology: &TopologyBlock,
     params: &CleanupParams,
 ) -> Result<TopologyBlock, CleanupError> {
-    topology.validate()?;
     let mut result = topology.clone();
     cleanup_stages(&mut result, params)?;
-    result.validate()?;
     Ok(result)
 }
 
@@ -53,9 +51,7 @@ pub(crate) fn cleanup_in_place(
     topology: &mut TopologyBlock,
     params: &CleanupParams,
 ) -> Result<(), CleanupError> {
-    topology.validate()?;
     cleanup_stages(topology, params)?;
-    topology.validate()?;
     Ok(())
 }
 

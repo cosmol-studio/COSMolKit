@@ -58,16 +58,6 @@ pub(crate) enum OperationKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TopologyEditKind {
-    None,
-    Local,
-    Compacting,
-    Expanding,
-    Reordering,
-    Reconstruction,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MappingRequirement {
     None,
     Identity,
@@ -127,7 +117,6 @@ pub(crate) struct MoleculeFields {
     pub(crate) assemble_fn: Option<Path>,
     pub(crate) domain: MoleculeDomain,
     pub(crate) kind: OperationKind,
-    pub(crate) topology_edit: TopologyEditKind,
     pub(crate) access: AccessFields,
     pub(crate) may_mutate: Vec<MoleculeBlock>,
     pub(crate) auto_remap: Vec<MoleculeBlock>,
@@ -192,7 +181,6 @@ struct RawMoleculeFields {
     assemble_fn: Option<Path>,
     domain: Option<Ident>,
     kind: Option<Ident>,
-    topology_edit: Option<Ident>,
     access: Option<RawAccessFields>,
     may_mutate: Option<Vec<Ident>>,
     auto_remap: Option<Vec<Ident>>,
@@ -265,7 +253,6 @@ impl Parse for MoleculeOperation {
                 "assemble_fn" => raw.assemble_fn = Some(content.parse()?),
                 "domain" => raw.domain = Some(content.parse()?),
                 "kind" => raw.kind = Some(content.parse()?),
-                "topology_edit" => raw.topology_edit = Some(content.parse()?),
                 "access" => raw.access = Some(parse_access_fields(&content)?),
                 "may_mutate" => raw.may_mutate = Some(parse_ident_list(&content, "may_mutate")?),
                 "auto_remap" => raw.auto_remap = Some(parse_ident_list(&content, "auto_remap")?),
@@ -353,7 +340,6 @@ fn finish_molecule_fields(
     let output = parse_molecule_output(raw.output.as_ref())?;
     let domain = parse_molecule_domain(raw.domain.as_ref())?;
     let kind = parse_operation_kind(required(raw.kind, operation, "kind")?)?;
-    let topology_edit = parse_topology_edit(raw.topology_edit.as_ref())?;
     let access = finish_access(required(raw.access, operation, "access")?)?;
     let may_mutate = parse_molecule_blocks(raw.may_mutate.clone().unwrap_or_default())?;
     let auto_remap = parse_molecule_blocks(raw.auto_remap.clone().unwrap_or_default())?;
@@ -400,7 +386,6 @@ fn finish_molecule_fields(
         raw.inplace_result_type.as_ref(),
         raw.assemble_fn.as_ref(),
         kind,
-        topology_edit,
         &access,
         &may_mutate,
         &auto_remap,
@@ -451,7 +436,6 @@ fn finish_molecule_fields(
         assemble_fn: raw.assemble_fn,
         domain,
         kind,
-        topology_edit,
         access,
         may_mutate,
         auto_remap,
@@ -486,7 +470,6 @@ fn validate_molecule_relationships(
     inplace_result_type: Option<&Type>,
     assemble_fn: Option<&Path>,
     kind: OperationKind,
-    topology_edit: TopologyEditKind,
     access: &AccessFields,
     may_mutate: &[MoleculeBlock],
     auto_remap: &[MoleculeBlock],
@@ -537,7 +520,6 @@ fn validate_molecule_relationships(
         cip_state,
         derived_effects,
         kind,
-        topology_edit,
         access,
         requires_mapping,
     )?;
@@ -548,48 +530,25 @@ fn validate_molecule_relationships(
         access,
         cip_state,
         kind,
-        topology_edit,
         requires_mapping,
         may_mutate,
         auto_remap,
     )?;
 
-    let changes_indices = matches!(
-        topology_edit,
-        TopologyEditKind::Compacting
-            | TopologyEditKind::Expanding
-            | TopologyEditKind::Reordering
-            | TopologyEditKind::Reconstruction
-    );
-    if changes_indices
-        && (kind != OperationKind::Strong
-            || requires_mapping
-                != if topology_edit == TopologyEditKind::Reconstruction {
-                    MappingRequirement::Reconstruction
-                } else {
-                    MappingRequirement::Required
-                })
+    if kind == OperationKind::Strong
+        && !matches!(
+            requires_mapping,
+            MappingRequirement::Required | MappingRequirement::Reconstruction
+        )
     {
         return Err(syn::Error::new(
             operation.span(),
-            "index-changing topology edits must be strong and require a mapping",
-        ));
-    }
-    if kind == OperationKind::Strong && !changes_indices {
-        return Err(syn::Error::new(
-            operation.span(),
-            "strong molecule operations must declare an index-changing topology edit",
-        ));
-    }
-    if kind == OperationKind::Weak && changes_indices {
-        return Err(syn::Error::new(
-            operation.span(),
-            "weak molecule operations cannot declare an index-changing topology edit",
+            "strong molecule operations require a mapping",
         ));
     }
     if requires_mapping == MappingRequirement::Reconstruction
         && (output != MoleculeOutput::Multiple
-            || topology_edit != TopologyEditKind::Reconstruction
+            || kind != OperationKind::Strong
             || [
                 MoleculeBlock::Topology,
                 MoleculeBlock::Coordinates,
@@ -769,7 +728,6 @@ fn validate_operation_defined(
     cip_state: CipStatePolicy,
     effects: &DerivedEffectFields,
     kind: OperationKind,
-    topology_edit: TopologyEditKind,
     access: &AccessFields,
     mapping: MappingRequirement,
 ) -> syn::Result<()> {
@@ -788,7 +746,6 @@ fn validate_operation_defined(
         && output == MoleculeOutput::Single
         && cip_state == CipStatePolicy::Clear
         && kind == OperationKind::Strong
-        && topology_edit == TopologyEditKind::Expanding
         && mapping == MappingRequirement::Required
         && access.read.is_empty()
         && access.write
@@ -802,7 +759,6 @@ fn validate_operation_defined(
     // USER approval ROOT CK-4b988: these two exact Weak source transitions.
     // Every other identity, authority and effect shape remains forbidden.
     let weak_source = kind == OperationKind::Weak
-        && topology_edit == TopologyEditKind::Local
         && output == MoleculeOutput::Single
         && mapping == MappingRequirement::None
         && access.read.is_empty()
@@ -853,7 +809,6 @@ fn validate_cip_transition(
     access: &AccessFields,
     cip_state: CipStatePolicy,
     kind: OperationKind,
-    topology_edit: TopologyEditKind,
     mapping: MappingRequirement,
     may_mutate: &[MoleculeBlock],
     auto_remap: &[MoleculeBlock],
@@ -870,7 +825,6 @@ fn validate_cip_transition(
             ("fragments", MoleculeOutput::Multiple) | ("largest_fragment", MoleculeOutput::Single)
         ) && operation == method
             && kind == OperationKind::Strong
-            && topology_edit == TopologyEditKind::Compacting
             && mapping == MappingRequirement::Required
             && access.read.is_empty()
             && access.write.len() == blocks.len()
@@ -884,7 +838,7 @@ fn validate_cip_transition(
         } else {
             Err(syn::Error::new(
                 operation.span(),
-                "fragment source transition requires an exact mapped strong compacting fragment operation and four write-owned blocks",
+                "fragment source transition requires an exact mapped strong fragment operation and four write-owned blocks",
             ))
         };
     }
@@ -901,7 +855,6 @@ fn validate_cip_transition(
         ) && operation == method
             && output == MoleculeOutput::Single
             && kind == OperationKind::Strong
-            && topology_edit == TopologyEditKind::Compacting
             && mapping == MappingRequirement::Required
             && access.read.is_empty()
             && access.write.len() == blocks.len()
@@ -917,7 +870,7 @@ fn validate_cip_transition(
         } else {
             Err(syn::Error::new(
                 operation.span(),
-                "scaffold source transition requires an exact strong compacting scaffold operation and four write-owned blocks",
+                "scaffold source transition requires an exact mapped strong scaffold operation and four write-owned blocks",
             ))
         };
     }
@@ -931,13 +884,11 @@ fn validate_cip_transition(
                     "reaction_products_from_inputs"
                 )
         ) && output == MoleculeOutput::Multiple
-            && topology_edit == TopologyEditKind::Reconstruction
             && mapping == MappingRequirement::Reconstruction
             && auto_remap.is_empty();
         let apply = operation == "apply_reaction"
             && method == "apply_reaction_with_params"
             && output == MoleculeOutput::Single
-            && topology_edit == TopologyEditKind::Compacting
             && mapping == MappingRequirement::Required
             && auto_remap.len() == 2
             && auto_remap.contains(&MoleculeBlock::Coordinates)
@@ -961,7 +912,7 @@ fn validate_cip_transition(
         } else {
             Err(syn::Error::new(
                 operation.span(),
-                "reaction source transition requires an exact reaction operation with strong reconstruction or compacting mapping and four write-owned blocks",
+                "reaction source transition requires an exact strong reaction operation with reconstruction or required mapping and four write-owned blocks",
             ))
         };
     }
@@ -977,7 +928,6 @@ fn validate_cip_transition(
             )
         ) && output == MoleculeOutput::LazyMultiple
             && kind == OperationKind::Weak
-            && topology_edit == TopologyEditKind::None
             && mapping == MappingRequirement::None
             && may_mutate.len() == 4
             && [
@@ -1731,21 +1681,6 @@ fn parse_operation_kind(value: Ident) -> syn::Result<OperationKind> {
     }
 }
 
-fn parse_topology_edit(value: Option<&Ident>) -> syn::Result<TopologyEditKind> {
-    match value.map(ToString::to_string).as_deref() {
-        None | Some("none") => Ok(TopologyEditKind::None),
-        Some("local") => Ok(TopologyEditKind::Local),
-        Some("compacting") => Ok(TopologyEditKind::Compacting),
-        Some("expanding") => Ok(TopologyEditKind::Expanding),
-        Some("reordering") => Ok(TopologyEditKind::Reordering),
-        Some("reconstruction") => Ok(TopologyEditKind::Reconstruction),
-        Some(other) => Err(syn::Error::new_spanned(
-            value.expect("present value"),
-            format!("unknown topology edit kind '{other}'"),
-        )),
-    }
-}
-
 fn parse_mapping_requirement(value: Option<&Ident>) -> syn::Result<MappingRequirement> {
     match value.map(ToString::to_string).as_deref() {
         None | Some("none") => Ok(MappingRequirement::None),
@@ -1915,7 +1850,7 @@ mod scaffold_contract_tests {
     use super::*;
 
     #[test]
-    fn scaffold_transition_requires_exact_name_and_compacting_authority() {
+    fn scaffold_transition_requires_exact_name_and_mapping_authority() {
         let blocks = vec![
             MoleculeBlock::Topology,
             MoleculeBlock::Coordinates,
@@ -1931,7 +1866,6 @@ mod scaffold_contract_tests {
                      method: &str,
                      output,
                      kind,
-                     edit,
                      mapping,
                      access: &AccessFields,
                      mutated: &[MoleculeBlock],
@@ -1943,7 +1877,6 @@ mod scaffold_contract_tests {
                 access,
                 CipStatePolicy::ScaffoldSourceTransition,
                 kind,
-                edit,
                 mapping,
                 mutated,
                 remap,
@@ -1956,7 +1889,6 @@ mod scaffold_contract_tests {
                     name,
                     MoleculeOutput::Single,
                     OperationKind::Strong,
-                    TopologyEditKind::Compacting,
                     MappingRequirement::Required,
                     &access,
                     &blocks,
@@ -1965,13 +1897,12 @@ mod scaffold_contract_tests {
                 .is_ok()
             );
         }
-        for (name, method, output, kind, edit, mapping) in [
+        for (name, method, output, kind, mapping) in [
             (
                 "other",
                 "other",
                 MoleculeOutput::Single,
                 OperationKind::Strong,
-                TopologyEditKind::Compacting,
                 MappingRequirement::Required,
             ),
             (
@@ -1979,7 +1910,6 @@ mod scaffold_contract_tests {
                 "other",
                 MoleculeOutput::Single,
                 OperationKind::Strong,
-                TopologyEditKind::Compacting,
                 MappingRequirement::Required,
             ),
             (
@@ -1987,7 +1917,6 @@ mod scaffold_contract_tests {
                 "net_scaffold",
                 MoleculeOutput::Multiple,
                 OperationKind::Strong,
-                TopologyEditKind::Compacting,
                 MappingRequirement::Required,
             ),
             (
@@ -1995,7 +1924,6 @@ mod scaffold_contract_tests {
                 "net_scaffold",
                 MoleculeOutput::Single,
                 OperationKind::Weak,
-                TopologyEditKind::Compacting,
                 MappingRequirement::Required,
             ),
             (
@@ -2003,21 +1931,19 @@ mod scaffold_contract_tests {
                 "net_scaffold",
                 MoleculeOutput::Single,
                 OperationKind::Strong,
-                TopologyEditKind::Reconstruction,
-                MappingRequirement::Required,
+                MappingRequirement::Reconstruction,
             ),
             (
                 "net_scaffold",
                 "net_scaffold",
                 MoleculeOutput::Single,
                 OperationKind::Strong,
-                TopologyEditKind::Compacting,
                 MappingRequirement::None,
             ),
         ] {
             assert!(
                 check(
-                    name, method, output, kind, edit, mapping, &access, &blocks, &remap
+                    name, method, output, kind, mapping, &access, &blocks, &remap
                 )
                 .is_err()
             );
@@ -2038,7 +1964,6 @@ mod scaffold_contract_tests {
                     "net_scaffold",
                     MoleculeOutput::Single,
                     OperationKind::Strong,
-                    TopologyEditKind::Compacting,
                     MappingRequirement::Required,
                     access,
                     mutated,
@@ -2073,7 +1998,6 @@ mod scaffold_contract_tests {
                 &access,
                 CipStatePolicy::FragmentSourceTransition,
                 OperationKind::Strong,
-                TopologyEditKind::Compacting,
                 mapping,
                 &blocks,
                 &[],

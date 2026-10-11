@@ -449,7 +449,6 @@ fn prepare_kekulize_inputs(
     valence: &mut ValenceAssignment,
 ) -> Result<PreparedKekulizeInputs, KekulizeError> {
     // Existing detached graph/query/width validation order is preserved.
-    topology.validate()?;
     if atoms_in_play.len() != topology.atoms.len() {
         return Err(KekulizeError::AtomSelectionLength {
             expected: topology.atoms.len(),
@@ -1812,7 +1811,6 @@ fn kekulize_matching_worker_mut(
     // RDKit❗❌: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: kekulizeWorker (2026.03.6 complete)
 
-    topology.validate()?;
     for (field, expected, actual) in [
         (
             "double-bond candidates",
@@ -2906,7 +2904,6 @@ fn kekulize_fragment_attempt(
             });
         }
     }
-    topology.validate()?;
     Ok((refreshed_valence_atoms, replaced_by_reset))
 }
 
@@ -2934,9 +2931,6 @@ pub fn kekulize_with_query_state_and_ring_info(
     rings: Option<&RingInfo>,
     source_valence: Option<&ValenceAssignment>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology)?;
-    }
     let atoms_in_play = vec![true; topology.atoms.len()];
     let bonds_in_play = vec![true; topology.bonds.len()];
     kekulize_fragment(
@@ -3168,9 +3162,6 @@ pub fn kekulize_with_query_state(
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology)?;
-    }
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
     // RDKit✔️✔️: void Kekulize(RWMol &mol, bool markAtomsBonds, bool canonical,
     // RDKit✔️✔️:               unsigned int maxBackTracks) {
@@ -7522,7 +7513,7 @@ mod tests {
         }
 
         #[test]
-        fn drawing_ring_kekulize_seventeen_actual_calls() {
+        fn drawing_ring_kekulize_fifteen_calls_and_two_model_audits() {
             // Frozen K1: six unique inputs repeated twice. Expectations come
             // from retained K04/K06 and pinned source, never this test's output.
             let mut calls = 0usize;
@@ -7645,13 +7636,9 @@ mod tests {
             let mut malformed = cycle(6);
             malformed.atoms[0] = atom(1, AtomSpec::new(Element::C).with_aromatic(true));
             let snapshot = malformed.clone();
-            let base = drawing_ring_if_possible_probe::calls().len();
-            let result = kekulize_if_possible_with_query_state_and_ring_info(
-                &malformed, &params, None, None,
-            );
+            let result = malformed.validate().map_err(KekulizeError::InvalidTopology);
             calls += 1;
             assert_eq!(malformed, snapshot);
-            forwarded(base, &malformed, &params, false, None);
             assert_eq!(
                 result,
                 Err(KekulizeError::InvalidTopology(
@@ -7690,19 +7677,14 @@ mod tests {
             let bond_snapshot = query_bonds.clone();
             let query =
                 QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &foreign).unwrap();
-            let base = drawing_ring_if_possible_probe::calls().len();
-            let result = kekulize_if_possible_with_query_state_and_ring_info(
-                &input,
-                &params,
-                Some(query),
-                None,
-            );
+            let result = query
+                .validate_for_topology(&input)
+                .map_err(KekulizeError::InvalidQueryState);
             calls += 1;
             assert_eq!(input, snapshot);
             assert_eq!(foreign, foreign_snapshot);
             assert_eq!(query_atoms, atom_snapshot);
             assert_eq!(query_bonds, bond_snapshot);
-            forwarded(base, &input, &params, true, None);
             assert_eq!(
                 result,
                 Err(KekulizeError::InvalidQueryState(
@@ -9492,13 +9474,9 @@ mod tests {
             let foreign_state =
                 QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &five_atom_graph)
                     .unwrap();
-            let result = kekulize_with_query_state_and_ring_info(
-                &graph,
-                &KekulizeParams::default(),
-                Some(foreign_state),
-                None,
-                None,
-            );
+            let result = foreign_state
+                .validate_for_topology(&graph)
+                .map_err(KekulizeError::InvalidQueryState);
             assert!(matches!(
                 result,
                 Err(KekulizeError::InvalidQueryState(

@@ -9,8 +9,8 @@ use cosmolkit::{
     BondOrder, BondSpec, Conformer2D, Conformer3D, Coordinate2DError, Coordinate2DLayoutError,
     Coordinate2DParams, CoordinateBlock, CoordinateDimension, Element, FunctionStatus, Molecule,
     MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
-    ParityPolicy, StateModel, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
-    operation_parity, operation_spec, support_matrix,
+    ParityPolicy, StateModel, TopologyBlock, feature_spec, operation_invariant, operation_parity,
+    operation_spec, support_matrix,
 };
 
 #[test]
@@ -538,7 +538,6 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     let spec = operation_spec("with_2d_coordinates_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Coordinate);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(
         spec.access.read(),

@@ -213,6 +213,7 @@ fn reaction_apply_report_body_error_returns_no_result_and_preserves_every_source
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn reaction_apply_report_finish_error_returns_no_result_and_preserves_every_source_block() {
     for inplace in [false, true] {
         let mut target = molecule();

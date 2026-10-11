@@ -164,7 +164,6 @@ fn validate_topology_and_valence(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<(), PotentialStereoError> {
-    topology.validate()?;
     let atom_count = topology.atoms.len();
     for (field, rows) in [
         ("explicit_valence", &valence.explicit_valence),
@@ -2253,7 +2252,6 @@ pub fn potential_stereo(
         )?;
     }
     let ring_relations = special_ring_relations(&working, valence, rings, &ranks)?;
-    working.validate()?;
     Ok(PotentialStereoAssignment {
         stereo,
         atom_ranks: ranks,
@@ -2787,14 +2785,14 @@ mod cf_smi_tetra_tests {
 
         let mut malformed = source.clone();
         malformed.atoms[0] = malformed.atoms[0].clone().with_id(AtomId::new(1));
+        // Whole-state corruption is rejected by the explicit model/runtime
+        // audit, not by the chemistry algorithm being exercised above.
         assert_eq!(
-            potential_tetrahedral_centers_for_atoms(&malformed, &valence, None, &[AtomId::new(0)],),
-            Err(PotentialStereoError::InvalidTopology(
-                TopologyValidationError::AtomIdMismatch {
-                    position: 0,
-                    id: AtomId::new(1),
-                }
-            ))
+            malformed.validate(),
+            Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+                position: 0,
+                id: AtomId::new(1)
+            }),
         );
     }
 }

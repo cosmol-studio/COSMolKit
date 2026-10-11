@@ -155,7 +155,6 @@ pub(crate) fn total_hydrogens(
     )?)
 }
 pub(crate) fn prepared(view: TautomerRecordView<'_>) -> Result<TautomerRecord, TautomerRunError> {
-    view.topology.validate()?;
     let valence = prepared_valence(view)?;
     let rings = match view.rings {
         Some(value) if value.is_symm_sssr() => value.clone(),
@@ -1047,7 +1046,6 @@ pub(crate) fn copy_for_canonical_assignment(
     // RDKit✔️❌:   ROMol *res = new ROMol(*bestMol);
     // Preserve existing ring quality before the unique legacy owner performs
     // source-required fast-ring and cleanIt SymmSSSR preparation.
-    view.topology.validate()?;
     Ok(TautomerRecord {
         topology: view.topology.clone(),
         properties: view.properties.clone(),

@@ -9,8 +9,8 @@ use cosmolkit::{
     ChemistryProblemError, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
     MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
     ParityPolicy, SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, StateModel,
-    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
-    operation_spec, operation_specs, support_matrix,
+    TopologyBlock, feature_spec, operation_invariant, operation_parity, operation_spec,
+    operation_specs, support_matrix,
 };
 
 fn topology_from_specs(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -256,7 +256,6 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     let spec = operation_spec("sanitize_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(
@@ -521,7 +520,6 @@ fn sanitize_has_no_mapping_multiple_output_or_separate_inplace_operation() {
     let spec = operation_spec("sanitize_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.result_type, "Molecule");
-    assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     // Canonical generated in-place methods share the one sanitize operation;

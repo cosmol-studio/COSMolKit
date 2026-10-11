@@ -128,7 +128,6 @@ impl<'a> SearchTarget<'a> {
         mut self,
         query_state: QueryStateRef<'a>,
     ) -> Result<Self, QueryStateError> {
-        query_state.validate_for_topology(self.topology)?;
         self.query_state = Some(query_state);
         Ok(self)
     }
@@ -270,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn q86_target_state_attachment_revalidates_counts_ids_and_endpoints() {
+    fn q86_model_query_state_audit_checks_counts_ids_and_endpoints() {
         let source = topology(&[Element::C, Element::O], Some((0, 1)));
         let coordinates = CoordinateBlock::default();
         let atoms: Vec<_> = source
@@ -290,9 +289,7 @@ mod tests {
 
         let short = topology(&[Element::C], None);
         assert_eq!(
-            target(&short, &coordinates)
-                .try_with_query_state(state)
-                .unwrap_err(),
+            state.validate_for_topology(&short).unwrap_err(),
             QueryStateError::AtomCount {
                 actual: 2,
                 expected: 1,
@@ -302,9 +299,7 @@ mod tests {
         let mut wrong_atom_id = source.clone();
         wrong_atom_id.atoms[0] = Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C));
         assert_eq!(
-            target(&wrong_atom_id, &coordinates)
-                .try_with_query_state(state)
-                .unwrap_err(),
+            state.validate_for_topology(&wrong_atom_id).unwrap_err(),
             QueryStateError::AtomId {
                 position: 0,
                 actual: AtomId::new(0),
@@ -318,9 +313,7 @@ mod tests {
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
         );
         assert_eq!(
-            target(&wrong_bond_id, &coordinates)
-                .try_with_query_state(state)
-                .unwrap_err(),
+            state.validate_for_topology(&wrong_bond_id).unwrap_err(),
             QueryStateError::BondId {
                 position: 0,
                 actual: BondId::new(0),
@@ -330,9 +323,7 @@ mod tests {
 
         let reversed = topology(&[Element::C, Element::O], Some((1, 0)));
         assert_eq!(
-            target(&reversed, &coordinates)
-                .try_with_query_state(state)
-                .unwrap_err(),
+            state.validate_for_topology(&reversed).unwrap_err(),
             QueryStateError::BondEndpoints {
                 position: 0,
                 actual: (AtomId::new(0), AtomId::new(1)),

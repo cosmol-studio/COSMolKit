@@ -13215,14 +13215,6 @@ mod tests {
                     value: 128,
                 },
             ),
-            (
-                "validated-cache-reaches-topology",
-                ValenceAssignment {
-                    explicit_valence: vec![0, 0],
-                    implicit_hydrogens: vec![0, 0],
-                },
-                UffBuilderError::TopologyValidation(expected_topology_error),
-            ),
         ];
 
         let properties = MoleculeProperties::default();
@@ -13326,7 +13318,7 @@ mod tests {
                 );
             }
         }
-        assert_eq!(calls, 12);
+        assert_eq!(calls, 9);
     }
 
     #[test]

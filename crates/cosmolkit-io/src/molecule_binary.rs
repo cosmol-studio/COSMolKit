@@ -2785,10 +2785,39 @@ impl BinaryInput<'_> {
         self.properties
     }
     fn validate(&self) -> Result<(), PickleError> {
-        self.topology.validate().map_err(invalid)?;
-        self.coordinates
-            .validate_for_atom_count(self.num_atoms())
-            .map_err(invalid)?;
+        // Decoders construct topology through try_from_parts: dense IDs,
+        // endpoints and annotation references are checked while accepting the
+        // incoming rows. Do not re-audit the already constructed CSR here.
+        // Archive lengths/order are wire input conditions, independent of ops.
+        for conformer in &self.coordinates.conformers_2d {
+            conformer
+                .validate_for_atom_count(self.num_atoms())
+                .map_err(invalid)?;
+        }
+        for conformer in &self.coordinates.conformers_3d {
+            conformer
+                .validate_for_atom_count(self.num_atoms())
+                .map_err(invalid)?;
+        }
+        if let Some(order) = &self.coordinates.source_conformer_order {
+            let two_d = order
+                .iter()
+                .filter(|d| **d == CoordinateDimension::TwoD)
+                .count();
+            let three_d = order.len() - two_d;
+            if two_d != self.coordinates.conformers_2d.len()
+                || three_d != self.coordinates.conformers_3d.len()
+            {
+                return Err(invalid(
+                    cosmolkit_model::CoordinateValidationError::SourceConformerOrder {
+                        two_d,
+                        three_d,
+                        expected_two_d: self.coordinates.conformers_2d.len(),
+                        expected_three_d: self.coordinates.conformers_3d.len(),
+                    },
+                ));
+            }
+        }
         if self.derived.valid_bits & !0xff != 0 {
             return Err(PickleError::InvalidArchive(
                 "unknown native derived-validity bits".into(),
@@ -2813,10 +2842,39 @@ impl BinaryRecord {
         self.topology.bonds.len()
     }
     fn validate(&self) -> Result<(), PickleError> {
-        self.topology.validate().map_err(invalid)?;
-        self.coordinates
-            .validate_for_atom_count(self.num_atoms())
-            .map_err(invalid)?;
+        // Decoders construct topology through try_from_parts: dense IDs,
+        // endpoints and annotation references are checked while accepting the
+        // incoming rows. Do not re-audit the already constructed CSR here.
+        // Archive lengths/order are wire input conditions, independent of ops.
+        for conformer in &self.coordinates.conformers_2d {
+            conformer
+                .validate_for_atom_count(self.num_atoms())
+                .map_err(invalid)?;
+        }
+        for conformer in &self.coordinates.conformers_3d {
+            conformer
+                .validate_for_atom_count(self.num_atoms())
+                .map_err(invalid)?;
+        }
+        if let Some(order) = &self.coordinates.source_conformer_order {
+            let two_d = order
+                .iter()
+                .filter(|d| **d == CoordinateDimension::TwoD)
+                .count();
+            let three_d = order.len() - two_d;
+            if two_d != self.coordinates.conformers_2d.len()
+                || three_d != self.coordinates.conformers_3d.len()
+            {
+                return Err(invalid(
+                    cosmolkit_model::CoordinateValidationError::SourceConformerOrder {
+                        two_d,
+                        three_d,
+                        expected_two_d: self.coordinates.conformers_2d.len(),
+                        expected_three_d: self.coordinates.conformers_3d.len(),
+                    },
+                ));
+            }
+        }
         if let Some(bits) = self.derived.valid_bits {
             if bits & !0xff != 0
                 || self.derived.aromaticity_valid != (bits & 8 != 0)

@@ -374,8 +374,6 @@ pub fn with_atom_position(
     // RDKit✔️✔️: d_positions[aid] = pos;
     // Detached conformers are fixed-length, so the source resize branch is not
     // reachable and an out-of-range id is reported instead of appending rows.
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     check_atom(atom, topology.atoms.len(), "atom")?;
     validate_point(position, "position")?;
     let index = match params.conformer_id {
@@ -572,7 +570,6 @@ pub fn with_dihedral_degrees(
 }
 
 fn validate_pair(topology: &TopologyBlock, conformer: &Conformer3D) -> Result<(), TransformError> {
-    topology.validate()?;
     conformer.validate_for_atom_count(topology.atoms.len())?;
     Ok(())
 }

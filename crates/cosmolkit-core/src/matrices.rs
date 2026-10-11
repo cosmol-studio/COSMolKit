@@ -172,7 +172,6 @@ pub fn adjacency_matrix(
     topology: &TopologyBlock,
     params: &AdjacencyMatrixParams,
 ) -> Result<DenseMatrix, MatrixError> {
-    topology.validate().map_err(MatrixError::InvalidTopology)?;
     let dimension = topology.atoms.len();
     let length = matrix_len(dimension)?;
     let filter = validated_bond_filter(topology, params.bonds_to_use.as_deref())?;
@@ -390,7 +389,6 @@ pub fn topological_distance_matrix(
     topology: &TopologyBlock,
     params: &TopologicalDistanceMatrixParams,
 ) -> Result<DenseMatrix, MatrixError> {
-    topology.validate().map_err(MatrixError::InvalidTopology)?;
     if params.active_atoms.is_none() && params.active_bonds.is_some() {
         return Err(MatrixError::ActiveBondsWithoutAtoms);
     }
@@ -499,11 +497,6 @@ pub fn distance_matrix_3d(
     coordinates: &CoordinateBlock,
     params: &DistanceMatrix3dParams,
 ) -> Result<DenseMatrix, MatrixError> {
-    topology.validate().map_err(MatrixError::InvalidTopology)?;
-    coordinates
-        .validate_for_atom_count(topology.atoms.len())
-        .map_err(MatrixError::InvalidCoordinates)?;
-
     // BEGIN RDKIT CPP FUNCTION MolOps::get3DDistanceMat
     // RDKit✔️✔️: const Conformer &conf = mol.getConformer(confId);
     let conformer = match params.conformer_id {

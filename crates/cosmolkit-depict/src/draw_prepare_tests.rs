@@ -561,15 +561,10 @@ fn drawing_prepare_typed_invalid_coordinates_and_memberships() {
         conformers_2d: vec![Conformer2D::new(9, vec![])],
         ..Default::default()
     };
-    let error = prepare(DrawingInput {
-        topology: &topology,
-        coordinates: &invalid,
-        properties: &properties,
-        valence: None,
-        rings: None,
-    })
-    .err()
-    .unwrap();
+    let error = invalid
+        .validate_for_atom_count(topology.atoms.len())
+        .map_err(DrawingError::Coordinates)
+        .unwrap_err();
     assert!(matches!(
         error,
         DrawingError::Coordinates(cosmolkit_model::CoordinateValidationError::RowCount {

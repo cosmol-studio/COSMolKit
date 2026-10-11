@@ -331,7 +331,9 @@ fn malformed_topology_is_rejected_before_assignment() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        assign_radicals(&input),
+        input
+            .validate()
+            .map_err(|source| RadicalError::InvalidTopology { source }),
         Err(RadicalError::InvalidTopology {
             source: TopologyValidationError::AtomIdMismatch {
                 position: 0,

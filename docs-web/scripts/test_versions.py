@@ -14,6 +14,7 @@ class VersionTests(unittest.TestCase):
     def test_manual_catalog_and_exact_publication(self):
         catalog = load_catalog()
         self.assertEqual(catalog["versions"][0], {"version": "latest", "url": "https://kit.cosmol.org/"})
+        self.assertIn({"version": "0.5.0", "url": "https://2f659d0f.cosmolkit-docs-web.pages.dev/"}, catalog["versions"])
         self.assertIn({"version": "0.3.0", "url": "https://c6862989.cosmolkit-docs-web.pages.dev/"}, catalog["versions"])
         with tempfile.TemporaryDirectory() as temporary:
             public = Path(temporary)

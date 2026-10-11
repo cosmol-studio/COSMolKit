@@ -9,7 +9,7 @@ use crate::declaration::{
     AccessFields, BioBlock, BioDerivedState, BioDomain, BioEditKind, BioOperation, BioParity,
     BioRegistry, BioState, CipStatePolicy, DerivedState, MappingRequirement, MoleculeBlock,
     MoleculeDomain, MoleculeOperation, MoleculeOutput, MoleculeParity, MoleculeRegistry,
-    OperationKind, SemanticPrecondition, TopologyEditKind,
+    OperationKind, SemanticPrecondition,
 };
 
 pub(crate) fn expand_molecule_matrices(
@@ -95,7 +95,6 @@ fn expand_molecule_operation(operation: &MoleculeOperation) -> syn::Result<Matri
     let result_type = molecule_result_type(operation);
     let domain = molecule_domain(fields.domain);
     let kind = operation_kind(fields.kind);
-    let topology_edit = topology_edit(fields.topology_edit);
     let access = molecule_access(&fields.access);
     let may_mutate = molecule_blocks(&fields.may_mutate);
     let auto_remap = molecule_blocks(&fields.auto_remap);
@@ -121,7 +120,6 @@ fn expand_molecule_operation(operation: &MoleculeOperation) -> syn::Result<Matri
             result_type: #result_type,
             domain: #domain,
             kind: #kind,
-            topology_edit: #topology_edit,
             access: #access,
             may_mutate: #may_mutate,
             auto_remap: #auto_remap,
@@ -299,17 +297,6 @@ fn operation_kind(value: OperationKind) -> proc_macro2::TokenStream {
     match value {
         OperationKind::Weak => quote!(crate::ops::MoleculeOpKind::Weak),
         OperationKind::Strong => quote!(crate::ops::MoleculeOpKind::Strong),
-    }
-}
-
-fn topology_edit(value: TopologyEditKind) -> proc_macro2::TokenStream {
-    match value {
-        TopologyEditKind::None => quote!(crate::ops::TopologyEditKind::None),
-        TopologyEditKind::Local => quote!(crate::ops::TopologyEditKind::Local),
-        TopologyEditKind::Compacting => quote!(crate::ops::TopologyEditKind::Compacting),
-        TopologyEditKind::Expanding => quote!(crate::ops::TopologyEditKind::Appending),
-        TopologyEditKind::Reordering => quote!(crate::ops::TopologyEditKind::Renumbering),
-        TopologyEditKind::Reconstruction => quote!(crate::ops::TopologyEditKind::Reconstruction),
     }
 }
 

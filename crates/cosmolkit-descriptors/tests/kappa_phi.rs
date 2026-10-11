@@ -227,31 +227,31 @@ fn kappa_phi_malformed_topology_retains_typed_causes_and_input() {
         BondSpec::new(AtomId::new(0), AtomId::new(0), BondOrder::Single),
     );
     malformed.push(self_loop);
-    for topology in malformed {
-        let expected_source = topology.validate().unwrap_err();
+    let expected = [
+        TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(7),
+        },
+        TopologyValidationError::BondIdMismatch {
+            position: 0,
+            id: BondId::new(7),
+        },
+        TopologyValidationError::BondEndpointOutOfRange {
+            bond: BondId::new(0),
+            endpoint: "end",
+            atom: AtomId::new(9),
+            atom_count: 2,
+        },
+        TopologyValidationError::AdjacencyMismatch,
+        TopologyValidationError::SelfLoopBond {
+            bond: BondId::new(0),
+            atom: AtomId::new(0),
+        },
+    ];
+    for (topology, expected) in malformed.into_iter().zip(expected) {
         let before = topology.clone();
-        for (name, entry) in ENTRIES {
-            let error = entry(&topology).unwrap_err();
-            let expected = if name == "kappa_2" || name == "kappa_3" {
-                DescriptorError::Path {
-                    function: name,
-                    source: PathError::InvalidTopology(expected_source.clone()),
-                }
-            } else {
-                DescriptorError::InvalidTopology {
-                    function: name,
-                    source: expected_source.clone(),
-                }
-            };
-            assert_eq!(error, expected);
-            let cause = std::error::Error::source(&error).expect("structural source retained");
-            if name == "kappa_2" || name == "kappa_3" {
-                assert!(cause.downcast_ref::<PathError>().is_some());
-            } else {
-                assert!(cause.downcast_ref::<TopologyValidationError>().is_some());
-            }
-            assert_eq!(topology, before);
-        }
+        assert_eq!(topology.validate(), Err(expected));
+        assert_eq!(topology, before);
     }
 }
 

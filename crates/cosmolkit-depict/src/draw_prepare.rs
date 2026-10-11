@@ -144,10 +144,6 @@ pub(crate) fn prepare(input: DrawingInput<'_>) -> Result<PreparedDrawing, Drawin
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/MolDraw2D/MolDraw2DUtils.cpp :: prepareMolForDrawing
-    input.topology.validate()?;
-    input
-        .coordinates
-        .validate_for_atom_count(input.topology.atoms.len())?;
     check_properties(
         input.properties,
         input.topology.atoms.len(),
@@ -330,8 +326,6 @@ pub(crate) fn prepare(input: DrawingInput<'_>) -> Result<PreparedDrawing, Drawin
         &properties,
         Some(&rings),
     );
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     check_properties(&properties, topology.atoms.len(), topology.bonds.len())?;
     check_ring_dimensions(&rings, topology.atoms.len(), topology.bonds.len())?;
     let valence =
@@ -354,8 +348,6 @@ fn check_hydrogen_append(
     let fail = |row, reason| DrawingError::HydrogenAppend { row, reason };
     let (a, b) = (old_atoms.len(), old_bonds.len());
     let (new_a, new_b) = (topology.atoms.len(), topology.bonds.len());
-    topology.validate()?;
-    mapping.validate_for_counts(a, new_a, b, new_b)?;
     if new_a < a || new_b < b || new_a - a != new_b - b {
         return Err(fail(None, "atom/bond counts are not a paired append"));
     }
@@ -470,6 +462,5 @@ fn wedge(
     }
     // Reversing endpoint orientation leaves the undirected adjacency and its
     // incident-bond order intact. Validation checks that exact model invariant.
-    topology.validate()?;
     Ok(rings)
 }

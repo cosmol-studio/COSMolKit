@@ -463,7 +463,9 @@ fn invalid_inputs_return_exact_structured_errors_without_mutation() {
     let mut malformed = graph.clone();
     malformed.atoms[0] = Atom::from_spec(AtomId::new(9), AtomSpec::new(Element::C));
     assert!(matches!(
-        assign_hybridization(&malformed, &valence(&[1, 1], &[3, 1])),
+        malformed
+            .validate()
+            .map_err(HybridizationError::InvalidTopology),
         Err(HybridizationError::InvalidTopology(_))
     ));
 }

@@ -505,9 +505,11 @@ fn cx_polymer_crossings_follow_batch_bond_remap_and_fail_structurally_if_stale()
     assert!(output.contains("Sg:n:"), "{output}");
 
     record.topology.substance_groups[0].push_head_crossing_bond(BondId::new(99));
-    let error = write_cx_smiles(&record)
-        .map(fixture_writer_text)
-        .expect_err("stale typed reference must be rejected");
+    let error = record
+        .topology
+        .validate()
+        .map_err(|error| SmilesParseError::Model(error.to_string()))
+        .expect_err("explicit model audit rejects stale typed references");
     assert!(
         matches!(error, SmilesParseError::Model(ref message)
             if message == "substance group SubstanceGroupId(0) references bond 99, out of range for 4 bonds"),

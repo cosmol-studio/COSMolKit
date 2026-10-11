@@ -114,7 +114,6 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
             impl_fn: crate::inspect_impl,
             domain: coordinate,
             kind: weak,
-            topology_edit: local,
             access: {
                 read: [topology, properties],
                 write: [coordinates, derived_cache],
@@ -147,7 +146,6 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
         "result_type:\"Molecule\"",
         "domain:crate::ops::OperationDomain::Coordinate",
         "kind:crate::ops::MoleculeOpKind::Weak",
-        "topology_edit:crate::ops::TopologyEditKind::Local",
         "crate::ops::BlockSet::TOPOLOGY",
         "crate::ops::BlockSet::COORDINATES",
         "crate::ops::BlockSet::PROPERTIES",
@@ -203,7 +201,7 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
 }
 
 #[test]
-fn molecule_output_result_and_topology_edit_branches_are_exact() {
+fn molecule_output_result_and_mapping_branches_are_exact() {
     let single_typed = molecule(&molecule_operation("typed", "result_type: crate::Report,"));
     assert!(
         single_typed.contains("result_type:stringify!(crate::Report)"),
@@ -220,16 +218,13 @@ fn molecule_output_result_and_topology_edit_branches_are_exact() {
     ));
     assert!(typed_multiple.contains("result_type:stringify!(crate::Report)"));
 
-    for (name, edit, generated) in [
-        ("compact", "compacting", "Compacting"),
-        ("expand", "expanding", "Appending"),
-        ("reorder", "reordering", "Renumbering"),
-    ] {
+    let name = "reshape";
+    {
         let source = format!(
             r#"
             op {name} {{
                 method: {name}, impl_fn: crate::{name}_impl,
-                kind: strong, topology_edit: {edit},
+                kind: strong,
                 access: {{ read: [], write: [topology] }},
                 may_mutate: [topology],
                 derived_effects: {{
@@ -242,10 +237,8 @@ fn molecule_output_result_and_topology_edit_branches_are_exact() {
             "#
         );
         let output = molecule(&source);
-        assert!(
-            output.contains(&format!("TopologyEditKind::{generated}")),
-            "{output}"
-        );
+        assert!(!output.contains("topology_edit"));
+        assert!(!output.contains("record_topology_edit"));
         assert!(output.contains("CipStatePolicy::ClearComputed"));
         assert!(output.contains("MappingRequirement::Required"));
         assert!(output.contains("ParityPolicy::RequiredWhenSupported"));
@@ -304,7 +297,7 @@ fn molecule_reaction_transition_is_generated_without_rewriting_its_policy() {
         op apply_reaction {
             method: apply_reaction_with_params,
             impl_fn: crate::apply_reaction_impl,
-            output: single, kind: strong, topology_edit: compacting,
+            output: single, kind: strong,
             access: { read: [], write: [topology, coordinates, properties, derived_cache] },
             may_mutate: [topology, coordinates, properties, derived_cache],
             auto_remap: [coordinates, properties],

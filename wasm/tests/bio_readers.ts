@@ -6,3 +6,9 @@ const bad:Uint8Array=e.recordTag();
 // @ts-expect-error boolean flag type
 new BioPdbReadParams(0,'false');
 void [f,name,counts,line,tag,stage,other,kind,bad];
+import {bioFromMmcif,proteinFromMmcif,Protein} from 'cosmolkit-generated';
+const aliasStructure:BioStructure=bioFromMmcif('data_x');
+const aliasProtein:Protein=proteinFromMmcif('data_x');
+// @ts-expect-error constructor aliases preserve the text input type
+bioFromMmcif(42);
+void [aliasStructure,aliasProtein];

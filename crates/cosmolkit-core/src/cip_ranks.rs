@@ -77,9 +77,6 @@ pub fn assign_atom_cip_ranks_with_query_state(
     // mutating caller storage or atom properties. The selected legacy branch
     // is otherwise implemented by the source-shaped helpers below.
     validate_inputs(topology, valence)?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology)?;
-    }
     let invariants = build_cip_invariants(topology)?;
     iterate_cip_ranks(topology, valence, &invariants, false, query_state)
 }
@@ -104,9 +101,6 @@ pub fn refine_atom_cip_ranks_from_invariants_with_query_state(
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<Vec<u32>, CipRankError> {
     validate_inputs(topology, valence)?;
-    if let Some(state) = query_state {
-        state.validate_for_topology(topology)?;
-    }
     if invariants.len() != topology.atoms.len() {
         return Err(CipRankError::InvariantCount {
             actual: invariants.len(),
@@ -120,7 +114,6 @@ fn validate_inputs(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<(), CipRankError> {
-    topology.validate().map_err(CipRankError::InvalidTopology)?;
     let atom_count = topology.atoms.len();
     if valence.explicit_valence.len() != atom_count {
         return Err(CipRankError::ValenceRowCount {

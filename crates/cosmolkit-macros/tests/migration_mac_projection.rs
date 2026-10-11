@@ -593,7 +593,6 @@ fn operation_callsite_fixture(body: TokenStream) -> String {
         #[derive(Debug)] struct OperationError;
         struct PreservationProof;
         struct DerivedState;
-        struct TopologyEditKind;
         struct MultiOutputOpParts<'a, T>(&'a mut T);
         struct OpParts<'a, T>(std::marker::PhantomData<(&'a (), T)>);
         impl<'a, T> OpParts<'a, T> {{

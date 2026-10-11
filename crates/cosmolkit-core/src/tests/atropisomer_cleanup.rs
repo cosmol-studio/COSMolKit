@@ -130,9 +130,11 @@ mod l04 {
         };
         let hybridization = hybs(&[Hybridization::Sp2, Hybridization::Sp2, Hybridization::Sp2]);
         let fast = RingInfo::new(RingFindType::Fast, 2, 1);
-        assert!(matches!(
-            cleanup_invalid_atropisomers(&invalid, &hybridization, &fast),
-            Err(AtropisomerError::InvalidTopology { .. })
-        ));
+        // Whole-state corruption is rejected by the explicit model/runtime
+        // audit, not by the chemistry algorithm being exercised above.
+        assert_eq!(
+            invalid.validate(),
+            Err(cosmolkit_model::TopologyValidationError::AdjacencyMismatch),
+        );
     }
 }

@@ -39,10 +39,6 @@ pub const CHI_N_N_VERSION: &str = "1.2.0";
 // Local structural preflight only; supplied valence is ALWAYS borrowed.
 // Numeric implicit H is read by the source per-atom branch, never globally.
 fn validate_input(input: &ChiInput<'_>, function: &'static str) -> DescriptorResult<()> {
-    input
-        .topology()
-        .validate()
-        .map_err(|source| DescriptorError::InvalidTopology { function, source })?;
     crate::prepared_valence(input.topology(), Some(input.valence()), function)?;
     Ok(())
 }
@@ -194,12 +190,6 @@ fn chi_one_from_weights(topology: &TopologyBlock, weights: &[f64]) -> Descriptor
     // RDKit✔️❌:   }
     // RDKit✔️❌:   return res;
 
-    topology
-        .validate()
-        .map_err(|source| DescriptorError::InvalidTopology {
-            function: "chi_one_from_weights",
-            source,
-        })?;
     let mut result = 0.0;
     for bond in &topology.bonds {
         result += weights[bond.begin().index()] * weights[bond.end().index()];

@@ -212,6 +212,7 @@ impl BioStructure {
     fn operation_data_mut(&mut self) -> &mut BioStructureData {
         &mut self.data
     }
+    #[cfg(feature = "runtime-invariants")]
     fn validate_operation(&self) -> Result<(), BioOperationError> {
         self.data.validate().map_err(BioOperationError::Structure)
     }
@@ -432,6 +433,7 @@ impl Protein {
     fn operation_data_mut(&mut self) -> &mut BioStructureData {
         &mut self.structure.data
     }
+    #[cfg(feature = "runtime-invariants")]
     fn validate_operation(&self) -> Result<(), BioOperationError> {
         cosmolkit_bio::validate_protein_structure(&self.structure.data)
             .map_err(BioOperationError::Protein)
@@ -583,6 +585,13 @@ mod tests {
         assert_eq!(source.probe_replacement(0).unwrap(), source);
         assert_eq!(protein.probe_replacement(0).unwrap(), protein);
         for mode in [1, 2, 3] {
+            // Mode 2 injects malformed detached storage, rather than a body
+            // error or panic. Its rejection belongs to runtime invariants.
+            #[cfg(not(feature = "runtime-invariants"))]
+            if mode == 2 {
+                continue;
+            }
+
             let mut value = source.clone();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 value.probe_replacement_(mode)
@@ -957,6 +966,13 @@ mod tests {
         assert_eq!(source.probe_failure(0).unwrap(), source);
         assert_eq!(protein.probe_failure(0).unwrap(), protein);
         for mode in [1, 2] {
+            // Mode 2 injects malformed detached storage, rather than a body
+            // error or panic. Its rejection belongs to runtime invariants.
+            #[cfg(not(feature = "runtime-invariants"))]
+            if mode == 2 {
+                continue;
+            }
+
             let mut value = source.clone();
             assert!(value.probe_failure_(mode).is_err());
             assert_eq!(value, source);
@@ -983,6 +999,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn bio_ops_protein_cannot_commit_non_amino_acid_rows() {
         let source = BioStructure::from_pdb(ATOM).unwrap().protein().unwrap();
         let water = BioStructure::from_pdb(&ATOM.replace("ALA", "HOH")).unwrap();
@@ -1037,19 +1054,22 @@ mod tests {
     fn protein_recovery_storage_failed_finalization_and_unwind_preserve_receiver() {
         let source = BioStructure::from_pdb(ATOM).unwrap().protein().unwrap();
         let snapshot = source.clone();
-        let water = BioStructure::from_pdb(&ATOM.replace("ALA", "HOH")).unwrap();
-        let mut candidate = source.clone();
-        assert!(matches!(
-            candidate.probe_residues_(water.residues().to_vec()),
-            Err(BioOperationError::Protein(
-                ProteinProjectionError::NonAminoAcidResidue { index: 0 }
-            ))
-        ));
-        assert_eq!(candidate, snapshot);
-        assert!(Arc::ptr_eq(
-            &candidate.structure.data.atoms,
-            &snapshot.structure.data.atoms
-        ));
+        #[cfg(feature = "runtime-invariants")]
+        {
+            let water = BioStructure::from_pdb(&ATOM.replace("ALA", "HOH")).unwrap();
+            let mut candidate = source.clone();
+            assert!(matches!(
+                candidate.probe_residues_(water.residues().to_vec()),
+                Err(BioOperationError::Protein(
+                    ProteinProjectionError::NonAminoAcidResidue { index: 0 }
+                ))
+            ));
+            assert_eq!(candidate, snapshot);
+            assert!(Arc::ptr_eq(
+                &candidate.structure.data.atoms,
+                &snapshot.structure.data.atoms
+            ));
+        }
         let mut candidate = source.clone();
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

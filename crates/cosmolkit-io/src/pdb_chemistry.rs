@@ -1372,8 +1372,6 @@ pub fn postprocess_pdb_detached(
     // RDKit✔️✔️:     StandardPDBResidueBondOrders(mol.get());
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   BasicPDBCleanup(*mol);
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     {
         let mut editor = DetachedPdbEditor::new(topology, coordinates);
         if params.proximity_bonding {
@@ -1385,7 +1383,6 @@ pub fn postprocess_pdb_detached(
         editor.finish();
     }
     basic_pdb_cleanup_like_rdkit(topology)?;
-    topology.validate()?;
     Ok(())
 }
 
@@ -1393,9 +1390,7 @@ pub fn postprocess_pdb_detached(
 pub fn apply_standard_pdb_residue_chirality_detached(
     topology: &mut TopologyBlock,
 ) -> Result<(), PdbPostprocessError> {
-    topology.validate()?;
     standard_pdb_residue_chirality_like_rdkit(topology)?;
-    topology.validate()?;
     Ok(())
 }
 

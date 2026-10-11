@@ -189,7 +189,6 @@ pub trait StereoGraphAccess: sealed::Graph {
     fn atoms(&self) -> &[Self::Atom];
     fn bonds(&self) -> BondRows<'_>;
     fn adjacency(&self) -> GraphAdjacency<'_>;
-    fn validate(&self) -> Result<(), StereoGraphError>;
 }
 impl StereoGraphAccess for TopologyBlock {
     type Atom = Atom;
@@ -202,9 +201,6 @@ impl StereoGraphAccess for TopologyBlock {
     fn adjacency(&self) -> GraphAdjacency<'_> {
         GraphAdjacency::Concrete(&self.adjacency)
     }
-    fn validate(&self) -> Result<(), StereoGraphError> {
-        TopologyBlock::validate(self).map_err(Into::into)
-    }
 }
 impl StereoGraphAccess for QueryGraph {
     type Atom = QueryAtom;
@@ -216,9 +212,6 @@ impl StereoGraphAccess for QueryGraph {
     }
     fn adjacency(&self) -> GraphAdjacency<'_> {
         GraphAdjacency::Query(self)
-    }
-    fn validate(&self) -> Result<(), StereoGraphError> {
-        QueryGraph::validate(self).map_err(Into::into)
     }
 }
 

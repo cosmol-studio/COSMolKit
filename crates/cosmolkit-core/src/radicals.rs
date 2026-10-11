@@ -36,10 +36,6 @@ pub enum RadicalError {
 
 /// Assign radical-electron counts in canonical atom-row order.
 pub fn assign_radicals(topology: &TopologyBlock) -> Result<RadicalAssignment, RadicalError> {
-    topology
-        .validate()
-        .map_err(|source| RadicalError::InvalidTopology { source })?;
-
     // BEGIN RDKIT CPP FUNCTION MolOps::assignRadicals
     // RDKit✔️❌: void assignRadicals(RWMol &mol) {
     // RDKit✔️❌:   for (auto atom : mol.atoms()) {

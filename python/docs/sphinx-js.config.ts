@@ -6,6 +6,22 @@ import { ReflectionKind } from "typedoc";
 // the parser and add only the missing rendering, without rewriting declarations.
 export const config = {
   postConvert(_app, project, typedocToIRMap) {
+    // sphinx-js treats `const alias: typeof Class.factory` as an attribute.
+    // Display the resolved callable's actual signature, keeping the alias's
+    // own name, anchor and location. No API names or signatures are duplicated.
+    for (const [declaration, entry] of typedocToIRMap) {
+      if (!declaration.kindOf(ReflectionKind.Variable) || declaration.type?.type !== "query") continue;
+      const target = declaration.type.queryType.reflection;
+      const original = target && typedocToIRMap.get(target);
+      if (original?.kind !== "function") continue;
+      Object.assign(entry, {
+        kind: "function", params: original.params, returns: original.returns,
+        type_params: original.type_params, exceptions: original.exceptions,
+        is_async: original.is_async,
+      });
+      delete entry.type;
+      delete entry.readonly;
+    }
     // sphinx-js hides explicit void results; keep every declared return type.
     function retainVoid(declaration, entry) {
       const signature = declaration.signatures?.[0]

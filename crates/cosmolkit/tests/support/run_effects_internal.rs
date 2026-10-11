@@ -9,8 +9,9 @@ use super::*;
 use crate::molecule::DerivedCacheBlock;
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet,
 };
+use crate::strict::OPERATION_CONTRACTS_ENABLED;
 
 struct EffectsAccess;
 
@@ -38,7 +39,6 @@ fn spec(
         result_type: "Molecule",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
-        topology_edit: TopologyEditKind::None,
         access,
         may_mutate,
         auto_remap: BlockSet::NONE,
@@ -124,6 +124,7 @@ fn derived_state_set_algebra_preserves_exact_masks() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn empty_and_each_independent_category_validate() {
     for declared in [
         effects(
@@ -167,6 +168,7 @@ fn empty_and_each_independent_category_validate() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn every_pairwise_overlap_reports_the_exact_state() {
     let ring = DerivedState::RINGS;
     let declarations = [
@@ -200,6 +202,7 @@ fn every_pairwise_overlap_reports_the_exact_state() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn effects_require_cache_write_and_may_mutate_authority() {
     let declared = effects(
         DerivedState::RINGS,
@@ -238,6 +241,7 @@ fn effects_require_cache_write_and_may_mutate_authority() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn operation_defined_allow_list_is_exact() {
     for method in ["without_hydrogens", "without_hydrogens_with_params"] {
         let operation = spec(
@@ -318,6 +322,7 @@ fn update_and_clear_change_only_declared_cache_bits() {
         .unwrap();
     parts.clear_cache_runtime(DerivedState::RINGS).unwrap();
     parts.apply_cip_policy_runtime().unwrap();
+    #[cfg(feature = "op-contracts")]
     parts.validate_effect_completion().unwrap();
     let output = parts.finish().unwrap();
     let valid = output.derived_cache_runtime().valid_states();
@@ -333,6 +338,7 @@ fn update_and_clear_change_only_declared_cache_bits() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn empty_wrong_category_and_duplicate_actions_are_atomic() {
     let source = molecule_with_valid(DerivedState::DRAWING);
     let operation = spec(
@@ -379,6 +385,7 @@ fn empty_wrong_category_and_duplicate_actions_are_atomic() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn preserve_only_runtime_category_access_product() {
     let mut rows = 0;
     for category in 0..4 {
@@ -435,6 +442,7 @@ fn preserve_only_runtime_category_access_product() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn preserve_only_borrow_proof_and_commit_keep_cache_storage() {
     let mut rows = 0;
     for read in [BlockSet::NONE, BlockSet::DERIVED_CACHE] {
@@ -527,6 +535,7 @@ fn preserve_only_borrow_proof_and_commit_keep_cache_storage() {
                 .prove_preserved_runtime(DerivedState::RINGS, PreservationProof::CoordinateOnly)
                 .unwrap();
             parts.apply_cip_policy_runtime().unwrap();
+            #[cfg(feature = "op-contracts")]
             parts.validate_effect_completion().unwrap();
             assert!(matches!(parts.derived_cache, WorkingBlock::Shared));
             let output = parts.finish().unwrap();
@@ -636,6 +645,90 @@ fn preservation_requires_an_objective_supported_proof() {
 
 #[test]
 #[cfg(feature = "op-contracts")]
+fn leaf_append_proof_rejects_mapping_and_output_corruption_at_runtime_boundary() {
+    let source = molecule();
+    let before = source.clone();
+    let operation = spec(
+        "leaf_append_audit",
+        MoleculeOpOutput::Single,
+        all_effect_access(),
+        all_effect_access().write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::RINGS,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    for case in 0..7 {
+        let mut topology = source.topology().clone();
+        topology
+            .atoms
+            .push(Atom::from_spec(AtomId::new(2), AtomSpec::new(Element::H)));
+        topology.bonds.push(Bond::from_spec(
+            BondId::new(1),
+            BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single),
+        ));
+        topology.adjacency = cosmolkit_model::AdjacencyList::from_topology(3, &topology.bonds);
+        let mut mapping = TopologyMapping::with_appended(2, 1, 1, 1);
+        let expected_issue = match case {
+            0 => None,
+            1 => {
+                topology.atoms.pop();
+                topology.bonds.pop();
+                Some("leaf-atom-append mapping is invalid")
+            }
+            2 => {
+                topology.bonds.pop();
+                Some("leaf-atom-append mapping is invalid")
+            }
+            3 => {
+                mapping.atoms.old_to_new.clear();
+                Some("leaf-atom-append mapping is invalid")
+            }
+            4 => {
+                mapping.atoms.old_to_new[0] = None;
+                mapping.atoms.new_to_old[0] = None;
+                Some("leaf-atom-append proof failed")
+            }
+            5 => {
+                topology.atoms[2] = Atom::from_spec(AtomId::new(2), AtomSpec::new(Element::HE));
+                Some("leaf-atom-append proof failed")
+            }
+            _ => {
+                topology.bonds[1] = Bond::from_spec(
+                    BondId::new(1),
+                    BondSpec::new(AtomId::new(2), AtomId::new(1), BondOrder::Single),
+                );
+                None // Ring preservation is independent of endpoint orientation.
+            }
+        };
+        let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+        // Inject faulty detached outputs directly into the runtime's private
+        // test boundary, without asking a chemistry owner to audit them.
+        parts.topology = WorkingBlock::Installed(topology);
+        parts.topology_mapping = Some(mapping);
+        let result =
+            parts.prove_preserved_runtime(DerivedState::RINGS, PreservationProof::LeafAtomAppend);
+        match expected_issue {
+            None => result.unwrap(),
+            Some(expected) => assert!(
+                matches!(result,
+                Err(OperationError::DerivedEffectContract { issue, .. }) if issue == expected),
+                "case {case}: {result:?}"
+            ),
+        }
+        assert_eq!(source.topology(), before.topology());
+        assert!(Arc::ptr_eq(
+            &source.topology_arc_runtime(),
+            &before.topology_arc_runtime()
+        ));
+    }
+}
+
+#[test]
+#[cfg(feature = "op-contracts")]
 fn unchanged_input_proof_preserves_nan_bits_and_rejects_real_coordinate_changes() {
     let source = molecule();
     // Match the dimension metadata established by the real Molecule constructor;
@@ -723,6 +816,7 @@ fn unchanged_input_proof_preserves_nan_bits_and_rejects_real_coordinate_changes(
 }
 
 #[test]
+#[cfg(all(feature = "op-contracts", feature = "runtime-invariants"))]
 fn sanitize_coordinate_proof_accepts_orientation_but_rejects_rewiring_and_new_identity() {
     let topology = TopologyBlock::try_from_parts(
         vec![atom(0), atom(1), atom(2)],
@@ -932,6 +1026,7 @@ fn mmff_preservation_keeps_cow_and_coordinate_bits_in_both_modes() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn completion_reports_each_missing_category_then_accepts_all() {
     let operation = spec(
         "complete",
@@ -1015,6 +1110,7 @@ fn cip_source() -> Molecule {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn cip_preserve_accepts_equal_state_and_rejects_changed_observable_state() {
     let source = cip_source();
     let operation = spec(
@@ -1096,6 +1192,7 @@ fn cip_clear_removes_computed_members_only_and_is_atomic() {
         ),
         CipStatePolicy::ClearComputed,
     );
+    #[cfg(feature = "op-contracts")]
     assert!(matches!(
         OpParts::<EffectsAccess>::validate_effect_contract(denied),
         Err(OperationError::CipStateContract { .. })
@@ -1203,6 +1300,7 @@ fn cip_assignment_proof_preserves_unowned_typed_property_state_and_order() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn cip_assign_requires_exact_operation_authority_and_assignment_evidence() {
     for method in ["wrong", "with_cip_labels_with_options"] {
         let access = if method == "wrong" {
@@ -1261,6 +1359,7 @@ fn cip_assign_requires_exact_operation_authority_and_assignment_evidence() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
     let valid = spec(
         "enumerate_tautomers_with_params",
@@ -1314,6 +1413,7 @@ fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+#[cfg(feature = "op-contracts")]
 fn reaction_source_transition_rejects_other_runtime_shapes() {
     let blocks = BlockSet::TOPOLOGY
         .union(BlockSet::COORDINATES)
@@ -1337,7 +1437,7 @@ fn reaction_source_transition_rejects_other_runtime_shapes() {
                 0 => bad.method = "other_operation",
                 1 => bad.output = MoleculeOpOutput::LazyMultiple,
                 2 => bad.kind = MoleculeOpKind::Weak,
-                3 => bad.topology_edit = TopologyEditKind::Local,
+                3 => bad.requires_mapping = MappingRequirement::Identity,
                 4 => bad.requires_mapping = MappingRequirement::None,
                 5 => bad.auto_remap = BlockSet::COORDINATES,
                 6 => bad.access = BlockAccess::new(BlockSet::TOPOLOGY, blocks),
@@ -1430,6 +1530,7 @@ fn source_shape_keeps_effect_authority_private_and_domain_free() {
     feature = "cap-kekulize",
     feature = "cap-sanitize"
 ))]
+#[cfg(feature = "op-contracts")]
 fn add_hs_operation_defined_requires_the_exact_generated_source_transition() {
     let canonical = crate::operation_spec("with_hydrogens_with_params").unwrap();
     assert_eq!(
@@ -1442,7 +1543,7 @@ fn add_hs_operation_defined_requires_the_exact_generated_source_transition() {
             0 => changed.method = "other_add_hs",
             1 => changed.output = MoleculeOpOutput::Multiple,
             2 => changed.kind = MoleculeOpKind::Weak,
-            3 => changed.topology_edit = TopologyEditKind::None,
+            3 => changed.requires_mapping = MappingRequirement::Identity,
             4 => changed.requires_mapping = MappingRequirement::None,
             5 => changed.cip_state = CipStatePolicy::Preserve,
             6 => changed.access = BlockAccess::new(BlockSet::TOPOLOGY, canonical.access.write()),
@@ -1475,6 +1576,7 @@ fn add_hs_operation_defined_requires_the_exact_generated_source_transition() {
     feature = "cap-kekulize",
     feature = "cap-sanitize"
 ))]
+#[cfg(feature = "op-contracts")]
 fn weak_source_valence_guards_match_exact_generated_registry_shapes() {
     for method in ["with_kekulized_bonds_with_params", "sanitize_with_params"] {
         let canonical = crate::operation_spec(method).unwrap();
@@ -1492,7 +1594,7 @@ fn weak_source_valence_guards_match_exact_generated_registry_shapes() {
             match mutation {
                 0 => changed.method = "other_weak_source",
                 1 => changed.kind = MoleculeOpKind::Strong,
-                2 => changed.topology_edit = TopologyEditKind::None,
+                2 => changed.requires_mapping = MappingRequirement::Identity,
                 3 => changed.output = MoleculeOpOutput::Multiple,
                 4 => changed.requires_mapping = MappingRequirement::Required,
                 5 => {
@@ -1533,6 +1635,7 @@ fn weak_source_valence_guards_match_exact_generated_registry_shapes() {
 
 #[cfg(feature = "cap-stereoisomers")]
 #[test]
+#[cfg(feature = "op-contracts")]
 fn stereoisomer_source_transition_rejects_other_runtime_shapes() {
     let blocks = BlockSet::TOPOLOGY
         .union(BlockSet::COORDINATES)
@@ -1564,7 +1667,7 @@ fn stereoisomer_source_transition_rejects_other_runtime_shapes() {
             1 => bad.output = MoleculeOpOutput::Single,
             2 => bad.output = MoleculeOpOutput::Multiple,
             3 => bad.kind = MoleculeOpKind::Strong,
-            4 => bad.topology_edit = TopologyEditKind::Local,
+            4 => bad.requires_mapping = MappingRequirement::Identity,
             5 => bad.requires_mapping = MappingRequirement::Identity,
             6 => bad.access = BlockAccess::new(BlockSet::TOPOLOGY, blocks),
             7 => {

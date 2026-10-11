@@ -33,5 +33,6 @@ name = "migration_q_writer"
 required-features = ["smiles-integration"]
 
 [dev-dependencies]
+cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 # Native child-isolated source SIGINT regressions only.
 libc = "0.2"

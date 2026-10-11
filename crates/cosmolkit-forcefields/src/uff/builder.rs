@@ -2755,7 +2755,7 @@ pub(super) fn prepare_conjugated_presence(
     // It allocates V result values plus the validator's temporary adjacency.
     // This test-only helper materializes every row for retained regression
     // cases; production evaluates the same predicate at its source branch.
-    // The production topology validation and temporary adjacency remain costs.
+    // This audit is test-only; production does not rebuild expected adjacency.
     Ok(atom_has_conjugated_bond)
 }
 
@@ -2775,8 +2775,8 @@ pub(super) fn atom_has_conjugated_bond_from_validated_topology(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
-    // The caller validated adjacency once at the borrowed cached-state
-    // boundary; this shared leaf retains the source incident-bond scan.
+    // The detached input carries canonical adjacency; this shared leaf retains
+    // the source incident-bond scan without repeating a whole-graph audit.
     topology
         .adjacency
         .neighbors_of(atom_index)

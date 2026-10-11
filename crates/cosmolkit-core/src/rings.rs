@@ -1664,7 +1664,6 @@ pub fn find_sssr(
     topology: &TopologyBlock,
     params: &RingSearchParams,
 ) -> Result<RingInfo, RingFindingError> {
-    topology.validate()?;
     find_sssr_with_options_from_parts(
         topology.atoms.len(),
         &topology.bonds,
@@ -1694,7 +1693,6 @@ pub fn symmetrized_sssr_with_properties(
     // Ordered retained keys and source computed-list creation are reproduced
     // by representing that typed cache in RingSearchResult instead of adding
     // a second dictionary or a generic Any value implementation.
-    topology.validate()?;
     let context =
         RingSearchContext::from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency);
     let info = symmetrize_sssr_from_context(
@@ -1710,7 +1708,6 @@ pub fn symmetrized_sssr(
     topology: &TopologyBlock,
     params: &RingSearchParams,
 ) -> Result<RingInfo, RingFindingError> {
-    topology.validate()?;
     symmetrize_sssr_with_options_from_parts(
         topology.atoms.len(),
         &topology.bonds,
@@ -1748,7 +1745,6 @@ pub fn fast_find_rings_from_parts(
 }
 
 pub fn fast_find_rings(topology: &TopologyBlock) -> Result<RingInfo, RingFindingError> {
-    topology.validate()?;
     fast_find_rings_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)
 }
 
@@ -1806,7 +1802,6 @@ pub fn find_ring_families(
     topology: &TopologyBlock,
     params: &RingSearchParams,
 ) -> Result<RingInfo, RingFindingError> {
-    topology.validate()?;
     find_ring_families_from_parts(
         topology.atoms.len(),
         &topology.bonds,

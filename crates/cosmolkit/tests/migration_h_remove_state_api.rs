@@ -9,8 +9,8 @@ use cosmolkit::{
     HydrogenError, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain,
     OperationError, ParityPolicy, RemoveHsParams, SdfPropertyList, SdfPropertyListTarget,
     StateModel, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
-    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
-    operation_spec, support_matrix,
+    TopologyBlock, feature_spec, operation_invariant, operation_parity, operation_spec,
+    support_matrix,
 };
 
 fn atom(index: usize, spec: AtomSpec) -> Atom {
@@ -268,7 +268,6 @@ fn generated_registry_and_four_matrices_share_the_strong_compacting_operation() 
     let spec = operation_spec("without_hydrogens_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Strong);
-    assert_eq!(spec.topology_edit, TopologyEditKind::Compacting);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(
@@ -358,6 +357,7 @@ fn live_compacting_commit_remaps_rows_and_preserves_typed_references() {
         &[BondId::new(0)]
     );
     assert_eq!(output.topology().stereo_groups[0].id(), Some(23));
+    #[cfg(feature = "runtime-invariants")]
     output.topology().validate().unwrap();
 
     assert_eq!(

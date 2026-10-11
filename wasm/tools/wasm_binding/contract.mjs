@@ -3,9 +3,23 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const camel = name => name.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+export function checkConveniences(module, document) {
+    const errors = [];
+    for (const row of document.javascript_aliases || []) {
+        const name = camel(row.name);
+        const [owner, method] = row.target.split('.');
+        if (typeof module[name] !== 'function') {
+            errors.push(`${name}: actual JavaScript convenience missing`);
+        } else if (module[name] !== module[owner]?.[method]) {
+            errors.push(`${name}: must directly reference ${row.target}`);
+        }
+    }
+    return errors;
+}
+
 export function checkContract(module, document) {
     const types = new Map(document.entries.filter(row => row.item === 'type').map(row => [row.semantic_id.split('.').at(-1), row.javascript_name]));
-    const errors = [];
+    const errors = checkConveniences(module, document);
     for (const row of document.entries.filter(row => row.platform !== 'native')) {
         const ownerName = row.owner === 'molecule' ? 'Molecule' : types.get(row.semantic_id.split('.').slice(0, -1).join('.'));
         const owner = row.item === 'type' || row.owner === 'module' ? module : row.receiver ? module[ownerName]?.prototype : module[ownerName];
@@ -37,7 +51,8 @@ export function checkContract(module, document) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const module = await import(pathToFileURL(process.argv[2]).href);
     module.initSync({ module: readFileSync(process.argv[3]) });
-    const errors = checkContract(module, JSON.parse(readFileSync(process.argv[4], 'utf8')));
+    const check = process.argv.includes('--conveniences-only') ? checkConveniences : checkContract;
+    const errors = check(module, JSON.parse(readFileSync(process.argv[4], 'utf8')));
     if (errors.length) {
         console.error(`WASM binding contract failed: ${errors.length} violations\n${errors.join('\n')}`);
         process.exitCode = 1;

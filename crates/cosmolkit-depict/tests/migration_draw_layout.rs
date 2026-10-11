@@ -131,14 +131,15 @@ fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
 
 #[test]
 fn detached_typed_error_chain_preserves_topology_source() {
-    let absent_properties = MoleculeProperties::default();
     let mut invalid = TopologyBlock::default();
     invalid
         .atoms
         .push(Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)));
 
-    let error =
-        compute_2d_coordinates(&invalid, &absent_properties, &Default::default()).unwrap_err();
+    let error = invalid
+        .validate()
+        .map_err(DepictError::InvalidTopology)
+        .unwrap_err();
     let source = std::error::Error::source(&error)
         .expect("depiction topology errors must retain the typed topology source");
     assert!(matches!(

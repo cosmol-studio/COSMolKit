@@ -107,8 +107,10 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
     pub(super) fn new_reconstruction(
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
+        #[cfg(feature = "op-contracts")]
         OpParts::<Access>::validate_operation_spec(spec)?;
         OpParts::<Access>::validate_semantic_preconditions(spec)?;
+        #[cfg(feature = "op-contracts")]
         OpParts::<Access>::validate_effect_contract(spec)?;
         let all = BlockSet::TOPOLOGY
             .union(BlockSet::COORDINATES)
@@ -149,6 +151,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         })
     }
 
+    #[cfg(feature = "op-contracts")]
     fn ensure_read_access(
         &self,
         block: BlockSet,
@@ -165,16 +168,19 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
     }
 
     pub(super) fn source_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::TOPOLOGY, "topology")?;
         Ok(self.source()?.topology())
     }
 
     pub(super) fn source_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         Ok(self.source()?.coordinate_block_runtime())
     }
 
     pub(super) fn source_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
         Ok(self.source()?.properties())
     }
@@ -182,6 +188,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
     pub(super) fn source_derived_cache_runtime(
         &self,
     ) -> Result<&crate::molecule::DerivedCacheBlock, OperationError> {
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         Ok(self.source()?.derived_cache_runtime())
     }
@@ -200,9 +207,13 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                 requirement: self.spec.requires_mapping,
             });
         }
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::TOPOLOGY, "topology")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
+        #[cfg(feature = "op-contracts")]
         self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
         let mut counts = Vec::with_capacity(inputs.len());
         let mut detached = Vec::with_capacity(inputs.len());
@@ -553,6 +564,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                         }
                         #[cfg(feature = "cap-reaction")]
                         DetachedCandidate::Reconstructed(product) => {
+                            #[cfg(feature = "op-contracts")]
                             validate_reconstruction_origins(
                                 self.spec,
                                 &self.reconstruction_inputs,
@@ -570,6 +582,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                                     prepared = prepared.union(super::DerivedState::RINGS);
                                 }
                                 cache.mark_valid(prepared);
+                                #[cfg(feature = "runtime-invariants")]
                                 validate_reconstruction_input(
                                     &product.topology,
                                     &product.coordinates,
@@ -707,6 +720,7 @@ impl Iterator for StereoisomerIterator {
 impl std::iter::FusedIterator for StereoisomerIterator {}
 
 #[cfg(any(feature = "cap-reaction", test))]
+#[cfg(feature = "runtime-invariants")]
 fn validate_reconstruction_input(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
@@ -718,6 +732,7 @@ fn validate_reconstruction_input(
 }
 
 #[cfg(feature = "cap-reaction")]
+#[cfg(feature = "op-contracts")]
 fn validate_reconstruction_origins(
     spec: &'static MoleculeOpSpec,
     inputs: &[(usize, usize)],
@@ -748,6 +763,7 @@ fn validate_reconstruction_origins(
 }
 
 #[cfg(any(feature = "cap-reaction", test))]
+#[cfg(feature = "op-contracts")]
 fn validate_reconstruction_rows(
     spec: &'static MoleculeOpSpec,
     inputs: &[(usize, usize)],
@@ -818,9 +834,11 @@ fn validate_reconstruction_rows(
             }
         }
     }
+    #[cfg(feature = "runtime-invariants")]
     topology
         .validate()
         .map_err(OperationError::InvalidTopology)?;
+    #[cfg(feature = "runtime-invariants")]
     coordinates
         .validate_for_atom_count(topology.atoms.len())
         .map_err(OperationError::InvalidCoordinates)?;
@@ -836,6 +854,7 @@ mod tests {
 mod mapped_tests {
     use super::*;
     #[test]
+    #[cfg(feature = "op-contracts")]
     fn mapped_outputs_reject_invalid_inverse_rows_without_touching_source() {
         let source = Molecule::from_smiles("CC.O").unwrap();
         let before = source.clone();

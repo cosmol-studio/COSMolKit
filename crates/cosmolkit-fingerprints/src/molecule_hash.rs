@@ -145,9 +145,6 @@ pub fn molecule_hash_with_ranks(
         return Err(MoleculeHashError::EmptyMolecule);
     }
 
-    topology
-        .validate()
-        .map_err(MoleculeHashError::InvalidTopology)?;
     if ranks.len() != topology.atoms.len() {
         return Err(MoleculeHashError::RankCount {
             actual: ranks.len(),

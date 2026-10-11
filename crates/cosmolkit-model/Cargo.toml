@@ -11,6 +11,11 @@ edition.workspace = true
 readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
+[features]
+default = []
+runtime-invariants = []
+op-contracts = []
+
 [dependencies]
 cosmolkit-types = { version = "0.5.0", path = "../cosmolkit-types" }
 thiserror = "2.0.18"

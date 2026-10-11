@@ -31,8 +31,18 @@ fn combined_strict_selector_enables_both_parent_checks() {
 fn parent_manifest_declares_the_exact_strict_feature_composition_once() {
     let manifest = include_str!("../Cargo.toml");
 
-    assert_eq!(manifest.matches("runtime-invariants = []").count(), 1);
-    assert_eq!(manifest.matches("op-contracts = []").count(), 1);
+    assert_eq!(
+        manifest
+            .matches("runtime-invariants = [\"cosmolkit-model/runtime-invariants\"]")
+            .count(),
+        1
+    );
+    assert_eq!(
+        manifest
+            .matches("op-contracts = [\"cosmolkit-model/op-contracts\"]")
+            .count(),
+        1
+    );
     assert_eq!(
         manifest
             .matches("op-contracts-strict = [\"runtime-invariants\", \"op-contracts\"]")

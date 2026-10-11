@@ -17,3 +17,6 @@ cosmolkit-cx = { version = "0.5.0", path = "../cosmolkit-cx" }
 cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model" }
 cosmolkit-types = { version = "0.5.0", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
+
+[dev-dependencies]
+cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }

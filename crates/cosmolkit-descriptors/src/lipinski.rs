@@ -9,9 +9,8 @@ use cosmolkit_model::TopologyBlock;
 /// Behavior review: reproduces the source's single atom loop and its exact
 /// `getAtomicNum() == 7 || getAtomicNum() == 8` predicate; charge, aromatic
 /// flags, hydrogens, and degrees play no role, and the function has no error
-/// path (the source returns an unsigned count). The preceding
-/// `validate_topology` is a COSMolKit representational-safety precheck the
-/// source performs implicitly by operating on a valid `ROMol`.
+/// path (the source returns an unsigned count). Whole-topology auditing is
+/// not part of this algorithm.
 /// Complexity review: one O(n) pass over atom rows with an iterator
 /// filter+count and zero allocation, matching the source's ConstAtomIterator
 /// loop; no per-atom lookup or buffering is introduced.
@@ -28,7 +27,6 @@ pub(crate) fn lipinski_hba_kernel(topology: &TopologyBlock) -> DescriptorResult<
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: RDKit::Descriptors::calcLipinskiHBA
-    crate::validate_topology(topology, "lipinski_hba")?;
     u32::try_from(
         topology
             .atoms
@@ -80,7 +78,6 @@ pub(crate) fn lipinski_hbd_kernel(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: RDKit::Descriptors::calcLipinskiHBD
-    crate::validate_topology(topology, "lipinski_hbd")?;
     let assignment = crate::prepared_valence(topology, Some(assignment), "lipinski_hbd")?;
     let mut result = 0_u32;
     for atom in &topology.atoms {
@@ -155,7 +152,6 @@ pub(crate) fn fraction_csp3_kernel(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: RDKit::Atom::getTotalDegree
-    crate::validate_topology(topology, "fraction_csp3")?;
     let assignment = crate::prepared_valence(topology, Some(assignment), "fraction_csp3")?;
     let mut carbon_count = 0_u32;
     let mut sp3_count = 0_u32;
@@ -367,13 +363,13 @@ pub fn num_heteroatoms_prepared(input: &DescriptorInput<'_>) -> DescriptorResult
 /// D-A resolution (HETERO-PUBLIC): the `[!#6;!#1]` pattern reads ONLY
 /// atomic-number rows, so this entry routes through the ONE common
 /// retained-pattern match owner with the narrow topology-only query
-/// context (validation + borrowed adjacency; ring_info None, valence
+/// context (borrowed adjacency; ring_info None, valence
 /// None). NO valence assignment, ring find, fabricated chemistry rows or
 /// direct element counting; default `SubstructMatchParameters`
 /// (uniquify=true, maxMatches=1000) exactly as the prepared path.
 ///
-/// Complexity review: one O(V+E) validation + one retained-query
-/// acquisition + one matcher pass — the same cost class as the source
+/// Complexity review: one retained-query acquisition + one matcher pass,
+/// without a whole-topology audit — the same cost class as the source
 /// flyweight + `SubstructMatch` on a mol with precomputed state.
 pub fn num_heteroatoms_topology(topology: &TopologyBlock) -> DescriptorResult<u32> {
     // BEGIN RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHeteroatoms

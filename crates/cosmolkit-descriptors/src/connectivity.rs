@@ -26,12 +26,6 @@ pub fn chi_0(topology: &TopologyBlock) -> DescriptorResult<f64> {
     // RDKit✔️❌:   res = sum(numpy.sqrt(1. / deltas))
     // RDKit✔️❌:   return res
     // END RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi0
-    topology
-        .validate()
-        .map_err(|source| DescriptorError::InvalidTopology {
-            function: "chi_0",
-            source,
-        })?;
     Ok(topology
         .atoms
         .iter()
@@ -63,12 +57,6 @@ pub fn chi_1(topology: &TopologyBlock) -> DescriptorResult<f64> {
     // RDKit✔️❌:   res = sum(numpy.sqrt(1. / c1s))
     // RDKit✔️❌:   return res
     // END RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi1
-    topology
-        .validate()
-        .map_err(|source| DescriptorError::InvalidTopology {
-            function: "chi_1",
-            source,
-        })?;
     Ok(topology
         .bonds
         .iter()
@@ -498,20 +486,15 @@ fn heavy_atom_count(topology: &TopologyBlock, function: &'static str) -> Descrip
     // RDKit✔️❌:   return res;
     // RDKit✔️❌: };
     // RDKit✔️❌:
-    // Healthy input: ONE owner call and its existing O(n+m+annotations)
-    // validation/allocation. Only on the owner's known two legacy flattened
-    // errors do we recover the structural validation cause or source u32
-    // count overflow. Other error variants are propagated without rewriting.
+    // One source-owned atom-count pass; the only flattened failure from
+    // this kernel is count conversion overflow, not a topology audit.
     crate::counts::num_heavy_atoms_kernel(topology).map_err(|error| match error {
         DescriptorError::Unsupported {
             function: "num_heavy_atoms",
             ..
-        } => match topology.validate() {
-            Err(source) => DescriptorError::InvalidTopology { function, source },
-            Ok(()) => DescriptorError::CountOverflow {
-                function,
-                field: "heavy_atoms",
-            },
+        } => DescriptorError::CountOverflow {
+            function,
+            field: "heavy_atoms",
         },
         other => other,
     })

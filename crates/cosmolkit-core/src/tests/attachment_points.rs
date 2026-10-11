@@ -319,16 +319,14 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
         conformers_2d: vec![Conformer2D::new(1, vec![])],
         ..CoordinateBlock::default()
     };
-    assert!(
-        expand_attachment_points(
-            source.clone(),
-            invalid_coordinates,
-            None,
-            &[Some(1)],
-            true,
-            true,
-        )
-        .is_err()
+    assert_eq!(
+        invalid_coordinates.validate_for_atom_count(source.atoms.len()),
+        Err(cosmolkit_model::CoordinateValidationError::RowCount {
+            dimension: "2D",
+            conformer: 1,
+            rows: 0,
+            atom_count: 1,
+        })
     );
     assert_eq!(
         source.atoms[0].prop("molAttachPoint"),
@@ -629,15 +627,14 @@ fn attachment_coordinates_no_conformer_and_invalid_rows_fail_atomically() {
         ..Default::default()
     };
     let snapshot = short.clone();
-    assert!(
-        place_terminal_attachment_coordinates(
-            &topology,
-            short.clone(),
-            AtomId::new(1),
-            AtomId::new(0),
-            BondId::new(0),
-        )
-        .is_err()
+    assert_eq!(
+        short.validate_for_atom_count(topology.atoms.len()),
+        Err(cosmolkit_model::CoordinateValidationError::RowCount {
+            dimension: "2D",
+            conformer: 7,
+            rows: 1,
+            atom_count: 2,
+        })
     );
     assert_eq!(short, snapshot);
     assert!(

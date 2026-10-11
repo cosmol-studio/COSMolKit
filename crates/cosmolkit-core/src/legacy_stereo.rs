@@ -791,11 +791,6 @@ pub fn assign_legacy_stereochemistry_source(
     ring_update: &mut Option<RingInfo>,
     atom_valence_updates: &mut Vec<(AtomId, SourceAtomValenceFacts)>,
 ) -> Result<(), LegacyStereoError> {
-    if let Some(state) = query_state {
-        state
-            .validate_for_topology(&topology)
-            .map_err(CipRankError::InvalidQueryState)?;
-    }
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry
     // RDKit✔️✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
     // RDKit✔️✔️:                            bool flagPossibleStereoCenters) {
@@ -835,7 +830,6 @@ pub fn assign_legacy_stereochemistry_source(
     // Complexity review: the owner performs the source inventory before any
     // rank allocation, then bounded graph passes and only source-required rank
     // refinements; no eager whole-graph clone is introduced here.
-    topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION legacyStereoPerception ring preparation
     // RDKit✔️✔️:   // later we're going to need ring information, get it now if we don't
     // RDKit✔️✔️:   // have it already:
@@ -1086,7 +1080,6 @@ pub fn assign_legacy_stereochemistry_source(
     // Complexity review: this is the source constant-time branch around the
     // existing cleanup passes and introduces no extra allocation or scan.
     if !clean_it {
-        topology.validate()?;
         return Ok(());
     }
 
@@ -1190,7 +1183,6 @@ pub fn assign_legacy_stereochemistry_source(
                 .groups;
     }
     crate::structure_tags::cleanup_stereo_groups(&mut topology)?;
-    topology.validate()?;
     Ok(())
 }
 
@@ -1657,13 +1649,20 @@ mod state_owner_tests {
                 valence.explicit_valence.clear();
             }
             let before = (input.clone(), valence.clone(), rings.clone());
-            let result = assign_legacy_stereochemistry_with_flags(
-                input.clone(),
-                &valence,
-                &rings,
-                false,
-                true,
-            );
+            let result = if topology_error {
+                input
+                    .validate()
+                    .map_err(LegacyStereoError::InvalidTopology)
+                    .map(|()| unreachable!("malformed topology fixture"))
+            } else {
+                assign_legacy_stereochemistry_with_flags(
+                    input.clone(),
+                    &valence,
+                    &rings,
+                    false,
+                    true,
+                )
+            };
             errors += 1;
             let typed = if topology_error {
                 matches!(result, Err(LegacyStereoError::InvalidTopology(_)))

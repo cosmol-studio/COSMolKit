@@ -147,14 +147,16 @@ pub use cosmolkit_search::{
     SubstructMatchParams,
 };
 
+pub use binding_contract::conveniences::*;
 #[doc(hidden)]
 pub use binding_contract::{
-    BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
-    BINDING_CONTRACT_PYTHON_ADAPTERS, BINDING_CONTRACT_PYTHON_ALIASES,
+    BINDING_CONTRACT, BINDING_CONTRACT_CONVENIENCES, BINDING_CONTRACT_KEYWORDS,
+    BINDING_CONTRACT_PROPERTIES, BINDING_CONTRACT_PYTHON_ADAPTERS,
     BINDING_CONTRACT_PYTHON_COLLECTIONS, BindingCallableContract, BindingConfigurationField,
-    BindingContractEntry, BindingDefault, BindingItem, BindingKeywordContract, BindingKind,
-    BindingOwner, BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
-    BindingPythonAdapterContract, BindingReceiver, BindingTypeRole, FunctionStatus, StateModel,
+    BindingContractEntry, BindingConvenienceContract, BindingDefault, BindingItem,
+    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
+    BindingPropertyAccess, BindingPropertyContract, BindingPythonAdapterContract, BindingReceiver,
+    BindingTypeRole, FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]
 mod bio;
@@ -279,7 +281,7 @@ pub use ops::{
     BlockAccess, BlockSet, FeatureSpec, FeatureSpecIter, MOLECULE_OPS, MoleculeOpKind,
     MoleculeOpOutput, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationDomain,
     OperationInvariantEntry, PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SUPPORT_MATRIX,
-    SupportMatrixEntry, TopologyEditKind, feature_spec, feature_specs, operation_invariant,
+    SupportMatrixEntry, feature_spec, feature_specs, operation_invariant,
     operation_invariant_matrix, operation_parity, operation_spec, operation_specs, parity_matrix,
     support_matrix,
 };

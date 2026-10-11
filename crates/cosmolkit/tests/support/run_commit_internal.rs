@@ -9,7 +9,7 @@ use cosmolkit_model::{
 use super::*;
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
-    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet,
 };
 
 struct CommitAccess;
@@ -23,7 +23,7 @@ struct SpecFields {
     effects: DerivedEffects,
     cip: CipStatePolicy,
     preconditions: SemanticPreconditionSet,
-    edit: TopologyEditKind,
+    kind: MoleculeOpKind,
     mapping: MappingRequirement,
 }
 
@@ -45,7 +45,7 @@ fn base_fields() -> SpecFields {
         effects: no_effects(),
         cip: CipStatePolicy::Preserve,
         preconditions: SemanticPreconditionSet::NONE,
-        edit: TopologyEditKind::None,
+        kind: MoleculeOpKind::Weak,
         mapping: MappingRequirement::None,
     }
 }
@@ -57,17 +57,7 @@ fn spec(method: &'static str, fields: SpecFields) -> &'static MoleculeOpSpec {
         output: fields.output,
         result_type: "Molecule",
         domain: OperationDomain::Topology,
-        kind: if matches!(
-            fields.edit,
-            TopologyEditKind::Compacting
-                | TopologyEditKind::Appending
-                | TopologyEditKind::Renumbering
-        ) {
-            MoleculeOpKind::Strong
-        } else {
-            MoleculeOpKind::Weak
-        },
-        topology_edit: fields.edit,
+        kind: fields.kind,
         access: fields.access,
         may_mutate: fields.may_mutate,
         auto_remap: fields.auto_remap,
@@ -294,15 +284,15 @@ fn finish_closes_none_identity_and_required_mapping_profiles() {
     let mut identity_fields = base_fields();
     identity_fields.access = BlockAccess::new(BlockSet::NONE, BlockSet::TOPOLOGY);
     identity_fields.may_mutate = BlockSet::TOPOLOGY;
-    identity_fields.edit = TopologyEditKind::Local;
+    identity_fields.kind = MoleculeOpKind::Weak;
     identity_fields.mapping = MappingRequirement::Identity;
     let identity_spec = spec("identity", identity_fields);
     assert!(matches!(
         OpParts::<CommitAccess>::new(&source, identity_spec)
             .unwrap()
             .finish(),
-        Err(OperationError::TopologyEditContract {
-            issue: "missing-record",
+        Err(OperationError::MappingContract {
+            issue: "required mapping was not recorded",
             ..
         })
     ));
@@ -310,20 +300,16 @@ fn finish_closes_none_identity_and_required_mapping_profiles() {
     let detached = identity.checkout_topology_runtime().unwrap();
     identity.install_topology_runtime(detached).unwrap();
     identity
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
-    identity
         .record_topology_mapping_runtime(TopologyMapping::identity(2, 1))
         .unwrap();
     identity.apply_cip_policy_runtime().unwrap();
     assert!(identity.finish().is_ok());
 
     let mut required_fields = identity_fields;
-    required_fields.edit = TopologyEditKind::Compacting;
+    required_fields.kind = MoleculeOpKind::Strong;
     required_fields.mapping = MappingRequirement::Required;
     let required_spec = spec("required", required_fields);
-    let mut required = OpParts::<CommitAccess>::new(&source, required_spec).unwrap();
-    required.topology_edit = Some(TopologyEditKind::Compacting);
+    let required = OpParts::<CommitAccess>::new(&source, required_spec).unwrap();
     assert!(matches!(
         required.finish(),
         Err(OperationError::MappingContract {
@@ -333,7 +319,6 @@ fn finish_closes_none_identity_and_required_mapping_profiles() {
     ));
 
     let mut malformed = OpParts::<CommitAccess>::new(&source, required_spec).unwrap();
-    malformed.topology_edit = Some(TopologyEditKind::Compacting);
     malformed.topology_mapping = Some(TopologyMapping {
         atoms: AtomMapping {
             old_to_new: vec![Some(AtomId::new(9)), Some(AtomId::new(1))],
@@ -371,13 +356,12 @@ fn finish_requires_exact_remap_completion_and_accepts_one_validated_application(
     );
     fields.may_mutate = fields.access.write();
     fields.auto_remap = BlockSet::COORDINATES.union(BlockSet::PROPERTIES);
-    fields.edit = TopologyEditKind::Local;
+    fields.kind = MoleculeOpKind::Weak;
     fields.mapping = MappingRequirement::Identity;
     let operation = spec("remap", fields);
 
     for completed in [BlockSet::NONE, BlockSet::COORDINATES, BlockSet::PROPERTIES] {
         let mut parts = OpParts::<CommitAccess>::new(&source, operation).unwrap();
-        parts.topology_edit = Some(TopologyEditKind::Local);
         parts.topology_mapping = Some(TopologyMapping::identity(2, 1));
         parts.remapped_blocks = completed;
         assert_eq!(
@@ -395,9 +379,6 @@ fn finish_requires_exact_remap_completion_and_accepts_one_validated_application(
     let mut complete = OpParts::<CommitAccess>::new(&source, operation).unwrap();
     let detached = complete.checkout_topology_runtime().unwrap();
     complete.install_topology_runtime(detached).unwrap();
-    complete
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
     complete
         .record_topology_mapping_runtime(TopologyMapping::identity(2, 1))
         .unwrap();
@@ -559,10 +540,9 @@ fn invariant_parts(source: &Molecule, method: &'static str) -> OpParts<'static, 
     let mut fields = base_fields();
     fields.access = BlockAccess::new(BlockSet::NONE, BlockSet::TOPOLOGY);
     fields.may_mutate = BlockSet::TOPOLOGY;
-    fields.edit = TopologyEditKind::Local;
-    fields.mapping = MappingRequirement::Identity;
+    fields.kind = MoleculeOpKind::Strong;
+    fields.mapping = MappingRequirement::Required;
     let mut parts = OpParts::<CommitAccess>::new(leaked, spec(method, fields)).unwrap();
-    parts.topology_edit = Some(TopologyEditKind::Local);
     parts.topology_mapping = Some(TopologyMapping::identity(2, 1));
     parts.effect_trace.cip_applied = true;
     parts

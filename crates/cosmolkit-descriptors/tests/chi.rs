@@ -528,14 +528,13 @@ fn chi_prepared_dimensions_and_invalid_topology() {
     }
     let mut f = graph(&[6], &[0], &[]);
     f.topology.atoms[0] = f.topology.atoms[0].clone().with_id(AtomId::new(7));
-    errors_preserve(&f);
-    assert!(matches!(
-        chi_0_v(&f.input()),
-        Err(DescriptorError::InvalidTopology {
-            function: "chi_0_v",
-            ..
+    assert_eq!(
+        f.topology.validate(),
+        Err(cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+            position: 0,
+            id: AtomId::new(7),
         })
-    ));
+    );
 }
 #[test]
 fn chi_supplied_ring_coordinate_property_state_not_reprepared() {

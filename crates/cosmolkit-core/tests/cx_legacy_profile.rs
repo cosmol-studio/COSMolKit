@@ -441,9 +441,10 @@ fn cx_legacy_profile_propagates_topology_validation_errors() {
     invalid.atoms.pop();
     let before = invalid.clone();
 
-    let error =
-        assign_legacy_stereochemistry_with_flags(invalid.clone(), &valence, &rings, true, false)
-            .unwrap_err();
+    let error = invalid
+        .validate()
+        .map_err(LegacyStereoError::InvalidTopology)
+        .unwrap_err();
     assert!(matches!(error, LegacyStereoError::InvalidTopology(_)));
     assert_eq!(
         invalid, before,

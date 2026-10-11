@@ -139,11 +139,9 @@ fn defaults_empty_acyclic_custom_and_dimension_errors_are_exact_and_atomic() {
     let mut malformed = acyclic.clone();
     malformed.atoms[0] = Atom::from_spec(AtomId::new(7), AtomSpec::new(Element::C));
     assert!(matches!(
-        assign_aromaticity(
-            &malformed,
-            &RingInfo::new(RingFindType::Sssr, 2, 1),
-            &AromaticityParams::default(),
-        ),
+        malformed
+            .validate()
+            .map_err(AromaticityError::InvalidTopology),
         Err(AromaticityError::InvalidTopology(_))
     ));
 }

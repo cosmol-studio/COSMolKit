@@ -255,6 +255,13 @@ impl TopologyBlock {
             substance_groups,
             stereo_groups,
         };
+        check_topology_input_rows(
+            &topology.atoms,
+            &topology.bonds,
+            &topology.substance_groups,
+            &topology.stereo_groups,
+        )?;
+        #[cfg(feature = "runtime-invariants")]
         topology.validate()?;
         Ok(topology)
     }
@@ -279,6 +286,7 @@ impl TopologyBlock {
         // RDKit❗✔️: }
         // An owned TopologyBlock is not already an editor, so re-entry cannot
         // occur. Linear validity/mask setup and moved ownership avoid cloning.
+        #[cfg(feature = "runtime-invariants")]
         self.validate().map_err(|error| match error {
             TopologyValidationError::StereoGroup(cause) => TopologyEditError::StereoGroup(cause),
             other => TopologyEditError::InvalidSource(other),
@@ -299,6 +307,7 @@ impl TopologyBlock {
         &self,
         old_atom_order: &[AtomId],
     ) -> Result<(Self, TopologyMapping), TopologyEditError> {
+        #[cfg(feature = "runtime-invariants")]
         self.validate().map_err(|error| match error {
             TopologyValidationError::StereoGroup(cause) => TopologyEditError::StereoGroup(cause),
             other => TopologyEditError::InvalidSource(other),
@@ -442,6 +451,7 @@ impl TopologyBlock {
                 new_to_old: bond_new_to_old,
             },
         };
+        #[cfg(feature = "op-contracts")]
         mapping
             .validate_for_counts(self.atoms.len(), atoms.len(), self.bonds.len(), bonds.len())
             .map_err(TopologyEditError::InvalidMapping)?;
@@ -455,98 +465,14 @@ impl TopologyBlock {
         Ok((topology, mapping))
     }
 
+    #[cfg(feature = "runtime-invariants")]
     pub fn validate(&self) -> Result<(), TopologyValidationError> {
-        for (position, atom) in self.atoms.iter().enumerate() {
-            if atom.id() != AtomId::new(position) {
-                return Err(TopologyValidationError::AtomIdMismatch {
-                    position,
-                    id: atom.id(),
-                });
-            }
-            if let Some(order) = atom.template_attachment_order() {
-                order
-                    .validate_for_atom_count(self.atoms.len())
-                    .map_err(|source| TopologyValidationError::TemplateAttachmentOrder {
-                        atom: atom.id(),
-                        source,
-                    })?;
-            }
-        }
-        for (position, bond) in self.bonds.iter().enumerate() {
-            if bond.id() != BondId::new(position) {
-                return Err(TopologyValidationError::BondIdMismatch {
-                    position,
-                    id: bond.id(),
-                });
-            }
-            for (endpoint, atom) in [("begin", bond.begin()), ("end", bond.end())] {
-                if atom.index() >= self.atoms.len() {
-                    return Err(TopologyValidationError::BondEndpointOutOfRange {
-                        bond: bond.id(),
-                        endpoint,
-                        atom,
-                        atom_count: self.atoms.len(),
-                    });
-                }
-            }
-            if bond.begin() == bond.end() {
-                return Err(TopologyValidationError::SelfLoopBond {
-                    bond: bond.id(),
-                    atom: bond.begin(),
-                });
-            }
-            if let Some([begin, end]) = bond.stereo_atoms()
-                && (begin.index() >= self.atoms.len() || end.index() >= self.atoms.len())
-            {
-                return Err(TopologyValidationError::StereoAtomOutOfRange {
-                    bond: bond.id(),
-                    begin,
-                    end,
-                    atom_count: self.atoms.len(),
-                });
-            }
-            for atom in bond.stereo_atom_references() {
-                if atom.index() >= self.atoms.len() {
-                    return Err(TopologyValidationError::StereoReferenceOutOfRange {
-                        bond: bond.id(),
-                        atom: *atom,
-                        atom_count: self.atoms.len(),
-                    });
-                }
-            }
-            if matches!(
-                bond.stereo(),
-                crate::BondStereo::Cis | crate::BondStereo::Trans
-            ) && bond.stereo_atoms().is_none()
-            {
-                return Err(TopologyValidationError::StereoAtomsRequired {
-                    bond: bond.id(),
-                    stereo: bond.stereo(),
-                });
-            }
-        }
-        let atom_count = self.atoms.len();
-        let bond_count = self.bonds.len();
-        validate_substance_groups(&self.substance_groups, atom_count, bond_count)?;
-        for group in &self.stereo_groups {
-            for atom in group.atoms() {
-                if atom.index() >= atom_count {
-                    return Err(TopologyValidationError::StereoGroupAtomOutOfRange {
-                        atom: *atom,
-                        atom_count,
-                    });
-                }
-            }
-            for bond in group.bonds() {
-                if bond.index() >= bond_count {
-                    return Err(TopologyValidationError::StereoGroupBondOutOfRange {
-                        bond: *bond,
-                        bond_count,
-                    });
-                }
-            }
-            group.validate_members()?;
-        }
+        check_topology_input_rows(
+            &self.atoms,
+            &self.bonds,
+            &self.substance_groups,
+            &self.stereo_groups,
+        )?;
         // Earlier checks preserve the original error precedence and establish
         // dense IDs, valid endpoints and no self-loops. Only the final CSR
         // comparison (including duplicate edges) is replaced, not skipped.
@@ -558,6 +484,106 @@ impl TopologyBlock {
         }
         Ok(())
     }
+}
+
+fn check_topology_input_rows(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    substance_groups: &[SubstanceGroup],
+    stereo_groups: &[StereoGroup],
+) -> Result<(), TopologyValidationError> {
+    for (position, atom) in atoms.iter().enumerate() {
+        if atom.id() != AtomId::new(position) {
+            return Err(TopologyValidationError::AtomIdMismatch {
+                position,
+                id: atom.id(),
+            });
+        }
+        if let Some(order) = atom.template_attachment_order() {
+            order
+                .validate_for_atom_count(atoms.len())
+                .map_err(|source| TopologyValidationError::TemplateAttachmentOrder {
+                    atom: atom.id(),
+                    source,
+                })?;
+        }
+    }
+    for (position, bond) in bonds.iter().enumerate() {
+        if bond.id() != BondId::new(position) {
+            return Err(TopologyValidationError::BondIdMismatch {
+                position,
+                id: bond.id(),
+            });
+        }
+        for (endpoint, atom) in [("begin", bond.begin()), ("end", bond.end())] {
+            if atom.index() >= atoms.len() {
+                return Err(TopologyValidationError::BondEndpointOutOfRange {
+                    bond: bond.id(),
+                    endpoint,
+                    atom,
+                    atom_count: atoms.len(),
+                });
+            }
+        }
+        if bond.begin() == bond.end() {
+            return Err(TopologyValidationError::SelfLoopBond {
+                bond: bond.id(),
+                atom: bond.begin(),
+            });
+        }
+        if let Some([begin, end]) = bond.stereo_atoms()
+            && (begin.index() >= atoms.len() || end.index() >= atoms.len())
+        {
+            return Err(TopologyValidationError::StereoAtomOutOfRange {
+                bond: bond.id(),
+                begin,
+                end,
+                atom_count: atoms.len(),
+            });
+        }
+        for atom in bond.stereo_atom_references() {
+            if atom.index() >= atoms.len() {
+                return Err(TopologyValidationError::StereoReferenceOutOfRange {
+                    bond: bond.id(),
+                    atom: *atom,
+                    atom_count: atoms.len(),
+                });
+            }
+        }
+        if matches!(
+            bond.stereo(),
+            crate::BondStereo::Cis | crate::BondStereo::Trans
+        ) && bond.stereo_atoms().is_none()
+        {
+            return Err(TopologyValidationError::StereoAtomsRequired {
+                bond: bond.id(),
+                stereo: bond.stereo(),
+            });
+        }
+    }
+    let atom_count = atoms.len();
+    let bond_count = bonds.len();
+    validate_substance_groups(&substance_groups, atom_count, bond_count)?;
+    for group in stereo_groups {
+        for atom in group.atoms() {
+            if atom.index() >= atom_count {
+                return Err(TopologyValidationError::StereoGroupAtomOutOfRange {
+                    atom: *atom,
+                    atom_count,
+                });
+            }
+        }
+        for bond in group.bonds() {
+            if bond.index() >= bond_count {
+                return Err(TopologyValidationError::StereoGroupBondOutOfRange {
+                    bond: *bond,
+                    bond_count,
+                });
+            }
+        }
+        group.validate_members()?;
+    }
+    Ok(())
 }
 
 fn parse_endpts_decimal_prefix(token: &[u8]) -> Result<(f64, usize), BondEndPointsParseErrorKind> {
@@ -1081,9 +1107,11 @@ impl TopologyBatchEdit {
                 text_reader,
             },
         )?;
+        #[cfg(feature = "runtime-invariants")]
         self.working
             .validate()
             .map_err(|e| E::from(TopologyEditError::InvalidResult(e)))?;
+        #[cfg(feature = "op-contracts")]
         mapping
             .validate_for_counts(
                 self.source_atom_count,
@@ -1642,6 +1670,7 @@ impl TopologyBatchEdit {
                 new_to_old: bond_new_to_old,
             },
         };
+        #[cfg(feature = "op-contracts")]
         mapping
             .validate_for_counts(old_atom_count, atoms.len(), old_bond_count, bonds.len())
             .map_err(TopologyEditError::InvalidMapping)?;
@@ -1841,6 +1870,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn validate_rejects_misaligned_ids_and_endpoints() {
         let block = TopologyBlock {
             atoms: vec![atom(1)],
@@ -1964,6 +1994,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn validate_rejects_stale_adjacency() {
         let begin = AtomId::new(0);
         let end = AtomId::new(1);
@@ -1992,11 +2023,13 @@ mod tests {
         // Duplicate edges are still an adjacency error, including reversed
         // endpoints. Earlier ID/endpoint failures must not be masked by it.
         block.bonds[1] = f12_bond(1, 1, 0, BondOrder::Single, BondStereo::None, None);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(
             block.validate(),
             Err(TopologyValidationError::AdjacencyMismatch)
         );
         block.bonds[1] = f12_bond(0, 1, 0, BondOrder::Single, BondStereo::None, None);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(
             block.validate(),
             Err(TopologyValidationError::BondIdMismatch {
@@ -2005,6 +2038,7 @@ mod tests {
             })
         );
         block.bonds[1] = f12_bond(1, 1, 3, BondOrder::Single, BondStereo::None, None);
+        #[cfg(feature = "runtime-invariants")]
         assert_eq!(
             block.validate(),
             Err(TopologyValidationError::BondEndpointOutOfRange {
@@ -2019,6 +2053,7 @@ mod tests {
     #[test]
     fn topology_mapping_validates_bidirectional_atom_and_bond_rows() {
         let mapping = TopologyMapping::with_appended(2, 1, 1, 1);
+        #[cfg(feature = "op-contracts")]
         assert!(mapping.validate_for_counts(2, 3, 1, 2).is_ok());
 
         let invalid = TopologyMapping {
@@ -2031,6 +2066,7 @@ mod tests {
                 new_to_old: vec![Some(BondId::new(0))],
             },
         };
+        #[cfg(feature = "op-contracts")]
         assert!(matches!(
             invalid.validate_for_counts(2, 2, 1, 1),
             Err(MappingValidationError::InverseMismatch {
@@ -2054,6 +2090,7 @@ mod tests {
                 new_to_old: Vec::new(),
             },
         };
+        #[cfg(feature = "op-contracts")]
         assert!(matches!(
             invalid.validate_for_counts(1, 1, 0, 0),
             Err(MappingValidationError::OutOfRange {
@@ -2102,6 +2139,7 @@ mod tests {
         );
         assert_eq!(result.bonds[1].begin(), AtomId::new(0));
         assert_eq!(result.bonds[1].end(), AtomId::new(2));
+        #[cfg(feature = "runtime-invariants")]
         assert!(result.validate().is_ok());
     }
 
@@ -2144,6 +2182,7 @@ mod tests {
                     },
                     "source tag transition for {stereo:?} after removing {left}-{right}"
                 );
+                #[cfg(feature = "runtime-invariants")]
                 assert!(result.validate().is_ok());
             }
         }
@@ -2177,6 +2216,7 @@ mod tests {
         );
         assert_eq!(result.bonds[0].begin(), AtomId::new(0));
         assert_eq!(result.bonds[0].end(), AtomId::new(1));
+        #[cfg(feature = "runtime-invariants")]
         assert!(result.validate().is_ok());
     }
 
@@ -2695,6 +2735,7 @@ mod tests {
                 None,
             ]
         );
+        #[cfg(feature = "runtime-invariants")]
         assert!(result.validate().is_ok());
     }
 
@@ -3433,6 +3474,7 @@ mod source_remove_bond_complete_tests {
             assert_eq!(topology.substance_groups[0].bonds(), [BondId::new(1)]);
             assert_eq!(topology.stereo_groups.len(), 1);
             assert_eq!(topology.stereo_groups[0].bonds(), [BondId::new(1)]);
+            #[cfg(feature = "runtime-invariants")]
             topology.validate().unwrap();
         }
     }
@@ -4163,6 +4205,7 @@ mod source_remove_atom_complete_tests {
                 properties.props().contains_key(b"mol-computed".as_slice()),
                 !clear
             );
+            #[cfg(feature = "runtime-invariants")]
             topology.validate().unwrap();
         }
     }
@@ -5067,6 +5110,7 @@ mod source_batch_remove_bonds_complete_tests {
             bookmarks,
             BTreeMap::from([(1, vec![]), (2, vec![BondId::new(0)])])
         );
+        #[cfg(feature = "runtime-invariants")]
         topology.validate().unwrap();
     }
     #[test]
@@ -5541,6 +5585,7 @@ mod source_batch_remove_atoms_complete_tests {
             [[0.0; 3], [2.0; 3], [3.0; 3]]
         );
         assert!(!coords.conformers_3d[0].is_3d());
+        #[cfg(feature = "runtime-invariants")]
         assert!(matches!(
             graph.validate(),
             Err(TopologyValidationError::StereoAtomsRequired { .. })
@@ -5572,6 +5617,7 @@ mod source_batch_remove_atoms_complete_tests {
         let mut clone = graph.bonds[0].clone();
         clone.set_source_stereo_atom_references(vec![AtomId::new(9)]);
         graph.bonds[0] = clone;
+        #[cfg(feature = "runtime-invariants")]
         assert!(
             matches!(graph.validate(), Err(TopologyValidationError::StereoReferenceOutOfRange { atom, .. }) if atom == AtomId::new(9))
         );
@@ -5958,6 +6004,7 @@ mod source_commit_batch_edit_complete_tests {
         assert!(f.props.prop("mol").is_none());
         assert!(f.graph.atoms[0].prop("atom").is_none());
         assert!(f.graph.bonds[0].prop("bond").is_none());
+        #[cfg(feature = "runtime-invariants")]
         f.graph.validate().unwrap();
         f.commit().unwrap();
         assert_eq!(f.resets.get(), 2); // successful masks are inactive
@@ -6458,6 +6505,7 @@ mod source_editor_commit_consumer_tests {
             assert_eq!(t.atoms.len(), if atom_removal { 2 } else { 3 });
             assert!(m.bonds.new_to_old.is_empty());
             assert!(m.bonds.old_to_new.is_empty());
+            #[cfg(feature = "op-contracts")]
             m.validate_for_counts(3, t.atoms.len(), 0, 0).unwrap();
         }
     }

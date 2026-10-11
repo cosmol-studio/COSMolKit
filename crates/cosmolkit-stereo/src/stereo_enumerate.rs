@@ -1390,11 +1390,7 @@ impl Iterator for StereoisomerIterator {
         if let Some(isomer) = self.pending_no_center.take() {
             self.finished = true;
             self.yielded = 1;
-            return Some(
-                validate_candidate(&isomer)
-                    .map(|()| isomer)
-                    .map_err(EnumerationError::from),
-            );
+            return Some(Ok(isomer));
         }
 
         // RDKit✔️✔️:       if options.maxIsomers != 0 and numIsomers >= options.maxIsomers:
@@ -1440,11 +1436,6 @@ impl Iterator for StereoisomerIterator {
                     return Some(Err(error));
                 }
             };
-
-            if let Err(error) = validate_candidate(&isomer) {
-                self.finished = true;
-                return Some(Err(error.into()));
-            }
 
             // RDKit✔️✔️:     if cid >= 0:
             // RDKit✔️✔️:       yield isomer
@@ -1501,14 +1492,6 @@ where
         project_query,
         Some(Box::new(callback)),
     )
-}
-
-fn validate_candidate(record: &SmilesRecord) -> Result<(), EnumerationError> {
-    record.topology.validate()?;
-    record
-        .coordinates
-        .validate_for_atom_count(record.topology.atoms.len())?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -2118,7 +2101,11 @@ mod tests {
             .validate_for_atom_count(record.topology.atoms.len())
     }
     fn checked_record(record: SmilesRecord) -> SmilesRecord {
-        validate_candidate(&record).unwrap();
+        record.topology.validate().unwrap();
+        record
+            .coordinates
+            .validate_for_atom_count(record.topology.atoms.len())
+            .unwrap();
         record
     }
     fn stereo_info(

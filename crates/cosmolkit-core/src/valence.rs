@@ -182,12 +182,6 @@ pub(crate) fn incident<'a>(
     )
 }
 
-fn validate_topology(topology: &TopologyBlock) -> Result<(), ValenceError> {
-    topology
-        .validate()
-        .map_err(|source| ValenceError::InvalidTopology { source })
-}
-
 fn validate_atom_id(topology: &TopologyBlock, atom_id: AtomId) -> Result<(), ValenceError> {
     if atom_id.index() >= topology.atoms.len() {
         return Err(ValenceError::AtomOutOfRange {
@@ -920,7 +914,6 @@ pub fn explicit_valence_for_atom(
     strict: bool,
 ) -> Result<i32, ValenceError> {
     validate_atom_id(topology, atom_id)?;
-    validate_topology(topology)?;
     calculate_explicit_valence_for_topology(topology, atom_id, strict, false)
 }
 
@@ -1454,7 +1447,6 @@ pub fn implicit_valence_for_atom(
     strict: bool,
 ) -> Result<i32, ValenceError> {
     validate_atom_id(topology, atom_id)?;
-    validate_topology(topology)?;
     if let Some(value) = explicit_valence
         && value < 0
     {
@@ -1527,7 +1519,6 @@ pub fn assign_valence(
     topology: &TopologyBlock,
     params: &ValenceParams,
 ) -> Result<ValenceAssignment, ValenceError> {
-    validate_topology(topology)?;
     assign_valence_with_options_from_parts(
         &topology.atoms,
         &topology.bonds,
@@ -1669,7 +1660,6 @@ pub fn atom_has_valence_violation_for_topology(
 /// Classify one atom through the canonical detached violation API.
 pub fn has_valence_violation(topology: &TopologyBlock, id: AtomId) -> Result<bool, ValenceError> {
     validate_atom_id(topology, id)?;
-    validate_topology(topology)?;
     atom_has_valence_violation_for_topology(topology, id)
 }
 
@@ -1931,11 +1921,8 @@ pub fn atom_metadata_from_assignment(
     // Caller-supplied detached assignments can retain calculation-width i32 values. Reproduce
     // the source's int8 storage conversion at this cached-getter boundary,
     // before applying its > -1 precondition; never recalculate strict valence.
-    // Detached validation adds O(V+E) work over O(V) source cached getters,
-    // so the complexity marker records that extra boundary cost.
-    // Owned rows require one O(V) allocation. Validating detached topology once
-    // costs O(V+E); each getter then performs O(1) cache/adjacency access.
-    validate_topology(topology)?;
+    // Owned result rows require one O(V) allocation. Each selected getter
+    // uses O(1) cached/adjacency access; no whole-topology audit is performed.
     let mut rows = Vec::with_capacity(topology.atoms.len());
     for atom in &topology.atoms {
         let id = atom.id();

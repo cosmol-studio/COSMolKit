@@ -542,7 +542,7 @@ fn malformed_aromatic_query_and_topology_errors_are_exact_and_not_swallowed() {
         stereo_groups: vec![],
     };
     assert!(matches!(
-        kekulize_if_possible(&invalid, &KekulizeParams::default()),
+        invalid.validate().map_err(KekulizeError::InvalidTopology),
         Err(KekulizeError::InvalidTopology(TopologyValidationError::AtomIdMismatch {
             position: 0,
             id,

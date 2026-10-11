@@ -8,8 +8,8 @@ use cosmolkit::{
     BondOrder, BondSpec, BondStereo, ChiralTag, CipDescriptor, CipLabelOptions, CipLabelerError,
     Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule, MoleculeOpKind,
     MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    StateModel, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
-    operation_parity, operation_spec, support_matrix,
+    StateModel, TopologyBlock, feature_spec, operation_invariant, operation_parity, operation_spec,
+    support_matrix,
 };
 
 fn topology(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -195,7 +195,6 @@ fn generated_registry_and_all_four_matrices_share_one_single_output_operation() 
     assert_eq!(spec.result_type, "Molecule");
     assert_eq!(spec.domain, OperationDomain::Topology);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
-    assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(spec.access.read(), BlockSet::NONE);
     assert_eq!(
         spec.access.write(),

@@ -503,7 +503,7 @@ fn topology_and_valence_errors_are_rejected_before_ranking() {
     let mut invalid = valid.clone();
     invalid.atoms[0] = invalid.atoms[0].clone().with_id(AtomId::new(1));
     assert_eq!(
-        assign_atom_cip_ranks(&invalid, &zero_valence(2)),
+        invalid.validate().map_err(CipRankError::InvalidTopology),
         Err(CipRankError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,

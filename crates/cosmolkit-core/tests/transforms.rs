@@ -562,7 +562,9 @@ fn range_topology_and_coordinate_errors_keep_their_typed_boundaries() {
         ..Default::default()
     };
     assert!(matches!(
-        centroid(&invalid_topology, &one, &Default::default()),
+        invalid_topology
+            .validate()
+            .map_err(TransformError::InvalidTopology),
         Err(TransformError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch { .. }
         ))

@@ -1136,6 +1136,7 @@ impl<'a> QueryStateRef<'a> {
 
     /// Revalidate row alignment against the current topology without exposing
     /// carrier snapshots or requiring chemistry attributes to remain unchanged.
+    #[cfg(feature = "runtime-invariants")]
     pub fn validate_for_topology(self, topology: &TopologyBlock) -> Result<(), QueryStateError> {
         Self::try_for_topology(self.atoms, self.bonds, topology).map(|_| ())
     }
@@ -1199,6 +1200,7 @@ pub fn remap_query_rows_with_appended(
     appended_atoms: &[QueryAtom],
     appended_bonds: &[QueryBond],
 ) -> Result<(Vec<QueryAtom>, Vec<QueryBond>), QueryStateError> {
+    #[cfg(feature = "op-contracts")]
     mapping.validate_for_counts(
         state.atoms.len(),
         topology.atoms.len(),
@@ -1722,13 +1724,14 @@ impl QueryGraph {
             substance_groups: Vec::new(),
             source_ring_info: crate::SourceRingInfo::default(),
         };
+        graph.check_input_rows()?;
+        #[cfg(feature = "runtime-invariants")]
         graph.validate()?;
         Ok(graph)
     }
 
-    /// Validate local query-graph structure without consulting a live
-    /// molecule or runtime cache.
-    pub fn validate(&self) -> Result<(), QueryGraphError> {
+    /// Check incoming detached rows at the construction boundary.
+    fn check_input_rows(&self) -> Result<(), QueryGraphError> {
         for (position, atom) in self.atoms.iter().enumerate() {
             if atom.id() != AtomId::new(position) {
                 return Err(QueryGraphError::AtomIdMismatch {
@@ -1769,15 +1772,20 @@ impl QueryGraph {
             }
         }
 
-        let coordinates = CoordinateBlock {
-            conformers_2d: self.conformers_2d.clone(),
-            conformers_3d: self.conformers_3d.clone(),
-            source_coordinate_dim: None,
-            source_conformer_order: self.source_conformer_order.clone(),
-        };
-        coordinates
-            .validate_for_atom_count(self.atoms.len())
-            .map_err(QueryGraphError::CoordinateValidation)?;
+        // RDKit✔️✔️: PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+        // RDKit✔️✔️:              "Number of atom mismatch");
+        // Input construction checks each incoming conformer, without cloning
+        // an entire coordinate block or re-auditing an existing graph.
+        for conformer in &self.conformers_2d {
+            conformer
+                .validate_for_atom_count(self.atoms.len())
+                .map_err(QueryGraphError::CoordinateValidation)?;
+        }
+        for conformer in &self.conformers_3d {
+            conformer
+                .validate_for_atom_count(self.atoms.len())
+                .map_err(QueryGraphError::CoordinateValidation)?;
+        }
 
         validate_substance_groups(&self.substance_groups, self.atoms.len(), self.bonds.len())?;
 
@@ -1801,6 +1809,31 @@ impl QueryGraph {
             group.validate_members()?;
         }
 
+        Ok(())
+    }
+
+    /// Audit the existing graph, including its derived adjacency and
+    /// cross-collection conformer order. Absent from ordinary builds.
+    #[cfg(feature = "runtime-invariants")]
+    pub fn validate(&self) -> Result<(), QueryGraphError> {
+        self.check_input_rows()?;
+        if let Some(order) = &self.source_conformer_order {
+            let two_d = order
+                .iter()
+                .filter(|d| **d == crate::CoordinateDimension::TwoD)
+                .count();
+            let three_d = order.len() - two_d;
+            if two_d != self.conformers_2d.len() || three_d != self.conformers_3d.len() {
+                return Err(QueryGraphError::CoordinateValidation(
+                    crate::CoordinateValidationError::SourceConformerOrder {
+                        two_d,
+                        three_d,
+                        expected_two_d: self.conformers_2d.len(),
+                        expected_three_d: self.conformers_3d.len(),
+                    },
+                ));
+            }
+        }
         let mut expected_adjacency = vec![Vec::new(); self.atoms.len()];
         for (bond_index, bond) in self.bonds.iter().enumerate() {
             let begin = bond.begin().index();
@@ -2817,6 +2850,7 @@ mod tests {
             .expect("in-range parent references are structurally valid");
 
         assert_eq!(query_substance_groups(&graph), groups);
+        #[cfg(feature = "runtime-invariants")]
         graph
             .validate()
             .expect("parent cycles are not a model rule");
@@ -3009,6 +3043,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "runtime-invariants")]
     fn validate_rejects_stale_query_adjacency_after_detached_editing() {
         let graph = QueryGraph {
             atoms: vec![carbon(0), carbon(1)],

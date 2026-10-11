@@ -452,12 +452,9 @@ fn validation_rejects_topology_valence_and_ring_rows_before_indexing() {
     let mut invalid = topology.clone();
     invalid.atoms[0] = invalid.atoms[0].clone().with_id(AtomId::new(1));
     assert_eq!(
-        potential_stereo(
-            &invalid,
-            &assignment,
-            &symmetric_empty_rings(&topology),
-            &PotentialStereoParams::default(),
-        ),
+        invalid
+            .validate()
+            .map_err(PotentialStereoError::InvalidTopology),
         Err(PotentialStereoError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,

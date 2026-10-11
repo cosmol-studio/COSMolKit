@@ -19,6 +19,7 @@ fn bits_3d(rows: &[[f64; 3]]) -> Vec<[u64; 3]> {
 }
 
 #[test]
+#[cfg(feature = "runtime-invariants")]
 fn coordinate_dimensions_and_empty_blocks_are_valid() {
     assert_ne!(CoordinateDimension::TwoD, CoordinateDimension::ThreeD);
 
@@ -149,6 +150,7 @@ fn duplicate_ids_preserve_source_entries_and_order() {
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
         source_conformer_order: None,
     };
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(block.validate_for_atom_count(1), Ok(()));
     assert_eq!(
         block
@@ -246,6 +248,7 @@ fn row_validation_rejects_mismatches_without_rejecting_source_values() {
         ],
         ..Default::default()
     };
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(
         duplicate_with_bad_rows.validate_for_atom_count(1),
         Err(CoordinateValidationError::RowCount {
@@ -261,6 +264,7 @@ fn row_validation_rejects_mismatches_without_rejecting_source_values() {
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
         source_conformer_order: Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD]),
     };
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(valid_mixed.validate_for_atom_count(1), Ok(()));
 }
 
@@ -364,6 +368,7 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
     );
     assert!(block.conformers_3d[0].is_3d());
     assert!(!block.conformers_3d[1].is_3d());
+    #[cfg(feature = "runtime-invariants")]
     assert_eq!(block.validate_for_atom_count(2), Ok(()));
 }
 
@@ -404,6 +409,7 @@ fn remap_preserves_ids_for_identity_removal_reorder_and_empty_projection() {
             CoordinateDimension::ThreeD,
         ]),
     };
+    #[cfg(feature = "runtime-invariants")]
     original.validate_for_atom_count(3).unwrap();
     for kept in [&[0, 1, 2][..], &[0, 2], &[2, 0, 1], &[]] {
         let mut mapped = original.clone();
@@ -444,6 +450,7 @@ fn remap_preserves_ids_for_identity_removal_reorder_and_empty_projection() {
                 .collect();
             assert_eq!(bits_3d(output.coordinates()), bits_3d(&expected));
         }
+        #[cfg(feature = "runtime-invariants")]
         mapped.validate_for_atom_count(kept.len()).unwrap();
     }
     // Identity mapping of already-empty conformers also retains their IDs.

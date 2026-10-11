@@ -47,14 +47,15 @@ excludes the parity package; run corpus and
 special-regression suites separately through their prepare/test entrypoints.
 
 ```bash
+export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
 uv sync --locked --group dev
 cargo fmt --all --check
-cargo test --workspace --locked --profile dev-test --no-fail-fast \
+cargo test --workspace --locked --no-fail-fast \
     --exclude cosmolkit-parity-tests \
     --features cosmolkit/op-contracts-strict
 cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
-.venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
-python3 wasm/tools/wasm_binding/run.py
+.venv/bin/maturin develop --manifest-path python/Cargo.toml
+python3 wasm/tools/wasm_binding/run.py --profile dev
 .venv/bin/pytest python/tests
 ```
 
@@ -62,9 +63,11 @@ Also run every `run` step in the `feature-matrix` job of
 [features.yml](../.github/workflows/features.yml); do not maintain a separate
 feature list or weaken CI.
 
-Daily `--profile dev-test` builds use optimization level 3 without LTO and with
-16 codegen units. CI distribution builds use `--release` for fat LTO and one
-codegen unit; strict checks are independent of either profile.
+Pre-commit checks use Cargo's default unoptimized dev/test profiles, without
+debug information, prioritizing compilation speed. No custom profile is needed.
+The existing optimized `dev-test` profile remains available for larger test runs.
+CI distribution builds still use `--release` for optimization level 3, fat LTO
+and one codegen unit; strict checks are independent of the build profile.
 
 All checks must pass before committing. Record commands, exit codes, test
 counts and logs; do not add exclusions beyond the parity-package separation

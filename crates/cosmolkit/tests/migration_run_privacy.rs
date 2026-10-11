@@ -5,6 +5,7 @@ use std::process::{Command, Output};
 type Case = (&'static str, &'static [&'static str]);
 
 const ALLOWED: &[&str] = &[
+    "model_local_preconditions",
     "allowed",
     "cip_cow_allowed",
     "atom_code_cow_allowed",
@@ -134,9 +135,27 @@ const FINALIZER: &[Case] = &[("pending_finalizer", &["private", "parts", "operat
 #[test]
 fn real_operation_module_capability_boundaries_default_and_strict() {
     for strict in [false, true] {
-        let allowed = compile_probe(ALLOWED, strict);
+        let mut allowed_cases = ALLOWED.to_vec();
+        if strict {
+            allowed_cases.push("audit_definitions");
+        }
+        let allowed = compile_probe(&allowed_cases, strict);
         assert!(allowed.status.success(), "{}", output_text(&allowed));
-        for cases in [ACCESS, BORROWS, FINALIZER] {
+        let mut access = ACCESS.to_vec();
+        if !strict {
+            access.push((
+                "audit_definitions",
+                &[
+                    "E0599",
+                    "TopologyBlock",
+                    "QueryGraph",
+                    "validate_for_topology",
+                    "validate_for_atom_count",
+                    "validate_for_counts",
+                ],
+            ));
+        }
+        for cases in [access.as_slice(), BORROWS, FINALIZER] {
             let selected: Vec<_> = cases.iter().map(|(case, _)| *case).collect();
             let output = compile_probe(&selected, strict);
             assert!(
@@ -175,7 +194,7 @@ fn real_operation_module_capability_boundaries_default_and_strict() {
         }
     }
     println!(
-        "8 compiler invocations; 15 rejected probe groups verified in both default and strict modes"
+        "8 compiler invocations; capability privacy and model audit feature boundaries verified"
     );
 }
 

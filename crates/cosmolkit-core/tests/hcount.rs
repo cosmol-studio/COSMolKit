@@ -233,7 +233,9 @@ fn invalid_atom_and_topology_errors_preserve_exact_fields() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        total_hydrogen_count(&invalid, &assignment(vec![0]), AtomId::new(0), false),
+        invalid
+            .validate()
+            .map_err(|source| ValenceError::InvalidTopology { source }),
         Err(ValenceError::InvalidTopology {
             source: TopologyValidationError::AtomIdMismatch {
                 position: 0,

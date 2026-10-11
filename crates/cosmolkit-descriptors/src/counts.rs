@@ -2,9 +2,7 @@
 //! `RDKit::Descriptors::calcNumAtoms`, `RDKit::ROMol::getNumHeavyAtoms`,
 //! `RDKit::ROMol::getNumAtoms`).
 
-use crate::{
-    DescriptorError, DescriptorInput, DescriptorResult, prepared_valence, validate_topology,
-};
+use crate::{DescriptorError, DescriptorInput, DescriptorResult, prepared_valence};
 use cosmolkit_core::{ValenceAssignment, total_hydrogen_count_from_validated};
 use cosmolkit_model::TopologyBlock;
 
@@ -30,7 +28,6 @@ pub(crate) fn num_heavy_atoms_kernel(topology: &TopologyBlock) -> DescriptorResu
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: };
     // END RDKIT CPP FUNCTION: RDKit::ROMol::getNumHeavyAtoms
-    validate_topology(topology, "num_heavy_atoms")?;
     u32::try_from(
         topology
             .atoms
@@ -87,7 +84,6 @@ pub(crate) fn num_atoms_kernel(
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: };
     // END RDKIT CPP FUNCTION: RDKit::ROMol::getNumAtoms
-    validate_topology(topology, "num_atoms")?;
     let assignment = prepared_valence(topology, Some(assignment), "num_atoms")?;
     let mut result =
         u32::try_from(topology.atoms.len()).map_err(|_| DescriptorError::Unsupported {

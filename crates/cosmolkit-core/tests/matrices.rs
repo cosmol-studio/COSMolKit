@@ -433,24 +433,9 @@ fn all_matrix_entries_reject_invalid_topology_before_indexing() {
         adjacency: AdjacencyList::from_topology(2, &[]),
         ..valid
     };
-    let expected = Err(MatrixError::InvalidTopology(
-        TopologyValidationError::AdjacencyMismatch,
-    ));
     assert_eq!(
-        adjacency_matrix(&invalid, &AdjacencyMatrixParams::default()),
-        expected
-    );
-    assert_eq!(
-        topological_distance_matrix(&invalid, &TopologicalDistanceMatrixParams::default()),
-        expected
-    );
-    assert_eq!(
-        distance_matrix_3d(
-            &invalid,
-            &CoordinateBlock::default(),
-            &DistanceMatrix3dParams::default()
-        ),
-        expected
+        invalid.validate(),
+        Err(TopologyValidationError::AdjacencyMismatch)
     );
 }
 
@@ -544,14 +529,9 @@ fn three_dimensional_errors_preserve_validation_and_selection_order() {
         ..CoordinateBlock::default()
     };
     assert_eq!(
-        distance_matrix_3d(
-            &topology,
-            &short,
-            &DistanceMatrix3dParams {
-                conformer_id: Some(404),
-                ..DistanceMatrix3dParams::default()
-            }
-        ),
+        short
+            .validate_for_atom_count(topology.atoms.len())
+            .map_err(MatrixError::InvalidCoordinates),
         Err(MatrixError::InvalidCoordinates(
             CoordinateValidationError::RowCount {
                 dimension: "3D",

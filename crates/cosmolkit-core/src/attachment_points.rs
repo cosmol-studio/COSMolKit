@@ -107,8 +107,6 @@ pub fn expand_attachment_points(
     // Complexity review: detached topology reconstruction after each append
     // clones/rebuilds graph state, materially costlier than RWMol mutation;
     // no claim of equivalent performance is made.
-    topology.validate()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     let old_atoms = topology.atoms.len();
     let old_bonds = topology.bonds.len();
     if attachment_values.len() != old_atoms {
@@ -116,9 +114,6 @@ pub fn expand_attachment_points(
             actual: attachment_values.len(),
             expected: old_atoms,
         });
-    }
-    if let Some(state) = query_state {
-        state.validate_for_topology(&topology)?;
     }
     let mut appended_query_atoms = Vec::new();
     let mut appended_query_bonds = Vec::new();
@@ -213,7 +208,6 @@ pub fn expand_attachment_points(
             )
         })
         .transpose()?;
-    coordinates.validate_for_atom_count(topology.atoms.len())?;
     Ok(AttachmentExpansionResult {
         topology,
         coordinates,

@@ -15,6 +15,9 @@ permissions:
 jobs:
     feature-matrix:
         runs-on: ubuntu-latest
+        env:
+            CARGO_PROFILE_DEV_DEBUG: "0"
+            CARGO_PROFILE_TEST_DEBUG: "0"
 
         steps:
             - name: Checkout
@@ -36,7 +39,7 @@ jobs:
               run: cargo check -p cosmolkit --no-default-features
 
             - name: Test minimal facade
-              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features op-contracts-strict
+              run: cargo test -p cosmolkit --no-default-features --features op-contracts-strict
 
             - name: Check leaf and composed features
               shell: bash
@@ -71,10 +74,10 @@ jobs:
               run: cargo check -p cosmolkit
 
             - name: Test core bundle public surface
-              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict --test feature_selection
+              run: cargo test -p cosmolkit --no-default-features --features core,op-contracts-strict --test feature_selection
 
             - name: Test reaction dependency public surface
-              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features reaction,op-contracts-strict --test feature_selection
+              run: cargo test -p cosmolkit --no-default-features --features reaction,op-contracts-strict --test feature_selection
 
             - name: Test core with unified private IO dependencies
-              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict,cosmolkit-io/depict,cosmolkit-io/search --test feature_selection
+              run: cargo test -p cosmolkit --no-default-features --features core,op-contracts-strict,cosmolkit-io/depict,cosmolkit-io/search --test feature_selection

@@ -56,15 +56,9 @@ fn model_boundaries_return_precise_topology_valence_and_coordinate_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        assign_chiral_tags_from_structure(
-            &invalid_topology,
-            &CoordinateBlock::default(),
-            &ValenceAssignment {
-                explicit_valence: vec![0],
-                implicit_hydrogens: vec![0],
-            },
-            &StructureTagParams::default(),
-        ),
+        invalid_topology
+            .validate()
+            .map_err(StereoError::InvalidTopology),
         Err(StereoError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,

@@ -22,6 +22,7 @@ fn source() -> Molecule {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn new_exact_cip_method_rejects_each_missing_authority_and_unrelated_methods() {
     let valid = operation();
     OpParts::<Probe>::validate_effect_contract(Box::leak(Box::new(valid))).unwrap();
@@ -69,9 +70,6 @@ fn no_effect_scoped_callback_retains_every_arc_and_error_leaves_complete_slots()
         .unwrap();
     assert_eq!(answer, 17);
     assert!(!changed);
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
     let output = parts.finish().unwrap();
     assert!(Arc::ptr_eq(
         &source.topology_arc_runtime(),
@@ -104,9 +102,6 @@ fn no_effect_scoped_callback_retains_every_arc_and_error_leaves_complete_slots()
         .unwrap_err();
     assert!(matches!(error, OperationError::Algorithm { .. }));
     parts.ensure_complete_blocks().unwrap();
-    parts
-        .record_topology_edit_runtime(TopologyEditKind::Local)
-        .unwrap();
     let untouched = parts.finish().unwrap();
     assert_eq!(untouched, source);
     assert!(Arc::ptr_eq(
@@ -116,6 +111,7 @@ fn no_effect_scoped_callback_retains_every_arc_and_error_leaves_complete_slots()
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn new_exact_method_still_requires_computed_assignment_evidence() {
     let source = source();
     let spec = Box::leak(Box::new(operation()));

@@ -8,7 +8,6 @@ use declaration::{
     BioBlock, BioDerivedState, BioDomain, BioEditKind, BioParity, BioRegistry, BioState,
     CipStatePolicy, DerivedState, MappingRequirement, MoleculeBlock, MoleculeDomain,
     MoleculeOutput, MoleculeParity, MoleculeRegistry, OperationKind, SemanticPrecondition,
-    TopologyEditKind,
 };
 
 fn molecule_source() -> String {
@@ -20,7 +19,6 @@ fn molecule_source() -> String {
             output: single,
             domain: coordinate,
             kind: weak,
-            topology_edit: local,
             access: {
                 read: [topology, properties],
                 write: [coordinates, derived_cache],
@@ -206,7 +204,6 @@ fn molecule_full_declaration_preserves_types_order_and_every_set_value() {
     assert_eq!(fields.output, MoleculeOutput::Single);
     assert_eq!(fields.domain, MoleculeDomain::Coordinate);
     assert_eq!(fields.kind, OperationKind::Weak);
-    assert_eq!(fields.topology_edit, TopologyEditKind::Local);
     assert_eq!(
         fields.access.read,
         [MoleculeBlock::Topology, MoleculeBlock::Properties]
@@ -273,22 +270,19 @@ fn molecule_defaults_and_optional_op_introducer_are_supported() {
     let fields = &registry.operations[0].fields;
     assert_eq!(fields.output, MoleculeOutput::Single);
     assert_eq!(fields.domain, MoleculeDomain::Topology);
-    assert_eq!(fields.topology_edit, TopologyEditKind::None);
     assert_eq!(fields.requires_mapping, MappingRequirement::None);
     assert!(!fields.io_roundtrip);
     assert!(!fields.inplace);
 }
 
 #[test]
-fn molecule_strong_edit_and_mapping_branches_parse() {
-    for edit in ["compacting", "expanding", "reordering"] {
-        let source = format!(
-            r#"
+fn molecule_strong_mapping_branch_parses() {
+    let source = format!(
+        r#"
                 op reshape {{
                     method: reshape,
                     impl_fn: crate::reshape_impl,
                     kind: strong,
-                    topology_edit: {edit},
                     access: {{ read: [], write: [topology] }},
                     may_mutate: [topology],
                     derived_effects: {{
@@ -302,11 +296,10 @@ fn molecule_strong_edit_and_mapping_branches_parse() {
                     parity_profile: "reshape-rdkit",
                 }}
             "#
-        );
-        let fields = &parse_molecule(&source).operations[0].fields;
-        assert_eq!(fields.kind, OperationKind::Strong);
-        assert_eq!(fields.requires_mapping, MappingRequirement::Required);
-    }
+    );
+    let fields = &parse_molecule(&source).operations[0].fields;
+    assert_eq!(fields.kind, OperationKind::Strong);
+    assert_eq!(fields.requires_mapping, MappingRequirement::Required);
 }
 
 #[test]
@@ -405,12 +398,11 @@ fn molecule_missing_unknown_and_removed_fields_have_focused_diagnostics() {
 
 #[test]
 fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
-    for (operation, method, output, edit, mapping, remap) in [
+    for (operation, method, output, mapping, remap) in [
         (
             "reaction_products",
             "reaction_products_with_params",
             "multiple",
-            "reconstruction",
             "reconstruction",
             "[]",
         ),
@@ -418,7 +410,6 @@ fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
             "reaction_products_from_inputs",
             "reaction_products_from_inputs",
             "multiple",
-            "reconstruction",
             "reconstruction",
             "[]",
         ),
@@ -426,7 +417,6 @@ fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
             "apply_reaction",
             "apply_reaction_with_params",
             "single",
-            "compacting",
             "required",
             "[coordinates,properties]",
         ),
@@ -434,7 +424,7 @@ fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
         let source = format!(
             r#"op {operation} {{
             method:{method},impl_fn:crate::reaction_impl,
-            output:{output},kind:strong,topology_edit:{edit},
+            output:{output},kind:strong,
             access:{{read:[],write:[topology,coordinates,properties,derived_cache]}},
             may_mutate:[topology,coordinates,properties,derived_cache],auto_remap:{remap},
             derived_effects:{{recompute:[],preserve:[],invalidate:[],operation_defined:[]}},
@@ -460,10 +450,6 @@ fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
                 "output:lazy_multiple".to_owned(),
             ),
             ("kind:strong".to_owned(), "kind:weak".to_owned()),
-            (
-                format!("topology_edit:{edit}"),
-                "topology_edit:local".to_owned(),
-            ),
             (
                 format!("requires_mapping:{mapping}"),
                 "requires_mapping:none".to_owned(),
@@ -565,9 +551,9 @@ fn molecule_rejects_unknown_typed_vocabulary() {
         ),
         ("kind: weak", "kind: maybe", "unknown operation kind"),
         (
-            "topology_edit: local",
-            "topology_edit: shuffle",
-            "unknown topology edit",
+            "kind: weak",
+            "kind: weak, topology_edit: compacting",
+            "unknown molecule_ops field",
         ),
         (
             "coordinates, derived_cache",
@@ -701,16 +687,18 @@ fn preserve_only_access_and_effect_category_product() {
 }
 
 #[test]
-fn molecule_edit_mapping_relationships_are_enforced() {
-    let weak_index_change = replace(
-        &molecule_source(),
-        "topology_edit: local",
-        "topology_edit: compacting",
+fn molecule_strong_mapping_relationships_are_enforced() {
+    let strong = replace(&molecule_source(), "kind: weak", "kind: strong");
+    assert!(molecule_error(&strong).contains("strong molecule operations require a mapping"));
+    let required = replace(
+        &strong,
+        "requires_mapping: identity",
+        "requires_mapping: required",
     );
-    assert!(molecule_error(&weak_index_change).contains("must be strong and require a mapping"));
-
-    let strong_local = replace(&molecule_source(), "kind: weak", "kind: strong");
-    assert!(molecule_error(&strong_local).contains("strong molecule operations"));
+    assert_eq!(
+        parse_molecule(&required).operations[0].fields.kind,
+        OperationKind::Strong
+    );
 }
 
 #[test]
@@ -1128,7 +1116,6 @@ fn historical_declaration_shape_matrix_remains_parseable() {
                     impl_fn: crate::historical_{index},
                     domain: {domain},
                     kind: weak,
-                    topology_edit: local,
                     access: {{ read: [topology], write: [] }},
                     derived_effects: {{
                         recompute: [], preserve: [], invalidate: [], operation_defined: [],
@@ -1200,7 +1187,7 @@ fn current_cosmolkit_operations_have_disjoint_access_for_every_cfg_gate() {
 fn source_add_hs_operation_defined_guard_requires_exact_canonical_contract() {
     let source = r#"op with_hydrogens(params: crate::AddHsParams) {
         method: with_hydrogens_with_params, impl_fn: crate::add_hydrogens_impl,
-        kind: strong, topology_edit: expanding,
+        kind: strong,
         access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
@@ -1223,7 +1210,6 @@ fn source_add_hs_operation_defined_guard_requires_exact_canonical_contract() {
         ),
         ("cip_state: clear", "cip_state: preserve"),
         ("kind: strong", "kind: weak"),
-        ("topology_edit: expanding", "topology_edit: compacting"),
         (
             "operation_defined: [valence]",
             "operation_defined: [coordinates]",
@@ -1264,7 +1250,7 @@ fn weak_source_valence_guard_requires_both_exact_approved_shapes() {
     ] {
         let source = format!(
             r#"op {operation}(params: crate::Params) {{
-            method: {method}, impl_fn: crate::source_impl, kind: weak, topology_edit: local,
+            method: {method}, impl_fn: crate::source_impl, kind: weak,
             access: {{ read: [], write: [topology, properties, derived_cache] }},
             may_mutate: [topology, properties, derived_cache], auto_remap: [],
             derived_effects: {{ recompute: [rings], preserve: [{preserve}], invalidate: [{invalidate}], operation_defined: [valence] }},
@@ -1283,7 +1269,6 @@ fn weak_source_valence_guard_requires_both_exact_approved_shapes() {
             (format!("op {operation}("), "op other(".into()),
             (format!("method: {method}"), "method: other".into()),
             ("kind: weak".into(), "kind: strong".into()),
-            ("topology_edit: local".into(), "topology_edit: none".into()),
             (
                 format!("cip_state: {cip}"),
                 format!(
@@ -1331,7 +1316,7 @@ fn weak_source_valence_guard_requires_both_exact_approved_shapes() {
 fn stereoisomer_lazy_source_transition_requires_exact_identity_and_authority() {
     let source = r#"op enumerate_stereoisomers(options:&crate::StereoisomerOptions) {
         method:enumerate_stereoisomers_with_options,impl_fn:crate::enumerate_impl,
-        output:lazy_multiple,kind:weak,topology_edit:none,
+        output:lazy_multiple,kind:weak,
         access:{read:[],write:[topology,coordinates,properties,derived_cache]},
         may_mutate:[topology,coordinates,properties,derived_cache],
         derived_effects:{recompute:[rings,valence],preserve:[],invalidate:[],operation_defined:[]},
@@ -1363,7 +1348,6 @@ fn stereoisomer_lazy_source_transition_requires_exact_identity_and_authority() {
         ("output:lazy_multiple", "output:single"),
         ("output:lazy_multiple", "output:multiple"),
         ("kind:weak", "kind:strong"),
-        ("topology_edit:none", "topology_edit:local"),
         ("requires_mapping:none", "requires_mapping:identity"),
         ("read:[]", "read:[topology]"),
         (

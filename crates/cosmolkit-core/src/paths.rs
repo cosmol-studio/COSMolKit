@@ -534,7 +534,6 @@ pub(crate) fn connected_components_from_source(
 }
 
 pub fn connected_components(topology: &TopologyBlock) -> Result<ConnectedComponents, PathError> {
-    topology.validate().map_err(PathError::InvalidTopology)?;
     Ok(connected_components_from_source(topology))
 }
 
@@ -542,7 +541,6 @@ pub fn connected_components(topology: &TopologyBlock) -> Result<ConnectedCompone
 /// materializing element-only topology or discarding query carrier identities.
 #[doc(hidden)]
 pub fn query_connected_components(query: &QueryGraph) -> Result<ConnectedComponents, PathError> {
-    query.validate().map_err(PathError::QueryGraph)?;
     Ok(connected_components_from_source(query))
 }
 
@@ -557,7 +555,6 @@ pub fn shortest_path(
     // RDKit✔️✔️:   RANGE_CHECK(0, aid1, nats - 1);
     // RDKit✔️✔️:   RANGE_CHECK(0, aid2, nats - 1);
     // RDKit✔️✔️:   CHECK_INVARIANT(aid1 != aid2, "");
-    topology.validate().map_err(PathError::InvalidTopology)?;
     validate_required_atom(topology, begin, "begin")?;
     validate_required_atom(topology, end, "end")?;
     if begin == end {
@@ -640,7 +637,6 @@ pub fn all_paths_in_range(
     upper_length: usize,
     params: &PathSearchParams,
 ) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
-    topology.validate().map_err(PathError::InvalidTopology)?;
     validate_range(lower_length, upper_length)?;
     let distances = params
         .only_shortest_paths
@@ -697,7 +693,6 @@ fn query_paths_in_range(
     params: &SubgraphSearchParams,
     representation: PathRepresentation,
 ) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
-    query.validate().map_err(PathError::QueryGraph)?;
     let path_params = PathSearchParams {
         representation,
         use_hydrogens: params.use_hydrogens,
@@ -915,7 +910,6 @@ pub fn all_subgraphs_of_length(
     target_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<Vec<Vec<BondId>>, PathError> {
-    topology.validate().map_err(PathError::InvalidTopology)?;
     validate_ignored_atom_mask(params.ignore_atoms, topology.atoms.len())?;
     if target_length == 0 {
         return Ok(Vec::new());
@@ -936,7 +930,6 @@ pub fn all_subgraphs_in_range(
     upper_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
-    topology.validate().map_err(PathError::InvalidTopology)?;
     all_subgraphs_from_graph(
         PathGraphAccess::Concrete(topology),
         lower_length,
@@ -953,7 +946,6 @@ pub fn query_subgraphs_in_range(
     upper_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
-    query.validate().map_err(PathError::QueryGraph)?;
     all_subgraphs_from_graph(
         PathGraphAccess::Query(query),
         lower_length,
@@ -1082,7 +1074,6 @@ pub fn unique_subgraphs_of_length(
     // RDKit❗✔️:   return res;
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION RDKit::findUniqueSubgraphsOfLengthN
-    topology.validate().map_err(PathError::InvalidTopology)?;
     if let Some(extra) = &params.extra_atom_invariants
         && extra.len() != topology.atoms.len()
     {
@@ -1127,7 +1118,6 @@ pub fn atom_environment(
     // RDKit✔️✔️: if (rootedAtAtom >= mol.getNumAtoms()) {
     // RDKit✔️✔️:   throw ValueErrorException("bad atom index");
     // RDKit✔️✔️: }
-    topology.validate().map_err(PathError::InvalidTopology)?;
     validate_required_atom(topology, root, "root")?;
     let mut atom_distances = vec![None; topology.atoms.len()];
     atom_distances[root.index()] = Some(0);
@@ -1205,7 +1195,6 @@ pub fn bond_ids_from_atom_path(
     // RDKit✔️✔️:   PATH_TYPE bids;
     // RDKit✔️✔️:   unsigned int natms = atomIds.size();
     // RDKit✔️✔️:   if (natms <= 1) { return bids; }
-    topology.validate().map_err(PathError::InvalidTopology)?;
     for (position, atom) in atoms.iter().copied().enumerate() {
         if atom.index() >= topology.atoms.len() {
             return Err(PathError::AtomPathOutOfRange {
@@ -1238,7 +1227,6 @@ pub fn subtopology_from_path(
     bonds: &[BondId],
     params: &SubtopologyParams,
 ) -> Result<SubtopologyResult, PathError> {
-    topology.validate().map_err(PathError::InvalidTopology)?;
     // BEGIN RDKIT CPP FUNCTION getSubsetInfo/copySelectedAtomsAndBonds
     // RDKit✔️✔️: } else if (options.method == SubsetMethod::BONDS) {
     // RDKit✔️✔️:   for (const auto &bond_idx : path) {
@@ -1319,14 +1307,6 @@ pub fn subtopology_from_path(
             new_to_old: bond_new_to_old,
         },
     };
-    mapping
-        .validate_for_counts(
-            topology.atoms.len(),
-            copied_atoms.len(),
-            topology.bonds.len(),
-            copied_bonds.len(),
-        )
-        .map_err(PathError::Mapping)?;
 
     for atom in &mut copied_atoms {
         let carrier = mapping.atoms.new_to_old[atom.id().index()]

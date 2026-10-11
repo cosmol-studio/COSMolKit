@@ -166,6 +166,7 @@ impl SdfRecord {
                 cosmolkit_io::SdfReadError::MissingCapability("search"),
             ));
         }
+        #[cfg(feature = "runtime-invariants")]
         query.validate().map_err(SdfError::QueryGraph)?;
         let fields = properties.sdf_data_fields().to_vec();
         Ok(Self::from_finalized_graph(

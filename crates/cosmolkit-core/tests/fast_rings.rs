@@ -327,7 +327,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&atom_id_mismatch),
+        atom_id_mismatch
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::AtomIdMismatch {
                 position: 0,
@@ -345,7 +347,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&bond_id_mismatch),
+        bond_id_mismatch
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::BondIdMismatch {
                 position: 0,
@@ -363,7 +367,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&endpoint_out_of_range),
+        endpoint_out_of_range
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::BondEndpointOutOfRange {
                 bond: BondId::new(0),
@@ -385,7 +391,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&self_loop),
+        self_loop
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::SelfLoopBond {
                 bond: BondId::new(0),
@@ -409,7 +417,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&duplicate_edge),
+        duplicate_edge
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::AdjacencyMismatch
         ))
@@ -428,7 +438,9 @@ fn malformed_topology_is_rejected_with_exact_structured_errors() {
         ..valid_triangle
     };
     assert_eq!(
-        fast_find_rings(&stale_adjacency),
+        stale_adjacency
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::AdjacencyMismatch
         ))
@@ -449,7 +461,9 @@ fn invalid_stereo_and_sgroup_references_fail_before_traversal() {
         ..TopologyBlock::default()
     };
     assert_eq!(
-        fast_find_rings(&invalid_bond_stereo),
+        invalid_bond_stereo
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::StereoAtomOutOfRange {
                 bond: BondId::new(0),
@@ -468,7 +482,9 @@ fn invalid_stereo_and_sgroup_references_fail_before_traversal() {
         ..topology(1, &[])
     };
     assert_eq!(
-        fast_find_rings(&invalid_stereo_group),
+        invalid_stereo_group
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::StereoGroupAtomOutOfRange {
                 atom: AtomId::new(4),
@@ -485,7 +501,9 @@ fn invalid_stereo_and_sgroup_references_fail_before_traversal() {
         ..topology(1, &[])
     };
     assert_eq!(
-        fast_find_rings(&invalid_sgroup),
+        invalid_sgroup
+            .validate()
+            .map_err(RingFindingError::InvalidTopology),
         Err(RingFindingError::InvalidTopology(
             TopologyValidationError::SubstanceGroupAtomOutOfRange {
                 sgroup: SubstanceGroupId::new(0),
