@@ -509,17 +509,20 @@ fn preserve_only_borrow_proof_and_commit_keep_cache_storage() {
                     ..
                 })
             ));
-            assert!(matches!(
-                parts.prove_preserved_runtime(
-                    DerivedState::RINGS,
-                    PreservationProof::UnchangedInput
-                ),
-                Err(OperationError::DerivedEffectContract {
-                    issue: "unchanged-input proof failed",
-                    ..
-                })
-            ));
-            assert_eq!(parts.effect_trace, EffectTrace::default());
+            #[cfg(feature = "op-contracts")]
+            {
+                assert!(matches!(
+                    parts.prove_preserved_runtime(
+                        DerivedState::RINGS,
+                        PreservationProof::UnchangedInput
+                    ),
+                    Err(OperationError::DerivedEffectContract {
+                        issue: "unchanged-input proof failed",
+                        ..
+                    })
+                ));
+                assert_eq!(parts.effect_trace, EffectTrace::default());
+            }
             parts
                 .prove_preserved_runtime(DerivedState::RINGS, PreservationProof::CoordinateOnly)
                 .unwrap();
@@ -588,6 +591,7 @@ fn preserve_only_cache_inspection_borrows_installed_values_and_rejects_checkout(
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn preservation_requires_an_objective_supported_proof() {
     let source = molecule_with_valid(DerivedState::RINGS);
     let operation = spec(
@@ -628,6 +632,94 @@ fn preservation_requires_an_objective_supported_proof() {
             ..
         })
     ));
+}
+
+#[test]
+#[cfg(feature = "op-contracts")]
+fn unchanged_input_proof_preserves_nan_bits_and_rejects_real_coordinate_changes() {
+    let source = molecule();
+    // Match the dimension metadata established by the real Molecule constructor;
+    // minimal-runtime fixtures intentionally do not perform that normalization.
+    let mut coordinates = CoordinateBlock {
+        source_coordinate_dim: Some(cosmolkit_model::CoordinateDimension::ThreeD),
+        ..Default::default()
+    };
+    coordinates
+        .conformers_3d
+        .push(cosmolkit_model::Conformer3D::new(
+            9,
+            vec![[f64::from_bits(0x7ff8_0000_0000_0001), 0.0, 1.0]; 2],
+            true,
+        ));
+    let source = Molecule::from_parts(
+        source.topology().clone(),
+        coordinates,
+        source.properties().clone(),
+    )
+    .unwrap();
+    let access = BlockAccess::new(
+        BlockSet::NONE,
+        all_effect_access().write().union(BlockSet::COORDINATES),
+    );
+    let operation = spec(
+        "unchanged_nan",
+        MoleculeOpOutput::Single,
+        access,
+        access.write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::COORDINATES,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    let mut shared = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    shared
+        .prove_preserved_runtime(DerivedState::COORDINATES, PreservationProof::UnchangedInput)
+        .unwrap();
+    assert!(matches!(shared.coordinates, WorkingBlock::Shared));
+    for (proof, issue) in [
+        (
+            PreservationProof::UnchangedInput,
+            "unchanged-input proof failed",
+        ),
+        (
+            PreservationProof::StructureTagAssignment {
+                clear_stereochem_done: false,
+            },
+            "structure-tag-assignment proof failed",
+        ),
+    ] {
+        for mutation in 0..5 {
+            let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+            let mut candidate = parts.checkout_coordinates_runtime().unwrap();
+            match mutation {
+                0 => {}
+                1 => {
+                    candidate.conformers_3d[0].coordinates_mut()[0][0] =
+                        f64::from_bits(0x7ff8_0000_0000_0002)
+                }
+                2 => candidate.conformers_3d[0].coordinates_mut()[0][1] = -0.0,
+                3 => candidate.conformers_3d[0].coordinates_mut()[0][2] = 2.0,
+                4 => {
+                    candidate.source_coordinate_dim =
+                        Some(cosmolkit_model::CoordinateDimension::TwoD)
+                }
+                _ => unreachable!(),
+            }
+            parts.install_coordinates_runtime(candidate).unwrap();
+            let result = parts.prove_preserved_runtime(DerivedState::COORDINATES, proof);
+            if mutation == 0 {
+                result.unwrap();
+            } else {
+                assert!(
+                    matches!(result, Err(OperationError::DerivedEffectContract { issue: actual, .. }) if actual == issue),
+                    "mutation {mutation}, proof {proof:?}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -692,7 +784,7 @@ fn sanitize_coordinate_proof_accepts_orientation_but_rejects_rewiring_and_new_id
             DerivedState::COORDINATES,
             PreservationProof::SanitizeTopologyState,
         );
-        if allowed {
+        if allowed || !OPERATION_CONTRACTS_ENABLED {
             assert_eq!(result, Ok(()));
         } else {
             assert!(matches!(
@@ -703,6 +795,139 @@ fn sanitize_coordinate_proof_accepts_orientation_but_rejects_rewiring_and_new_id
                 })
             ));
         }
+    }
+}
+
+#[test]
+#[cfg(not(feature = "op-contracts"))]
+fn preservation_without_contracts_records_effects_without_inspecting_blocks() {
+    let source = molecule();
+    let access = BlockAccess::new(BlockSet::NONE, BlockSet::COORDINATES);
+    let operation = spec(
+        "unchecked_preservation",
+        MoleculeOpOutput::Single,
+        access,
+        access.write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::COORDINATES,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    let _coordinates = parts.checkout_coordinates_runtime().unwrap();
+    // A diagnostic would inspect this checked-out block and return an error.
+    // Default-mode bookkeeping neither reads it nor allocates a snapshot.
+    parts
+        .prove_preserved_runtime(DerivedState::COORDINATES, PreservationProof::UnchangedInput)
+        .unwrap();
+    assert_eq!(parts.effect_trace.preserved, DerivedState::COORDINATES);
+    assert!(matches!(parts.derived_cache, WorkingBlock::Shared));
+    // Removing diagnostics does not permit an incomplete transaction to commit.
+    assert!(matches!(
+        parts.finish(),
+        Err(OperationError::IncompleteCommit {
+            block: "coordinates",
+            ..
+        })
+    ));
+}
+
+#[test]
+#[cfg(feature = "cap-forcefields")]
+fn mmff_preservation_keeps_cow_and_coordinate_bits_in_both_modes() {
+    let source = molecule();
+    let mut properties = source.properties().clone();
+    properties
+        .set_computed_prop("_MMFFSanitized", 1_i32)
+        .unwrap();
+    let mut coordinates = CoordinateBlock::default();
+    coordinates
+        .conformers_3d
+        .push(cosmolkit_model::Conformer3D::new(
+            0,
+            vec![[f64::from_bits(0x7ff8_0000_0000_0001), 0.0, 1.0]; 2],
+            true,
+        ));
+    let source = Molecule::from_parts(source.topology().clone(), coordinates, properties).unwrap();
+    let peer = source.clone();
+    let access = BlockAccess::new(
+        BlockSet::NONE,
+        all_effect_access().write().union(BlockSet::COORDINATES),
+    );
+    let operation = spec(
+        "mmff_cow",
+        MoleculeOpOutput::Single,
+        access,
+        access.write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::COORDINATES,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    for mutation in 0..4 {
+        let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+        let topology = parts.checkout_topology_runtime().unwrap();
+        parts.install_topology_runtime(topology).unwrap();
+        let properties = parts.checkout_properties_runtime().unwrap();
+        parts.install_properties_runtime(properties).unwrap();
+        let cache = parts.checkout_derived_cache_runtime().unwrap();
+        parts.install_derived_cache_runtime(cache).unwrap();
+        let mut coordinates = parts.checkout_coordinates_runtime().unwrap();
+        match mutation {
+            0 => {}
+            1 => {
+                coordinates.conformers_3d[0].coordinates_mut()[0][0] =
+                    f64::from_bits(0x7ff8_0000_0000_0002)
+            }
+            2 => coordinates.conformers_3d[0].coordinates_mut()[0][1] = -0.0,
+            3 => coordinates.conformers_3d[0].coordinates_mut()[0][2] = 2.0,
+            _ => unreachable!(),
+        }
+        let expected_bits: Vec<_> = coordinates.conformers_3d[0]
+            .coordinates()
+            .iter()
+            .flatten()
+            .map(|x| x.to_bits())
+            .collect();
+        parts.install_coordinates_runtime(coordinates).unwrap();
+        parts
+            .prove_preserved_runtime(
+                DerivedState::COORDINATES,
+                PreservationProof::MmffPreparedOptimization,
+            )
+            .unwrap();
+        assert!(matches!(parts.topology, WorkingBlock::Shared));
+        assert!(matches!(parts.properties, WorkingBlock::Shared));
+        assert!(matches!(parts.derived_cache, WorkingBlock::Shared));
+        assert_eq!(
+            matches!(parts.coordinates, WorkingBlock::Shared),
+            mutation == 0
+        );
+        let actual_bits: Vec<_> = parts.current_coordinates_candidate().unwrap().conformers_3d[0]
+            .coordinates()
+            .iter()
+            .flatten()
+            .map(|x| x.to_bits())
+            .collect();
+        assert_eq!(actual_bits, expected_bits);
+        assert!(Arc::ptr_eq(
+            &source.coordinates_arc_runtime(),
+            &peer.coordinates_arc_runtime()
+        ));
+        assert_eq!(
+            source.conformers_3d()[0].coordinates()[0][0].to_bits(),
+            0x7ff8_0000_0000_0001
+        );
+        assert_eq!(
+            source.conformers_3d()[0].coordinates()[0][1].to_bits(),
+            0.0f64.to_bits()
+        );
     }
 }
 
@@ -878,6 +1103,7 @@ fn cip_clear_removes_computed_members_only_and_is_atomic() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn cip_assignment_proof_preserves_unowned_typed_property_state_and_order() {
     let operation = spec(
         "with_cip_labels_with_options",

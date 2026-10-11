@@ -1,6 +1,6 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 use cosmolkit_model::{
     Atom, AtomId, Bond, BondId, BondValueError, PropertyValue, PropertyValueKind, TopologyBlock,
@@ -107,6 +107,8 @@ pub enum PotentialStereoError {
     EmptyRingStereoReferences { atom: AtomId },
     #[error("ring preparation failed: {0}")]
     Ring(#[from] crate::RingFindingError),
+    #[error("connectivity ranking failed: {0}")]
+    Rank(#[from] crate::CanonicalRankError),
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
     #[error("valence field {field} has {actual} rows, expected {atom_count}")]
@@ -765,54 +767,48 @@ fn bond_symbol(bond: &Bond) -> &'static str {
 
 fn connectivity_ranks(
     topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
     atom_symbols: &[String],
     bond_symbols: &[String],
 ) -> Result<Vec<u32>, PotentialStereoError> {
     // BEGIN RDKIT CPP FUNCTION rankFragmentAtoms restricted call from runCleanup
+    // RDKit✔️✔️: const bool includeChirality = false;
+    // RDKit✔️✔️: const bool includeIsotopes = false;
+    // RDKit✔️✔️: const bool breakTies = false;
+    // RDKit✔️✔️: const bool includeAtomMaps = false;
+    // RDKit✔️✔️: const bool includeChiralPresence = false;
+    // RDKit✔️✔️: const bool useRingStereo = false;
     // RDKit✔️✔️: Canon::rankFragmentAtoms(mol, aranks, atomsInPlay, bondsInPlay,
-    // RDKit✔️✔️:   &atomSymbols, &bondSymbols, false, false, false, false, false, false);
+    // RDKit✔️✔️:                          &atomSymbols, &bondSymbols, breakTies,
+    // RDKit✔️✔️:                          includeChirality, includeIsotopes, includeAtomMaps,
+    // RDKit✔️✔️:                          includeChiralPresence, useRingStereo);
     // END RDKIT CPP FUNCTION rankFragmentAtoms restricted call from runCleanup
-    // With every atom and bond in play and all six optional dimensions false,
-    // the source comparison is the stable equitable refinement of the supplied
-    // atom label and sorted incident (bond label, neighbor class) multiset.
-    let count = topology.atoms.len();
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-    let mut ranks = vec![0; count];
-    for iteration in 0..=count {
-        let keys = (0..count)
-            .map(|index| {
-                let mut neighbors = topology
-                    .adjacency
-                    .neighbors_of(index)
-                    .iter()
-                    .map(|neighbor| {
-                        (
-                            bond_symbols[neighbor.bond.index()].clone(),
-                            ranks[neighbor.atom_index],
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                neighbors.sort_unstable();
-                (ranks[index], atom_symbols[index].clone(), neighbors)
-            })
-            .collect::<Vec<_>>();
-        let unique = keys.iter().cloned().collect::<BTreeSet<_>>();
-        let classes = unique
-            .into_iter()
-            .enumerate()
-            .map(|(rank, key)| (key, rank as u32))
-            .collect::<BTreeMap<_, _>>();
-        let next = keys.iter().map(|key| classes[key]).collect::<Vec<_>>();
-        if iteration > 0 && next == ranks {
-            return Ok(next);
-        }
-        ranks = next;
-    }
-    Err(PotentialStereoError::RefinementDidNotConverge {
-        iterations: count + 1,
-    })
+    // Reuse the source-shaped canonical partition engine, including its degree
+    // comparison before custom symbols. Borrow prepared state and symbols;
+    // only the O(V + E) participation masks and rank result are materialized.
+    let mut params = crate::CanonicalRankParams::default();
+    params.break_ties = false;
+    params.include_chirality = false;
+    params.include_isotopes = false;
+    params.include_atom_maps = false;
+    params.include_chiral_presence = false;
+    params.include_stereo_groups = false;
+    params.use_non_stereo_ranks = false;
+    params.include_ring_stereo = false;
+    Ok(crate::rank_fragment_atoms_with_prepared_state(
+        topology,
+        valence,
+        Some(rings),
+        &vec![true; topology.atoms.len()],
+        &vec![true; topology.bonds.len()],
+        Some(atom_symbols),
+        Some(bond_symbols),
+        &params,
+    )?
+    .into_iter()
+    .map(|rank| rank as u32)
+    .collect())
 }
 
 fn initialize_atoms(
@@ -2065,7 +2061,7 @@ fn refinement_loop(
     let mut result = Vec::new();
     for iteration in 0..limit {
         result.clear();
-        ranks = connectivity_ranks(topology, atom_symbols, bond_symbols)?;
+        ranks = connectivity_ranks(topology, valence, rings, atom_symbols, bond_symbols)?;
         let mut another = update_atoms(
             topology,
             valence,
@@ -2124,8 +2120,7 @@ pub fn potential_stereo(
     // END RDKIT CPP FUNCTION findPotentialStereo
     // The caller supplies the already materialized valence and symmetric-ring
     // assignments. The validated total-H helper avoids rescanning topology for
-    // each atom and bond; the private rank implementation remains slower than
-    // the C++ path.
+    // each atom and bond; connectivity refinement reuses the canonical ranker.
     validate_inputs(topology, valence, rings)?;
     let mut working = topology.clone();
     let atom_count = working.atoms.len();
@@ -3092,6 +3087,53 @@ mod source_cached_getter_conditions {
                 atom: AtomId::new(0),
                 value: -1
             })
+        );
+    }
+}
+
+#[cfg(test)]
+mod connectivity_rank_regressions {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec, Element};
+
+    #[test]
+    fn connectivity_ranking_keeps_degree_before_custom_atom_symbols() {
+        let topology = TopologyBlock::try_from_parts(
+            [Element::C, Element::C, Element::O]
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+                .collect(),
+            [(0, 1), (1, 2)]
+                .into_iter()
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let atoms = topology.atoms.iter().map(atom_symbol).collect::<Vec<_>>();
+        let bonds = topology
+            .bonds
+            .iter()
+            .map(|b| bond_symbol(b).to_owned())
+            .collect::<Vec<_>>();
+        let valence = crate::assign_valence_with_options_for_topology(
+            &topology,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let rings = RingInfo::new(crate::RingFindType::SymmSssr, 3, 2);
+        assert_eq!(
+            connectivity_ranks(&topology, &valence, &rings, &atoms, &bonds).unwrap(),
+            [0, 2, 1]
         );
     }
 }

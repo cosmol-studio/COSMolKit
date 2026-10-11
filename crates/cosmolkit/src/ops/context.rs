@@ -21,6 +21,67 @@ enum WorkingBlock<T> {
     Installed(T),
 }
 
+// Preservation is an identity claim, not floating-point numerical equality.
+// In particular, an untouched NaN must pass and a changed signed zero must not.
+// Shared blocks need no traversal; detached candidates use a borrowed O(N) scan.
+#[cfg(feature = "op-contracts")]
+fn coordinates_preserved(before: &CoordinateBlock, after: &CoordinateBlock) -> bool {
+    if std::ptr::eq(before, after) {
+        return true;
+    }
+    let order_matches = match (
+        &before.source_conformer_order,
+        &after.source_conformer_order,
+    ) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => true,
+        (Some(order), None) | (None, Some(order)) => {
+            if before.conformers_2d.is_empty() {
+                order.len() == before.conformers_3d.len()
+                    && order.iter().all(|d| *d == CoordinateDimension::ThreeD)
+            } else if before.conformers_3d.is_empty() {
+                order.len() == before.conformers_2d.len()
+                    && order.iter().all(|d| *d == CoordinateDimension::TwoD)
+            } else {
+                false
+            }
+        }
+    };
+    before.source_coordinate_dim == after.source_coordinate_dim
+        && order_matches
+        && before.conformers_2d.len() == after.conformers_2d.len()
+        && before.conformers_3d.len() == after.conformers_3d.len()
+        && before
+            .conformers_2d
+            .iter()
+            .zip(&after.conformers_2d)
+            .all(|(a, b)| {
+                a.id() == b.id()
+                    && a.props() == b.props()
+                    && a.coordinates().len() == b.coordinates().len()
+                    && a.coordinates()
+                        .iter()
+                        .flatten()
+                        .zip(b.coordinates().iter().flatten())
+                        .all(|(x, y)| x.to_bits() == y.to_bits())
+            })
+        && before
+            .conformers_3d
+            .iter()
+            .zip(&after.conformers_3d)
+            .all(|(a, b)| {
+                a.id() == b.id()
+                    && a.is_3d() == b.is_3d()
+                    && a.props() == b.props()
+                    && a.coordinates().len() == b.coordinates().len()
+                    && a.coordinates()
+                        .iter()
+                        .flatten()
+                        .zip(b.coordinates().iter().flatten())
+                        .all(|(x, y)| x.to_bits() == y.to_bits())
+            })
+}
+
 /// Opaque, single-use detached candidate for one registered transaction.
 /// No live Molecule, constructors, block accessors, or conversion methods are
 /// available to operation bodies. Shared slots are resolved by the wrapper.
@@ -1517,6 +1578,28 @@ impl<'a, Access> OpParts<'a, Access> {
         proof: PreservationProof,
     ) -> Result<(), OperationError> {
         self.validate_effect_action("preserve", states, self.spec.derived_effects.preserve)?;
+        // Preservation proofs are diagnostics, not chemistry or cache updates.
+        // Compile their scans and comparison-only clones out of ordinary builds.
+        #[cfg(feature = "op-contracts")]
+        self.validate_preservation_proof(states, proof)?;
+        // MMFF also uses this boundary to restore unchanged block sharing.
+        // That COW behavior is required in both modes and is not a proof check.
+        #[cfg(feature = "cap-forcefields")]
+        if proof == PreservationProof::MmffPreparedOptimization {
+            self.reuse_unchanged_mmff_blocks()?;
+        }
+        #[cfg(not(any(feature = "op-contracts", feature = "cap-forcefields")))]
+        let _ = proof;
+        self.effect_trace.preserved = self.effect_trace.preserved.union(states);
+        Ok(())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_preservation_proof(
+        &self,
+        states: DerivedState,
+        proof: PreservationProof,
+    ) -> Result<(), OperationError> {
         match proof {
             PreservationProof::AtomUserProperties => {
                 if OPERATION_CONTRACTS_ENABLED {
@@ -1562,8 +1645,10 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::UnchangedInput => {
                 let unchanged = self.current_topology_candidate()? == self.source.topology()
-                    && self.current_coordinates_candidate()?
-                        == self.source.coordinate_block_runtime()
+                    && coordinates_preserved(
+                        self.source.coordinate_block_runtime(),
+                        self.current_coordinates_candidate()?,
+                    )
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1776,9 +1861,11 @@ impl<'a, Access> OpParts<'a, Access> {
                         .clear_prop("_StereochemDone")
                         .map_err(OperationError::InvalidProperty)?;
                 }
-                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == &expected_properties
+                let preserved_blocks_are_unchanged = coordinates_preserved(
+                    self.source.coordinate_block_runtime(),
+                    self.current_coordinates_candidate()?,
+                ) && self.current_properties_candidate()?
+                    == &expected_properties
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -2233,12 +2320,43 @@ impl<'a, Access> OpParts<'a, Access> {
             #[cfg(feature = "cap-forcefields")]
             PreservationProof::MmffPreparedOptimization => {
                 // MMFF preparation preserves graph identity and only adjusts
-                // aromatic atom/H and bond-order flags; minimization may alter
-                // stored 3D positions. Permit precisely these source writes.
+                // aromatic atom/H, bond-order flags and Kekulize direction
+                // cleanup; minimization may alter stored 3D positions.
                 // Existing proof variants and their checks remain unchanged.
                 let allowed = DerivedState::RING_FAMILIES.union(DerivedState::COORDINATES);
                 let candidate = self.current_topology_candidate()?;
                 let source = self.source.topology();
+                // Preparation guard and its source anchors are owned by
+                // cosmolkit-forcefields/src/mmff/mol_properties.rs::new_prepared
+                // (ForceFieldHelpers/MMFF/AtomTyper.cpp:2354-2366).
+                // Structural permission only: the domain owner still selects
+                // Kekule bonds; runtime must not replay the chemical algorithm.
+                let kekulize_preparation =
+                    self.source.properties().prop("_MMFFSanitized").is_none()
+                        && source.atoms.iter().any(|atom| atom.is_aromatic());
+                let expected_bond = |row: &cosmolkit_model::Bond, old: &cosmolkit_model::Bond| {
+                    let mut expected = old.clone();
+                    expected.set_order(row.order());
+                    expected.set_aromatic(row.is_aromatic());
+                    // Direction cleanup and its verbatim source anchors remain
+                    // in cosmolkit-core/src/kekulize.rs::kekulize_matching_worker_mut
+                    // (Kekulize.cpp:350-391): aromatic or dummy-incident candidate
+                    // bonds may lose direction when selected as double bonds.
+                    // backTrack may subsequently restore SINGLE without
+                    // restoring direction; MMFF also reassigns aromaticity.
+                    // Thus final bond order cannot identify every legal cleanup.
+                    // Borrowed O(1) eligibility checks retain the original one
+                    // comparison clone per bond, with no extra topology copy.
+                    if kekulize_preparation
+                        && row.direction() == crate::BondDirection::None
+                        && (old.is_aromatic()
+                            || source.atoms[old.begin().index()].atomic_number() == 0
+                            || source.atoms[old.end().index()].atomic_number() == 0)
+                    {
+                        expected.set_direction(crate::BondDirection::None);
+                    }
+                    expected
+                };
                 let atom_rows = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(|(row, old)| {
                         let mut expected = old.clone();
@@ -2247,12 +2365,11 @@ impl<'a, Access> OpParts<'a, Access> {
                         &expected == row
                     });
                 let bond_rows = candidate.bonds.len() == source.bonds.len()
-                    && candidate.bonds.iter().zip(&source.bonds).all(|(row, old)| {
-                        let mut expected = old.clone();
-                        expected.set_order(row.order());
-                        expected.set_aromatic(row.is_aromatic());
-                        &expected == row
-                    });
+                    && candidate
+                        .bonds
+                        .iter()
+                        .zip(&source.bonds)
+                        .all(|(row, old)| &expected_bond(row, old) == row);
                 let graph_identity = atom_rows
                     && bond_rows
                     && candidate.adjacency == source.adjacency
@@ -2305,44 +2422,229 @@ impl<'a, Access> OpParts<'a, Access> {
                     || !properties_match
                     || !cache_match
                 {
-                    return Err(Self::effect_error(
-                        self.spec,
-                        "preserve",
-                        states,
-                        "MMFF graph/property/coordinate-metadata preservation proof failed",
-                    ));
-                }
-                // Runtime retains source sharing only when final values are
-                // unchanged. Coordinates require bit equality: signed zeros
-                // cannot erase a real source result by ordinary f64 equality.
-                let same_topology = candidate == source;
-                let same_coordinates = coordinate_metadata
-                    && coordinates
+                    // Diagnose only a rejected candidate. Keep the complete
+                    // equality checks above authoritative, including fields not
+                    // individually named here. No formatting on the success path.
+                    macro_rules! check_preserved {
+                        ($field:expr, $expected:expr, $actual:expr) => {{
+                            let expected = &$expected;
+                            let actual = &$actual;
+                            if expected != actual {
+                                return Err(OperationError::DerivedPreservationMismatch {
+                                    operation: self.spec.method,
+                                    states,
+                                    field: $field.into(),
+                                    expected: format!("{expected:?}"),
+                                    actual: format!("{actual:?}"),
+                                });
+                            }
+                        }};
+                    }
+                    if !allowed.contains(states) {
+                        return Err(Self::effect_error(
+                            self.spec,
+                            "preserve",
+                            states,
+                            "MMFF proof supports only ring-family and coordinate preservation",
+                        ));
+                    }
+                    check_preserved!(
+                        "topology.atoms.len",
+                        source.atoms.len(),
+                        candidate.atoms.len()
+                    );
+                    for (index, (old, row)) in source.atoms.iter().zip(&candidate.atoms).enumerate()
+                    {
+                        let mut expected = old.clone();
+                        expected.set_aromatic(row.is_aromatic());
+                        expected.set_explicit_hydrogens(row.explicit_hydrogens());
+                        if &expected != row {
+                            macro_rules! atom_field {
+                                ($($getter:ident),+ $(,)?) => {$(
+                                    check_preserved!(format!("topology.atoms[{index}].{}", stringify!($getter)), expected.$getter(), row.$getter());
+                                )+};
+                            }
+                            atom_field!(
+                                id,
+                                element,
+                                formal_charge,
+                                source_valence_facts,
+                                chiral_tag,
+                                chiral_permutation,
+                                unknown_stereo,
+                                mol_parity,
+                                mol_inversion_flag,
+                                implicit_hydrogen,
+                                tracked_isotopic_hydrogens,
+                                isotope,
+                                atom_map,
+                                no_implicit,
+                                radical_electrons,
+                                hybridization,
+                                temporary_flags,
+                                pdb_residue_info,
+                                template_attachment_order,
+                                props
+                            );
+                            check_preserved!(format!("topology.atoms[{index}]"), &expected, row);
+                        }
+                    }
+                    check_preserved!(
+                        "topology.bonds.len",
+                        source.bonds.len(),
+                        candidate.bonds.len()
+                    );
+                    for (index, (old, row)) in source.bonds.iter().zip(&candidate.bonds).enumerate()
+                    {
+                        let expected = expected_bond(row, old);
+                        if &expected != row {
+                            macro_rules! bond_field {
+                                ($($getter:ident),+ $(,)?) => {$(
+                                    check_preserved!(format!("topology.bonds[{index}].{}", stringify!($getter)), expected.$getter(), row.$getter());
+                                )+};
+                            }
+                            bond_field!(
+                                id,
+                                begin,
+                                end,
+                                is_conjugated,
+                                direction,
+                                stereo,
+                                stereo_atom_references,
+                                unknown_stereo,
+                                temporary_flags,
+                                props,
+                                query
+                            );
+                            check_preserved!(format!("topology.bonds[{index}]"), &expected, row);
+                        }
+                    }
+                    check_preserved!("topology.adjacency", source.adjacency, candidate.adjacency);
+                    check_preserved!(
+                        "topology.substance_groups",
+                        source.substance_groups,
+                        candidate.substance_groups
+                    );
+                    check_preserved!(
+                        "topology.stereo_groups",
+                        source.stereo_groups,
+                        candidate.stereo_groups
+                    );
+                    check_preserved!(
+                        "coordinates.conformers_2d",
+                        old_coordinates.conformers_2d,
+                        coordinates.conformers_2d
+                    );
+                    check_preserved!(
+                        "coordinates.source_coordinate_dim",
+                        old_coordinates.source_coordinate_dim,
+                        coordinates.source_coordinate_dim
+                    );
+                    check_preserved!(
+                        "coordinates.source_conformer_order",
+                        old_coordinates.source_conformer_order,
+                        coordinates.source_conformer_order
+                    );
+                    check_preserved!(
+                        "coordinates.conformers_3d.len",
+                        old_coordinates.conformers_3d.len(),
+                        coordinates.conformers_3d.len()
+                    );
+                    for (index, (old, row)) in old_coordinates
                         .conformers_3d
                         .iter()
-                        .zip(&old_coordinates.conformers_3d)
-                        .all(|(row, old)| {
-                            row.coordinates()
-                                .iter()
-                                .flatten()
-                                .zip(old.coordinates().iter().flatten())
-                                .all(|(a, b)| a.to_bits() == b.to_bits())
-                        });
-                let same_properties =
-                    self.current_properties_candidate()? == self.source.properties();
-                let same_cache =
-                    self.current_cache_candidate()? == self.source.derived_cache_runtime();
-                if same_topology {
-                    self.topology = WorkingBlock::Shared;
-                }
-                if same_coordinates {
-                    self.coordinates = WorkingBlock::Shared;
-                }
-                if same_properties {
-                    self.properties = WorkingBlock::Shared;
-                }
-                if same_cache {
-                    self.derived_cache = WorkingBlock::Shared;
+                        .zip(&coordinates.conformers_3d)
+                        .enumerate()
+                    {
+                        check_preserved!(
+                            format!("coordinates.conformers_3d[{index}].id"),
+                            old.id(),
+                            row.id()
+                        );
+                        check_preserved!(
+                            format!("coordinates.conformers_3d[{index}].is_3d"),
+                            old.is_3d(),
+                            row.is_3d()
+                        );
+                        check_preserved!(
+                            format!("coordinates.conformers_3d[{index}].props"),
+                            old.props(),
+                            row.props()
+                        );
+                    }
+                    if let Err(error) = coordinates.validate_for_atom_count(source.atoms.len()) {
+                        return Err(OperationError::InvalidCoordinates(error));
+                    }
+                    let properties = self.current_properties_candidate()?;
+                    check_preserved!(
+                        "properties.props[_MMFFSanitized]",
+                        expected_properties.prop("_MMFFSanitized"),
+                        properties.prop("_MMFFSanitized")
+                    );
+                    check_preserved!(
+                        "properties.name",
+                        expected_properties.name(),
+                        properties.name()
+                    );
+                    check_preserved!(
+                        "properties.sdf_data_fields",
+                        expected_properties.sdf_data_fields(),
+                        properties.sdf_data_fields()
+                    );
+                    check_preserved!(
+                        "properties.sdf_property_lists",
+                        expected_properties.sdf_property_lists(),
+                        properties.sdf_property_lists()
+                    );
+                    for key in expected_properties
+                        .props()
+                        .keys()
+                        .chain(properties.props().keys())
+                    {
+                        check_preserved!(
+                            match std::str::from_utf8(key.as_bytes()) {
+                                Ok(text) => format!("properties.props[{text:?}]"),
+                                Err(_) => format!("properties.props[bytes {:?}]", key.as_bytes()),
+                            },
+                            expected_properties.prop(key),
+                            properties.prop(key)
+                        );
+                    }
+                    // PropertyStore equality also checks insertion order and
+                    // bookkeeping, not just the name/value map.
+                    check_preserved!("properties", &expected_properties, properties);
+                    check_preserved!(
+                        "derived_cache.preserved_valid_states",
+                        self.source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states),
+                        self.current_cache_candidate()?
+                            .valid_states()
+                            .intersection(states)
+                    );
+                    #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
+                    check_preserved!(
+                        "derived_cache.ring_family_info",
+                        self.source.derived_cache_runtime().ring_family_info(),
+                        self.current_cache_candidate()?.ring_family_info()
+                    );
+                    return Err(OperationError::DerivedPreservationMismatch {
+                        operation: self.spec.method,
+                        states,
+                        field: "MMFF.(graph_identity, coordinate_metadata, properties, cache)"
+                            .into(),
+                        expected: format!("{:?}", (true, true, true, true)),
+                        actual: format!(
+                            "{:?}",
+                            (
+                                graph_identity,
+                                coordinate_metadata,
+                                properties_match,
+                                cache_match
+                            )
+                        ),
+                    });
                 }
             }
             PreservationProof::SanitizeTopologyState => {
@@ -2392,7 +2694,73 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
         }
-        self.effect_trace.preserved = self.effect_trace.preserved.union(states);
+        Ok(())
+    }
+
+    #[cfg(feature = "cap-forcefields")]
+    fn reuse_unchanged_mmff_blocks(&mut self) -> Result<(), OperationError> {
+        // Installers already validate graph/coordinate structure. This borrowed
+        // comparison only recovers original Arcs after detached MMFF work; it
+        // does not construct expected chemical state or clone comparison rows.
+        // Shared slots need no scan. Installed slots cost O(their stored size).
+        let same_topology = matches!(self.topology, WorkingBlock::Installed(_))
+            && self.current_topology_candidate()? == self.source.topology();
+        let same_properties = matches!(self.properties, WorkingBlock::Installed(_))
+            && self.current_properties_candidate()? == self.source.properties();
+        let same_cache = matches!(self.derived_cache, WorkingBlock::Installed(_))
+            && self.current_cache_candidate()? == self.source.derived_cache_runtime();
+        let same_coordinates = if let WorkingBlock::Installed(coordinates) = &self.coordinates {
+            let old = self.source.coordinate_block_runtime();
+            // Exact metadata and float bits: restoring an Arc must not erase
+            // signed-zero changes or treat identical NaN payloads as a change.
+            coordinates.source_coordinate_dim == old.source_coordinate_dim
+                && coordinates.source_conformer_order == old.source_conformer_order
+                && coordinates.conformers_2d.len() == old.conformers_2d.len()
+                && coordinates.conformers_3d.len() == old.conformers_3d.len()
+                && coordinates
+                    .conformers_2d
+                    .iter()
+                    .zip(&old.conformers_2d)
+                    .all(|(a, b)| {
+                        a.id() == b.id()
+                            && a.props() == b.props()
+                            && a.coordinates().len() == b.coordinates().len()
+                            && a.coordinates()
+                                .iter()
+                                .flatten()
+                                .zip(b.coordinates().iter().flatten())
+                                .all(|(x, y)| x.to_bits() == y.to_bits())
+                    })
+                && coordinates
+                    .conformers_3d
+                    .iter()
+                    .zip(&old.conformers_3d)
+                    .all(|(a, b)| {
+                        a.id() == b.id()
+                            && a.is_3d() == b.is_3d()
+                            && a.props() == b.props()
+                            && a.coordinates().len() == b.coordinates().len()
+                            && a.coordinates()
+                                .iter()
+                                .flatten()
+                                .zip(b.coordinates().iter().flatten())
+                                .all(|(x, y)| x.to_bits() == y.to_bits())
+                    })
+        } else {
+            false
+        };
+        if same_topology {
+            self.topology = WorkingBlock::Shared;
+        }
+        if same_coordinates {
+            self.coordinates = WorkingBlock::Shared;
+        }
+        if same_properties {
+            self.properties = WorkingBlock::Shared;
+        }
+        if same_cache {
+            self.derived_cache = WorkingBlock::Shared;
+        }
         Ok(())
     }
 

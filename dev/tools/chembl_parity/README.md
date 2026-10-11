@@ -1,6 +1,6 @@
 # ChEMBL 37 Parity Audit
 
-COSMolKit 0.5.0 uses [the standard parity runner](../../../parity-tests_fixed/README.md)
+COSMolKit 0.5.0 uses [the standard parity runner](../../../parity-tests/README.md)
 with RDKit `2026.03.6`. Completed validation covers 18,000 ChEMBL 37
 source records and 20,505,775 parameterized comparisons with zero mismatches.
 Reference timeouts and upstream crashes are reported separately. Comparisons

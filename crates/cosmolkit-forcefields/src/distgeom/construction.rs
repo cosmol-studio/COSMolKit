@@ -7,7 +7,7 @@ use crate::{
     kernel::{
         AngleConstraintContribs, DistanceConstraintContribs, ForceField, ForceFieldKernelError,
     },
-    mmff::NonbondedContrib,
+    mmff::EleContrib,
     uff::{InversionContribs, InversionContributionError},
 };
 use std::collections::BTreeMap;
@@ -911,7 +911,7 @@ fn construct_3d_forcefield_with_cpci<'a>(
     // RDKit✔️✔️:   auto *contrib = new ForceFields::MMFF::EleContrib(field);
     let is_1_4 = false;
     let diel_model = 1;
-    let mut contrib = NonbondedContrib::new(&field);
+    let mut contrib = EleContrib::new(&field);
 
     // RDKit✔️✔️:   field->contribs().emplace_back(contrib);
     // RDKit✔️✔️:   for (const auto &charge : CPCI) {
@@ -923,8 +923,6 @@ fn construct_3d_forcefield_with_cpci<'a>(
             field.positions(),
             source_index(idx1)?,
             source_index(idx2)?,
-            None,
-            true,
             charge_term,
             diel_model,
             is_1_4,
@@ -2308,6 +2306,7 @@ mod tests {
 
     #[test]
     fn construct_3d_forcefield_with_cpci_appends_electrostatic_terms_after_base_field() {
+        use crate::mmff::NonbondedContrib;
         let positions = vec![
             point3(0.0, 0.0, 0.0),
             point3(1.0, 0.0, 0.0),

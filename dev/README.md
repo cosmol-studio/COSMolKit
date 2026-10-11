@@ -50,7 +50,7 @@ special-regression suites separately through their prepare/test entrypoints.
 uv sync --locked --group dev
 cargo fmt --all --check
 cargo test --workspace --locked --profile dev-test --no-fail-fast \
-    --exclude cosmolkit-parity-tests-fixed \
+    --exclude cosmolkit-parity-tests \
     --features cosmolkit/op-contracts-strict
 cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
 .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml

@@ -1,7 +1,6 @@
 """Check coverage-stage shell syntax and the shared instrumentation boundary."""
 
 from pathlib import Path
-import json
 import subprocess
 import tomllib
 import unittest
@@ -97,33 +96,46 @@ class CoverageWorkflowTests(unittest.TestCase):
                 self.assertNotIn("--no-report", script)
         self.assertNotIn("--test reference_parity", steps["Run all default crate regression suites with coverage"])
         parity = steps["Run small-corpus parity with coverage"]
-        self.assertIn("cargo test -p cosmolkit-parity-tests-fixed", parity)
+        self.assertIn("cargo test -p cosmolkit-parity-tests ", parity)
         self.assertIn("--test corpus --no-fail-fast", parity)
         self.assertNotIn("--test special_regression", parity)
-        self.assertIn("PARITY_CORPUS=smiles_small cargo test", parity)
+        self.assertIn('-- --corpus smiles_small --threads "$(nproc)"', parity)
+        self.assertIn('--suite "${{ steps.prepare.outputs.suites }}"', parity)
         prepare = steps["Prepare and validate small-corpus reference values"]
-        self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests-fixed', prepare)
+        self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests', prepare)
         self.assertIn('--corpus smiles_small --threads "$(nproc)"', prepare)
+        self.assertIn('awk \'$2 != "bio" && $2 != "special" {print $2}\'', prepare)
+        self.assertIn('echo "suites=$suites" >> "$GITHUB_OUTPUT"', prepare)
+        self.assertIn("^[a-z0-9_]+: prepare ", prepare)
         for command in (prepare, parity):
             self.assertNotIn("smiles_5000", command)
             self.assertNotIn("bio_small", command)
             self.assertNotIn("--special", command)
-        corpus = json.loads((ROOT / "parity-tests_fixed/testdata/corpora/smiles_small.json").read_text())
-        self.assertEqual(corpus["format"], "smiles")
-        self.assertEqual(corpus["input"], "smiles_small.smi")
+        corpus = (ROOT / "parity-tests/testdata/corpora/smiles_small.smi").read_text()
+        self.assertEqual(sum(bool(line.strip()) and not line.lstrip().startswith("#") for line in corpus.splitlines()), 152)
         self.assertNotIn(" preflight ", prepare)
         self.assertNotIn('$CARGO_TARGET_DIR/release/', prepare)
 
     def test_workspace_and_workflow_use_only_the_current_runner(self):
         workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]
-        self.assertNotIn("parity-tests", workspace["members"])
-        self.assertIn("parity-tests_fixed", workspace["members"])
+        self.assertIn("parity-tests", workspace["members"])
+        self.assertNotIn("parity-tests_fixed", workspace["members"])
+        self.assertIn("parity-tests_fixed", workspace["exclude"])
+        lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
+        packages = {package["name"] for package in lock["package"]}
+        self.assertIn("cosmolkit-parity-tests", packages)
+        self.assertNotIn("cosmolkit-parity-tests-fixed", packages)
         workflow = (ROOT / ".github/workflows/coverage.yml").read_text()
-        self.assertNotIn("parity-tests/", workflow)
+        self.assertNotIn("parity-tests_fixed", workflow)
+        self.assertNotIn("cosmolkit-parity-tests-fixed", workflow)
         self.assertNotIn("PARITY_DATA", workflow)
-        self.assertEqual(workflow.count("path: parity-tests_fixed/expected/corpus/smiles_small"), 2)
-        self.assertNotIn("parity-tests_fixed/expected/special", workflow)
-        self.assertIn("parity-tests_fixed/reports/**/*.json", workflow)
+        self.assertNotIn("PARITY_CORPUS", workflow)
+        self.assertEqual(workflow.count("path: parity-tests/expected/v1"), 2)
+        self.assertIn("parity-tests/reports/**/*.json", workflow)
+        self.assertIn("parity-tests/reports/**/*.jsonl", workflow)
+        development = (ROOT / "dev/README.md").read_text()
+        self.assertIn("--exclude cosmolkit-parity-tests ", development)
+        self.assertNotIn("--exclude cosmolkit-parity-tests-fixed", development)
 
     def test_report_is_separate_and_test_failures_remain_failures(self):
         steps = shell_steps()

@@ -1,0 +1,19 @@
+[package]
+name = "cosmolkit-parity-tests"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+cosmolkit = { path = "../crates/cosmolkit", features = ["full"] }
+rayon = "1"
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.11"
+tempfile = "3"
+
+[[test]]
+name = "corpus"
+path = "tests/corpus.rs"
+harness = false

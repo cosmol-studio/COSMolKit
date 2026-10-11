@@ -609,6 +609,7 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::SemanticPreconditionContract { .. } => "SemanticPreconditionContract",
         E::CoordinateAppendRequiresValues { .. } => "CoordinateAppendRequiresValues",
         E::DerivedEffectContract { .. } => "DerivedEffectContract",
+        E::DerivedPreservationMismatch { .. } => "DerivedPreservationMismatch",
         E::CipStateContract { .. } => "CipStateContract",
         E::InvalidTopology(..) => "InvalidTopology",
         #[cfg(feature = "cap-fingerprints")]

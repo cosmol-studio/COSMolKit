@@ -22,4 +22,4 @@ pub(crate) mod optimization;
 
 pub(crate) use numerical::{calc_torsion_cos_phi, calc_torsion_grad};
 
-pub(crate) use nonbonded_contrib::NonbondedContrib;
+pub(crate) use nonbonded_contrib::{EleContrib, NonbondedContrib};

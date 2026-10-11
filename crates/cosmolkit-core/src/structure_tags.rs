@@ -76,6 +76,11 @@ pub enum StereoError {
     AtomProperty(#[from] AtomPropertyError),
     #[error("source hydrogen getter failed: {0}")]
     HydrogenCount(crate::ValenceError),
+    #[error("bond {bond} property _UnknownStereo cannot be read as int: {source}")]
+    UnknownStereoProperty {
+        bond: cosmolkit_model::BondId,
+        source: crate::PropertyIntReadError,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -441,7 +446,7 @@ fn octahedral_permutation(pair: &[u8; 6], vectors: &[Vec3; 6]) -> u32 {
     }
 }
 
-fn is_wiggly_bond(bond: &Bond, center: AtomId) -> bool {
+fn is_wiggly_bond(bond: &Bond, center: AtomId) -> Result<bool, StereoError> {
     // BEGIN RDKIT CPP FUNCTION isWigglyBond
     // RDKit✔️✔️: bool isWigglyBond(const Bond *bond, const Atom *atom) {
     // RDKit✔️✔️:   int hasWigglyBond = 0;
@@ -456,9 +461,25 @@ fn is_wiggly_bond(bond: &Bond, center: AtomId) -> bool {
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION isWigglyBond
-    bond.begin() == center
-        && bond.order() == BondOrder::Single
-        && (bond.direction() == BondDirection::Unknown || bond.unknown_stereo())
+    if bond.begin() != center || bond.order() != BondOrder::Single {
+        return Ok(false);
+    }
+    if bond.direction() == BondDirection::Unknown || bond.unknown_stereo() {
+        return Ok(true);
+    }
+    // Preserve C++ int truthiness (including negative values), conversion
+    // failures and short-circuit order; the typed flag is not the raw property.
+    // One borrowed lookup and the shared conversion, without allocations.
+    bond.prop("_UnknownStereo")
+        .map(|value| {
+            crate::property_value_to_int(value)
+                .map(|value| value != 0)
+                .map_err(|source| StereoError::UnknownStereoProperty {
+                    bond: bond.id(),
+                    source,
+                })
+        })
+        .unwrap_or(Ok(false))
 }
 
 fn non_tetrahedral_assignment(
@@ -661,7 +682,7 @@ fn non_tetrahedral_assignment(
         return Ok(None);
     }
     for neighbor in topology.adjacency.neighbors_of(center.index()) {
-        if is_wiggly_bond(&topology.bonds[neighbor.bond.index()], center) {
+        if is_wiggly_bond(&topology.bonds[neighbor.bond.index()], center)? {
             return Ok(None);
         }
     }
@@ -1524,7 +1545,7 @@ pub fn assign_chiral_tags_from_structure(
         let mut wiggly = false;
         for neighbor in working.adjacency.neighbors_of(index) {
             let bond = &working.bonds[neighbor.bond.index()];
-            if is_wiggly_bond(bond, center) {
+            if is_wiggly_bond(bond, center)? {
                 wiggly = true;
                 break;
             }
@@ -1574,6 +1595,43 @@ pub fn assign_chiral_tags_from_structure(
         selected_conformer_id: Some(conformer.id()),
         clear_stereochem_done: true,
     })
+}
+
+#[cfg(test)]
+mod wiggly_property_tests {
+    use super::*;
+    use cosmolkit_model::{BondId, BondSpec, PropertyValue};
+
+    #[test]
+    fn wiggly_bond_reads_signed_property_and_respects_guards() {
+        let center = AtomId::new(0);
+        for (value, expected) in [
+            (PropertyValue::Int(-7), true),
+            (PropertyValue::Int(0), false),
+            (PropertyValue::Int(1), true),
+            (PropertyValue::String("-7".into()), true),
+        ] {
+            let bond = Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(center, AtomId::new(1), BondOrder::Single)
+                    .with_prop("_UnknownStereo", value)
+                    .unwrap(),
+            );
+            assert_eq!(is_wiggly_bond(&bond, center).unwrap(), expected);
+            assert!(!is_wiggly_bond(&bond, AtomId::new(1)).unwrap());
+        }
+        let invalid = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(center, AtomId::new(1), BondOrder::Single)
+                .with_prop("_UnknownStereo", true)
+                .unwrap(),
+        );
+        assert!(matches!(
+            is_wiggly_bond(&invalid, center),
+            Err(StereoError::UnknownStereoProperty { .. })
+        ));
+        assert!(!is_wiggly_bond(&invalid, AtomId::new(1)).unwrap());
+    }
 }
 
 #[cfg(test)]

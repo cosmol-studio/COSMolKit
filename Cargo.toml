@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "parity-tests_fixed",
+    "parity-tests",
     "crates/cosmolkit-core",
     "crates/cosmolkit-cx",
     "crates/cosmolkit-smiles",
@@ -29,7 +29,8 @@ members = [
 ]
 resolver = "2"
 # Alef's generated WASM crate is an ephemeral standalone package under tmp/.
-exclude = ["tmp/alef/wasm"]
+# Superseded parity sources stay on disk, outside the project dependency graph.
+exclude = ["tmp/alef/wasm", "parity-tests_fixed"]
 
 [workspace.package]
 edition = "2024"

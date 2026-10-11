@@ -3399,6 +3399,7 @@ impl<'a> CanonRankReadView<'a> {
         if let Some(rings) = rings
             && (rings.atom_row_count() != topology.atoms.len()
                 || rings.bond_row_count() != topology.bonds.len())
+            && !crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings)
         {
             return Err(CanonicalRankError::PreparedRingLength {
                 expected_atoms: topology.atoms.len(),
@@ -3407,6 +3408,21 @@ impl<'a> CanonRankReadView<'a> {
                 actual_bonds: rings.bond_row_count(),
             });
         }
+        // AddHs preserves ring state while appending terminal hydrogen leaves.
+        // Reuse the existing structural proof for that exact prefix shape;
+        // malformed/heavy suffixes still retain PreparedRingLength above.
+        // RingInfo.cpp's getters already return empty membership for suffix IDs:
+        // RDKit✔️✔️: const RingInfo::INT_VECT &RingInfo::atomMembers(unsigned int idx) const {
+        // RDKit✔️✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   static const INT_VECT emptyVect;
+        // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+        // RDKit✔️✔️:     return d_atomMembers[idx];
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return emptyVect;
+        // RDKit✔️✔️: }
+        // Exact dimensions retain the O(1) guard. Only a mismatched prefix needs
+        // the existing O(V+E+membership) structural proof; no cache clone/reset.
         let rings = if let Some(rings) = rings.filter(|rings| rings.is_find_fast_or_better()) {
             Cow::Borrowed(rings)
         } else {
@@ -3602,7 +3618,7 @@ pub fn rank_fragment_atoms_with_params(
     )
 }
 
-/// Ranks a fragment while borrowing exact-topology prepared valence and rings.
+/// Ranks a fragment borrowing prepared valence and structurally valid ring state.
 pub fn rank_fragment_atoms_with_prepared_state(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
@@ -11029,6 +11045,48 @@ mod tests {
         assert_eq!(graph, original_graph);
         assert_eq!(valence, original_valence);
         assert_eq!(rings, original_rings);
+    }
+
+    #[test]
+    fn fragment_rank_prepared_borrows_valid_terminal_hydrogen_ring_prefix() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+                atom(2, AtomSpec::new(Element::C)),
+                atom(3, AtomSpec::new(Element::H)),
+            ],
+            vec![bond(0, 0, 1), bond(1, 1, 2), bond(2, 2, 0), bond(3, 0, 3)],
+        );
+        let valence =
+            crate::assign_valence_with_options_for_topology(&graph, ValenceModel::RdkitLike, false)
+                .unwrap();
+        let mut prefix = RingInfo::new(RingFindType::SymmSssr, 3, 3);
+        prefix.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+        let before = prefix.clone();
+        let view =
+            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&prefix), None).unwrap();
+        assert!(matches!(view.rings, Cow::Borrowed(_)));
+        assert!(std::ptr::eq(view.rings.as_ref(), &prefix));
+        let mut full = RingInfo::new(RingFindType::SymmSssr, 4, 4);
+        full.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+        let ranks = |rings: &RingInfo| {
+            rank_fragment_atoms_with_prepared_state(
+                &graph,
+                &valence,
+                Some(rings),
+                &[true; 4],
+                &[true; 4],
+                None,
+                None,
+                &CanonicalRankParams::kekulize_fragment_default(),
+            )
+            .unwrap()
+        };
+        assert_eq!(ranks(&prefix), ranks(&full));
+        assert_eq!(prefix, before);
+        assert_eq!(prefix.atom_row_count(), 3);
+        assert_eq!(prefix.bond_row_count(), 3);
     }
 
     #[test]

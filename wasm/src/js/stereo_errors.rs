@@ -40,6 +40,7 @@ fn stereo_error_kind(source: &ck::StereoError) -> &'static str {
         E::StereoOrder(..) => "StereoOrder",
         E::AtomProperty(..) => "AtomProperty",
         E::HydrogenCount(..) => "HydrogenCount",
+        E::UnknownStereoProperty { .. } => "UnknownStereoProperty",
     }
 }
 pub(crate) fn stereo_error(source: &ck::StereoError) -> Result<JsValue, JsValue> {
@@ -89,6 +90,9 @@ pub(crate) fn stereo_error(source: &ck::StereoError) -> Result<JsValue, JsValue>
             set(&error, "center", (center.index() as f64).into())?;
             set(&error, "neighbor", (neighbor.index() as f64).into())?;
         }
+        E::UnknownStereoProperty { bond, .. } => {
+            set(&error, "bond", (bond.index() as f64).into())?;
+        }
         _ => {}
     }
     if let Some(cause) = source.source() {
@@ -134,6 +138,7 @@ fn potential_error_kind(source: &ck::PotentialStereoError) -> &'static str {
         E::InvalidRingStereoReference { .. } => "InvalidRingStereoReference",
         E::EmptyRingStereoReferences { .. } => "EmptyRingStereoReferences",
         E::Ring(..) => "Ring",
+        E::Rank(..) => "Rank",
         E::InvalidTopology(..) => "InvalidTopology",
         E::InvalidValence { .. } => "InvalidValence",
         E::InvalidValenceValue { .. } => "InvalidValenceValue",

@@ -137,6 +137,7 @@ pub(crate) fn operation_pyerr(
         E::SemanticPreconditionContract { .. } => "SemanticPreconditionContract",
         E::CoordinateAppendRequiresValues { .. } => "CoordinateAppendRequiresValues",
         E::DerivedEffectContract { .. } => "DerivedEffectContract",
+        E::DerivedPreservationMismatch { .. } => "DerivedPreservationMismatch",
         E::CipStateContract { .. } => "CipStateContract",
         E::InvalidPropertyList { .. } => "InvalidPropertyList",
         E::InvalidDerivedCache { .. } => "InvalidDerivedCache",

@@ -21,6 +21,7 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::PotentialStereoError) -> 
         E::InvalidRingStereoReference { .. } => "InvalidRingStereoReference",
         E::EmptyRingStereoReferences { .. } => "EmptyRingStereoReferences",
         E::Ring(_) => "Ring",
+        E::Rank(_) => "Rank",
         E::InvalidTopology(_) => "InvalidTopology",
         E::InvalidValence { .. } => "InvalidValence",
         E::InvalidValenceValue { .. } => "InvalidValenceValue",
@@ -133,6 +134,7 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::PotentialStereoError) -> 
                 value.setattr("iterations", *iterations)?
             }
             E::Ring(_)
+            | E::Rank(_)
             | E::InvalidTopology(_)
             | E::Valence(_)
             | E::StereoOrder(_)

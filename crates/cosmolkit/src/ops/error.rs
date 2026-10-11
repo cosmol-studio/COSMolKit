@@ -108,6 +108,14 @@ pub enum OperationError {
         states: DerivedState,
         issue: &'static str,
     },
+    /// First concrete difference rejected by a derived-state preservation proof.
+    DerivedPreservationMismatch {
+        operation: &'static str,
+        states: DerivedState,
+        field: String,
+        expected: String,
+        actual: String,
+    },
     CipStateContract {
         operation: &'static str,
         policy: CipStatePolicy,
@@ -308,6 +316,17 @@ impl fmt::Display for OperationError {
             } => write!(
                 formatter,
                 "operation `{operation}` has invalid derived-effect {action} for mask {:#x}: {issue}",
+                states.bits()
+            ),
+            Self::DerivedPreservationMismatch {
+                operation,
+                states,
+                field,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "operation `{operation}` has invalid derived-effect preserve for mask {:#x}: {field}: expected {expected}, got {actual}",
                 states.bits()
             ),
             Self::CipStateContract {

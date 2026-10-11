@@ -109,6 +109,66 @@ fn detached_expected(source: &Molecule, params: &StructureTagParams) -> Topology
 }
 
 #[test]
+fn signed_unknown_stereo_property_blocks_geometry_assignment() {
+    for (value, expected) in [
+        (-7, ChiralTag::Unspecified),
+        (0, ChiralTag::TetrahedralCcw),
+        (1, ChiralTag::Unspecified),
+    ] {
+        let mut topology = tetra_topology(ChiralTag::Unspecified);
+        topology.bonds[0]
+            .set_prop("_UnknownStereo", cosmolkit::PropertyValue::Int(value))
+            .unwrap();
+        let source = Molecule::from_parts(
+            topology,
+            coordinates(0, true),
+            MoleculeProperties::default(),
+        )
+        .unwrap();
+        let output = source.with_chiral_tags_from_structure().unwrap();
+        assert_eq!(output.atom(AtomId::new(0)).unwrap().chiral_tag(), expected);
+        assert_eq!(
+            source.atom(AtomId::new(0)).unwrap().chiral_tag(),
+            ChiralTag::Unspecified
+        );
+        coordinate_views::assert_shared_coordinates(&output, &source);
+        assert_eq!(
+            output.topology().bonds[0].prop("_UnknownStereo"),
+            Some(&cosmolkit::PropertyValue::Int(value))
+        );
+    }
+}
+
+#[test]
+fn valence_assignment_preserves_nonfinite_coordinate_bits() {
+    let mut coords = coordinates(0, true);
+    coords.conformers_3d[0].coordinates_mut()[1][0] = f64::from_bits(0x7ff8_0000_0000_0001);
+    let source = Molecule::from_parts(
+        tetra_topology(ChiralTag::Unspecified),
+        coords,
+        MoleculeProperties::default(),
+    )
+    .unwrap();
+    let output = source
+        .with_assigned_valence_with_params(&ValenceParams {
+            model: ValenceModel::RdkitLike,
+            strict: false,
+        })
+        .unwrap();
+    assert!(std::ptr::eq(output.conformers_3d(), source.conformers_3d()));
+    assert_eq!(
+        output.conformers_3d()[0].coordinates()[1][0].to_bits(),
+        0x7ff8_0000_0000_0001
+    );
+    let tagged = output.with_chiral_tags_from_structure().unwrap();
+    assert!(std::ptr::eq(tagged.conformers_3d(), source.conformers_3d()));
+    assert_eq!(
+        tagged.atom(AtomId::new(0)).unwrap().chiral_tag(),
+        ChiralTag::Unspecified
+    );
+}
+
+#[test]
 fn canonical_signatures_and_source_defaults_are_exact() {
     let _: fn(&Molecule) -> Result<Molecule, OperationError> =
         Molecule::with_chiral_tags_from_structure;

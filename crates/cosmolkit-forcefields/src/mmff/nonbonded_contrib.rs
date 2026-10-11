@@ -8,6 +8,192 @@ use super::{
 use crate::kernel::{
     BondIndexArgument, EvaluationContext, ForceField, ForceFieldContribution, ForceFieldKernelError,
 };
+
+/// The source's standalone electrostatic contribution, used by CPCI.
+/// Its gradient grouping differs from the combined nonbonded contribution.
+#[derive(Clone, Debug)]
+pub(crate) struct EleContrib {
+    atom1_indices: Vec<i16>,
+    atom2_indices: Vec<i16>,
+    charge_terms: Vec<f64>,
+    is_1_4s: Vec<u8>,
+    diel_models: Vec<u8>,
+}
+
+impl EleContrib {
+    pub(crate) fn new(_owner: &ForceField<'_>) -> Self {
+        // RDKit✔️✔️: EleContrib::EleContrib(ForceField *owner) {
+        // RDKit✔️✔️:   PRECONDITION(owner, "bad owner");
+        // RDKit✔️✔️:   dp_forceField = owner;
+        // RDKit✔️✔️: }
+        // The short-lived evaluation context replaces the retained owner pointer.
+        // The five packed arrays match source storage and allocation complexity.
+        Self {
+            atom1_indices: Vec::new(),
+            atom2_indices: Vec::new(),
+            charge_terms: Vec::new(),
+            is_1_4s: Vec::new(),
+            diel_models: Vec::new(),
+        }
+    }
+
+    pub(crate) fn add_term(
+        &mut self,
+        positions: &[&mut [f64]],
+        idx1: u32,
+        idx2: u32,
+        charge_term: f64,
+        diel_model: u8,
+        is_1_4: bool,
+    ) -> Result<(), ForceFieldKernelError> {
+        // RDKit✔️✔️: void EleContrib::addTerm(unsigned int idx1, unsigned int idx2,
+        // RDKit✔️✔️:                          double chargeTerm, std::uint8_t dielModel,
+        // RDKit✔️✔️:                          bool is1_4) {
+        // RDKit✔️✔️:   URANGE_CHECK(idx1, dp_forceField->positions().size());
+        // RDKit✔️✔️:   URANGE_CHECK(idx2, dp_forceField->positions().size());
+        // RDKit✔️✔️:   d_at1Idxs.push_back(idx1);
+        // RDKit✔️✔️:   d_at2Idxs.push_back(idx2);
+        // RDKit✔️✔️:   d_chargeTerms.push_back(chargeTerm);
+        // RDKit✔️✔️:   d_dielModels.push_back(dielModel);
+        // RDKit✔️✔️:   d_is_1_4s.push_back(is1_4);
+        // RDKit✔️✔️: }
+        for (argument, index) in [
+            (BondIndexArgument::First, idx1),
+            (BondIndexArgument::Second, idx2),
+        ] {
+            if index as usize >= positions.len() {
+                return Err(ForceFieldKernelError::BondIndexOutOfRange {
+                    argument,
+                    index,
+                    upper_bound: positions.len(),
+                });
+            }
+        }
+        self.atom1_indices.push(idx1 as i16);
+        self.atom2_indices.push(idx2 as i16);
+        self.charge_terms.push(charge_term);
+        self.diel_models.push(diel_model);
+        self.is_1_4s.push(u8::from(is_1_4));
+        Ok(())
+    }
+}
+
+impl ForceFieldContribution for EleContrib {
+    fn get_energy(
+        &self,
+        context: &mut EvaluationContext<'_>,
+    ) -> Result<f64, ForceFieldKernelError> {
+        // RDKit✔️✔️: double EleContrib::getEnergy(double *pos) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   double res = 0.0;
+        // RDKit✔️✔️:   const int numPairs = d_at1Idxs.size();
+        // RDKit✔️✔️:   for (int i = 0; i < numPairs; ++i) {
+        // RDKit✔️✔️:     unsigned int d_at1Idx = d_at1Idxs[i];
+        // RDKit✔️✔️:     unsigned int d_at2Idx = d_at2Idxs[i];
+        // RDKit✔️✔️:     double d_chargeTerm = d_chargeTerms[i];
+        // RDKit✔️✔️:     std::uint8_t d_dielModel = d_dielModels[i];
+        // RDKit✔️✔️:     bool d_is1_4 = d_is_1_4s[i];
+        // RDKit✔️✔️:     res += Utils::calcEleEnergy(
+        // RDKit✔️✔️:         d_at1Idx, d_at2Idx, dp_forceField->distance(d_at1Idx, d_at2Idx, pos),
+        // RDKit✔️✔️:         d_chargeTerm, d_dielModel, d_is1_4);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // Source-order linear accumulation, sharing the existing scalar energy
+        // function and kernel distance cache; no per-evaluation allocation.
+        let mut energy = 0.0;
+        for i in 0..self.atom1_indices.len() {
+            let a = self.atom1_indices[i] as u32;
+            let b = self.atom2_indices[i] as u32;
+            let distance = context.distance(a, b)?;
+            energy += calc_ele_energy(
+                a,
+                b,
+                distance,
+                self.charge_terms[i],
+                self.diel_models[i],
+                self.is_1_4s[i] != 0,
+            );
+        }
+        Ok(energy)
+    }
+
+    fn get_grad(
+        &self,
+        context: &mut EvaluationContext<'_>,
+        gradient: &mut [f64],
+    ) -> Result<(), ForceFieldKernelError> {
+        // RDKit✔️✔️: void EleContrib::getGrad(double *pos, double *grad) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   PRECONDITION(grad, "bad vector");
+        // RDKit✔️✔️:   const unsigned int dim = dp_forceField->dimension();
+        // RDKit✔️✔️:   const int numPairs = d_at1Idxs.size();
+        // RDKit✔️✔️:   for (int pairIdx = 0; pairIdx < numPairs; ++pairIdx) {
+        // RDKit✔️✔️:     const int d_at1Idx = d_at1Idxs[pairIdx];
+        // RDKit✔️✔️:     const int d_at2Idx = d_at2Idxs[pairIdx];
+        // RDKit✔️✔️:     const double d_chargeTerm = d_chargeTerms[pairIdx];
+        // RDKit✔️✔️:     const std::uint8_t d_dielModel = d_dielModels[pairIdx];
+        // RDKit✔️✔️:     const bool d_is1_4 = d_is_1_4s[pairIdx];
+        // RDKit✔️✔️:     double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
+        // RDKit✔️✔️:     double *at1Coords = &(pos[dim * d_at1Idx]);
+        // RDKit✔️✔️:     double *at2Coords = &(pos[dim * d_at2Idx]);
+        // RDKit✔️✔️:     double *g1 = &(grad[dim * d_at1Idx]);
+        // RDKit✔️✔️:     double *g2 = &(grad[dim * d_at2Idx]);
+        // RDKit✔️✔️:     double corr_dist = dist + 0.05;
+        // RDKit✔️✔️:     corr_dist *= ((d_dielModel == RDKit::MMFF::DISTANCE) ? corr_dist * corr_dist
+        // RDKit✔️✔️:                                                          : corr_dist);
+        // RDKit✔️✔️:     double dE_dr = -332.0716 * (double)(d_dielModel)*d_chargeTerm / corr_dist *
+        // RDKit✔️✔️:                    (d_is1_4 ? 0.75 : 1.0);
+        // RDKit✔️✔️:     for (unsigned int i = 0; i < 3; ++i) {
+        // RDKit✔️✔️:       double dGrad;
+        // RDKit✔️✔️:       dGrad = ((dist > 0.0) ? (dE_dr * (at1Coords[i] - at2Coords[i]) / dist)
+        // RDKit✔️✔️:                             : 0.02);
+        // RDKit✔️✔️:       g1[i] += dGrad;
+        // RDKit✔️✔️:       g2[i] -= dGrad;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // Keep multiplication before division, and process every coincident
+        // pair (no combined-contribution early return). Linear, allocation-free.
+        let dim = context.dimension() as usize;
+        for i in 0..self.atom1_indices.len() {
+            let a = self.atom1_indices[i] as u32;
+            let b = self.atom2_indices[i] as u32;
+            let dist = context.distance(a, b)?;
+            let mut corrected = dist + 0.05;
+            corrected *= if self.diel_models[i] == 2 {
+                corrected * corrected
+            } else {
+                corrected
+            };
+            let derivative = -332.0716 * f64::from(self.diel_models[i]) * self.charge_terms[i]
+                / corrected
+                * if self.is_1_4s[i] != 0 { 0.75 } else { 1.0 };
+            let a = dim * a as usize;
+            let b = dim * b as usize;
+            for axis in 0..3 {
+                let value = if dist > 0.0 {
+                    derivative * (context.coordinates()[a + axis] - context.coordinates()[b + axis])
+                        / dist
+                } else {
+                    0.02
+                };
+                gradient[a + axis] += value;
+                gradient[b + axis] -= value;
+            }
+        }
+        Ok(())
+    }
+
+    fn copy(&self) -> Box<dyn ForceFieldContribution> {
+        // RDKit✔️✔️: EleContrib *copy() const override { return new EleContrib(*this); }
+        // Five linear packed-array copies; owner context remains short lived.
+        Box::new(self.clone())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct NonbondedContrib {
     atom1_indices: Vec<i16>,
@@ -432,6 +618,61 @@ mod tests {
     use crate::mmff::mol_properties::{MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE};
 
     const TEST_TOLERANCE: f64 = 1.0e-12;
+
+    #[test]
+    fn standalone_electrostatic_gradient_keeps_native_multiply_then_divide_bits() {
+        // Pinned EleContrib, not NonbondedContrib: the latter differs by one ULP
+        // for axes 0/2 on this two-point input. No conformer corpus is needed.
+        let mut points = [[0.1, 0.2, 0.3], [1.4, -0.8, 2.2]];
+        let mut field = ForceField::new(3);
+        for p in &mut points {
+            field.positions_mut().push(p);
+        }
+        let mut term = EleContrib::new(&field);
+        term.add_term(field.positions(), 0, 1, 0.5, 1, false)
+            .unwrap();
+        field.add_contribution(Box::new(term));
+        field.initialize().unwrap();
+        assert_eq!(
+            field.calc_energy_current(None).unwrap().to_bits(),
+            0x405036ed638933d9
+        );
+        let mut gradient = [0.0; 6];
+        field.calc_grad_current(&mut gradient).unwrap();
+        assert_eq!(
+            gradient.map(f64::to_bits),
+            [
+                0x402a3e7d2a70b8f0,
+                0xc0243011831ba1f4,
+                0x40332daa3c8d7376,
+                0xc02a3e7d2a70b8f0,
+                0x40243011831ba1f4,
+                0xc0332daa3c8d7376,
+            ]
+        );
+    }
+
+    #[test]
+    fn standalone_electrostatic_coincident_pairs_all_accumulate() {
+        let mut points = [[0.0; 3]; 3];
+        let mut field = ForceField::new(3);
+        for p in &mut points {
+            field.positions_mut().push(p);
+        }
+        let mut term = EleContrib::new(&field);
+        for (a, b) in [(0, 1), (1, 2)] {
+            term.add_term(field.positions(), a, b, 0.5, 1, false)
+                .unwrap();
+        }
+        field.add_contribution(Box::new(term));
+        field.initialize().unwrap();
+        let mut gradient = [0.0; 9];
+        field.calc_grad_current(&mut gradient).unwrap();
+        assert_eq!(
+            gradient.map(f64::to_bits),
+            [0.02_f64, 0.02, 0.02, 0.0, 0.0, 0.0, -0.02, -0.02, -0.02].map(f64::to_bits)
+        );
+    }
 
     fn force_field_with_positions(rows: &mut [[f64; 3]]) -> ForceField<'_> {
         let mut force_field = ForceField::new(3);

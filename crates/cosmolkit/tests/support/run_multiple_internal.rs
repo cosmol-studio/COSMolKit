@@ -7,6 +7,7 @@ use cosmolkit_model::{
 
 use super::*;
 use crate::molecule::DerivedCacheBlock;
+use crate::strict::{OPERATION_CONTRACTS_ENABLED, RUNTIME_INVARIANTS_ENABLED};
 use crate::ops::{
     BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
     MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
@@ -332,12 +333,21 @@ fn invalid_topology_coordinate_and_property_rows_remain_structured() {
             .emit_all_runtime(vec![(topology, coordinates, properties)])
             .unwrap();
         let error = parts.finish().unwrap_err();
-        assert!(matches!(
-            (kind, error),
-            ("topology", OperationError::InvalidTopology(_))
-                | ("coordinates", OperationError::InvalidCoordinates(_))
-                | ("properties", OperationError::InvalidPropertyList { .. })
-        ));
+        if RUNTIME_INVARIANTS_ENABLED {
+            assert!(matches!(
+                (kind, error),
+                ("topology", OperationError::InvalidTopology(_))
+                    | ("coordinates", OperationError::InvalidCoordinates(_))
+                    | ("properties", OperationError::InvalidPropertyList { .. })
+            ));
+        } else {
+            // This declaration is read-only. Without the optional invariant
+            // preflight, write projection rejects the malformed tuple first.
+            assert_eq!(error, OperationError::AccessDenied {
+                operation: "invalid-candidate",
+                block: kind,
+            });
+        }
     }
 }
 
@@ -462,6 +472,7 @@ fn invalidate_clears_each_candidate_cache_without_touching_source() {
 }
 
 #[test]
+#[cfg(feature = "op-contracts")]
 fn preserve_requires_unchanged_input_proof_per_candidate() {
     let source = molecule();
     let mut fields = base_fields();
@@ -547,10 +558,15 @@ fn invalid_candidate_at_each_position_rejects_all_and_preserves_source() {
         };
         let mut parts = MultiOutputOpParts::<MultipleAccess>::new(&source, operation).unwrap();
         parts.emit_all_runtime(candidates).unwrap();
-        assert!(matches!(
-            parts.finish(),
-            Err(OperationError::InvalidCoordinates(_))
-        ));
+        let error = parts.finish().unwrap_err();
+        if RUNTIME_INVARIANTS_ENABLED {
+            assert!(matches!(error, OperationError::InvalidCoordinates(_)));
+        } else {
+            assert_eq!(error, OperationError::AccessDenied {
+                operation: "atomic",
+                block: "coordinates",
+            });
+        }
         assert_eq!(source, before);
     }
 }
@@ -799,10 +815,15 @@ fn lazy_invalid_candidate_at_each_position_rejects_before_counting_and_fuses() {
         for _ in 0..bad_index {
             outputs.next().unwrap().unwrap();
         }
-        assert!(matches!(
-            outputs.next(),
-            Some(Err(OperationError::InvalidCoordinates(_)))
-        ));
+        let error = outputs.next().unwrap().unwrap_err();
+        if RUNTIME_INVARIANTS_ENABLED {
+            assert!(matches!(error, OperationError::InvalidCoordinates(_)));
+        } else {
+            assert_eq!(error, OperationError::AccessDenied {
+                operation: "lazy-invalid",
+                block: "coordinates",
+            });
+        }
         assert_eq!(outputs.yielded_count(), bad_index);
         assert!(outputs.next().is_none());
         assert!(outputs.next().is_none());
@@ -914,15 +935,21 @@ fn lazy_access_mapping_and_preservation_contracts_fail_closed_per_candidate() {
         .emit_lazy_runtime(std::iter::once(Ok(changed)))
         .unwrap();
     let mut outputs = parts.finish_lazy().unwrap();
-    assert!(matches!(
-        outputs.next(),
-        Some(Err(OperationError::DerivedEffectContract {
-            operation: "lazy-preserve",
-            action: "preserve",
-            ..
-        }))
-    ));
-    assert_eq!(outputs.yielded_count(), 0);
+    if OPERATION_CONTRACTS_ENABLED {
+        assert!(matches!(
+            outputs.next(),
+            Some(Err(OperationError::DerivedEffectContract {
+                operation: "lazy-preserve",
+                action: "preserve",
+                ..
+            }))
+        ));
+        assert_eq!(outputs.yielded_count(), 0);
+    } else {
+        let output = outputs.next().unwrap().unwrap();
+        assert_eq!(output.properties(), &properties("changed"));
+        assert_eq!(outputs.yielded_count(), 1);
+    }
     assert!(outputs.next().is_none());
 }
 

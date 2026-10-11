@@ -1,0 +1,4 @@
+/expected/
+/reports/
+/testdata/corpora/chembl*/
+__pycache__/

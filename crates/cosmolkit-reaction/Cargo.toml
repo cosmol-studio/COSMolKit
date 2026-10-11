@@ -1,11 +1,15 @@
 [package]
 name = "cosmolkit-reaction"
 description = "Detached source-backed reaction templates and execution"
+keywords = ["cheminformatics", "reactions", "smirks", "chemistry"]
+categories = ["science", "algorithms"]
 repository.workspace = true
 homepage.workspace = true
 license.workspace = true
 version.workspace = true
 edition.workspace = true
+readme = "../cosmolkit/README.md"
+documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
 cosmolkit-types = { version = "0.5.0", path = "../cosmolkit-types" }

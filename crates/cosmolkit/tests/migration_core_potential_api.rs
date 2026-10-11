@@ -23,6 +23,45 @@ fn atom(index: usize, element: Element) -> Atom {
     Atom::from_spec(AtomId::new(index), AtomSpec::new(element))
 }
 
+#[test]
+fn double_bond_controls_follow_source_connectivity_ranks() {
+    for (smiles, center, controls) in [
+        (
+            "O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3",
+            6,
+            [Some(4), Some(1), Some(8), None],
+        ),
+        (
+            "CC1=C(/C=C2\\C(C)=C3/C(C)=C(/C=C4\\C(C)=C5/C(CCC(=O)O)=C(C(C)=C5N4)C=C6\\C(CCC(=O)O)=C(C)C(=C6N2)C=C1)N3)C=C(\\C=C)C",
+            27,
+            [Some(22), None, Some(29), Some(38)],
+        ),
+    ] {
+        let source = Molecule::from_smiles(smiles).unwrap();
+        let snapshot = source.clone();
+        for clean in [false, true] {
+            let result = source
+                .potential_stereo_with_params(&PotentialStereoParams {
+                    clean,
+                    flag_possible: true,
+                    allow_nontetrahedral: true,
+                })
+                .unwrap();
+            let info = result
+                .stereo
+                .iter()
+                .find(|i| i.centered_on == PotentialStereoCenter::Bond(BondId::new(center)))
+                .unwrap();
+            assert_eq!(
+                info.controlling_atoms,
+                controls.map(|a| a.map(AtomId::new)),
+                "{smiles}; clean={clean}"
+            );
+            assert_eq!(source, snapshot);
+        }
+    }
+}
+
 fn bond(index: usize, begin: usize, end: usize, order: BondOrder) -> Bond {
     Bond::from_spec(
         BondId::new(index),

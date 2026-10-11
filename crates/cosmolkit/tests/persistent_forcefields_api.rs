@@ -36,6 +36,82 @@ fn fixture() -> Molecule {
     .unwrap()
 }
 #[test]
+#[cfg(feature = "cap-hydrogens")]
+fn mmff_observation_does_not_precondition_the_next_optimizer() {
+    use cosmolkit::{MmffOptimizationParams, MmffPropertiesParams};
+    // AtomTyper.cpp::MMFFMolProperties prepares aromaticity on its input.
+    // Queries/factories must keep that preparation detached: on this fixed
+    // macrocycle, repeated preparation is observably non-idempotent upstream.
+    let mol = Molecule::from_smiles(concat!(
+        "CC1=C(/C=C2\\C(C)=C3/C(C)=C(/C=C4\\C(C)=C5/C(CCC(=O)O)=",
+        "C(C(C)=C5N4)C=C6\\C(CCC(=O)O)=C(C)C(=C6N2)C=C1)N3)C=C(\\C=C)C"
+    ))
+    .unwrap()
+    .with_hydrogens()
+    .unwrap();
+    let mut state = 17_u64;
+    let coordinates = (0..mol.num_atoms())
+        .map(|_| {
+            (0..3)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
+                    (((state >> 32) % 257) as f64 - 128.) / 16.
+                })
+                .collect()
+        })
+        .collect();
+    let mol = mol.with_added_3d_conformer(coordinates).unwrap();
+    for variant in ["MMFF94", "MMFF94s"] {
+        let mut queried = mol.clone();
+        let mut direct = mol.clone();
+        for _ in 0..2 {
+            let before = queried.clone();
+            queried
+                .mmff_properties_with_params(&MmffPropertiesParams {
+                    mmff_variant: variant.into(),
+                })
+                .unwrap();
+            queried
+                .mmff_force_field_with_params(&MmffForceFieldParams::new(
+                    None,
+                    variant.into(),
+                    100.,
+                    true,
+                ))
+                .unwrap()
+                .energy()
+                .unwrap();
+            assert_eq!(queried, before, "{variant}: observing must not write back");
+            let params = MmffOptimizationParams {
+                mmff_variant: variant.into(),
+                max_iterations: 2,
+                ..Default::default()
+            };
+            queried = queried
+                .with_mmff_optimized_with_params(&params)
+                .unwrap()
+                .molecule;
+            direct = direct
+                .with_mmff_optimized_with_params(&params)
+                .unwrap()
+                .molecule;
+            assert_eq!(queried.topology(), direct.topology());
+            assert_eq!(queried.properties(), direct.properties());
+            let bits = |m: &Molecule| {
+                m.conformers_3d()[0]
+                    .coordinates()
+                    .iter()
+                    .flatten()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(bits(&queried), bits(&direct));
+        }
+    }
+}
+#[test]
 fn immutable_defaults_and_registered_properties() {
     let mmff = MmffForceFieldParams::default();
     assert_eq!(mmff.conformer_id(), None);

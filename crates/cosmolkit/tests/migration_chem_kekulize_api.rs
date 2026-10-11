@@ -329,6 +329,40 @@ fn typed_algorithm_failure_is_atomic_for_value_and_inplace_wrappers() {
 }
 
 #[test]
+fn kekule_writer_keeps_source_ring_cache_when_hiding_dative_bonds() {
+    let source = Molecule::from_smiles(
+        "O=C([O-])C1=CC=C(N2N=C3[N]4=C2C5=CC=CC=C5[O-][Fe+3]4[O-]C6=CC=CC=C63)C=C1",
+    )
+    .unwrap();
+    let snapshot = source.clone();
+    for canonical in [false, true] {
+        let error = source
+            .to_smiles_with_params(&cosmolkit::SmilesWriteParams {
+                kekule: true,
+                include_dative_bonds: false,
+                canonical,
+                ..Default::default()
+            })
+            .unwrap_err();
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+        let mut found = false;
+        while let Some(current) = cause {
+            if let Some(KekulizeError::NotKekulizable { problem_atoms }) =
+                current.downcast_ref::<KekulizeError>()
+            {
+                assert_eq!(problem_atoms, &[8, 9, 11].map(AtomId::new));
+                found = true;
+                break;
+            }
+            cause = current.source();
+        }
+        assert!(found, "missing structured Kekulize cause: {error}");
+        assert_eq!(source, snapshot);
+        assert!(std::ptr::eq(source.topology(), snapshot.topology()));
+    }
+}
+
+#[test]
 fn single_output_local_edit_makes_multi_candidate_ordering_not_applicable() {
     let spec = operation_spec("with_kekulized_bonds_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);

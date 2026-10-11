@@ -1364,8 +1364,12 @@ fn write_smiles_output_with_random_stream<'record>(
                         .set_atom_map(original_atom_maps[source_atom.index()]);
                 }
             }
-            let kekulized =
-                kekulize_writer_fragment(&fragment.topology, &valence, &fragment.source_atoms)?;
+            let kekulized = kekulize_writer_fragment(
+                &fragment.topology,
+                &valence,
+                &fragment.source_atoms,
+                record.rings.filter(|_| components.len() == 1),
+            )?;
             project_kekulized_writer_valence(
                 &mut valence,
                 kekulized.final_valence.as_ref(),
@@ -1612,6 +1616,7 @@ fn kekulize_writer_fragment(
     fragment_topology: &TopologyBlock,
     writer_valence: &ValenceAssignment,
     source_atoms: &[AtomId],
+    retained_rings: Option<&cosmolkit_core::RingInfo>,
 ) -> Result<cosmolkit_core::KekulizeAssignment, SmilesParseError> {
     // BEGIN RDKIT CPP BLOCK Atom::calcImplicitValence retained explicit cache
     // RDKit✔️❌:   if (d_explicitValence == -1) {
@@ -1642,11 +1647,25 @@ fn kekulize_writer_fragment(
             .map(|atom| writer_valence.implicit_hydrogens[atom.index()])
             .collect(),
     };
+    // BEGIN RDKIT CPP BLOCK MolOps.cpp getTheFrags sole-fragment copy
+    // RDKit✔️✔️:   if (nFrags == 1) {
+    // RDKit✔️✔️:     res.emplace_back(new RWMol(mol));
+    // END RDKIT CPP BLOCK MolOps.cpp getTheFrags sole-fragment copy
+    // BEGIN RDKIT CPP BLOCK Kekulize.cpp KekulizeFragment ring acquisition
+    // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:       MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit✔️✔️:     }
+    // END RDKIT CPP BLOCK Kekulize.cpp KekulizeFragment ring acquisition
+    // A sole-fragment copy retains ring rows through DATIVE-to-SINGLE writes.
+    // Borrow them: a fresh search would introduce metal cycles absent from the
+    // source cache and merge independent aromatic systems. Multi-fragment
+    // extraction resets ring state and therefore retains the cold fallback.
+    // O(1) forwarding, no cache clone or second ring search here.
     cosmolkit_core::kekulize_with_query_state_and_ring_info(
         fragment_topology,
         &KekulizeParams::default(),
         None,
-        None,
+        retained_rings,
         Some(&component_valence),
     )
     .map_err(SmilesParseError::WriterKekulize)
@@ -5939,6 +5958,34 @@ mod tests {
     use crate::{SmilesParseParams, parse_smiles};
 
     #[test]
+    fn kekulize_failure_reports_remaining_worker_candidates() {
+        let record = parse_s33_standard_input(
+            "O=C([O-])C1=CC=C(N2N=C3[N]4=C2C5=CC=CC=C5[O-][Fe+3]4[O-]C6=CC=CC=C63)C=C1",
+        );
+        let rings = cosmolkit_core::symmetrized_sssr(
+            &record.topology,
+            &cosmolkit_core::RingSearchParams::default(),
+        )
+        .unwrap();
+        let view = crate::SmilesRecordView {
+            rings: Some(&rings),
+            ..(&record).into()
+        };
+        let error = write_smiles_with_params(
+            view,
+            &SmilesWriteParams {
+                kekule: true,
+                include_dative_bonds: false,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, SmilesParseError::WriterKekulize(cosmolkit_core::KekulizeError::NotKekulizable { problem_atoms }) if problem_atoms == [8, 9, 11].map(AtomId::new))
+        );
+    }
+
+    #[test]
     fn writer_kekulized_fragment_retains_existing_explicit_cache_and_recalculates_implicit() {
         let record = parse_smiles("CC", &SmilesParseParams::default()).expect("fixed C-C graph");
         // Source Atom::calcImplicitValence sees cached explicit=3 and neutral
@@ -5952,6 +5999,7 @@ mod tests {
             &record.topology,
             &retained,
             &[AtomId::new(0), AtomId::new(1)],
+            None,
         )
         .expect("source cache-preserving component input");
         let final_valence = assignment.final_valence.expect("selected rows retained");

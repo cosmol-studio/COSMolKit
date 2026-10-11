@@ -1,4 +1,4 @@
-//! Proposed controls for the new MMFF proof; existing normative controls unchanged.
+//! Local MMFF preservation-proof controls and concrete failure diagnostics.
 use super::*;
 use crate::{AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder};
 use std::sync::Arc;
@@ -35,6 +35,30 @@ fn prove(
     parts: &mut OpParts<'_, crate::ops::WithMmffOptimizedAccess>,
 ) -> Result<(), OperationError> {
     parts.prove_preserved_runtime(preserved(), PreservationProof::MmffPreparedOptimization)
+}
+fn assert_mismatch(
+    parts: &mut OpParts<'_, crate::ops::WithMmffOptimizedAccess>,
+    field: &str,
+    expected: &str,
+    actual: &str,
+) {
+    let error = prove(parts).unwrap_err();
+    assert_eq!(
+        error,
+        OperationError::DerivedPreservationMismatch {
+            operation: "with_mmff_optimized_with_params",
+            states: preserved(),
+            field: field.into(),
+            expected: expected.into(),
+            actual: actual.into(),
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "operation `with_mmff_optimized_with_params` has invalid derived-effect preserve for mask 0x22: {field}: expected {expected}, got {actual}"
+        )
+    );
 }
 fn assert_source_unchanged(source: &Molecule, peer: &Molecule) {
     assert_eq!(source, peer);
@@ -74,7 +98,7 @@ fn mmff_proof_rejects_unrelated_atom_formal_charge() {
     let mut topology = parts.checkout_topology_runtime().unwrap();
     topology.atoms[0].set_formal_charge(1);
     parts.install_topology_runtime(topology).unwrap();
-    assert!(prove(&mut parts).is_err());
+    assert_mismatch(&mut parts, "topology.atoms[0].formal_charge", "0", "1");
     assert_source_unchanged(&source, &peer);
 }
 #[test]
@@ -87,7 +111,134 @@ fn mmff_proof_rejects_conformer_identity_change() {
     coordinates.conformers_3d[0] =
         crate::Conformer3D::new(17, old.coordinates().to_vec(), old.is_3d());
     parts.install_coordinates_runtime(coordinates).unwrap();
-    assert!(prove(&mut parts).is_err());
+    assert_mismatch(&mut parts, "coordinates.conformers_3d[0].id", "0", "17");
+    assert_source_unchanged(&source, &peer);
+}
+#[test]
+fn mmff_proof_reports_bond_endpoint_change() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut topology = parts.checkout_topology_runtime().unwrap();
+    let begin = topology.bonds[0].begin();
+    let end = topology.bonds[0].end();
+    topology.bonds[0].set_endpoints(end, begin);
+    parts.install_topology_runtime(topology).unwrap();
+    assert_mismatch(
+        &mut parts,
+        "topology.bonds[0].begin",
+        "AtomId(0)",
+        "AtomId(1)",
+    );
+    assert_source_unchanged(&source, &peer);
+}
+#[test]
+fn mmff_proof_reports_atom_count_change() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let _topology = parts.checkout_topology_runtime().unwrap();
+    parts
+        .install_topology_runtime(cosmolkit_model::TopologyBlock::default())
+        .unwrap();
+    assert_mismatch(&mut parts, "topology.atoms.len", "2", "0");
+    assert_source_unchanged(&source, &peer);
+}
+#[test]
+fn mmff_proof_reports_bond_direction_change() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut topology = parts.checkout_topology_runtime().unwrap();
+    topology.bonds[0].set_direction(crate::BondDirection::EndUpRight);
+    parts.install_topology_runtime(topology).unwrap();
+    assert_mismatch(
+        &mut parts,
+        "topology.bonds[0].direction",
+        "None",
+        "EndUpRight",
+    );
+    assert_source_unchanged(&source, &peer);
+}
+fn directed_source(smiles: &str, bond: usize, sanitized: bool) -> Molecule {
+    let source = Molecule::from_smiles(smiles).unwrap();
+    let mut topology = source.topology().clone();
+    topology.bonds[bond].set_direction(crate::BondDirection::EndUpRight);
+    let mut properties = source.properties().clone();
+    if sanitized {
+        properties
+            .set_computed_prop("_MMFFSanitized", 1_i32)
+            .unwrap();
+    }
+    Molecule::from_parts(
+        topology,
+        source.coordinate_block_runtime().clone(),
+        properties,
+    )
+    .unwrap()
+    .with_assigned_rings()
+    .unwrap()
+}
+#[test]
+fn mmff_proof_accepts_source_kekulize_direction_cleanup() {
+    for order in [BondOrder::Single, BondOrder::Double, BondOrder::Aromatic] {
+        let source = directed_source("c1ccccc1", 0, false);
+        let peer = source.clone();
+        let mut parts = parts(&source);
+        let mut topology = parts.checkout_topology_runtime().unwrap();
+        topology.bonds[0].set_direction(crate::BondDirection::None);
+        topology.bonds[0].set_order(order);
+        parts.install_topology_runtime(topology).unwrap();
+        prove(&mut parts).unwrap();
+        assert_source_unchanged(&source, &peer);
+    }
+}
+#[test]
+fn mmff_proof_rejects_direction_cleanup_without_source_preparation() {
+    for (smiles, sanitized) in [("CC", false), ("c1ccccc1", true), ("Cc1ccccc1", false)] {
+        let source = directed_source(smiles, 0, sanitized);
+        let peer = source.clone();
+        let mut parts = parts(&source);
+        let mut topology = parts.checkout_topology_runtime().unwrap();
+        topology.bonds[0].set_direction(crate::BondDirection::None);
+        parts.install_topology_runtime(topology).unwrap();
+        assert_mismatch(
+            &mut parts,
+            "topology.bonds[0].direction",
+            "EndUpRight",
+            "None",
+        );
+        assert_source_unchanged(&source, &peer);
+    }
+}
+#[test]
+fn mmff_proof_rejects_non_source_direction_replacement() {
+    let source = directed_source("c1ccccc1", 0, false);
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut topology = parts.checkout_topology_runtime().unwrap();
+    topology.bonds[0].set_direction(crate::BondDirection::EndDownRight);
+    parts.install_topology_runtime(topology).unwrap();
+    assert_mismatch(
+        &mut parts,
+        "topology.bonds[0].direction",
+        "EndUpRight",
+        "EndDownRight",
+    );
+    assert_source_unchanged(&source, &peer);
+}
+#[test]
+fn mmff_proof_keeps_source_permitted_non_finite_positions() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut coordinates = parts.checkout_coordinates_runtime().unwrap();
+    coordinates.conformers_3d[0].coordinates_mut()[1][2] = f64::NAN;
+    // Stored positions need not be finite; numerical validation belongs to
+    // the algorithm, not this metadata-only preservation proof.
+    coordinates.validate_for_atom_count(2).unwrap();
+    parts.install_coordinates_runtime(coordinates).unwrap();
+    prove(&mut parts).unwrap();
     assert_source_unchanged(&source, &peer);
 }
 #[test]
@@ -98,7 +249,15 @@ fn mmff_proof_rejects_unrelated_property_write() {
     let mut properties = parts.checkout_properties_runtime().unwrap();
     properties.set_prop("unrelated", "written").unwrap();
     parts.install_properties_runtime(properties).unwrap();
-    assert!(prove(&mut parts).is_err());
+    assert_mismatch(
+        &mut parts,
+        "properties.props[\"unrelated\"]",
+        "None",
+        &format!(
+            "Some({:?})",
+            cosmolkit_model::PropertyValue::String("written".into())
+        ),
+    );
     assert_source_unchanged(&source, &peer);
 }
 #[test]
@@ -110,7 +269,12 @@ fn mmff_proof_rejects_missing_preparation_guard() {
         .find(|spec| spec.method == "with_mmff_optimized_with_params")
         .unwrap();
     let mut parts = OpParts::<crate::ops::WithMmffOptimizedAccess>::new(&source, spec).unwrap();
-    assert!(prove(&mut parts).is_err());
+    let error = prove(&mut parts).unwrap_err();
+    assert!(
+        matches!(&error, OperationError::DerivedPreservationMismatch { field, expected, actual, .. }
+        if field.contains("_MMFFSanitized") && expected == "Some(Int(1))" && actual == "None"),
+        "{error}"
+    );
     assert_source_unchanged(&source, &peer);
 }
 #[test]
@@ -121,7 +285,12 @@ fn mmff_proof_rejects_preserved_cache_validity_change() {
     let mut cache = parts.checkout_derived_cache_runtime().unwrap();
     cache.mark_valid(DerivedState::RING_FAMILIES);
     parts.install_derived_cache_runtime(cache).unwrap();
-    assert!(prove(&mut parts).is_err());
+    let error = prove(&mut parts).unwrap_err();
+    assert!(
+        matches!(&error, OperationError::DerivedPreservationMismatch { field, .. }
+        if field == "derived_cache.preserved_valid_states"),
+        "{error}"
+    );
     assert_source_unchanged(&source, &peer);
 }
 #[test]
@@ -157,7 +326,12 @@ fn mmff_proof_rejects_equal_text_with_non_source_scalar_tags() {
             .set_computed_prop("_MMFFSanitized", marker)
             .unwrap();
         parts.install_properties_runtime(properties).unwrap();
-        assert!(prove(&mut parts).is_err());
+        let error = prove(&mut parts).unwrap_err();
+        assert!(
+            matches!(&error, OperationError::DerivedPreservationMismatch { field, expected, .. }
+            if field.contains("_MMFFSanitized") && expected == "Some(Int(1))"),
+            "{error}"
+        );
         assert_source_unchanged(&source, &peer);
     }
 }
@@ -175,7 +349,12 @@ fn mmff_proof_rejects_coordinate_occurrence_metadata_changes() {
     // occurrence order changes source metadata even for a single dimension.
     coordinates.source_conformer_order = None;
     parts.install_coordinates_runtime(coordinates).unwrap();
-    assert!(prove(&mut parts).is_err());
+    assert_mismatch(
+        &mut parts,
+        "coordinates.source_conformer_order",
+        "Some([ThreeD])",
+        "None",
+    );
     assert_source_unchanged(&source, &peer);
 }
 
