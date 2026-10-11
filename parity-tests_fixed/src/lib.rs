@@ -1,4 +1,5 @@
 //! Corpus and designated source-regression preparation/comparison only.
+pub mod atom_pair;
 pub mod bio_mmcif;
 mod descriptors;
 mod execute;
@@ -8,6 +9,7 @@ pub mod mcs;
 pub mod mmff;
 pub mod molalign;
 pub mod molecular;
+pub mod morgan_historical;
 pub mod persistent_forcefields;
 mod prepared_regressions;
 mod reference;
@@ -17,6 +19,7 @@ pub mod smiles_write;
 pub mod special_regression;
 pub mod tautomer;
 pub mod testing;
+pub mod torsion;
 pub mod uff;
 mod workflow;
 

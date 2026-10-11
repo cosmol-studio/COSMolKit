@@ -86,24 +86,76 @@ pub enum Stage {
 }
 
 pub fn run(input: &WriteInput) -> Result<Record, String> {
-    let output = match Molecule::from_smiles(&input.case.smiles) {
-        Err(_) => Outcome::Error(Stage::Parse),
-        Ok(mol) => match mol.to_smiles_with_params(&input.profile.params(mol.num_atoms())) {
-            Ok(text) => {
-                Outcome::Smiles(String::from_utf8(text.into_bytes()).map_err(|e| e.to_string())?)
+    Evaluator::default().run(input)
+}
+
+/// Bounded, task-local reuse across the consecutive profiles of one case.
+/// No molecule or parse failure is shared between tests or different inputs.
+#[derive(Default)]
+pub(crate) struct Evaluator {
+    current: Option<(SmilesCase, Option<Molecule>)>,
+    #[cfg(test)]
+    parses: usize,
+}
+
+impl Evaluator {
+    pub(crate) fn run(&mut self, input: &WriteInput) -> Result<Record, String> {
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|(case, _)| case != &input.case)
+        {
+            self.current = Some((
+                input.case.clone(),
+                Molecule::from_smiles(&input.case.smiles).ok(),
+            ));
+            #[cfg(test)]
+            {
+                self.parses += 1;
             }
-            Err(_) => Outcome::Error(Stage::Write),
-        },
-    };
-    Ok(Record {
-        input: Input::SmilesWrite(input.clone()),
-        output: Value::SmilesWrite(output),
-    })
+        }
+        let output = match &self.current.as_ref().expect("case initialized").1 {
+            None => Outcome::Error(Stage::Parse),
+            Some(mol) => match mol.to_smiles_with_params(&input.profile.params(mol.num_atoms())) {
+                Ok(text) => Outcome::Smiles(
+                    String::from_utf8(text.into_bytes()).map_err(|e| e.to_string())?,
+                ),
+                Err(_) => Outcome::Error(Stage::Write),
+            },
+        };
+        Ok(Record {
+            input: Input::SmilesWrite(input.clone()),
+            output: Value::SmilesWrite(output),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_local_reuse_matches_fresh_parsing_for_every_profile_and_case_change() {
+        let mut evaluator = Evaluator::default();
+        for (id, smiles) in [
+            ("mapped", "[CH3:2][C@H](O)c1ccccc1"),
+            ("invalid", "C#"),
+            ("mapped", "CCO"),
+            ("empty", ""),
+        ] {
+            for profile in profiles() {
+                let input = WriteInput {
+                    case: SmilesCase {
+                        id: id.into(),
+                        smiles: smiles.into(),
+                    },
+                    profile,
+                };
+                assert_eq!(evaluator.run(&input).unwrap(), run(&input).unwrap());
+            }
+        }
+        assert_eq!(evaluator.parses, 4);
+    }
 
     #[test]
     fn matrix_has_all_768_unique_ordered_profiles_and_exact_parameter_mapping() {

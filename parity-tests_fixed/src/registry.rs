@@ -217,6 +217,8 @@ macro_rules! corpus_tasks {
             (mmff_optimize_smiles, Operation::MmffOptimization, CorpusType::Smiles, "generate_mmff_optimize"),
             (mmff_optimize_conformers_smiles, Operation::MmffConformerOptimization, CorpusType::Smiles, "generate_mmff_optimize_conformers"),
             (fingerprint_morgan_smiles, Operation::Molecular(molecule_plan::TaskId::MorganFingerprint), CorpusType::Smiles, "generate_morgan_fingerprint"),
+            (fingerprint_topological_torsion_smiles, Operation::Fingerprint($crate::fingerprints::Kind::TopologicalTorsion), CorpusType::Smiles, "generate_fingerprint"),
+            (fingerprint_atom_pair_smiles, Operation::Fingerprint($crate::fingerprints::Kind::AtomPair), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_maccs_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Maccs), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_topological_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Topological), CorpusType::Smiles, "generate_fingerprint"),
             (fingerprint_layered_smiles, Operation::Fingerprint($crate::fingerprints::Kind::Layered), CorpusType::Smiles, "generate_fingerprint"),
@@ -547,6 +549,7 @@ impl Input {
                     TautomerEnumeration { .. } => "tautomer_enumeration",
                     TautomerCanonicalization { .. } => "tautomer_canonicalization",
                     Morgan { output, .. } => output.task_name(),
+                    MorganHistorical { .. } => "fingerprint_morgan",
                 }
             }
         }
@@ -614,6 +617,57 @@ pub struct ReferenceBackend {
 pub struct Corpus {
     pub molecules: Vec<SmilesCase>,
     pub bio_cases: Vec<BioPdbCase>,
+    pub tautomer_profiles: Option<Vec<molecule_plan::TautomerProfile>>,
+    pub morgan_historical: Option<Vec<crate::morgan_historical::Recipe>>,
+    pub fingerprint_profiles:
+        std::collections::BTreeMap<crate::fingerprints::Kind, Vec<crate::fingerprints::Params>>,
+}
+
+impl Corpus {
+    pub(crate) fn molecular_profiles_for_case(
+        &self,
+        id: molecule_plan::TaskId,
+        case: &SmilesCase,
+    ) -> Vec<molecule_plan::Profile> {
+        let mut selected = self.molecular_profiles(id);
+        if id == molecule_plan::TaskId::MorganFingerprint {
+            if let Some(recipes) = &self.morgan_historical {
+                let counts = cosmolkit::Molecule::from_smiles(&case.smiles)
+                    .map(|mol| (mol.num_atoms(), mol.num_bonds()))
+                    .ok();
+                selected.extend(
+                    recipes
+                        .iter()
+                        .copied()
+                        .filter(|recipe| counts.is_none_or(|(a, b)| recipe.eligible(a, b)))
+                        .map(|recipe| molecule_plan::Profile::MorganHistorical { recipe }),
+                );
+            }
+        }
+        selected
+    }
+
+    pub(crate) fn molecular_profiles(
+        &self,
+        id: molecule_plan::TaskId,
+    ) -> Vec<molecule_plan::Profile> {
+        use molecule_plan::{Profile, TaskId};
+        match (id, &self.tautomer_profiles) {
+            (TaskId::TautomerEnumeration, Some(profiles)) => profiles
+                .iter()
+                .map(|parameters| Profile::TautomerEnumeration {
+                    parameters: *parameters,
+                })
+                .collect(),
+            (TaskId::TautomerCanonicalization, Some(profiles)) => profiles
+                .iter()
+                .map(|parameters| Profile::TautomerCanonicalization {
+                    parameters: *parameters,
+                })
+                .collect(),
+            _ => id.profiles(),
+        }
+    }
 }
 
 impl Task {
@@ -689,7 +743,9 @@ impl Task {
             Operation::MolAlign | Operation::PersistentMmff | Operation::PersistentUff => {
                 cases.molecules.len()
             }
-            Operation::Fingerprint(_) => cases.molecules.len(),
+            Operation::Fingerprint(kind) => {
+                cases.molecules.len() * cases.fingerprint_profiles.get(&kind).map_or(1, Vec::len)
+            }
             Operation::SmilesWrite => cases.molecules.len() * crate::smiles_write::profiles().len(),
             Operation::SubstructureMatch => cases.molecules.len() * crate::search::profiles().len(),
             Operation::UffCoverage
@@ -697,7 +753,17 @@ impl Task {
             | Operation::UffConformerOptimization => {
                 cases.molecules.len() * crate::uff::profiles(self.operation).len()
             }
-            Operation::Molecular(id) => cases.molecules.len() * id.profiles().len(),
+            Operation::Molecular(id)
+                if id == molecule_plan::TaskId::MorganFingerprint
+                    && cases.morgan_historical.is_some() =>
+            {
+                cases
+                    .molecules
+                    .iter()
+                    .map(|case| cases.molecular_profiles_for_case(id, case).len())
+                    .sum()
+            }
+            Operation::Molecular(id) => cases.molecules.len() * cases.molecular_profiles(id).len(),
             Operation::MmffCoverage
             | Operation::MmffOptimization
             | Operation::MmffConformerOptimization => {
@@ -771,6 +837,9 @@ pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
             .collect();
     }
     if let Operation::Fingerprint(kind) = task.operation {
+        if let Some(profiles) = cases.fingerprint_profiles.get(&kind) {
+            return crate::fingerprints::inputs_with_profiles(&cases.molecules, kind, profiles);
+        }
         return crate::fingerprints::inputs(&cases.molecules, kind);
     }
     if matches!(
@@ -866,7 +935,8 @@ pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
         .molecules
         .iter()
         .flat_map(|case| {
-            id.profiles()
+            cases
+                .molecular_profiles_for_case(id, case)
                 .into_iter()
                 .map(move |profile| Input::Molecular {
                     case: case.clone(),

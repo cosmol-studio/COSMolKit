@@ -100,8 +100,16 @@ follow the pinned [**upstream implementation diffs, not corpus-output fitting**]
 
 ### Validation
 
-- No differences have been observed on the known corpus of several hundred
-  thousand molecules. Million-scale parity validation is pending.
+- Completed 18,000 ChEMBL 37 source records and 20,505,775 parameterized
+  comparisons against RDKit 2026.03.6, with zero mismatches. Reference timeouts
+  (216 observations) and upstream crashes (27 observations) are recorded
+  separately, not counted as matches.
+- Discrete outputs and fingerprints compare exactly; descriptor floating-point
+  values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
+  bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
+  MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
+- Million-scale validation remains pending. See [VALIDATION.md](VALIDATION.md)
+  for completed functional/profile coverage and comparison boundaries.
 
 ## [0.3.0] - 2026-08-28
 

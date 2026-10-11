@@ -1,24 +1,140 @@
 # COSMolKit Validation
 
-## 0.5.0: million-scale parity validation pending
+## 0.5.0: ChEMBL 37 parity results
 
-No differences have been observed on the known corpus of several hundred
-thousand molecules. Million-scale parity validation is pending.
+Completed validation comprises nine batches covering **18,000 ChEMBL 37
+source records** and **20,505,775 parameterized comparisons**, with **zero
+mismatches**. Million-scale validation remains pending.
 
-The results, pass claims, comparison counts and coverage descriptions below are historical evidence
-from COSMolKit 0.3.0, not validation results for 0.5.0. They must not be
-transferred to the new architecture or APIs without rerunning the applicable
-tests against 0.5.0 and recording the actual results.
+### Reference and execution scope
+
+- Chemistry reference: RDKit **2026.03.6**, source revision
+  `0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`, CPython **3.13.12**.
+- Corpus: ChEMBL 37, 2,897,819 available source records; source archive SHA-256
+  `ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
+- Selection: nine consecutive 2,000-record batches, retaining source order and
+  ChEMBL IDs. The completed boundary is source offsets `0..18000`.
+- Execution: standard [`parity-tests_fixed`](parity-tests_fixed/README.md)
+  preparation and Cargo comparison, release optimization and
+  `cosmolkit/op-contracts-strict`. Every completed batch's Cargo command exited
+  successfully; together they produced 1,046 task reports.
+- Only completed comparisons are included. The additional 2,000-record batch
+  with unfinished reference preparation is excluded from the results below.
+
+| Result | Count |
+|---|---:|
+| Completed source records | 18,000 |
+| Actual comparisons | 20,505,775 |
+| Mismatches | 0 |
+| Reference timeout observations, not compared | 216 |
+| Upstream crash observations, not compared | 27 |
+| Upstream undefined observations, not compared | 0 |
+
+A comparison is one registered input/profile observation, potentially
+containing a vector, molecular state or provenance collection. Parameter
+profiles multiply comparisons, not the number of distinct input molecules.
+Matching parser rejections and defined error outcomes are included where the
+task contract compares them; they are not successful molecule calculations.
+
+### Completed functional coverage
+
+All counts below come from the nine completed batch receipts. Each row groups
+related registered tasks; the comparison column sums to the overall total.
+
+| Surface | Actual comparisons | Compared behavior |
+|---|---:|---|
+| SMILES writing | 13,824,000 | Complete 768-profile writer matrix |
+| SMILES parsing | 72,000 | Registered parser profiles and rejection outcomes |
+| Molecular descriptors | 3,528,000 | 78 tasks, including weights/formula, Chi, Kappa/Phi, QED, TPSA, Crippen, MQN, ASA/contributions, VSA bins and molecular counts |
+| Substructure matching | 324,000 | Registered matching parameter profiles |
+| Morgan fingerprints | 1,152,000 | Four output forms, 16 ordinary profiles per form, including provenance |
+| MACCS fingerprints | 18,000 | Registered raw/public fingerprint observations |
+| Avalon fingerprints | 238,000 | Ordinary profiles, then the full 23-profile matrix |
+| RDK topological fingerprints | 148,000 | Ordinary profiles, then the full 14-profile matrix |
+| Layered fingerprints | 119,973 | Ordinary profiles, then the full 18-profile matrix |
+| Pattern fingerprints | 72,000 | Ordinary profiles, then the full ten-profile matrix |
+| AtomPair fingerprints | 80,000 | Ten profiles across four output forms, with provenance |
+| Topological Torsion fingerprints | 72,000 | Nine profiles across four output forms, with provenance |
+| Fuzzy fingerprint operations | 36,000 | Registered AND/OR pair observations |
+| Tautomer enumeration and canonicalization | 264,000 | Ordered results, state and registered catalog/option profiles |
+| Persistent MMFF/UFF force fields | 36,000 | Initial/final energy, gradients and positions with two-step minimization |
+| MMFF single/conformer optimization | 71,856 | Prepared optimizer observations and defined outcomes |
+| UFF single/conformer optimization | 35,928 | Prepared optimizer observations and defined outcomes |
+| MMFF/UFF parameter availability | 72,000 | Registered parameter-availability branches |
+| Molecular alignment and RMSD | 18,000 | Six rotated call families, including transforms, maps and source preservation |
+| Direct 2D coordinates | 18,000 | Topology and coordinate outputs |
+| SVG drawing | 18,000 | Final artifacts under the registered SVG comparison rules |
+| Fragments and largest fragment | 36,000 | Registered fragment extraction and selection |
+| Murcko decomposition/scaffold and net scaffold | 54,000 | Registered scaffold outputs |
+| Sanitize, kekulize, hydrogen transforms and distance matrices | 198,000 | Registered graph/state and matrix observations |
+| Batch SMILES | 18 | Two whole-batch observations per completed batch |
+
+Historical parameter matrices were added at batch boundaries without rerunning
+earlier completed batches. Their completed input breadth is therefore:
+
+| Parameter matrix | Completed ChEMBL source records |
+|---|---:|
+| SMILES writer, 768 profiles | 18,000 |
+| Tautomers, eight enumeration and eight canonicalization profiles | 16,000 |
+| Avalon, 23 profiles; RDK topological, 14 profiles | 10,000 each |
+| Layered, 18 profiles; Pattern, ten profiles | 6,000 each |
+| AtomPair, 40 observations; Topological Torsion, 36 observations | 2,000 each |
+
+The additional 15 historical dense-Morgan recipes passed a separate focused
+standard prepare/Cargo comparison: **186/186 observations matched**, with no
+timeouts or upstream crashes. This includes 96 ordinary requests, 90 historical
+requests, 31 paired parser rejections and 75 actual historical fingerprint
+vectors. Source-defined atom/bond eligibility is retained. This focused check
+does not add ChEMBL input breadth; the corresponding large-batch comparison
+is not included in the completed results.
+
+### Comparison rules and reference exceptions
+
+Fingerprint vectors, integer/string/state outputs and provenance use exact
+comparison. Descriptor binary64 values, persistent MMFF/UFF numerical outputs
+and ordinary UFF optimization compare their IEEE-754 bits. Ordinary MMFF
+optimization compares energies and coordinates with absolute `1e-6` tolerance;
+statuses and conformer IDs are exact. Ordinary MolAlign results and direct 2D
+coordinates retain their declared absolute `1e-8` tolerance. Error and parser
+outcomes follow each registered task's structural comparison contract; exception
+message spelling alone is not a chemical mismatch. SVG uses the registered
+artifact normalization rules. The run did not weaken these comparisons.
+
+The 27 upstream crashes occurred in Layered fingerprint reference calls. The
+216 reference timeouts were recorded as 72 MMFF single, 72 MMFF conformer,
+36 UFF single and 36 UFF conformer observations. These are observation counts,
+not necessarily distinct molecules; none is counted as a match. One earlier
+memory-limit interruption was recovered using valid saved references and is
+recorded separately from chemical mismatches and upstream crashes.
+
+### Evidence and remaining coverage
+
+Inputs, reference manifests, exact parameters, comparison reports and immutable
+per-batch source identities are retained locally. The run's consolidated record
+is `target/overnight-parity-20261010/morning-report.json`; batch receipts are
+`completed.json` in the same directory. Native outcomes remain under
+`parity-tests_fixed/expected/`, and comparison/exception reports under
+`parity-tests_fixed/reports/`. Generated data are not committed.
+
+The latest completed test-runner library validation passed 77 tests. Focused
+adapter checks and replayed existing-reference comparisons are additional
+runner evidence, not additional distinct ChEMBL records.
+
+Remaining work includes million-scale breadth, uniform historical profiles
+across that breadth, the complete descriptor/MolAlign historical boundaries,
+modern CIP and potential-stereo/stereoisomer matrices, InChI diagnostics and
+options, distance-geometry/conformer matrices, full MOL/SDF/binary-state
+coverage, unsanitized/in-place hydrogen/cache observations, and full
+composition/batch/concurrent-read matrices. The functional coverage above
+records what was executed; it is not a complete 0.3.0-equivalent audit.
 
 ## Historical evidence: 0.3.0
 
-The remainder of this page preserves the corpus and comparison boundaries
-reported for 0.3.0. RDKit `2026.03.1` is its chemistry reference. Historical
-profiles and counts need not match the current preparation profile. A feature
-was parity-covered only at the boundary listed here. Separate upstream
-APIs outside that boundary were not claimed as implemented.
-This scope distinction never permits a mismatching row inside a covered
-boundary to be reclassified as unsupported.
+<details>
+<summary>Expand the previous full-corpus results and comparison boundaries</summary>
+
+The historical results below used RDKit **2026.03.1**. They retain their
+original corpus and API boundaries and are separate from the 0.5.0 run above.
 
 ## Corpus Tiers
 
@@ -569,3 +685,5 @@ parity boundary.
 - Golden baselines are condition-bound artifacts. Changing corpus, RDKit
   version, branch matrix, normalization, RNG/coordinate settings, or compared
   fields requires a new profile directory or file name.
+
+</details>

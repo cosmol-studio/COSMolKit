@@ -294,6 +294,138 @@ struct CorpusManifest {
     records: Option<usize>,
     #[serde(default)]
     inputs: Vec<BioSource>,
+    #[serde(default)]
+    tautomer_profiles: TautomerProfiles,
+    #[serde(default)]
+    fingerprint_profiles: FingerprintProfiles,
+}
+
+#[derive(Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum FingerprintProfiles {
+    #[default]
+    Seeded,
+    Historical0_3,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamedFingerprintProfile {
+    name: String,
+    params: crate::fingerprints::Params,
+}
+
+fn historical_fingerprint_profiles()
+-> Result<BTreeMap<crate::fingerprints::Kind, Vec<crate::fingerprints::Params>>> {
+    use crate::fingerprints::Kind;
+    let fixture: Value = serde_json::from_slice(&read(
+        &directory().join("testdata/profiles/fingerprints_historical_0_3.json"),
+    )?)
+    .map_err(|e| e.to_string())?;
+    let recipes: BTreeMap<Kind, Vec<NamedFingerprintProfile>> =
+        serde_json::from_value(fixture["profiles"].clone()).map_err(|e| e.to_string())?;
+    if recipes.keys().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            Kind::Avalon,
+            Kind::Topological,
+            Kind::Layered,
+            Kind::Pattern,
+        ])
+    {
+        return Err(
+            "historical fingerprint selection requires Avalon, Topological, Layered and Pattern recipes".into(),
+        );
+    }
+    let mut selected = BTreeMap::new();
+    for (kind, rows) in recipes {
+        if rows.is_empty() {
+            return Err("empty historical fingerprint profiles".into());
+        }
+        let mut names = BTreeSet::new();
+        let mut profiles = Vec::with_capacity(rows.len());
+        for row in rows {
+            if row.name.is_empty()
+                || !names.insert(row.name)
+                || row.params.kind() != kind
+                || profiles.contains(&row.params)
+            {
+                return Err("empty/duplicate/mismatched historical fingerprint profile".into());
+            }
+            profiles.push(row.params);
+        }
+        selected.insert(kind, profiles);
+    }
+    for (kind, file) in [
+        (Kind::AtomPair, "atom_pair_historical_0_3.json"),
+        (Kind::TopologicalTorsion, "torsion_historical_0_3.json"),
+    ] {
+        let rows: Vec<NamedFingerprintProfile> = serde_json::from_value(
+            serde_json::from_slice::<Value>(&read(
+                &directory().join("testdata/profiles").join(file),
+            )?)
+            .map_err(|e| e.to_string())?["profiles"]
+                .clone(),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut names = BTreeSet::new();
+        let mut profiles = Vec::new();
+        for row in rows {
+            if row.name.is_empty()
+                || !names.insert(row.name)
+                || row.params.kind() != kind
+                || profiles.contains(&row.params)
+            {
+                return Err(format!(
+                    "empty/duplicate/mismatched {kind:?} historical profile"
+                ));
+            }
+            profiles.push(row.params);
+        }
+        if profiles.is_empty() {
+            return Err(format!("empty {kind:?} historical profiles"));
+        }
+        selected.insert(kind, profiles);
+    }
+    Ok(selected)
+}
+
+#[derive(Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum TautomerProfiles {
+    #[default]
+    CurrentV1,
+    Historical0_3,
+}
+
+fn historical_tautomer_profiles() -> Result<Vec<registry::molecule_plan::TautomerProfile>> {
+    let fixture: Value = serde_json::from_slice(&read(
+        &directory().join("testdata/special/tautomer_focused.json"),
+    )?)
+    .map_err(|e| e.to_string())?;
+    let branches = fixture["branches"]
+        .as_array()
+        .ok_or("missing tautomer branches")?;
+    if branches.is_empty() {
+        return Err("empty tautomer profile selection".into());
+    }
+    let mut names = BTreeSet::new();
+    let mut profiles = Vec::with_capacity(branches.len());
+    for branch in branches {
+        let mut fields = branch.as_object().ok_or("invalid tautomer branch")?.clone();
+        let name = fields
+            .remove("name")
+            .ok_or("missing tautomer branch name")?;
+        let name = name.as_str().ok_or("invalid tautomer branch name")?;
+        if name.is_empty() || !names.insert(name.to_owned()) {
+            return Err("empty/duplicate tautomer branch name".into());
+        }
+        let profile = serde_json::from_value(Value::Object(fields)).map_err(|e| e.to_string())?;
+        if profiles.contains(&profile) {
+            return Err("duplicate tautomer parameters".into());
+        }
+        profiles.push(profile);
+    }
+    Ok(profiles)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -336,6 +468,31 @@ pub(crate) fn plan(selection: &Selection) -> Result<Plan> {
                 serde_json::from_slice(&read(&input_path(&format!("{name}.json"))?)?)
                     .map_err(|e| e.to_string())?;
             let mut cases = Corpus::default();
+            if manifest.fingerprint_profiles == FingerprintProfiles::Historical0_3 {
+                if manifest.format != "smiles" {
+                    return Err("fingerprint profiles require a SMILES corpus".into());
+                }
+                cases.fingerprint_profiles = historical_fingerprint_profiles()?;
+                let fixture: Value = serde_json::from_slice(&read(
+                    &directory().join("testdata/profiles/morgan_historical_0_3.json"),
+                )?)
+                .map_err(|e| e.to_string())?;
+                let recipes: Vec<crate::morgan_historical::Recipe> =
+                    serde_json::from_value(fixture["recipes"].clone())
+                        .map_err(|e| e.to_string())?;
+                if recipes != crate::morgan_historical::Recipe::ALL {
+                    return Err(
+                        "historical Morgan recipes differ from the complete source scope".into(),
+                    );
+                }
+                cases.morgan_historical = Some(recipes);
+            }
+            if manifest.tautomer_profiles == TautomerProfiles::Historical0_3 {
+                if manifest.format != "smiles" {
+                    return Err("tautomer profiles require a SMILES corpus".into());
+                }
+                cases.tautomer_profiles = Some(historical_tautomer_profiles()?);
+            }
             let kinds = match manifest.format.as_str() {
                 "smiles" => {
                     cases.molecules = crate::molecular::read_corpus(&input_path(
@@ -567,7 +724,7 @@ fn identity_with_output_digest(
         selection: selection.clone(),
         task: spec.key().into(),
         input_sha256: encoded_digest(input)?,
-        generator_sha256: reference::source_digest(spec)?,
+        generator_sha256: reference::source_digest_for_inputs(spec, input)?,
         reference_identity: serde_json::from_slice(&read(
             &directory().join("testdata/reference").join(pin),
         )?)
@@ -754,7 +911,7 @@ pub fn prepare_with_reuse(
                 continue;
             }
         }
-        let generator_before = reference::source_digest(spec)?;
+        let generator_before = reference::source_digest_for_inputs(spec, &input)?;
         eprintln!("Generating {}", spec.key());
         let temporary = tempfile::Builder::new()
             .prefix(".prepare-")
@@ -770,7 +927,7 @@ pub fn prepare_with_reuse(
             |row| writer.push(row),
         )?;
         let rows = writer.finish()?;
-        if reference::source_digest(spec)? != generator_before {
+        if reference::source_digest_for_inputs(spec, &input)? != generator_before {
             return Err("reference generator changed during preparation".into());
         }
         validate_rows(spec, &input, rows.iter()?, rows.len())?;
@@ -844,6 +1001,38 @@ pub fn prepare_with_reuse(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn historical_morgan_expansion_retains_ordinary_profiles_and_exact_eligibility() {
+        use crate::registry::molecule_plan::{Profile, TaskId};
+        let mut cases = Corpus::default();
+        cases.morgan_historical = Some(crate::morgan_historical::Recipe::ALL.to_vec());
+        for (smiles, historical) in [("", 10), ("C", 14), ("CC", 15), ("C.C", 14), ("CC(", 15)] {
+            let case = registry::SmilesCase {
+                id: smiles.into(),
+                smiles: smiles.into(),
+            };
+            let profiles = cases.molecular_profiles_for_case(TaskId::MorganFingerprint, &case);
+            assert_eq!(&profiles[..16], TaskId::MorganFingerprint.profiles());
+            assert_eq!(profiles.len(), 16 + historical);
+            assert!(
+                profiles[16..]
+                    .iter()
+                    .all(|p| matches!(p, Profile::MorganHistorical { .. }))
+            );
+            assert_eq!(
+                cases.molecular_profiles_for_case(TaskId::MorganSparseFingerprint, &case),
+                TaskId::MorganSparseFingerprint.profiles()
+            );
+            cases.molecules.push(case);
+        }
+        let task = registry::TASKS
+            .iter()
+            .find(|t| t.key == "fingerprint_morgan_smiles")
+            .unwrap();
+        let inputs = registry::expand(&cases, task);
+        assert_eq!(task.count(&cases), inputs.len());
+        assert_eq!(inputs.len(), 5 * 16 + 10 + 14 + 15 + 14 + 15);
+    }
     use super::*;
     #[cfg(unix)]
     #[test]
@@ -864,7 +1053,7 @@ mod tests {
     }
     #[test]
     fn registry_keys_and_cargo_declarations_share_one_census() {
-        assert_eq!(registry::TASKS.len(), 117);
+        assert_eq!(registry::TASKS.len(), 119);
         let mut unique = BTreeSet::new();
         for task in registry::TASKS {
             assert_eq!(
@@ -883,10 +1072,412 @@ mod tests {
         assert!(plan(&Selection::Corpus("fingerprint_5000".into())).is_err());
         let smoke = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
         assert_eq!(smoke.cases.molecules.len(), 3);
-        assert_eq!(smoke.specs.len(), 116);
+        assert_eq!(smoke.specs.len(), 118);
         let bio = plan(&Selection::Corpus("bio_small".into())).unwrap();
         assert_eq!(bio.cases.bio_cases.len(), 2);
         assert_eq!(bio.specs.len(), 2);
+    }
+
+    #[test]
+    fn torsion_historical_recipes_preserve_every_form_and_argument() {
+        use crate::fingerprints::{Kind, Params};
+        use crate::torsion::{Form, Profile};
+        let bytes = read(
+            &crate::root()
+                .join("tools/testdata/rdkit/topological_torsion_fingerprint_profile.json"),
+        )
+        .unwrap();
+        let original: Value = serde_json::from_slice(&bytes).unwrap();
+        let fixture: Value = serde_json::from_slice(
+            &read(&directory().join("testdata/profiles/torsion_historical_0_3.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fixture["source_sha256"], digest(&bytes));
+        let recipes = historical_fingerprint_profiles().unwrap();
+        let profiles = &recipes[&Kind::TopologicalTorsion];
+        assert_eq!(profiles.len(), 36);
+        for (index, branch) in original["corpus_branches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            for (offset, form) in [Form::SparseCount, Form::Count, Form::SparseBits, Form::Bits]
+                .into_iter()
+                .enumerate()
+            {
+                let expected = Profile {
+                    form,
+                    torsion_atom_count: branch["torsionAtomCount"].as_u64().unwrap_or(4) as u32,
+                    only_shortest_paths: branch["onlyShortestPaths"].as_bool().unwrap_or(false),
+                    include_chirality: branch["includeChirality"].as_bool().unwrap_or(false),
+                    count_simulation: branch["countSimulation"].as_bool().unwrap_or(true),
+                    count_bounds: branch.get("countBounds").map_or(vec![1, 2, 4, 8], |v| {
+                        serde_json::from_value(v.clone()).unwrap()
+                    }),
+                    fp_size: branch["fpSize"].as_u64().unwrap_or(2048) as u32,
+                    bits_per_feature: branch["numBitsPerFeature"].as_u64().unwrap_or(1) as u32,
+                    from_first: branch["fromAtoms"] == "first",
+                    ignore_first: branch["ignoreAtoms"] == "first",
+                    index_plus_17: branch["customAtomInvariants"] == "index_plus_17",
+                    additional_output: branch["additionalOutput"] == true,
+                };
+                assert_eq!(
+                    profiles[index * 4 + offset],
+                    Params::TopologicalTorsion(expected)
+                );
+                assert_eq!(
+                    fixture["profiles"][index * 4 + offset]["name"],
+                    format!(
+                        "{}.{}",
+                        branch["name"].as_str().unwrap(),
+                        ["SparseCount", "Count", "SparseBits", "Bits"][offset]
+                    )
+                );
+            }
+        }
+        let mut corpus = plan(&Selection::Corpus("smiles_smoke".into()))
+            .unwrap()
+            .cases;
+        let task = registry::TASKS
+            .iter()
+            .find(|t| t.operation == registry::Operation::Fingerprint(Kind::TopologicalTorsion))
+            .unwrap();
+        corpus
+            .fingerprint_profiles
+            .insert(Kind::TopologicalTorsion, profiles.clone());
+        assert_eq!(task.count(&corpus), corpus.molecules.len() * 36);
+        let expanded = registry::expand(&corpus, task);
+        assert_eq!(expanded.len(), corpus.molecules.len() * 36);
+        for (index, input) in expanded.iter().enumerate() {
+            let Input::Fingerprint(row) = input else {
+                panic!("wrong input family")
+            };
+            assert_eq!(row.case, corpus.molecules[index / 36]);
+            assert_eq!(row.params, profiles[index % 36]);
+        }
+    }
+
+    #[test]
+    fn atom_pair_historical_recipes_preserve_every_form_and_argument() {
+        use crate::atom_pair::{Form, Profile};
+        use crate::fingerprints::{Kind, Params};
+        let bytes =
+            read(&crate::root().join("tools/testdata/rdkit/atom_pair_fingerprint_profile.json"))
+                .unwrap();
+        let original: Value = serde_json::from_slice(&bytes).unwrap();
+        let fixture: Value = serde_json::from_slice(
+            &read(&directory().join("testdata/profiles/atom_pair_historical_0_3.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fixture["source_sha256"], digest(&bytes));
+        let recipes = historical_fingerprint_profiles().unwrap();
+        let profiles = &recipes[&Kind::AtomPair];
+        assert_eq!(profiles.len(), 40);
+        for (index, branch) in original["branches"].as_array().unwrap().iter().enumerate() {
+            for (offset, form) in [Form::SparseCount, Form::Count, Form::SparseBits, Form::Bits]
+                .into_iter()
+                .enumerate()
+            {
+                let expected = Profile {
+                    form,
+                    min_distance: branch["minDistance"].as_u64().unwrap() as u32,
+                    max_distance: branch["maxDistance"].as_u64().unwrap() as u32,
+                    include_chirality: branch["includeChirality"].as_bool().unwrap(),
+                    use_2d: branch["use2D"].as_bool().unwrap(),
+                    count_simulation: branch["countSimulation"].as_bool().unwrap(),
+                    count_bounds: serde_json::from_value(branch["countBounds"].clone()).unwrap(),
+                    fp_size: branch["fpSize"].as_u64().unwrap() as u32,
+                    bits_per_feature: branch["numBitsPerFeature"].as_u64().unwrap() as u32,
+                    from_first: branch["fromAtoms"] == "first",
+                    ignore_first: branch["ignoreAtoms"] == "first",
+                    index_plus_11: branch["customAtomInvariants"] == "index_plus_11",
+                    additional_output: branch["additionalOutput"] == true,
+                };
+                assert_eq!(profiles[index * 4 + offset], Params::AtomPair(expected));
+                assert_eq!(
+                    fixture["profiles"][index * 4 + offset]["name"],
+                    format!(
+                        "{}.{}",
+                        branch["name"].as_str().unwrap(),
+                        ["SparseCount", "Count", "SparseBits", "Bits"][offset]
+                    )
+                );
+            }
+        }
+        let mut corpus = plan(&Selection::Corpus("smiles_smoke".into()))
+            .unwrap()
+            .cases;
+        let task = registry::TASKS
+            .iter()
+            .find(|t| t.operation == registry::Operation::Fingerprint(Kind::AtomPair))
+            .unwrap();
+        corpus
+            .fingerprint_profiles
+            .insert(Kind::AtomPair, profiles.clone());
+        assert_eq!(task.count(&corpus), corpus.molecules.len() * 40);
+        let expanded = registry::expand(&corpus, task);
+        assert_eq!(expanded.len(), corpus.molecules.len() * 40);
+        for (index, input) in expanded.iter().enumerate() {
+            let Input::Fingerprint(row) = input else {
+                panic!("wrong input family")
+            };
+            assert_eq!(row.case, corpus.molecules[index / 40]);
+            assert_eq!(row.params, profiles[index % 40]);
+        }
+    }
+
+    #[test]
+    fn historical_fingerprint_selection_preserves_recipes_and_censuses() {
+        use crate::fingerprints::Kind;
+        let selected = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
+        let mut cases = selected.cases;
+        let fixture: Value = serde_json::from_slice(
+            &read(&directory().join("testdata/profiles/fingerprints_historical_0_3.json")).unwrap(),
+        )
+        .unwrap();
+        let profiles = historical_fingerprint_profiles().unwrap();
+        for (kind, file, key, count) in [
+            (
+                Kind::Avalon,
+                "avalon_fingerprint_profile.json",
+                "corpus_branches",
+                23,
+            ),
+            (
+                Kind::Topological,
+                "rdkit_topological_fingerprint_profile.json",
+                "branches",
+                14,
+            ),
+            (
+                Kind::Layered,
+                "layered_fingerprint_profile.json",
+                "branches",
+                18,
+            ),
+            (
+                Kind::Pattern,
+                "pattern_fingerprint_profile.json",
+                "corpus_branch_names",
+                10,
+            ),
+        ] {
+            let bytes = read(&crate::root().join("tools/testdata/rdkit").join(file)).unwrap();
+            let original: Value = serde_json::from_slice(&bytes).unwrap();
+            let historical: Vec<&Value> = if kind == Kind::Pattern {
+                original[key]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|name| {
+                        original["branches"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|branch| branch["name"] == *name)
+                            .unwrap()
+                    })
+                    .collect()
+            } else {
+                original[key].as_array().unwrap().iter().collect()
+            };
+            assert_eq!(historical.len(), count);
+            assert_eq!(profiles[&kind].len(), count);
+            let kind_name = match kind {
+                Kind::Avalon => "Avalon",
+                Kind::Topological => "Topological",
+                Kind::Layered => "Layered",
+                Kind::Pattern => "Pattern",
+                _ => unreachable!(),
+            };
+            let provenance = fixture["provenance"]["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|source| source["path"].as_str().unwrap().ends_with(file))
+                .unwrap();
+            assert_eq!(provenance["sha256"], digest(&bytes));
+            for (index, branch) in historical.iter().enumerate() {
+                assert_eq!(
+                    fixture["profiles"][kind_name][index]["name"],
+                    branch["name"]
+                );
+                let parameters = if kind == Kind::Avalon {
+                    json!({"Avalon": {
+                        "n_bits":branch["n_bits"], "is_query":branch["is_query"],
+                        "bit_flags":u32::from_str_radix(branch["bit_flags"].as_str().unwrap().trim_start_matches("0x"),16).unwrap()
+                    }})
+                } else if kind == Kind::Topological {
+                    json!({"Topological": {
+                        "min_path":branch["minPath"], "max_path":branch["maxPath"],
+                        "fp_size":branch["fpSize"], "bits_per_feature":branch["nBitsPerHash"],
+                        "use_hs":branch["useHs"], "density_milli":(branch["tgtDensity"].as_f64().unwrap()*1000.0) as u32,
+                        "min_size":branch["minSize"], "branched":branch["branchedPaths"],
+                        "bond_order":branch["useBondOrder"],
+                        "custom_invariants":branch["atomInvariants"]=="index_plus_one",
+                        "roots":if branch["fromAtoms"]=="first" { "First" } else { "All" }
+                    }})
+                } else if kind == Kind::Layered {
+                    json!({"Layered": {
+                        "layers":u32::from_str_radix(branch["layerFlags"].as_str().unwrap().trim_start_matches("0x"),16).unwrap(),
+                        "min_path":branch["minPath"], "max_path":branch["maxPath"],
+                        "fp_size":branch["fpSize"], "branched":branch["branchedPaths"],
+                        "roots":match branch["fromAtoms"].as_str() { Some("first") => "First", Some("terminal_pair") => "Terminals", None => "All", _=>panic!("unknown roots") },
+                        "counts":match branch["atomCounts"].as_str() { Some("zeros") => "Zero", Some("index_plus_10") => "Seeded", None => "Absent", _=>panic!("unknown counts") },
+                        "mask":match branch["setOnlyBits"].as_str() { Some("even") => "Even", Some("mod_three") => "ModThree", None => "Absent", _=>panic!("unknown mask") }
+                    }})
+                } else {
+                    json!({"Pattern": {
+                        "fp_size":branch["fpSize"], "tautomeric":branch["tautomericFingerprint"],
+                        "source_options":{"atom_counts":branch["atomCounts"], "set_only_bits":branch["setOnlyBits"]}
+                    }})
+                };
+                assert_eq!(
+                    serde_json::to_value(&profiles[&kind][index]).unwrap(),
+                    parameters
+                );
+            }
+            let task = registry::TASKS
+                .iter()
+                .find(|task| task.operation == registry::Operation::Fingerprint(kind))
+                .unwrap();
+            let normal = registry::expand(&cases, task);
+            assert_eq!(normal.len(), 3);
+            assert_eq!(task.count(&cases), 3);
+            cases
+                .fingerprint_profiles
+                .insert(kind, profiles[&kind].clone());
+            let expanded = registry::expand(&cases, task);
+            assert_eq!(task.count(&cases), 3 * count);
+            assert_eq!(expanded.len(), 3 * count);
+            for (index, input) in expanded.iter().enumerate() {
+                let Input::Fingerprint(row) = input else {
+                    panic!("wrong input family")
+                };
+                let Input::Fingerprint(sampled) = &normal[index / count] else {
+                    panic!("wrong input family")
+                };
+                assert_eq!(row.case, cases.molecules[index / count]);
+                assert_eq!(row.seed, sampled.seed);
+                assert_eq!(row.params, profiles[&kind][index % count]);
+            }
+            cases.fingerprint_profiles.insert(kind, vec![]);
+            assert!(registry::validate(&cases, &[task]).is_err());
+            cases
+                .fingerprint_profiles
+                .insert(kind, profiles[&kind].clone());
+        }
+        let untouched = registry::TASKS
+            .iter()
+            .find(|task| task.operation == registry::Operation::Fingerprint(Kind::Maccs))
+            .unwrap();
+        assert_eq!(
+            registry::expand(&cases, untouched),
+            crate::fingerprints::inputs(&cases.molecules, Kind::Maccs)
+        );
+        let normal: CorpusManifest = serde_json::from_value(json!({"format":"smiles"})).unwrap();
+        assert!(normal.fingerprint_profiles == FingerprintProfiles::Seeded);
+        let historical: CorpusManifest = serde_json::from_value(
+            json!({"format":"smiles", "fingerprint_profiles":"historical0_3"}),
+        )
+        .unwrap();
+        assert!(historical.fingerprint_profiles == FingerprintProfiles::Historical0_3);
+        assert!(
+            serde_json::from_value::<CorpusManifest>(
+                json!({"format":"smiles", "fingerprint_profiles":"unknown"})
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn historical_tautomer_selection_preserves_all_eight_recipes_and_both_censuses() {
+        use registry::molecule_plan::{Profile, TaskId};
+        let selected = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
+        let mut cases = selected.cases;
+        let original: Value = serde_json::from_slice(
+            &read(&crate::root().join("tools/testdata/rdkit/tautomer_profile.json")).unwrap(),
+        )
+        .unwrap();
+        let profiles = historical_tautomer_profiles().unwrap();
+        assert_eq!(profiles.len(), 8);
+        let historical: Vec<_> = original["chembl_branches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| {
+                let mut branch = original["branches"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|branch| branch["name"] == *name)
+                    .unwrap()
+                    .clone();
+                branch.as_object_mut().unwrap().remove("name");
+                serde_json::from_value::<registry::molecule_plan::TautomerProfile>(branch).unwrap()
+            })
+            .collect();
+        assert_eq!(profiles, historical);
+        for id in [
+            TaskId::TautomerEnumeration,
+            TaskId::TautomerCanonicalization,
+        ] {
+            let task = registry::TASKS
+                .iter()
+                .find(|task| task.operation == registry::Operation::Molecular(id))
+                .unwrap();
+            assert_eq!(task.count(&cases), 6);
+            assert_eq!(registry::expand(&cases, task).len(), 6);
+        }
+        cases.tautomer_profiles = Some(profiles.clone());
+        for id in [
+            TaskId::TautomerEnumeration,
+            TaskId::TautomerCanonicalization,
+        ] {
+            let task = registry::TASKS
+                .iter()
+                .find(|task| task.operation == registry::Operation::Molecular(id))
+                .unwrap();
+            assert_eq!(task.count(&cases), 24);
+            let expanded = registry::expand(&cases, task);
+            assert_eq!(expanded.len(), 24);
+            for (row, input) in expanded.iter().enumerate() {
+                let Input::Molecular { case, profile } = input else {
+                    panic!("wrong input family")
+                };
+                assert_eq!(case, &cases.molecules[row / 8]);
+                let parameters = match profile {
+                    Profile::TautomerEnumeration { parameters }
+                    | Profile::TautomerCanonicalization { parameters } => parameters,
+                    _ => panic!("wrong profile family"),
+                };
+                assert_eq!(parameters, &profiles[row % 8]);
+            }
+        }
+        assert_eq!(
+            cases.molecular_profiles(TaskId::NumHeavyAtoms),
+            TaskId::NumHeavyAtoms.profiles()
+        );
+        let standard: CorpusManifest =
+            serde_json::from_value(json!({"format":"smiles", "input":"smiles_smoke.smi"})).unwrap();
+        assert!(standard.tautomer_profiles == TautomerProfiles::CurrentV1);
+        let historical: CorpusManifest = serde_json::from_value(json!({"format":"smiles", "input":"smiles_smoke.smi", "tautomer_profiles":"historical0_3"})).unwrap();
+        assert!(historical.tautomer_profiles == TautomerProfiles::Historical0_3);
+        assert!(
+            serde_json::from_value::<CorpusManifest>(
+                json!({"format":"smiles", "tautomer_profiles":"unknown"})
+            )
+            .is_err()
+        );
+        cases.tautomer_profiles = Some(vec![]);
+        let task = registry::TASKS
+            .iter()
+            .find(|task| {
+                task.operation == registry::Operation::Molecular(TaskId::TautomerEnumeration)
+            })
+            .unwrap();
+        assert!(registry::validate(&cases, &[task]).is_err());
     }
     #[test]
     fn unknown_and_escaping_selections_fail_instead_of_skipping() {
@@ -1030,7 +1621,7 @@ mod tests {
     #[test]
     fn task_selection_is_exact_and_must_apply_to_the_corpus() {
         let selection = Selection::Corpus("smiles_smoke".into());
-        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 116);
+        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 118);
         for key in [
             "num_heavy_atoms_smiles",
             "batch_smiles",

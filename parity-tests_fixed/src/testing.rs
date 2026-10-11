@@ -250,12 +250,13 @@ struct ReportRow<'a> {
     timeout: Option<&'a crate::uff::PreparationTimeout>,
 }
 
-/// Retain every complete row on private disk, including failures/timeouts.
-/// Summary publication copies the array, without constructing a report Value.
+/// Count every comparison and retain complete non-success rows on private disk.
+/// Successful payloads remain reproducible from the immutable reference snapshot.
 struct CorpusReport {
     spool: tempfile::NamedTempFile,
     writer: std::io::BufWriter<std::fs::File>,
     total: usize,
+    retained: usize,
     failed: usize,
     timed_out: usize,
     upstream_crashed: usize,
@@ -272,6 +273,7 @@ impl CorpusReport {
             spool,
             writer,
             total: 0,
+            retained: 0,
             failed: 0,
             timed_out: 0,
             upstream_crashed: 0,
@@ -285,19 +287,43 @@ impl CorpusReport {
         skipped: bool,
         upstream_crashed: bool,
     ) -> Result<()> {
-        if self.total != 0 {
-            self.writer.write_all(b",").map_err(|e| e.to_string())?;
-        }
-        serde_json::to_writer(&mut self.writer, row).map_err(|e| e.to_string())?;
         self.total += 1;
         self.failed += usize::from(matches == Some(false));
         self.timed_out += usize::from(skipped);
         self.upstream_crashed += usize::from(upstream_crashed);
+        if matches == Some(true) && !skipped && !upstream_crashed {
+            return Ok(());
+        }
+        if self.retained != 0 {
+            self.writer.write_all(b",").map_err(|e| e.to_string())?;
+        }
+        serde_json::to_writer(&mut self.writer, row).map_err(|e| e.to_string())?;
+        self.retained += 1;
         Ok(())
     }
     fn push_upstream_undefined<T: serde::Serialize + ?Sized>(&mut self, row: &T) -> Result<()> {
         self.push(row, None, false, false)?;
         self.upstream_undefined += 1;
+        Ok(())
+    }
+    fn merge(&mut self, mut part: Self) -> Result<()> {
+        use std::io::{Seek, SeekFrom};
+        part.writer.flush().map_err(|e| e.to_string())?;
+        if part.retained != 0 {
+            if self.retained != 0 {
+                self.writer.write_all(b",").map_err(|e| e.to_string())?;
+            }
+            let mut input = part.spool.reopen().map_err(|e| e.to_string())?;
+            // A partial spool starts with '[' but is not sealed with ']'.
+            input.seek(SeekFrom::Start(1)).map_err(|e| e.to_string())?;
+            std::io::copy(&mut input, &mut self.writer).map_err(|e| e.to_string())?;
+        }
+        self.total += part.total;
+        self.retained += part.retained;
+        self.failed += part.failed;
+        self.timed_out += part.timed_out;
+        self.upstream_crashed += part.upstream_crashed;
+        self.upstream_undefined += part.upstream_undefined;
         Ok(())
     }
     fn finish(mut self, key: &str, report: &std::path::Path) -> Result<()> {
@@ -388,10 +414,75 @@ pub fn run_corpus(key: &str) -> Result<()> {
         .snapshots
         .get(key)
         .ok_or_else(|| format!("unregistered/inapplicable test: {key}"))?;
+    let chunk_size = match key {
+        "smiles_write_smiles" => crate::smiles_write::profiles().len(),
+        "tautomer_enumeration_smiles" | "tautomer_canonicalization_smiles" => 1,
+        _ => 0,
+    };
+    let rows = snapshot.rows.iter()?.enumerate();
+    let report = if chunk_size == 0 {
+        compare_rows(snapshot.spec, rows)?
+    } else {
+        let workers = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(16);
+        compare_parallel_rows(snapshot.spec, rows, chunk_size, workers)?
+    };
+    report.finish(key, &loaded.reports.join(format!("{key}.json")))
+}
+
+/// Bound buffered input to one window; merge chunks in original input order.
+/// A SMILES chunk contains one case's entire profile matrix, retaining parse reuse.
+fn compare_parallel_rows(
+    spec: Spec,
+    mut rows: impl Iterator<Item = (usize, Result<Value>)>,
+    chunk_size: usize,
+    workers: usize,
+) -> Result<CorpusReport> {
+    assert!(chunk_size > 0 && workers > 0);
     let mut report = CorpusReport::new()?;
-    for (index, row) in snapshot.rows.iter()?.enumerate() {
+    loop {
+        let mut chunks = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let chunk: Vec<_> = rows.by_ref().take(chunk_size).collect();
+            if chunk.is_empty() {
+                break;
+            }
+            chunks.push(chunk);
+        }
+        if chunks.is_empty() {
+            break;
+        }
+        let parts = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunks
+                .into_iter()
+                .map(|chunk| scope.spawn(move || compare_rows(spec, chunk.into_iter())))
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect::<Result<Vec<_>>>()
+        })?;
+        for part in parts {
+            report.merge(part)?;
+        }
+    }
+    Ok(report)
+}
+
+fn compare_rows(
+    spec: Spec,
+    rows: impl Iterator<Item = (usize, Result<Value>)>,
+) -> Result<CorpusReport> {
+    let mut report = CorpusReport::new()?;
+    let mut smiles_writer = crate::smiles_write::Evaluator::default();
+    for (index, row) in rows {
         let row = row?;
-        match snapshot.spec {
+        match spec {
             Spec::Corpus(_) => {
                 // Deserialize the borrowed original Value directly: do not
                 // create an intermediate cloned JSON tree for each record.
@@ -434,7 +525,11 @@ pub fn run_corpus(key: &str) -> Result<()> {
                     )?;
                     continue;
                 }
-                match crate::execute::run(&expected.input) {
+                let actual = match &expected.input {
+                    Input::SmilesWrite(input) => smiles_writer.run(input),
+                    input => crate::execute::run(input),
+                };
+                match actual {
                     Ok(actual) => {
                         if known_upstream_undefined(&actual) {
                             report.push_upstream_undefined(&ReportRow {
@@ -516,7 +611,7 @@ pub fn run_corpus(key: &str) -> Result<()> {
             Spec::Special(_) => return Err("special recipe in corpus selection".into()),
         }
     }
-    report.finish(key, &loaded.reports.join(format!("{key}.json")))
+    Ok(report)
 }
 
 pub(crate) fn special_snapshot(key: &str) -> Result<&'static Snapshot> {
@@ -536,6 +631,121 @@ pub(crate) fn special_snapshot(key: &str) -> Result<&'static Snapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bounded_parallel_comparison_preserves_counts_payloads_and_original_row_order() {
+        let task = registry::TASKS
+            .iter()
+            .find(|task| task.key == "num_heavy_atoms_smiles")
+            .unwrap();
+        let rows: Vec<_> = (0..37)
+            .map(|index| {
+                let record = Record {
+                    input: Input::Molecular {
+                        case: registry::SmilesCase {
+                            id: format!("row-{index}"),
+                            smiles: "CC".into(),
+                        },
+                        profile: registry::molecule_plan::Profile::NumHeavyAtoms {
+                            remove_hs: true,
+                        },
+                    },
+                    output: registry::Value::Molecular(crate::molecular::Outcome::Unsigned(
+                        if index % 5 == 0 { 3 } else { 2 },
+                    )),
+                };
+                (index, Ok(serde_json::to_value(record).unwrap()))
+            })
+            .collect();
+        let folder = tempfile::tempdir().unwrap();
+        let sequential_path = folder.path().join("sequential.json");
+        assert!(
+            compare_rows(Spec::Corpus(task), rows.clone().into_iter())
+                .unwrap()
+                .finish(task.key, &sequential_path)
+                .unwrap_err()
+                .contains("8/37 mismatches")
+        );
+        let sequential: Value =
+            serde_json::from_slice(&std::fs::read(sequential_path).unwrap()).unwrap();
+        for (size, workers) in [(1, 1), (3, 4), (16, 8)] {
+            let path = folder
+                .path()
+                .join(format!("parallel-{size}-{workers}.json"));
+            let report =
+                compare_parallel_rows(Spec::Corpus(task), rows.clone().into_iter(), size, workers)
+                    .unwrap();
+            assert!(
+                report
+                    .finish(task.key, &path)
+                    .unwrap_err()
+                    .contains("8/37 mismatches")
+            );
+            let parallel: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            assert_eq!(parallel, sequential);
+            let indexes: Vec<_> = parallel["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["index"].as_u64().unwrap())
+                .collect();
+            assert_eq!(indexes, vec![0, 5, 10, 15, 20, 25, 30, 35]);
+        }
+        assert_eq!(
+            compare_parallel_rows(
+                Spec::Corpus(task),
+                vec![(0, Err("read failed".into()))].into_iter(),
+                1,
+                2
+            )
+            .err()
+            .unwrap(),
+            "read failed"
+        );
+    }
+
+    #[test]
+    fn merged_report_retains_all_native_exception_categories_and_success_census() {
+        let rows = [
+            json!({"index":0,"matches":true}),
+            json!({"index":1,"matches":null,"stage":"Preparation","skipped":true}),
+            json!({"index":2,"matches":null,"stage":"UpstreamReferenceCrash","skipped":true}),
+            json!({"index":3,"matches":null,"stage":"UpstreamUndefinedBehavior","skipped":true}),
+            json!({"index":4,"matches":false,"expected":{"bits":[1]},"actual":{"bits":[2]}}),
+        ];
+        let mut merged = CorpusReport::new().unwrap();
+        for row in &rows {
+            let mut part = CorpusReport::new().unwrap();
+            if row["stage"] == "UpstreamUndefinedBehavior" {
+                part.push_upstream_undefined(row).unwrap();
+            } else {
+                part.push(
+                    row,
+                    row["matches"].as_bool(),
+                    row["stage"] == "Preparation",
+                    row["stage"] == "UpstreamReferenceCrash",
+                )
+                .unwrap();
+            }
+            merged.merge(part).unwrap();
+        }
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("merged.json");
+        assert!(
+            merged
+                .finish("mixed", &path)
+                .unwrap_err()
+                .contains("1/2 mismatches")
+        );
+        let saved: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["total"], 5);
+        assert_eq!(saved["compared"], 2);
+        assert_eq!(saved["failed"], 1);
+        assert_eq!(saved["timed_out"], 1);
+        assert_eq!(saved["upstream_crashed"], 1);
+        assert_eq!(saved["upstream_undefined"], 1);
+        assert_eq!(saved["rows"], json!(&rows[1..]));
+    }
+
     #[test]
     fn native_reference_crashes_never_compare_equal_and_are_separately_accounted() {
         use crate::fingerprints::{Counts, FingerprintInput, Mask, Observation, Params, Roots};
@@ -633,7 +843,7 @@ mod tests {
         assert_eq!(saved["failed"], 0);
         assert_eq!(saved["timed_out"], 0);
         assert_eq!(saved["upstream_crashed"], 1);
-        assert_eq!(saved["rows"], json!(rows));
+        assert_eq!(saved["rows"], json!([rows[0]]));
         assert!(write_corpus_report("fingerprint_layered_smiles", &rows[..1], &report).is_err());
     }
 
@@ -753,7 +963,7 @@ mod tests {
         assert_eq!(saved["failed"], 0);
         assert_eq!(saved["timed_out"], 0);
         assert_eq!(saved["upstream_crashed"], 0);
-        assert_eq!(saved["rows"], json!(rows));
+        assert_eq!(saved["rows"], json!([rows[0]]));
         assert!(
             write_corpus_report("undefined-only", &rows[..1], &path)
                 .unwrap_err()
@@ -787,7 +997,7 @@ mod tests {
         assert_eq!(report["compared"], 2);
         assert_eq!(report["failed"], 1);
         assert_eq!(report["timed_out"], 1);
-        assert_eq!(report["rows"], json!(rows));
+        assert_eq!(report["rows"], json!([rows[0], rows[2]]));
         assert!(
             write_corpus_report("all-timeout", &rows[..1], &path)
                 .unwrap_err()
@@ -909,7 +1119,7 @@ mod tests {
         assert!(!equal(&a, &b));
     }
     #[test]
-    fn borrowed_stream_report_retains_complete_expected_actual_and_array_order() {
+    fn compact_report_counts_successes_and_retains_complete_exceptions_in_order() {
         let folder = tempfile::tempdir().unwrap();
         let path = folder.path().join("all-rows.json");
         let expected = json!({"nested":{"text":"complete\nvalue","coordinates":[1,2,3]},
@@ -980,12 +1190,38 @@ mod tests {
             saved,
             json!({"task":"full-task","total":3,"compared":2,
             "failed":1,"timed_out":1,"upstream_crashed":0,"upstream_undefined":0,"rows":[
-                {"index":0,"matches":true,"expected":expected,"actual":{"output":actual}},
                 {"index":1,"matches":false,"expected":expected,"actual":{"error":error}},
                 {"index":2,"matches":null,"expected":expected,"actual":null,
                  "skipped":true,"stage":"Preparation","timeout":timeout}
             ]})
         );
+    }
+
+    #[test]
+    fn compact_report_counts_all_successes_without_serializing_payloads() {
+        struct MustNotSerialize;
+        impl serde::Serialize for MustNotSerialize {
+            fn serialize<S: serde::Serializer>(
+                &self,
+                _: S,
+            ) -> std::result::Result<S::Ok, S::Error> {
+                panic!("successful payload must not be serialized")
+            }
+        }
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("success.json");
+        let mut report = CorpusReport::new().unwrap();
+        for _ in 0..1000 {
+            report
+                .push(&MustNotSerialize, Some(true), false, false)
+                .unwrap();
+        }
+        report.finish("success", &path).unwrap();
+        let saved: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["total"], 1000);
+        assert_eq!(saved["compared"], 1000);
+        assert_eq!(saved["failed"], 0);
+        assert_eq!(saved["rows"], json!([]));
     }
 
     #[test]
@@ -1046,26 +1282,31 @@ mod tests {
                     actual: Some(ReportActual::Record { record: &actual }),
                     expected: &expected,
                     index: 0,
-                    matches: Some(true),
+                    matches: Some(false),
                     skipped: None,
                     stage: None,
                     timeout: None,
                 },
-                Some(true),
+                Some(false),
                 false,
                 false,
             )
             .unwrap();
-        report.finish("typed", &path).unwrap();
+        assert!(
+            report
+                .finish("typed", &path)
+                .unwrap_err()
+                .contains("1/1 mismatches")
+        );
         let saved: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(
             saved["rows"][0],
             json!({"actual":{"record":actual},
-                                          "expected":expected,"index":0,"matches":true})
+                                          "expected":expected,"index":0,"matches":false})
         );
         assert_eq!(saved["total"], 1);
         assert_eq!(saved["compared"], 1);
-        assert_eq!(saved["failed"], 0);
+        assert_eq!(saved["failed"], 1);
         assert_eq!(saved["timed_out"], 0);
     }
 }

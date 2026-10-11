@@ -1,0 +1,1003 @@
+{
+  "source": "tools/testdata/rdkit/atom_pair_fingerprint_profile.json",
+  "source_sha256": "b104ba22a87409b3631f1dd10c0bb5aec775115d8d2c3203ad2d37e9d504d261",
+  "reference": "current pinned RDKit; historical recipes only",
+  "profiles": [
+    {
+      "name": "default.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chiral.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chiral.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chiral.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chiral.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "count_simulation_false.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "count_simulation_false.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "count_simulation_false.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "count_simulation_false.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_bounds_collision.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_bounds_collision.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_bounds_collision.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_bounds_collision.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "distance_2_4.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 2,
+          "max_distance": 4,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "distance_2_4.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 2,
+          "max_distance": 4,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "distance_2_4.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 2,
+          "max_distance": 4,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "distance_2_4.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 2,
+          "max_distance": 4,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "from_first.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": true,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "from_first.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": true,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "from_first.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": true,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "from_first.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": true,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "ignore_first.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": true,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "ignore_first.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": true,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "ignore_first.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": true,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "ignore_first.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": true,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_index_plus_11.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_index_plus_11.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_index_plus_11.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_index_plus_11.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "num_bits_per_feature_2.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 2,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "num_bits_per_feature_2.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 2,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "num_bits_per_feature_2.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 2,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "num_bits_per_feature_2.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": false,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 2,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "additional_output.SparseCount",
+      "params": {
+        "AtomPair": {
+          "form": "SparseCount",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "additional_output.Count",
+      "params": {
+        "AtomPair": {
+          "form": "Count",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "additional_output.SparseBits",
+      "params": {
+        "AtomPair": {
+          "form": "SparseBits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "additional_output.Bits",
+      "params": {
+        "AtomPair": {
+          "form": "Bits",
+          "min_distance": 1,
+          "max_distance": 30,
+          "include_chirality": true,
+          "use_2d": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_11": false,
+          "additional_output": true
+        }
+      }
+    }
+  ]
+}

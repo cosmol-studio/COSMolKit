@@ -1,0 +1,867 @@
+{
+  "source": "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json",
+  "source_sha256": "f03a8b5a1e9b9f05347c0058761f7cac2efed4ea0baafce4bbcb967e44040daa",
+  "reference": "current pinned RDKit; historical recipes only",
+  "profiles": [
+    {
+      "name": "default.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "default.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "unfolded_no_count_simulation.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "unfolded_no_count_simulation.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "unfolded_no_count_simulation.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "unfolded_no_count_simulation.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "three_atom_custom_count_bounds.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 3,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 1536,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "three_atom_custom_count_bounds.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 3,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 1536,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "three_atom_custom_count_bounds.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 3,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 1536,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "three_atom_custom_count_bounds.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 3,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            3,
+            5
+          ],
+          "fp_size": 1536,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chirality.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chirality.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chirality.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "chirality.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": true,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "five_atom_shortest_paths.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 5,
+          "only_shortest_paths": true,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "five_atom_shortest_paths.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 5,
+          "only_shortest_paths": true,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "five_atom_shortest_paths.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 5,
+          "only_shortest_paths": true,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "five_atom_shortest_paths.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 5,
+          "only_shortest_paths": true,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 4096,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "extra_bits_folding.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 3,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "extra_bits_folding.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 3,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "extra_bits_folding.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 3,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "extra_bits_folding.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 257,
+          "bits_per_feature": 3,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_invariants.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_invariants.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_invariants.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "custom_atom_invariants.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": true,
+          "additional_output": false
+        }
+      }
+    },
+    {
+      "name": "all_provenance.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 1000,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "all_provenance.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 1000,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "all_provenance.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 1000,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "all_provenance.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": false,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 1000,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "count_simulation_provenance.SparseCount",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseCount",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "count_simulation_provenance.Count",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Count",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "count_simulation_provenance.SparseBits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "SparseBits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    },
+    {
+      "name": "count_simulation_provenance.Bits",
+      "params": {
+        "TopologicalTorsion": {
+          "form": "Bits",
+          "torsion_atom_count": 4,
+          "only_shortest_paths": false,
+          "include_chirality": false,
+          "count_simulation": true,
+          "count_bounds": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "fp_size": 2048,
+          "bits_per_feature": 1,
+          "from_first": false,
+          "ignore_first": false,
+          "index_plus_17": false,
+          "additional_output": true
+        }
+      }
+    }
+  ]
+}

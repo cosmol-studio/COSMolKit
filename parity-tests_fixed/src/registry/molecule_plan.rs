@@ -662,6 +662,9 @@ pub enum Profile {
     NumSaturatedCarbocycles {
         remove_hs: bool,
     },
+    MorganHistorical {
+        recipe: crate::morgan_historical::Recipe,
+    },
     Morgan {
         output: MorganOutputKind,
         radius: u32,

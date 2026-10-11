@@ -123,5 +123,8 @@ Neither proposal authorizes implementation or reorders the active plan.
 | [tools/](./tools/) | Development-only checking and preparation tools |
 | [archive/](./archive/) | Historical snapshots and superseded records; never normative |
 
-[VALIDATION.md](../VALIDATION.md) records the scope of reference evidence.
+[VALIDATION.md](../VALIDATION.md) records completed COSMolKit 0.5.0 validation:
+18,000 ChEMBL 37 source records and 20,505,775 parameterized comparisons against
+RDKit 2026.03.6, with zero mismatches. It also documents task-specific comparison
+rules and remaining coverage.
 Historical inventories are not a second current-status ledger.

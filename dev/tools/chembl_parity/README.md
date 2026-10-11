@@ -1,8 +1,12 @@
 # ChEMBL 37 Parity Audit
 
 COSMolKit 0.5.0 uses [the standard parity runner](../../../parity-tests_fixed/README.md)
-with RDKit `2026.03.6`. Million-scale 0.5.0 parity validation is pending; historical
-validation results remain in [VALIDATION.md](../../../VALIDATION.md).
+with RDKit `2026.03.6`. Completed validation covers 18,000 ChEMBL 37
+source records and 20,505,775 parameterized comparisons with zero mismatches.
+Reference timeouts and upstream crashes are reported separately. Comparisons
+use task-specific exact, bit-exact or numerical-tolerance rules; million-scale
+validation remains pending. See [VALIDATION.md](../../../VALIDATION.md) for
+current coverage and comparison rules.
 
 This directory retains the historical ChEMBL 37 audit tooling and its original
 reference identities. It is not the current 0.5.0 prepare/test entrypoint.
@@ -12,7 +16,7 @@ Changing their version strings alone would not update their API or result
 contracts. Their source pins are retained to keep the original evidence
 traceable, not to select the current chemistry reference.
 
-## Historical 0.3.0 audit
+## Legacy tooling
 
 The remaining workflow and receipts describe the audit against RDKit
 `2026.03.1`. They are historical reproduction instructions, not current
@@ -104,34 +108,6 @@ expected processed counts, and the only two informational mismatch keys.
 Those two keys compare historical InChI fields stored by ChEMBL with current
 pinned RDKit output; COSMolKit is still required to equal RDKit on the
 corresponding operation.
-
-The four additional phases received a complete configured-corpus execution in
-the final 15-phase validation run. Fragments and direct 2D coordinates had
-zero blocking mismatches. Topology operations exposed unsanitized `RemoveHs`
-valence/H-state differences, and binary roundtrips exposed
-post-deserialization hash/fingerprint differences. The immutable identity,
-exact counters, and acceptance consequences of that discovery execution are
-recorded in
-[`dev/gap_reports/chembl37_complete_validation_summary_20260820.md`](../../gap_reports/chembl37_complete_validation_summary_20260820.md).
-Any mismatch remains blocking until the implementation is source-traced,
-fixed, regression-tested, and the complete affected phase is rerun.
-
-Both gaps completed that process. The topology implementation now reproduces
-the upstream non-strict property-cache update before hydrogen removal and
-migrates every surviving atom's retained valence/H state through the topology
-mapping. Its complete affected-phase rerun evaluated 2,854,376 records across
-all 128 shards and recorded 45,669,848 matching observations with zero
-mismatch across the value-style and in-place operation branches.
-
-The archive now retains validated derived chemistry state in a required
-versioned section and remains able to read direct legacy payloads and archive
-v1.0. Its complete affected-phase rerun evaluated 524,288 eligible records
-across all 128 shards and recorded 11,534,336 matching observations with zero
-mismatch through both public deserialization entrypoints. The binary phase is
-a COSMolKit roundtrip invariant over ChEMBL structures; it is deliberately not
-described as RDKit binary-format parity. These complete reruns establish the
-current accepted results without rewriting the immutable discovery-run
-identity above.
 
 The topology phase deliberately selects from unsanitized parses. All 2,897,819
 source SMILES are accepted by both raw parsers; 2,854,376 have at most 80 atoms

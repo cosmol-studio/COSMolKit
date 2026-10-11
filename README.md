@@ -74,15 +74,18 @@ browser-based JavaScript without relearning the chemistry API.
 
 COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
 
-The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
+COSMolKit 0.5.0 validation covers **18,000 ChEMBL 37 source records**
+and **20,505,775 parameterized comparisons** against RDKit **2026.03.6**, with
+**zero mismatches**. Separately recorded reference outcomes comprise 216
+timeouts and 27 upstream crashes; these are not counted as matches.
+Million-scale 0.5.0 validation remains pending.
 
-**No differences have been observed on the known corpus of several hundred
-thousand molecules; million-scale 0.5.0 parity validation is pending.**
-The historical ChEMBL 37, 5,000-record and 152-record results in
-[`VALIDATION.md`](VALIDATION.md) come from **0.3.0**.
-They are retained as historical evidence, not a claim that 0.5.0 has passed
-the same comparisons. Current validation must record the tested implementation,
-reference versions, options, counts and actual outcomes.
+Discrete results and fingerprints compare exactly. Descriptor floating-point
+values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
+bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
+MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
+See [`VALIDATION.md`](VALIDATION.md) for completed functional/profile coverage,
+comparison boundaries.
 -->
 
 ## Installation

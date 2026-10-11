@@ -235,6 +235,7 @@ pub enum Outcome {
         dimension: usize,
         values_bits: Vec<u64>,
     },
+    MorganHistorical(crate::morgan_historical::Observation),
     MorganDenseBits(MorganDenseBitsOutput),
     MorganSparseBits(MorganSparseBitsOutput),
     MorganHashedCounts(MorganHashedCountsOutput),
@@ -343,6 +344,9 @@ pub fn topology(mol: &Molecule) -> Topology {
 pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String> {
     use Profile::*;
     let valid = match (profile, output) {
+        (MorganHistorical { recipe }, Outcome::MorganHistorical(value)) => {
+            crate::morgan_historical::valid(*recipe, value)
+        }
         (TautomerEnumeration { .. }, Outcome::TautomerEnumeration(value)) => {
             crate::tautomer::valid_enumeration(value)
         }
@@ -621,7 +625,7 @@ fn strictly_increasing_keys<K: Ord, V>(rows: &[(K, V)]) -> bool {
     })
 }
 
-fn valid_morgan_additional_output(output: &MorganAdditionalOutput) -> bool {
+pub(crate) fn valid_morgan_additional_output(output: &MorganAdditionalOutput) -> bool {
     let per_atom_lengths_match = match (&output.atom_counts, &output.atom_to_bits) {
         (Some(counts), Some(bits)) => counts.len() == bits.len(),
         _ => true,
@@ -710,6 +714,9 @@ pub fn run(input: &Input) -> Result<Record, String> {
         stage = Stage::Operation;
         use Profile::*;
         let transformed = match profile {
+            MorganHistorical { recipe } => {
+                return crate::morgan_historical::run(&mol, *recipe).map(Outcome::MorganHistorical);
+            }
             TautomerEnumeration { parameters } => {
                 return crate::tautomer::enumerate(&mol, *parameters);
             }
@@ -1607,7 +1614,7 @@ fn run_morgan(
     }
 }
 
-fn observed_morgan_additional_output(
+pub(crate) fn observed_morgan_additional_output(
     output: &FingerprintAdditionalOutput,
 ) -> MorganAdditionalOutput {
     MorganAdditionalOutput {

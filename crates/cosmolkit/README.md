@@ -161,18 +161,20 @@ Consult the package API and support status for the selected version.
 
 ## Validation Status
 
-**No differences have been observed on the known corpus of several hundred
-thousand molecules; million-scale 0.5.0 parity validation is pending.** See
+COSMolKit 0.5.0 validation covers **18,000 ChEMBL 37 source records** and
+**20,505,775 parameterized comparisons** against RDKit **2026.03.6**, with
+**zero mismatches**. Reference timeouts (216 observations) and upstream crashes
+(27 observations) are recorded separately, not counted as matches.
+Million-scale 0.5.0 validation remains pending. See
 [VALIDATION.md](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-for the current status and the separate historical 0.3.0 evidence.
+for completed functional/profile coverage and comparison rules.
 
-Validation compares source-defined discrete results exactly and numerical
-outputs under each suite's declared comparison rule. Source reproduction,
-local regressions and corpus comparisons are separate evidence boundaries.
+Discrete results and fingerprints compare exactly. Descriptor floating-point
+values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
+bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
+MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
 The standard preparation and comparison workflow is documented in
 [`parity-tests_fixed/README.md`](../../parity-tests_fixed/README.md).
-Historical ChEMBL counts and pass results remain in
-[`VALIDATION.md`](../../VALIDATION.md); they are not 0.5.0 results.
 
 ## Installation
 
@@ -360,7 +362,7 @@ assert_eq!(torsion.n_bits(), 2048);
 Use `*_with_params` for explicit settings and the family's supported output
 collector for atom/bit/path provenance. Batch APIs preserve input order and
 record positions for failures. Current corpus comparisons use RDKit 2026.03.6;
-historical full-corpus totals remain in [VALIDATION.md](../../VALIDATION.md).
+completed coverage is recorded in [VALIDATION.md](../../VALIDATION.md).
 
 Layered retains the upstream algorithm's `0.7.0` metadata; this is not the
 COSMolKit package version. Unspecified roots enumerate the whole molecule,

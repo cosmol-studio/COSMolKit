@@ -1,10 +1,20 @@
 # Parity tests
 
 This is the current COSMolKit 0.5.0 corpus and special-regression workflow.
-No differences have been observed on the known corpus of several hundred
-thousand molecules; million-scale 0.5.0 parity validation is pending.
-Historical 0.3.0 results are recorded
-separately in [VALIDATION.md](../VALIDATION.md).
+Completed validation covers **18,000 ChEMBL 37 source records** and
+**20,505,775 parameterized comparisons** against RDKit **2026.03.6**, with
+**zero mismatches**. Reference timeouts (216 observations) and upstream crashes
+(27 observations) are recorded separately, not counted as matches.
+Million-scale validation remains pending. Completed functional/profile coverage
+is recorded in [VALIDATION.md](../VALIDATION.md).
+
+Comparison rules are task-specific: discrete outputs and fingerprints are
+exact; descriptor floating-point values and persistent MMFF/UFF evaluators
+are bit-exact. Ordinary MMFF optimization uses absolute `1e-6` tolerance,
+ordinary UFF optimization is bit-exact, and MolAlign/RMSD and direct 2D
+coordinates use absolute `1e-8` tolerance. SVG artifacts use registered
+normalization; parser/error outcomes use registered structural comparisons.
+Special-regression rules are listed with their respective suites below.
 
 Run from the repository root. Each lane has two commands: prepare references,
 then compare with Cargo. Ordinary regressions stay in their owning crates.
@@ -38,6 +48,9 @@ cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolk
 Cargo owns name filtering and scheduling. `smiles_write_smiles` tests 768
 profiles per molecule: eight booleans × default/first/last root, matching the
 existing writer generator. Random traversal is off. Batch tests are unchanged.
+The SMILES writer and tautomer comparisons additionally use at most 16 scoped
+workers per task, with bounded input windows and reports merged in input order.
+Each writer worker reuses a parsed molecule across its case's 768 profiles.
 
 UFF and MMFF single-/multi-conformer optimization use at most **two iterations**.
 MMFF covers both MMFF94 and MMFF94s; multi-conformer inputs contain two conformers.
@@ -50,6 +63,11 @@ total rows, actual comparisons, mismatches and timeouts; timeouts never count
 as matches, and a task with zero actual comparisons fails. Other preparation
 errors retain their existing comparisons. Geometry, seeds and optimization
 parameters are unchanged for completed inputs.
+
+Reports count every input and comparison. Their `rows` array retains all
+mismatches, upstream crashes, undefined outcomes and timeouts, with complete
+expected/actual payloads; successful payloads are not duplicated. The immutable
+references and input IDs remain available for reproduction.
 
 MMFF energy/coordinate comparison uses the existing public MMFF suite's absolute tolerance of `1e-6`;
 UFF retains its exact-bit comparison. Parameter-availability queries are included.
@@ -66,6 +84,10 @@ Rejected SMILES compare at the parsing boundary without coordinates; missing
 geometry for an accepted molecule remains an error.
 Tautomer enumeration and canonicalization are ordinary registered corpus tasks;
 the long-conjugated tautomer case is a special regression below.
+For the complete historical eight-profile ChEMBL matrix, add
+`"tautomer_profiles": "historical0_3"` to a SMILES corpus manifest. It reuses the
+owned focused fixture's parameters with the current pinned native reference;
+omitting this field preserves the normal Current/V1 pair.
 
 `molalign_smiles` preserves the six-operation alignment/RMSD comparison on
 `smiles_small` (152 molecules) or `smiles_5000`. It compares RMSD, transforms,
@@ -80,6 +102,18 @@ MACCS, Topological, Layered, Pattern, Avalon, fuzzy AND and fuzzy OR are registe
 SMILES corpus tasks. Each molecule gets **one** reproducible parameter combination
 per task (seed `0x434b465020261007`, keyed by task, case ID and SMILES).
 Parameters are saved in `expected/` inputs; RDKit and CK consume the same values.
+An opt-in `"fingerprint_profiles": "historical0_3"` SMILES manifest selects
+all 23 historical Avalon, 14 RDK topological, 18 Layered and ten Pattern profiles from
+`testdata/profiles/fingerprints_historical_0_3.json`, in case-major order.
+These are parameter recipes, not historical expected outputs: prepare uses
+the current pinned reference. Pattern retains native-only count/mask inputs,
+which the pinned source checks for size but does not use in bit generation.
+The same selection enables the historical AtomPair and Torsion recipes below,
+and appends the fifteen historical dense Morgan recipes to its existing
+four-form coverage. Morgan's four atom-dependent recipes require atoms; its
+custom-bond-invariant recipe requires bonds. Each historical result also
+compares atom/bond counts and all five provenance collections. Other tasks
+retain their normal profiles; omitting the field preserves default selection.
 MACCS compares raw 167-bit and public 166-bit results; Layered also compares
 seeded atom counts. Fuzzy operations pair each molecule with the next (wrapping
 at the end), use Morgan counts, and sample signed counts and 32-/64-bit indices.
@@ -171,3 +205,17 @@ Inputs: `testdata/`. Generated references and checksums: `expected/`.
 Results: `reports/`. Preparation uses `.venv/bin/python` with pinned RDKit
 and Gemmi packages. Tests validate all selected references before
 CK calls; missing/stale references fail, never generate or overwrite expectations.
+
+AtomPair is registered as `fingerprint_atom_pair_smiles`. Historical selection
+uses all ten existing parameter branches in each of four output forms (40
+observations per input). The additional-output branch compares atom counts,
+atom-to-bit lists, bit-pair provenance and atoms-per-bit for all four forms.
+Sparse-count out-of-range exceptions retain and compare the exact offending
+index and vector size; they are not empty fingerprints or process crashes.
+Native expectations use the current pinned RDKit, never historical outputs.
+
+Topological Torsion is registered as `fingerprint_topological_torsion_smiles`.
+Historical selection uses all nine corpus recipes in all four output forms
+(36 observations per input). Both provenance recipes compare all five
+collections: atom counts, atom-to-bit lists, bit-pair information, bit paths
+and atoms-per-bit. Counts, bit IDs, paths and ordering compare exactly.

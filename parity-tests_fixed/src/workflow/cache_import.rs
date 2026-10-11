@@ -85,7 +85,7 @@ pub(super) fn import(
     let original_manifest = read(&source.join("manifest.json"))?;
     let manifest: Manifest =
         serde_json::from_slice(&original_manifest).map_err(|e| e.to_string())?;
-    let target_digest = reference::source_digest(spec)?;
+    let target_digest = reference::source_digest_for_inputs(spec, input)?;
     if !RECIPES.contains(&(manifest.generator_sha256.as_str(), target_digest.as_str())) {
         eprintln!("  recovery not reused: recipe pair has not been audited");
         return Ok(None);

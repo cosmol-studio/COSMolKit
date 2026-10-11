@@ -84,8 +84,10 @@ cargo test -p cosmolkit-inchi --release \
 
 ## Validation Status
 
-Million-scale COSMolKit 0.5.0 parity validation is pending; see
-[VALIDATION.md](../../VALIDATION.md) for current status and historical 0.3.0 results.
+Completed ChEMBL 37 validation covers other registered COSMolKit 0.5.0
+surfaces; it did not include the InChI corpus/diagnostic matrix. See
+[VALIDATION.md](../../VALIDATION.md) for completed coverage and comparison rules.
+Million-scale validation remains pending.
 Focused source-port tests cover the active official-engine call graph, and
 independent official-C oracle tests compare observable output fields at the
 function boundaries. The public COSMolKit adapter is also compared exactly

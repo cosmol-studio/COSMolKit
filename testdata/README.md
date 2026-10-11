@@ -25,5 +25,10 @@ production and package builds must not require them.
 
 Keep source versions, selection notes, licenses and checksums with existing
 fixtures. An unresolved provenance gap remains unresolved; do not infer a
-source from the filename. Historical 0.3.0 validation is recorded in
-[VALIDATION.md](../VALIDATION.md); million-scale 0.5.0 parity validation is pending.
+source from the filename.
+
+[VALIDATION.md](../VALIDATION.md) records completed COSMolKit 0.5.0 validation:
+18,000 ChEMBL 37 source records and 20,505,775 parameterized comparisons against
+RDKit 2026.03.6, with zero mismatches under the documented exact, bit-exact and
+tolerance rules. Reference timeouts and upstream crashes are reported separately.
+Million-scale 0.5.0 validation remains pending.

@@ -93,6 +93,76 @@ pub(crate) fn source_digest_at(spec: &Spec, checkout: &std::path::Path) -> Resul
     Ok(digest(&encode(&identities)?))
 }
 
+fn historical_morgan_selected(spec: &Spec, inputs: &Value) -> bool {
+    matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::Molecular(registry::molecule_plan::TaskId::MorganFingerprint))
+        && inputs.as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|row| !row["Molecular"]["profile"]["MorganHistorical"].is_null())
+        })
+}
+
+fn torsion_selected(spec: &Spec) -> bool {
+    matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::Fingerprint(crate::fingerprints::Kind::TopologicalTorsion))
+}
+
+fn atom_pair_selected(spec: &Spec) -> bool {
+    matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::Fingerprint(crate::fingerprints::Kind::AtomPair))
+}
+
+fn pattern_source_options(spec: &Spec, inputs: &Value) -> bool {
+    matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::Fingerprint(crate::fingerprints::Kind::Pattern))
+        && inputs.as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|row| !row["Fingerprint"]["params"]["Pattern"]["source_options"].is_null())
+        })
+}
+
+pub(crate) fn source_digest_for_inputs(spec: &Spec, inputs: &Value) -> Result<String> {
+    if !atom_pair_selected(spec)
+        && !torsion_selected(spec)
+        && !pattern_source_options(spec, inputs)
+        && !historical_morgan_selected(spec, inputs)
+    {
+        return source_digest(spec);
+    }
+    source_digest_for_inputs_at(spec, inputs, &root())
+}
+
+fn source_digest_for_inputs_at(
+    spec: &Spec,
+    inputs: &Value,
+    checkout: &std::path::Path,
+) -> Result<String> {
+    let baseline = source_digest_at(spec, checkout)?;
+    if !atom_pair_selected(spec)
+        && !torsion_selected(spec)
+        && !pattern_source_options(spec, inputs)
+        && !historical_morgan_selected(spec, inputs)
+    {
+        return Ok(baseline);
+    }
+    // Extend, never replace, the complete existing dependency identity for
+    // AtomPair, Torsion and historical Pattern calls. All other native calls
+    // retain their exact previous generator hashes and reusable references.
+    let paths: &[&str] = if historical_morgan_selected(spec, inputs) {
+        &["parity-tests_fixed/tools/morgan_profiles.py"]
+    } else if torsion_selected(spec) {
+        &["parity-tests_fixed/tools/torsion_profiles.py"]
+    } else if atom_pair_selected(spec) {
+        &["parity-tests_fixed/tools/atom_pair_profiles.py"]
+    } else {
+        &[
+            "parity-tests_fixed/tools/pattern_profiles.py",
+            "tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py",
+        ]
+    };
+    let mut identities = vec![("baseline".to_string(), baseline)];
+    for path in paths {
+        identities.push((path.to_string(), digest(&read(&checkout.join(path))?)));
+    }
+    Ok(digest(&encode(&identities)?))
+}
+
 #[derive(serde::Serialize)]
 struct NativeRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,13 +179,20 @@ struct NativeRequest<'a> {
 }
 
 fn invoke_output<T: serde::Serialize + Sync>(request: &T) -> Result<tempfile::NamedTempFile> {
+    invoke_output_at(request, "reference.py")
+}
+
+fn invoke_output_at<T: serde::Serialize + Sync>(
+    request: &T,
+    script: &str,
+) -> Result<tempfile::NamedTempFile> {
     // The native command/inputs are unchanged. A private file replaces the
     // whole stdout Vec so native failures still precede JSON decoding errors.
     let artifacts = directory().join("reports");
     std::fs::create_dir_all(&artifacts).map_err(|e| e.to_string())?;
     let output = tempfile::NamedTempFile::new_in(artifacts).map_err(|e| e.to_string())?;
     let mut child = Command::new(root().join(".venv/bin/python"))
-        .arg(directory().join("tools/reference.py"))
+        .arg(directory().join("tools").join(script))
         .stdin(Stdio::piped())
         .stdout(Stdio::from(output.reopen().map_err(|e| e.to_string())?))
         .stderr(Stdio::inherit())
@@ -311,7 +388,9 @@ pub(crate) fn generate<F: FnMut(Value) -> Result<()>>(
                 registry::Operation::SmilesWrite => {
                     serde_json::to_value(crate::smiles_write::profiles())
                 }
-                registry::Operation::Molecular(id) => serde_json::to_value(id.profiles()),
+                registry::Operation::Molecular(id) => {
+                    serde_json::to_value(cases.molecular_profiles(id))
+                }
                 registry::Operation::SubstructureMatch => {
                     serde_json::to_value(crate::search::profiles())
                 }
@@ -339,12 +418,310 @@ pub(crate) fn generate<F: FnMut(Value) -> Result<()>>(
             }
         }
     };
+    if torsion_selected(spec)
+        || atom_pair_selected(spec)
+        || pattern_source_options(spec, inputs)
+        || historical_morgan_selected(spec, inputs)
+    {
+        let script = if historical_morgan_selected(spec, inputs) {
+            "morgan_profiles.py"
+        } else if torsion_selected(spec) {
+            "torsion_profiles.py"
+        } else if atom_pair_selected(spec) {
+            "atom_pair_profiles.py"
+        } else {
+            "pattern_profiles.py"
+        };
+        let output = invoke_output_at(&request, script)?;
+        return decode_rows(
+            BufReader::new(output.reopen().map_err(|e| e.to_string())?),
+            &mut emit,
+        );
+    }
     invoke_rows(&request, &mut emit)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn historical_morgan_native_identity_is_scoped_and_detects_adapter_changes() {
+        let spec = Spec::Corpus(
+            registry::TASKS
+                .iter()
+                .find(|t| t.key == "fingerprint_morgan_smiles")
+                .unwrap(),
+        );
+        let normal = json!([{"Molecular":{"case":{"id":"test","smiles":"CC"},
+            "profile":{"Morgan":{"output":"DenseBits","radius":2,"include_chirality":false,
+                "invariants":"Connectivity","count_simulation":false}}}}]);
+        let historical = json!([{"Molecular":{"case":{"id":"test","smiles":"CC"},
+            "profile":{"MorganHistorical":{"recipe":"default"}}}}]);
+        let baseline = source_digest(&spec).unwrap();
+        assert_eq!(source_digest_for_inputs(&spec, &normal).unwrap(), baseline);
+        let selected = source_digest_for_inputs(&spec, &historical).unwrap();
+        assert_ne!(selected, baseline);
+        let other = Spec::Corpus(
+            registry::TASKS
+                .iter()
+                .find(|t| t.key == "fingerprint_morgan_sparse_smiles")
+                .unwrap(),
+        );
+        assert_eq!(
+            source_digest_for_inputs(&other, &historical).unwrap(),
+            source_digest(&other).unwrap()
+        );
+        let temporary = tempfile::tempdir().unwrap();
+        for path in [
+            "parity-tests_fixed/tools/reference.py",
+            "parity-tests_fixed/tools/forcefield_preparation.py",
+            "parity-tests_fixed/Cargo.toml",
+            "parity-tests_fixed/src/descriptors.rs",
+            "tools/oracles/rdkit/fingerprint_values_pilot.py",
+            "tools/testdata/rdkit/_generate_molecular_descriptors_golden.py",
+            "tools/testdata/rdkit/_generate_smiles_writer_golden.py",
+            "tools/testdata/rdkit/_tautomer_oracle.py",
+            "tools/testdata/rdkit/tautomer_profile.json",
+            "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
+            "tools/testdata/rdkit/_generate_molalign_golden.py",
+            "parity-tests_fixed/tools/morgan_profiles.py",
+        ] {
+            let target = temporary.path().join(path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(root().join(path), target).unwrap();
+        }
+        assert_eq!(
+            source_digest_for_inputs_at(&spec, &historical, temporary.path()).unwrap(),
+            selected
+        );
+        std::fs::write(
+            temporary
+                .path()
+                .join("parity-tests_fixed/tools/morgan_profiles.py"),
+            b"# changed",
+        )
+        .unwrap();
+        assert_ne!(
+            source_digest_for_inputs_at(&spec, &historical, temporary.path()).unwrap(),
+            selected
+        );
+        assert_eq!(
+            source_digest_for_inputs_at(&spec, &normal, temporary.path()).unwrap(),
+            baseline
+        );
+    }
     use super::*;
+
+    #[test]
+    fn torsion_native_identity_is_scoped_to_its_registered_task() {
+        let spec = Spec::Corpus(
+            registry::TASKS
+                .iter()
+                .find(|t| {
+                    t.operation
+                        == registry::Operation::Fingerprint(
+                            crate::fingerprints::Kind::TopologicalTorsion,
+                        )
+                })
+                .unwrap(),
+        );
+        let cases = vec![registry::SmilesCase {
+            id: "one".into(),
+            smiles: "CCCC".into(),
+        }];
+        let inputs = serde_json::to_value(crate::fingerprints::inputs(
+            &cases,
+            crate::fingerprints::Kind::TopologicalTorsion,
+        ))
+        .unwrap();
+        let baseline = source_digest(&spec).unwrap();
+        let expected = digest(
+            &encode(&vec![
+                ("baseline".to_string(), baseline.clone()),
+                (
+                    "parity-tests_fixed/tools/torsion_profiles.py".to_string(),
+                    digest(
+                        &read(&root().join("parity-tests_fixed/tools/torsion_profiles.py"))
+                            .unwrap(),
+                    ),
+                ),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(source_digest_for_inputs(&spec, &inputs).unwrap(), expected);
+        assert_ne!(expected, baseline);
+        for kind in [
+            crate::fingerprints::Kind::Maccs,
+            crate::fingerprints::Kind::Avalon,
+            crate::fingerprints::Kind::Topological,
+            crate::fingerprints::Kind::Layered,
+        ] {
+            let other = Spec::Corpus(
+                registry::TASKS
+                    .iter()
+                    .find(|t| t.operation == registry::Operation::Fingerprint(kind))
+                    .unwrap(),
+            );
+            assert_eq!(
+                source_digest_for_inputs(&other, &inputs).unwrap(),
+                source_digest(&other).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn atom_pair_native_identity_is_scoped_to_its_registered_task() {
+        let spec = Spec::Corpus(
+            registry::TASKS
+                .iter()
+                .find(|t| {
+                    t.operation
+                        == registry::Operation::Fingerprint(crate::fingerprints::Kind::AtomPair)
+                })
+                .unwrap(),
+        );
+        let cases = vec![registry::SmilesCase {
+            id: "one".into(),
+            smiles: "CCO".into(),
+        }];
+        let inputs = serde_json::to_value(crate::fingerprints::inputs(
+            &cases,
+            crate::fingerprints::Kind::AtomPair,
+        ))
+        .unwrap();
+        let baseline = source_digest(&spec).unwrap();
+        let expected = digest(
+            &encode(&vec![
+                ("baseline".to_string(), baseline.clone()),
+                (
+                    "parity-tests_fixed/tools/atom_pair_profiles.py".to_string(),
+                    digest(
+                        &read(&root().join("parity-tests_fixed/tools/atom_pair_profiles.py"))
+                            .unwrap(),
+                    ),
+                ),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(source_digest_for_inputs(&spec, &inputs).unwrap(), expected);
+        assert_ne!(expected, baseline);
+        for kind in [
+            crate::fingerprints::Kind::Maccs,
+            crate::fingerprints::Kind::Avalon,
+            crate::fingerprints::Kind::Topological,
+            crate::fingerprints::Kind::Layered,
+        ] {
+            let other = Spec::Corpus(
+                registry::TASKS
+                    .iter()
+                    .find(|t| t.operation == registry::Operation::Fingerprint(kind))
+                    .unwrap(),
+            );
+            assert_eq!(
+                source_digest_for_inputs(&other, &inputs).unwrap(),
+                source_digest(&other).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn historical_pattern_identity_extends_only_selected_native_calls() {
+        let task = registry::TASKS
+            .iter()
+            .find(|t| {
+                t.operation == registry::Operation::Fingerprint(crate::fingerprints::Kind::Pattern)
+            })
+            .unwrap();
+        let spec = Spec::Corpus(task);
+        let cases = vec![registry::SmilesCase {
+            id: "one".into(),
+            smiles: "CCO".into(),
+        }];
+        let normal = serde_json::to_value(crate::fingerprints::inputs(
+            &cases,
+            crate::fingerprints::Kind::Pattern,
+        ))
+        .unwrap();
+        assert!(
+            normal[0]["Fingerprint"]["params"]["Pattern"]
+                .get("source_options")
+                .is_none()
+        );
+        assert_eq!(
+            source_digest_for_inputs(&spec, &normal).unwrap(),
+            source_digest(&spec).unwrap()
+        );
+        let mut historical = normal.clone();
+        historical[0]["Fingerprint"]["params"]["Pattern"]["source_options"] =
+            json!({"atom_counts":"index_plus_11", "set_only_bits":"sparse"});
+        let baseline = source_digest(&spec).unwrap();
+        let selected = source_digest_for_inputs(&spec, &historical).unwrap();
+        assert_ne!(selected, baseline);
+        let other = Spec::Corpus(
+            registry::TASKS
+                .iter()
+                .find(|t| {
+                    t.operation
+                        == registry::Operation::Fingerprint(crate::fingerprints::Kind::Layered)
+                })
+                .unwrap(),
+        );
+        assert_eq!(
+            source_digest_for_inputs(&other, &historical).unwrap(),
+            source_digest(&other).unwrap()
+        );
+        let temporary = tempfile::tempdir().unwrap();
+        for path in [
+            "parity-tests_fixed/tools/reference.py",
+            "parity-tests_fixed/tools/forcefield_preparation.py",
+            "parity-tests_fixed/Cargo.toml",
+            "parity-tests_fixed/tools/fingerprints.py",
+            "parity-tests_fixed/src/descriptors.rs",
+            "tools/oracles/rdkit/fingerprint_values_pilot.py",
+            "tools/testdata/rdkit/_generate_molecular_descriptors_golden.py",
+            "tools/testdata/rdkit/_generate_smiles_writer_golden.py",
+            "tools/testdata/rdkit/_tautomer_oracle.py",
+            "tools/testdata/rdkit/tautomer_profile.json",
+            "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
+            "tools/testdata/rdkit/_generate_molalign_golden.py",
+            "parity-tests_fixed/tools/pattern_profiles.py",
+            "tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py",
+        ] {
+            let target = temporary.path().join(path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(root().join(path), target).unwrap();
+        }
+        assert_eq!(
+            source_digest_for_inputs_at(&spec, &historical, temporary.path()).unwrap(),
+            selected
+        );
+        for path in [
+            "parity-tests_fixed/tools/pattern_profiles.py",
+            "tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py",
+        ] {
+            let target = temporary.path().join(path);
+            let original = read(&target).unwrap();
+            std::fs::write(&target, b"# mutated generator").unwrap();
+            assert_ne!(
+                source_digest_for_inputs_at(&spec, &historical, temporary.path()).unwrap(),
+                selected
+            );
+            assert_eq!(
+                source_digest_for_inputs_at(&spec, &normal, temporary.path()).unwrap(),
+                baseline
+            );
+            std::fs::write(target, original).unwrap();
+        }
+        let legacy = crate::fingerprints::Params::Pattern {
+            fp_size: 257,
+            tautomeric: true,
+            source_options: None,
+        };
+        assert_eq!(
+            serde_json::to_value(legacy).unwrap(),
+            json!({"Pattern":{"fp_size":257,"tautomeric":true}})
+        );
+    }
+
     #[test]
     fn reference_transport_preserves_native_coordinate_bits() {
         // Actual native MolAlign coordinates from the retained failing rows.

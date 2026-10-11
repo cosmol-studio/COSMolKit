@@ -1,0 +1,12 @@
+{
+  "source": "dev/tools/chembl_parity/audit_core.py:885-1083",
+  "source_sha256": "02de8eca72ea4d7fb6c8a411553951914763f817173a2a736136d33098be1d5a",
+  "recipes": [
+    "default", "chiral", "radius3", "no_bond_types", "count_simulation",
+    "redundant_environments", "feature_invariants",
+    "connectivity_without_ring_membership", "chiral_bond_invariants",
+    "two_bits_per_feature", "from_first", "ignore_first",
+    "custom_atom_invariants", "only_nonzero_custom_invariants",
+    "custom_bond_invariants"
+  ]
+}

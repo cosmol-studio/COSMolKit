@@ -11,13 +11,15 @@ use sha2::{Digest, Sha256};
 
 pub const SEED: u64 = 0x434b_4650_2026_1007;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Kind {
     Maccs,
     Avalon,
     Topological,
     Layered,
     Pattern,
+    AtomPair,
+    TopologicalTorsion,
     FuzzyAnd,
     FuzzyOr,
 }
@@ -29,6 +31,8 @@ impl Kind {
             Self::Topological => "fingerprint_topological",
             Self::Layered => "fingerprint_layered",
             Self::Pattern => "fingerprint_pattern",
+            Self::AtomPair => "fingerprint_atom_pair",
+            Self::TopologicalTorsion => "fingerprint_topological_torsion",
             Self::FuzzyAnd => "fuzzy_and",
             Self::FuzzyOr => "fuzzy_or",
         }
@@ -37,6 +41,8 @@ impl Kind {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Params {
+    AtomPair(crate::atom_pair::Profile),
+    TopologicalTorsion(crate::torsion::Profile),
     Maccs,
     Avalon {
         n_bits: u32,
@@ -69,6 +75,8 @@ pub enum Params {
     Pattern {
         fp_size: u32,
         tautomeric: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_options: Option<PatternSourceOptions>,
     },
     Fuzzy {
         union: bool,
@@ -79,8 +87,10 @@ pub enum Params {
     },
 }
 impl Params {
-    fn kind(&self) -> Kind {
+    pub(crate) fn kind(&self) -> Kind {
         match self {
+            Self::AtomPair(_) => Kind::AtomPair,
+            Self::TopologicalTorsion(_) => Kind::TopologicalTorsion,
             Self::Maccs => Kind::Maccs,
             Self::Avalon { .. } => Kind::Avalon,
             Self::Topological { .. } => Kind::Topological,
@@ -90,6 +100,31 @@ impl Params {
             Self::Fuzzy { union: true, .. } => Kind::FuzzyOr,
         }
     }
+}
+
+/// Native Pattern arguments are precondition-only in pinned RDKit. They
+/// distinguish historical calls without inventing CK chemistry parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PatternSourceOptions {
+    pub atom_counts: PatternCounts,
+    pub set_only_bits: PatternMask,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternCounts {
+    None,
+    Zeroed,
+    #[serde(rename = "index_plus_11")]
+    IndexPlus11,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternMask {
+    None,
+    Zero,
+    All,
+    Sparse,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,6 +206,53 @@ pub fn inputs(cases: &[SmilesCase], kind: Kind) -> Vec<Input> {
             let seed = u64::from_le_bytes(hash.finalize()[..8].try_into().unwrap());
             let mut rng = Random(seed);
             let params = match kind {
+                Kind::TopologicalTorsion => Params::TopologicalTorsion(crate::torsion::Profile {
+                    form: rng.pick(&[
+                        crate::torsion::Form::SparseCount,
+                        crate::torsion::Form::Count,
+                        crate::torsion::Form::SparseBits,
+                        crate::torsion::Form::Bits,
+                    ]),
+                    torsion_atom_count: rng.pick(&[4, 5]),
+                    only_shortest_paths: rng.boolean(),
+                    include_chirality: rng.boolean(),
+                    count_simulation: rng.boolean(),
+                    count_bounds: if rng.boolean() {
+                        vec![1, 2, 4, 8]
+                    } else {
+                        vec![1, 3, 5]
+                    },
+                    fp_size: rng.pick(&[257, 2048]),
+                    bits_per_feature: rng.pick(&[1, 3]),
+                    from_first: rng.boolean(),
+                    ignore_first: rng.boolean(),
+                    index_plus_17: rng.boolean(),
+                    additional_output: rng.boolean(),
+                }),
+                Kind::AtomPair => Params::AtomPair(crate::atom_pair::Profile {
+                    form: rng.pick(&[
+                        crate::atom_pair::Form::SparseCount,
+                        crate::atom_pair::Form::Count,
+                        crate::atom_pair::Form::SparseBits,
+                        crate::atom_pair::Form::Bits,
+                    ]),
+                    min_distance: rng.pick(&[1, 2]),
+                    max_distance: rng.pick(&[4, 30]),
+                    include_chirality: rng.boolean(),
+                    use_2d: true,
+                    count_simulation: rng.boolean(),
+                    count_bounds: if rng.boolean() {
+                        vec![1, 2, 4, 8]
+                    } else {
+                        vec![1, 3, 5]
+                    },
+                    fp_size: rng.pick(&[257, 2048]),
+                    bits_per_feature: rng.pick(&[1, 2]),
+                    from_first: rng.boolean(),
+                    ignore_first: rng.boolean(),
+                    index_plus_11: rng.boolean(),
+                    additional_output: rng.boolean(),
+                }),
                 Kind::Maccs => Params::Maccs,
                 Kind::Avalon => Params::Avalon {
                     n_bits: rng.pick(&[9, 31, 32, 64, 511, 512, 513, 1024]),
@@ -209,6 +291,7 @@ pub fn inputs(cases: &[SmilesCase], kind: Kind) -> Vec<Input> {
                 Kind::Pattern => Params::Pattern {
                     fp_size: rng.pick(&[64, 256, 257, 2048, 4096]),
                     tautomeric: rng.boolean(),
+                    source_options: None,
                 },
                 Kind::FuzzyAnd | Kind::FuzzyOr => Params::Fuzzy {
                     union: kind == Kind::FuzzyOr,
@@ -224,6 +307,28 @@ pub fn inputs(cases: &[SmilesCase], kind: Kind) -> Vec<Input> {
                 params,
                 right: matches!(kind, Kind::FuzzyAnd | Kind::FuzzyOr)
                     .then(|| cases[(index + 1) % cases.len()].clone()),
+            })
+        })
+        .collect()
+}
+
+/// Expand explicit profiles in case-major order, preserving the same seeded
+/// case identity as the normal one-profile workflow. Parameters themselves
+/// are included in every reference input and its validated identity.
+pub(crate) fn inputs_with_profiles(
+    cases: &[SmilesCase],
+    kind: Kind,
+    profiles: &[Params],
+) -> Vec<Input> {
+    inputs(cases, kind)
+        .into_iter()
+        .flat_map(|input| {
+            profiles.iter().map(move |params| {
+                let Input::Fingerprint(mut row) = input.clone() else {
+                    unreachable!("fingerprint input family")
+                };
+                row.params = params.clone();
+                Input::Fingerprint(row)
             })
         })
         .collect()
@@ -249,6 +354,8 @@ pub struct CountVector {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
+    AtomPair(crate::atom_pair::Observation),
+    TopologicalTorsion(crate::torsion::Observation),
     /// Source-proven out-of-bounds access, not a defined reference value.
     LayeredAtomPathAsBondUndefined {
         checked_error: String,
@@ -292,6 +399,12 @@ pub fn validate_output(row: &FingerprintInput, output: &Observation) -> Result<(
             && fp.entries.windows(2).all(|pair| pair[0].0 < pair[1].0)
     };
     let valid = match (&row.params, output) {
+        (Params::TopologicalTorsion(profile), Observation::TopologicalTorsion(value)) => {
+            crate::torsion::validate(profile, value)
+        }
+        (Params::AtomPair(profile), Observation::AtomPair(value)) => {
+            crate::atom_pair::validate(profile, value)
+        }
         (_, Observation::ParseRejected { right: false }) => true,
         (Params::Fuzzy { .. }, Observation::ParseRejected { right: true }) => row.right.is_some(),
         (Params::Avalon { .. }, Observation::AvalonInputAtomicNumberNotFound) => true,
@@ -388,6 +501,12 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
     };
     let n = mol.num_atoms();
     let observed = match row.params {
+        Params::TopologicalTorsion(ref profile) => {
+            Observation::TopologicalTorsion(crate::torsion::run(&mol, profile)?)
+        }
+        Params::AtomPair(ref profile) => {
+            Observation::AtomPair(crate::atom_pair::run(&mol, profile)?)
+        }
         Params::Maccs => Observation::Maccs {
             raw: mol
                 .fingerprint_maccs_raw()
@@ -515,9 +634,12 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
                 },
             }
         }
+        // PatternFingerprints.cpp uses atomCounts/setOnlyBits only in size
+        // preconditions; historical native calls retain them separately.
         Params::Pattern {
             fp_size,
             tautomeric,
+            ..
         } => Observation::Bits {
             fingerprint: mol
                 .fingerprint_pattern_with_params(&PatternFingerprintParams {
@@ -712,6 +834,8 @@ mod tests {
             Kind::Topological,
             Kind::Layered,
             Kind::Pattern,
+            Kind::AtomPair,
+            Kind::TopologicalTorsion,
             Kind::FuzzyAnd,
             Kind::FuzzyOr,
         ] {
@@ -810,6 +934,8 @@ mod tests {
             Kind::Topological,
             Kind::Layered,
             Kind::Pattern,
+            Kind::AtomPair,
+            Kind::TopologicalTorsion,
             Kind::FuzzyAnd,
             Kind::FuzzyOr,
         ] {
