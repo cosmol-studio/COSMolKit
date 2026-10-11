@@ -16,6 +16,19 @@ sys.path.insert(0, str(DOCS))
 from api_types import read_stub, return_signature, type_text
 
 
+class DocumentationWorkflowTests(unittest.TestCase):
+    def test_generates_checked_stub_before_documentation_consumers(self):
+        workflow = (ROOT / ".github/workflows/docs-web.yml").read_text(encoding="utf-8")
+        generate = workflow.index(
+            "cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen"
+        )
+        for consumer in (
+            "unittest discover -s dev/tools -p 'test_python_docs.py'",
+            "python -m sphinx -W",
+        ):
+            self.assertLess(generate, workflow.index(consumer))
+
+
 class PythonApiTypesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

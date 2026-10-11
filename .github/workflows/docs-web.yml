@@ -65,6 +65,9 @@ jobs:
             - name: Build checkout package for autodoc
               run: .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
 
+            - name: Generate checked Python API type declarations
+              run: cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+
             - name: Generate checkout JavaScript type declarations
               env:
                   CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
