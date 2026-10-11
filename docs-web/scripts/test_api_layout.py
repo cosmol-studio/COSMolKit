@@ -10,7 +10,7 @@ from docutils.utils import new_document
 from sphinx import addnodes
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python/docs"))
-from api_layout import api_toc, format_api
+from api_layout import api_toc, format_api, format_javascript_signature
 
 
 def declaration(kind, name, *children):
@@ -88,6 +88,61 @@ class ApiLayoutTests(unittest.TestCase):
         before = self.tree.pformat()
         format_api(self.app, self.tree, "quickstart")
         self.assertEqual(self.tree.pformat(), before)
+
+    def javascript_callable(self, with_prose=False):
+        entry = declaration("function", "compileQuery")
+        signature, content = entry
+        parameters = addnodes.desc_parameterlist()
+        parameters += addnodes.desc_parameter("", "query")
+        signature += parameters
+        fields = nodes.field_list()
+        for name, children in [
+            ("param query", [nodes.Text("Query to compile.")] if with_prose else []),
+            ("type query", [nodes.inline("", "QueryGraph", classes=["sphinx_js-type"])]),
+            ("returns", [nodes.inline("", "CompiledQuery", classes=["sphinx_js-type"])] +
+             ([nodes.Text(" -- Reusable compiled query.")] if with_prose else [])),
+            ("throws Error", [nodes.Text("If the query is invalid.")]),
+        ]:
+            fields += nodes.field("", nodes.field_name("", name),
+                                  nodes.field_body("", nodes.paragraph("", "", *children)))
+        content += fields
+        return entry
+
+    def test_javascript_types_move_to_signature_without_empty_fields(self):
+        entry = self.javascript_callable()
+        format_javascript_signature(self.app, "js", "function", entry[1])
+        self.assertEqual(entry[0].astext(), "compileQuery(query: QueryGraph) -> CompiledQuery")
+        self.assertEqual([field[0].astext() for field in entry[1][0]], ["throws Error"])
+        self.assertIn("If the query is invalid.", entry[1].astext())
+
+    def test_javascript_parameter_and_return_prose_are_retained(self):
+        entry = self.javascript_callable(with_prose=True)
+        format_javascript_signature(self.app, "js", "function", entry[1])
+        self.assertEqual([field[0].astext() for field in entry[1][0]],
+                         ["param query", "returns", "throws Error"])
+        self.assertIn("Query to compile.", entry[1].astext())
+        self.assertIn("Reusable compiled query.", entry[1].astext())
+        self.assertNotIn(" -- ", entry[1].astext())
+        # No duplicate type/return insertion if another extension repeats it.
+        before = entry.pformat()
+        format_javascript_signature(self.app, "js", "function", entry[1])
+        self.assertEqual(entry.pformat(), before)
+
+    def test_javascript_type_projection_does_not_change_python(self):
+        entry = self.javascript_callable()
+        before = entry.pformat()
+        format_javascript_signature(self.app, "py", "function", entry[1])
+        self.assertEqual(entry.pformat(), before)
+
+    def test_javascript_void_result_removes_empty_field_list(self):
+        entry = declaration("function", "free")
+        entry[0] += addnodes.desc_parameterlist()
+        entry[1] += nodes.field_list("", nodes.field(
+            "", nodes.field_name("", "returns"),
+            nodes.field_body("", nodes.paragraph("", "", nodes.strong("", "void")))))
+        format_javascript_signature(self.app, "js", "function", entry[1])
+        self.assertEqual(entry[0].astext(), "free() -> void")
+        self.assertEqual(len(entry[1]), 0)
 
 
 if __name__ == "__main__":

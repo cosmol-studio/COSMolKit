@@ -18,6 +18,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_sitemap",
     "sphinx_js",
+    "api_types",
     "api_layout",
 ]
 
@@ -40,6 +41,7 @@ ts_sphinx_js_config = str(Path(__file__).resolve().parent.parent / "sphinx-js.co
 
 autosummary_generate = True
 autodoc_typehints = "signature"
+python_api_stub = str(Path(__file__).resolve().parents[2] / "cosmolkit.pyi")
 autoclass_content = "both"
 
 templates_path = ["_templates"]

@@ -73,6 +73,7 @@ jobs:
 
             - name: Build Sphinx source
               run: |
+                  .venv/bin/python -m unittest discover -s dev/tools -p 'test_python_docs.py' -v
                   rm -rf python/docs/build/html
                   .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
 
