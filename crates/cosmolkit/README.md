@@ -189,7 +189,7 @@ use cosmolkit::{Molecule, SmilesWriteParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mol = Molecule::from_smiles("CCO")?;
-    let mol = mol.with_2d_coordinates()?;
+    let mol = mol.add_2d_coordinates()?;
 
     let smiles = mol.to_smiles_with_params(&SmilesWriteParams::default())?;
     let svg = mol.to_svg(300, 300)?;
@@ -262,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let batch = MoleculeBatch::from_smiles_list(&smiles)?
         .with_parallel_jobs(Some(8))?
-        .with_2d_coordinates()?;
+        .add_2d_coordinates()?;
 
     let out = batch.to_smiles_list()?;
     println!("{out:?}");

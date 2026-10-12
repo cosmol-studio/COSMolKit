@@ -176,7 +176,7 @@ For an existing coordinate-bearing MOL/SDF, parse the string with
 .. code-block:: javascript
 
    const mol = ck.Molecule.fromSmiles("CCO");
-   const positioned = mol.with2dCoordinates();
+   const positioned = mol.add2dCoordinates();
    try {
      const sdf = positioned.toSdf(); // String, not a filesystem write
      const restored = ck.Molecule.fromSdf(sdf);
@@ -276,13 +276,13 @@ Draw SVG and retain 2D coordinates
 ----------------------------------
 
 Requires ``depict``. ``toSvg()`` returns markup without storing drawing
-coordinates back into the original molecule. Use ``with2dCoordinates()`` if
+coordinates back into the original molecule. Use ``add2dCoordinates()`` if
 you also need a molecule containing those coordinates.
 
 .. code-block:: javascript
 
    const mol = ck.Molecule.fromSmiles("c1ccccc1O");
-   const positioned = mol.with2dCoordinates();
+   const positioned = mol.add2dCoordinates();
    try {
      const svg = positioned.toSvg(320, 240);
      console.log(svg); // Insert into your application's molecule container

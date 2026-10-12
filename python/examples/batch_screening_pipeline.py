@@ -52,7 +52,7 @@ batch = (
 
 prepared = (
     batch.sanitize(errors=ck.BatchErrorMode.KEEP)
-    .with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
+    .add_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
 )
 
 fingerprints = prepared.fingerprint_morgan_list(radius=2, fp_size=1024)

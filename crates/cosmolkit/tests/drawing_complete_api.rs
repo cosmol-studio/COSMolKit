@@ -25,10 +25,10 @@ fn draw_complete_value_inplace_and_presence_preserve_peer_and_3d() {
     let three_d = source.conformers_3d().to_vec();
     let peer_before = peer.to_builder().coordinates().clone();
     assert!(!source.has_2d_coordinates());
-    let value = source.with_2d_coordinates().unwrap();
+    let value = source.add_2d_coordinates().unwrap();
     assert!(value.has_2d_coordinates());
     assert!(!source.has_2d_coordinates());
-    source.compute_2d_coordinates_().unwrap();
+    source.add_2d_coordinates_().unwrap();
     assert_eq!(source.coordinates_2d(), value.coordinates_2d());
     assert_eq!(source.conformers_3d(), three_d);
     assert_eq!(peer.to_builder().coordinates(), &peer_before);
@@ -37,7 +37,7 @@ fn draw_complete_value_inplace_and_presence_preserve_peer_and_3d() {
         clear_existing_2d: false,
         ..Coordinate2DParams::default()
     };
-    source.compute_2d_coordinates_with_params_(&params).unwrap();
+    source.add_2d_coordinates_with_params_(&params).unwrap();
     assert_eq!(source.to_builder().coordinates().conformers_2d.len(), 2);
     assert_eq!(source.topology(), &topology);
     assert_eq!(source.conformers_3d(), three_d);

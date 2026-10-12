@@ -2,20 +2,20 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn with_2d_coordinates(&self) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: .with_2d_coordinates()
-        self.inner.borrow().with_2d_coordinates().map(|inner| Self {
+    pub fn add_2d_coordinates(&self) -> Result<Self, ck::OperationError> {
+        // COSMolKit❗✔️: .add_2d_coordinates()
+        self.inner.borrow().add_2d_coordinates().map(|inner| Self {
             inner: inner.into(),
         })
     }
-    pub fn with_2d_coordinates_with_params(
+    pub fn add_2d_coordinates_with_params(
         &self,
         params: &ck::Coordinate2DParams,
     ) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: .with_2d_coordinates_with_params(&params.inner)
+        // COSMolKit❗✔️: .add_2d_coordinates_with_params(&params.inner)
         self.inner
             .borrow()
-            .with_2d_coordinates_with_params(params)
+            .add_2d_coordinates_with_params(params)
             .map(|inner| Self {
                 inner: inner.into(),
             })
@@ -28,18 +28,18 @@ impl Molecule {
         // COSMolKit❗✔️: .to_png(width, height)
         self.inner.borrow().to_png(width, height)
     }
-    pub fn compute_2d_coordinates_(&self) -> Result<(), ck::OperationError> {
-        // COSMolKit❗✔️: .compute_2d_coordinates_()
-        self.inner.borrow_mut().compute_2d_coordinates_()
+    pub fn add_2d_coordinates_(&self) -> Result<(), ck::OperationError> {
+        // COSMolKit❗✔️: .add_2d_coordinates_()
+        self.inner.borrow_mut().add_2d_coordinates_()
     }
-    pub fn compute_2d_coordinates_with_params_(
+    pub fn add_2d_coordinates_with_params_(
         &self,
         params: &ck::Coordinate2DParams,
     ) -> Result<(), ck::OperationError> {
-        // COSMolKit❗✔️: .compute_2d_coordinates_with_params_(&params.inner)
+        // COSMolKit❗✔️: .add_2d_coordinates_with_params_(&params.inner)
         self.inner
             .borrow_mut()
-            .compute_2d_coordinates_with_params_(params)
+            .add_2d_coordinates_with_params_(params)
     }
     pub fn write_svg(
         &self,
@@ -76,15 +76,15 @@ mod tests {
             force_rdkit: true,
             ..Default::default()
         };
-        let out = m.with_2d_coordinates().unwrap();
+        let out = m.add_2d_coordinates().unwrap();
         assert!(m.coordinates_2d().is_empty());
         assert_eq!(out.coordinates_2d().len(), 6);
-        let pinned = m.with_2d_coordinates_with_params(&p).unwrap();
+        let pinned = m.add_2d_coordinates_with_params(&p).unwrap();
         assert_eq!(&pinned.coordinates_2d()[..2], &[4., 5.]);
         assert!(m.coordinates_2d().is_empty());
-        m.compute_2d_coordinates_().unwrap();
+        m.add_2d_coordinates_().unwrap();
         assert_eq!(m.coordinates_2d().len(), 6);
-        m.compute_2d_coordinates_with_params_(&p).unwrap();
+        m.add_2d_coordinates_with_params_(&p).unwrap();
         assert_eq!(&m.coordinates_2d()[..2], &[4., 5.]);
         let before = m.coordinates_2d();
         let p_before = p.clone();
@@ -130,7 +130,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            m.compute_2d_coordinates_with_params_(&bad),
+            m.add_2d_coordinates_with_params_(&bad),
             Err(ck::OperationError::Coordinate2D(
                 ck::Coordinate2DError::Fragment(ck::Coordinate2DLayoutError::AtomIndexOutOfRange {
                     atom: 99,

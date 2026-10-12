@@ -3804,9 +3804,9 @@ impl Molecule {
     }
 
     /// In place, generate and store 2D drawing coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
-    fn compute_2d_coordinates_(&mut self, py: Python<'_>) -> PyResult<()> {
+    fn add_2d_coordinates_(&mut self, py: Python<'_>) -> PyResult<()> {
         self.inner
-            .compute_2d_coordinates_()
+            .add_2d_coordinates_()
             .map_err(|error| operation_pyerr(py, error))
     }
 
@@ -3823,20 +3823,20 @@ impl Molecule {
     }
 
     /// In place, generate and store 2D drawing coordinates. Copy-on-write isolates other molecule values; errors do not commit partial changes.
-    fn compute_2d_coordinates_with_params_(
+    fn add_2d_coordinates_with_params_(
         &mut self,
         py: Python<'_>,
         params: &Coordinate2DParams,
     ) -> PyResult<()> {
         self.inner
-            .compute_2d_coordinates_with_params_(&params.inner)
+            .add_2d_coordinates_with_params_(&params.inner)
             .map_err(|error| operation_pyerr(py, error))
     }
 
     /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
-    fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
+    fn add_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
-            .with_2d_coordinates()
+            .add_2d_coordinates()
             .map(|inner| Self { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
@@ -3851,13 +3851,13 @@ impl Molecule {
     }
 
     /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
-    fn with_2d_coordinates_with_params(
+    fn add_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
         params: &Coordinate2DParams,
     ) -> PyResult<Self> {
         self.inner
-            .with_2d_coordinates_with_params(&params.inner)
+            .add_2d_coordinates_with_params(&params.inner)
             .map(|inner| Self { inner })
             .map_err(|error| operation_pyerr(py, error))
     }

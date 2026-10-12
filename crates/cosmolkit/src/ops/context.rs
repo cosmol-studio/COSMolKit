@@ -3636,7 +3636,7 @@ mod original_binary_live_tests {
             "CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO",
         )
         .expect("parse retained ChEMBL binary-roundtrip molecule")
-        .with_2d_coordinates()
+        .add_2d_coordinates()
         .expect("generate the audited pre-archive 2D state");
         let hash_before = mol.molecular_hash().expect("hash before archive");
         let morgan_before = mol

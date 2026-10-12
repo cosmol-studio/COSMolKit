@@ -50,7 +50,10 @@ TYPE_NAMES = {
 }
 MOLECULE_NAMES = {
     "analyze_potential_stereo": "potential_stereo",
-    "kekulize_": "kekulize_bonds_", "compute_2d_coordinates_": "compute_2d_coordinates_",
+    "kekulize_": "kekulize_bonds_", "compute_2d_coordinates_": "add_2d_coordinates_",
+    "with_2d_coordinates": "add_2d_coordinates",
+    "with_2d_coordinates_with_params": "add_2d_coordinates_with_params",
+    "compute_2d_coordinates_with_params_": "add_2d_coordinates_with_params_",
     "edit": "to_builder", "mol_from_binary": "from_binary", "mol_to_binary": "to_binary",
     "num_conformers": "num_3d_conformers", "read_mol_from_str": "from_mol",
     "read_mol2_from_str": "from_mol2", "read_sdf_from_str": "from_sdf",
@@ -347,7 +350,7 @@ def current_match(root, docs, api, kind, new, family, counts):
         elif api == "Molecule.analyze_potential_stereo":
             note.append("新版结果为 PotentialStereoResult；字段映射与 clean 参数／返回状态需保留")
     elif family == "depict":
-        if api == "Molecule.with_2d_coordinates":
+        if api == "Molecule.add_2d_coordinates":
             state = "partial"
             note.append("MAIN 公开 value layout 可调用；现存 MAIN 5000报告仍208失败；_2的坐标修复未合入且完整状态红")
         elif api == "Molecule.has_2d_coordinates":
@@ -570,7 +573,7 @@ def branch_note(api):
         return "_2：morgan.rs 公共四路生成／additional output交付；未整合 MAIN", "../COSMolKit_2/crates/cosmolkit/src/morgan.rs"
     if "uff" in api.lower():
         return "_1：UFF公共链已有；一步5000仍38错误行，不是整包通过；未整合 MAIN", "../COSMolKit_1/dev/gap_reports/three_d_migration/parity_framework_migration.md"
-    if api in ("Molecule.from_smiles", "Molecule.to_smiles", "Molecule.coordinates_2d", "Molecule.num_atoms", "Molecule.num_bonds", "Molecule.with_2d_coordinates", "Molecule.to_svg", "Molecule.to_png", "Molecule.write_svg", "Molecule.write_png"):
+    if api in ("Molecule.from_smiles", "Molecule.to_smiles", "Molecule.coordinates_2d", "Molecule.num_atoms", "Molecule.num_bonds", "Molecule.add_2d_coordinates", "Molecule.to_svg", "Molecule.to_png", "Molecule.write_svg", "Molecule.write_png"):
         return "_4：选定 drawing Python profile已交付；仅num_atoms/num_bonds无已知旧接口差异，其余参数／返回值／范围仍需核对；未整合 MAIN", "../COSMolKit_4/python/src/drawing_binding.rs"
     if api in ("Molecule.from_inchi", "Molecule.to_inchi", "Molecule.to_inchi_key", "inchi_to_key"):
         return "_3：隔离审计与局部修复；405 finding未闭合，非公共可用", "../COSMolKit_3/dev/gap_reports/inchi/element_lookup_repair.md"
@@ -585,7 +588,7 @@ def corpus_tasks(api):
         "Molecule.from_smiles": "smiles_read", "Molecule.with_hydrogens": "add_hydrogens",
         "Molecule.add_hydrogens_": "add_hydrogens", "Molecule.without_hydrogens": "remove_hydrogens",
         "Molecule.remove_hydrogens_": "remove_hydrogens", "Molecule.with_kekulized_bonds": "kekulize",
-        "Molecule.kekulize_": "kekulize", "Molecule.with_2d_coordinates": "coordinates_2d",
+        "Molecule.kekulize_": "kekulize", "Molecule.add_2d_coordinates": "coordinates_2d",
         "Molecule.uff_has_all_molecule_params": "uff_has_all_molecule_params",
         "Molecule.has_uff_params": "uff_has_all_molecule_params", "uff_has_all_molecule_params": "uff_has_all_molecule_params",
         "Molecule.with_uff_optimized": "uff_optimize", "uff_optimize_molecule": "uff_optimize",

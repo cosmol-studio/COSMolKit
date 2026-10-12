@@ -17,7 +17,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 mol = (
     ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]", sanitize=True)
     .with_hydrogens()
-    .with_2d_coordinates()
+    .add_2d_coordinates()
 )
 
 payload = pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL)

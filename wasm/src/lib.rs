@@ -541,7 +541,7 @@ $$$$
         );
         assert_eq!(molecule.num_conformers_3d(), 0);
         assert!(molecule.coordinates_2d().is_empty());
-        let drawn = molecule.with_2d_coordinates().expect("2D layout");
+        let drawn = molecule.add_2d_coordinates().expect("2D layout");
         assert_eq!(drawn.coordinates_2d().len(), 6);
         assert_eq!(molecule.num_atoms(), 3);
         let benzene = Molecule::from_smiles("c1ccccc1").expect("benzene parses");

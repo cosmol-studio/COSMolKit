@@ -34,7 +34,7 @@ fn d2_prepared_property_public_twelve_native_operations() {
                     ..Default::default()
                 };
                 let params_before = params.clone();
-                let result = source.with_2d_coordinates_with_params(&params);
+                let result = source.add_2d_coordinates_with_params(&params);
                 calls += 1;
                 // Full original input checks precede inspecting Result.
                 assert_eq!(source, before);
@@ -189,17 +189,17 @@ fn disconnected_molecule() -> Molecule {
 
 #[test]
 fn short_and_parameterized_with_2d_coordinates() {
-    let _: fn(&Molecule) -> Result<Molecule, OperationError> = Molecule::with_2d_coordinates;
+    let _: fn(&Molecule) -> Result<Molecule, OperationError> = Molecule::add_2d_coordinates;
     let _: for<'a, 'b> fn(
         &'a Molecule,
         &'b Coordinate2DParams,
-    ) -> Result<Molecule, OperationError> = Molecule::with_2d_coordinates_with_params;
+    ) -> Result<Molecule, OperationError> = Molecule::add_2d_coordinates_with_params;
     let _: fn(&str) -> Option<&'static cosmolkit::FeatureSpec> = feature_spec;
 
     let source = chain_molecule();
-    let short = source.with_2d_coordinates().unwrap();
+    let short = source.add_2d_coordinates().unwrap();
     let configured = source
-        .with_2d_coordinates_with_params(&Coordinate2DParams::default())
+        .add_2d_coordinates_with_params(&Coordinate2DParams::default())
         .unwrap();
     assert_eq!(short.coordinates_2d(), configured.coordinates_2d());
     assert_eq!(
@@ -230,7 +230,7 @@ fn all_frozen_layout_options_and_constraint_errors() {
         force_rdkit: true,
         use_ring_templates: true,
     };
-    let output = source.with_2d_coordinates_with_params(&params).unwrap();
+    let output = source.add_2d_coordinates_with_params(&params).unwrap();
     let stored = output.to_builder().coordinates().clone();
     assert_eq!(stored.conformers_2d.len(), 2);
     assert_eq!(stored.conformers_2d[0].id(), 7);
@@ -242,9 +242,7 @@ fn all_frozen_layout_options_and_constraint_errors() {
 
     let mut invalid = Coordinate2DParams::default();
     invalid.coordinate_map.insert(3, [0.0, 0.0]);
-    let error = source
-        .with_2d_coordinates_with_params(&invalid)
-        .unwrap_err();
+    let error = source.add_2d_coordinates_with_params(&invalid).unwrap_err();
     assert!(matches!(error, OperationError::Coordinate2D(_)));
     assert!(error.source().is_some());
 }
@@ -252,7 +250,7 @@ fn all_frozen_layout_options_and_constraint_errors() {
 #[test]
 fn two_d_coordinate_rows_and_three_d_preservation() {
     let source = chain_molecule();
-    let output = source.with_2d_coordinates().unwrap();
+    let output = source.add_2d_coordinates().unwrap();
     let source_block = source.to_builder().coordinates().clone();
     let output_block = output.to_builder().coordinates().clone();
 
@@ -273,7 +271,7 @@ fn conformer_id_empty_and_replace_paths_assign_zero() {
     let empty = chain_molecule_with_conformer_ids(&[], &[41]);
     let mut append = Coordinate2DParams::default();
     append.clear_existing_2d = false;
-    let appended = empty.with_2d_coordinates_with_params(&append).unwrap();
+    let appended = empty.add_2d_coordinates_with_params(&append).unwrap();
     let appended_block = appended.to_builder().coordinates().clone();
     assert_eq!(
         appended_block
@@ -286,7 +284,7 @@ fn conformer_id_empty_and_replace_paths_assign_zero() {
     assert_eq!(appended_block.conformers_3d[0].id(), 41);
 
     let existing = chain_molecule_with_conformer_ids(&[9, 2], &[41]);
-    let replaced = existing.with_2d_coordinates().unwrap();
+    let replaced = existing.add_2d_coordinates().unwrap();
     let replaced_block = replaced.to_builder().coordinates().clone();
     assert_eq!(
         replaced_block
@@ -306,7 +304,7 @@ fn conformer_id_append_uses_two_d_max_plus_one_and_preserves_three_d() {
     let mut params = Coordinate2DParams::default();
     params.clear_existing_2d = false;
 
-    let output = source.with_2d_coordinates_with_params(&params).unwrap();
+    let output = source.add_2d_coordinates_with_params(&params).unwrap();
     let output_block = output.to_builder().coordinates().clone();
     assert_eq!(
         output_block
@@ -329,7 +327,7 @@ fn conformer_id_overflow_is_structured_and_failure_atomic() {
     params.clear_existing_2d = false;
 
     let error = source
-        .with_2d_coordinates_with_params(&params)
+        .add_2d_coordinates_with_params(&params)
         .expect_err("max 2D conformer id must not wrap or panic");
     assert!(matches!(error, OperationError::Coordinate2D(_)));
     assert!(error.source().is_some());
@@ -340,7 +338,7 @@ fn conformer_id_overflow_is_structured_and_failure_atomic() {
 #[test]
 fn value_semantics_unchanged_blocks_and_failure_atomicity() {
     let source = chain_molecule();
-    let output = source.with_2d_coordinates().unwrap();
+    let output = source.add_2d_coordinates().unwrap();
 
     assert!(std::ptr::eq(source.topology(), output.topology()));
     assert!(std::ptr::eq(source.properties(), output.properties()));
@@ -361,7 +359,7 @@ fn value_semantics_unchanged_blocks_and_failure_atomicity() {
     let before = source.clone();
     let mut invalid = Coordinate2DParams::default();
     invalid.coordinate_map.insert(99, [1.0, 2.0]);
-    assert!(source.with_2d_coordinates_with_params(&invalid).is_err());
+    assert!(source.add_2d_coordinates_with_params(&invalid).is_err());
     assert_eq!(source, before);
     assert!(std::ptr::eq(source.topology(), before.topology()));
     assert!(std::ptr::eq(source.properties(), before.properties()));
@@ -376,7 +374,7 @@ fn live_typed_error_chain_preserves_layout_category_and_source_object() {
     params.coordinate_map.insert(3, [0.0, 0.0]);
 
     let error = source
-        .with_2d_coordinates_with_params(&params)
+        .add_2d_coordinates_with_params(&params)
         .expect_err("an out-of-range coordinate-map atom must remain an error");
     assert!(matches!(&error, OperationError::Coordinate2D(_)));
     let operation_source = error
@@ -409,7 +407,7 @@ fn live_typed_error_chain_preserves_sampling_safety_boundary() {
     };
 
     let error = source
-        .with_2d_coordinates_with_params(&params)
+        .add_2d_coordinates_with_params(&params)
         .expect_err("the CK boundary must not invent undefined sampling costs");
     assert!(matches!(&error, OperationError::Coordinate2D(_)));
     assert!(error.source().is_some());
@@ -432,7 +430,7 @@ fn live_coordinate_failure_after_checkout_is_atomic_and_typed() {
     params.clear_existing_2d = false;
 
     let error = source
-        .with_2d_coordinates_with_params(&params)
+        .add_2d_coordinates_with_params(&params)
         .expect_err("incrementing the maximum 2D conformer ID must fail without wrapping");
     assert!(matches!(
         &error,
@@ -462,13 +460,13 @@ fn binding_registry_operation_contract_and_feature_isolation() {
             "types.Coordinate2DError",
             "types.Coordinate2DTemplateError",
             "types.Coordinate2DLayoutError",
-            "Molecule.with_2d_coordinates",
-            "Molecule.with_2d_coordinates_with_params",
+            "Molecule.add_2d_coordinates",
+            "Molecule.add_2d_coordinates_with_params",
             "types.DrawingError",
             "Molecule.to_svg",
             "Molecule.to_png",
-            "Molecule.compute_2d_coordinates_",
-            "Molecule.compute_2d_coordinates_with_params_",
+            "Molecule.add_2d_coordinates_",
+            "Molecule.add_2d_coordinates_with_params_",
             "types.DrawingWriteError",
             "Molecule.write_svg",
             "Molecule.write_png",
@@ -535,7 +533,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     let feature = feature_spec("cap-depict").unwrap();
     assert_eq!(feature.name, "cap-depict");
 
-    let spec = operation_spec("with_2d_coordinates_with_params").unwrap();
+    let spec = operation_spec("add_2d_coordinates_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Coordinate);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
     assert_eq!(spec.output, MoleculeOpOutput::Single);

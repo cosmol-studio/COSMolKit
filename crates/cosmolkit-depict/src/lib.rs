@@ -34,6 +34,9 @@ mod templates;
 #[cfg(test)]
 mod disconnected_stereo_tests;
 
+#[cfg(test)]
+mod coordinate_rounding_tests;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DepictError {
     InvalidTopology(TopologyValidationError),

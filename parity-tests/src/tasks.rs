@@ -208,6 +208,18 @@ fn failure(error: impl std::fmt::Display) -> Vec<u8> {
 pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8> {
     let mut cause = Some(error);
     while let Some(inner) = cause {
+        if let Some(cosmolkit::CipLabelerError::TooManyNodes { limit }) =
+            inner.downcast_ref::<cosmolkit::CipLabelerError>()
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("CipTooManyNodes".into()),
+                    Value::UInt(*limit as u64),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
         if matches!(
             inner.downcast_ref::<cosmolkit::CipLabelerError>(),
             Some(cosmolkit::CipLabelerError::MaxIterationsExceeded)
@@ -293,8 +305,20 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
     };
     match task {
         "cip" => {
-            native == "RuntimeError: Max Iterations Exceeded in CIP label calculation"
-                && matches!(ck.as_slice(),[Value::Text(kind),Value::Text(_)] if kind=="CipMaxIterationsExceeded")
+            // CIPLabeler/Digraph.cpp::expand, before neighbor expansion:
+            // RDKit✔️✔️:   if (MAX_NODE_COUNT > 0 && d_nodes.size() >= MAX_NODE_COUNT) {
+            // RDKit✔️✔️:     std::stringstream errmsg;
+            // RDKit✔️✔️:     errmsg << "Digraph generation failed: more than " << MAX_NODE_COUNT
+            // RDKit✔️✔️:            << "nodes found.";
+            // RDKit✔️✔️:     throw TooManyNodesException(errmsg.str());
+            // RDKit✔️✔️:   }
+            // Match only the typed cause and identical limit, not arbitrary errors.
+            // One bounded diagnostic comparison; calculated values remain untouched.
+            (native == "RuntimeError: Max Iterations Exceeded in CIP label calculation"
+                && matches!(ck.as_slice(),[Value::Text(kind),Value::Text(_)] if kind=="CipMaxIterationsExceeded"))
+                || matches!(ck.as_slice(), [Value::Text(kind), Value::UInt(limit), Value::Text(_)]
+                    if kind == "CipTooManyNodes"
+                        && native == format!("RuntimeError: Digraph generation failed: more than {limit}nodes found."))
         }
         "smiles_write" | "sanitize" | "kekulize" => {
             if let [Value::Text(class), Value::List(atoms), Value::Text(_)] = ck.as_slice() {
@@ -724,6 +748,35 @@ pub fn unpack_row(mut row: &[u8], profiles: usize) -> Result<Vec<&[u8]>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cip_node_limit_matches_only_the_same_typed_rejection() {
+        use super::*;
+        let native = outcome(
+            5,
+            Value::Text(
+                "RuntimeError: Digraph generation failed: more than 100000nodes found.".into(),
+            ),
+        );
+        let actual = failed_error(&cosmolkit::CipLabelerError::TooManyNodes { limit: 100_000 });
+        assert!(matching_error("cip", &native, &actual));
+        assert!(!matching_error("valence", &native, &actual));
+        assert!(!matching_error(
+            "cip",
+            &native,
+            &failed_error(&cosmolkit::CipLabelerError::TooManyNodes { limit: 99_999 })
+        ));
+        assert!(!matching_error(
+            "cip",
+            &native,
+            &failed_error(&cosmolkit::CipLabelerError::MaxIterationsExceeded)
+        ));
+        assert!(!matching_error(
+            "cip",
+            &native,
+            &failure("Digraph generation failed: more than 100000 nodes found.")
+        ));
+    }
+
     #[test]
     fn cip_selection_and_recursion_are_not_lost() {
         let profiles = super::profiles("cip").unwrap();

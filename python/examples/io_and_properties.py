@@ -24,7 +24,7 @@ KEKULE_BENZENE_MOL = """kekule_benzene
 M  END
 """
 
-mol = ck.mol_from_smiles("CCO", sanitize=True).with_2d_coordinates()
+mol = ck.mol_from_smiles("CCO", sanitize=True).add_2d_coordinates()
 coords = mol.coordinates_2d()
 assert coords is not None
 print("coords shape:", coords.shape)
@@ -59,7 +59,7 @@ sanitized_benzene = raw_benzene.sanitize()
 print("raw MolBlock bond orders:", [bond.order().name for bond in raw_benzene.bonds()])
 print("delayed sanitize smiles:", sanitized_benzene.to_smiles())
 
-explicit_h_mol = ck.mol_from_smiles("CCO").with_hydrogens().with_2d_coordinates()
+explicit_h_mol = ck.mol_from_smiles("CCO").with_hydrogens().add_2d_coordinates()
 explicit_h_sdf = explicit_h_mol.to_sdf_2d(format="v2000")
 kept_h = ck.mol_from_sdf(
     explicit_h_sdf,

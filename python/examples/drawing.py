@@ -8,9 +8,9 @@ import cosmolkit as ck
 
 def main() -> None:
     original = ck.mol_from_smiles("CCO")
-    laid_out = original.with_2d_coordinates()
+    laid_out = original.add_2d_coordinates()
     params = ck.Coordinate2DParams(coordinate_map={0: [-0.0, 1.5]})
-    configured = original.with_2d_coordinates_with_params(params)
+    configured = original.add_2d_coordinates_with_params(params)
     assert original.coordinates_2d() is None
     assert laid_out.coordinates_2d() is not None
     assert configured.coordinates_2d() is not None

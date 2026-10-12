@@ -478,7 +478,7 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
 }
 fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
     Ok(match task {
-        "coordinates_2d" => two_d_value(&m.with_2d_coordinates_with_params(&two_d_params(p))?)?,
+        "coordinates_2d" => two_d_value(&m.add_2d_coordinates_with_params(&two_d_params(p))?)?,
         "svg" => Value::Bytes(
             namespace(m.to_svg(integer(p, "width") as u32, integer(p, "height") as u32)?)
                 .into_bytes(),
@@ -599,7 +599,7 @@ pub fn evaluate(
                     .unwrap_or_else(|e| tasks::failed_error(e.as_ref())),
             });
         }
-        let transformed = batch.with_2d_coordinates_with_params(&two_d_params(p), &params)?;
+        let transformed = batch.add_2d_coordinates_with_params(&two_d_params(p), &params)?;
         for (slot, (before, after)) in output[split..]
             .iter_mut()
             .zip(batch.records().iter().zip(transformed.records()))

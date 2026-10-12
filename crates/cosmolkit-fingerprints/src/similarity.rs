@@ -57,7 +57,7 @@ pub fn num_on_bits_in_common(a: &Fingerprint, b: &Fingerprint) -> Result<u32, Fi
             what: "no afp (CalcBitmapNumBitsInCommon on zero-length vector)",
         });
     }
-    Ok(a.and(b)?.num_on_bits())
+    a.intersection_count(b)
 }
 
 /// `NumOnBitsInCommon<SparseBitVect>` — the generic template (BitOps.cpp

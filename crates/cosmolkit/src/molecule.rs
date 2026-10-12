@@ -1488,7 +1488,7 @@ mod ring_live_lifecycle_tests {
         assert_eq!(molecule.num_rings().unwrap(), 1, "repeat query");
 
         // Coordinate value operation preserves rows/type and old IDs.
-        let with_coords = molecule.with_2d_coordinates().unwrap();
+        let with_coords = molecule.add_2d_coordinates().unwrap();
         {
             let rings = with_coords
                 .derived_cache_runtime()

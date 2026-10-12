@@ -454,9 +454,38 @@ pub(crate) fn compute_bisect_point(center: Point2, angle: f64, a: Point2, b: Poi
     // RDKit❗✔️: }
     let mut loc = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
     if angle > PI {
-        loc = [2.0 * center[0] - loc[0], 2.0 * center[1] - loc[1]];
+        // Preserve subtraction, negation, then addition. Reassociating this
+        // as 2*center-loc changes the bisector by one ULP at spiro junctions.
+        // The source and this form both use constant-time scalar arithmetic.
+        for axis in 0..2 {
+            loc[axis] -= center[axis];
+            loc[axis] *= -1.0;
+            loc[axis] += center[axis];
+        }
     }
     loc
+}
+
+#[cfg(test)]
+mod bisector_regression {
+    use super::*;
+
+    #[test]
+    fn spiro_bisector_preserves_source_operation_order() {
+        // First divergent checkpoint in pinned DepictUtils::computeBisectPoint
+        // for CC1(C)CC12NC(=O)N(Cc1ccccc1)C2=O, before ring transformation.
+        let point = |x, y| [f64::from_bits(x), f64::from_bits(y)];
+        let result = compute_bisect_point(
+            point(13824844120144235698, 13828302655841107966),
+            f64::from_bits(4617581216554078270),
+            point(13824844120144235688, 4604930618986332161),
+            point(4605975682916830379, 0),
+        );
+        assert_eq!(
+            result.map(f64::to_bits),
+            [13830926145634643950, 13834495105328742398]
+        );
+    }
 }
 
 pub(crate) fn reflect_point(point: Point2, a: Point2, b: Point2) -> Point2 {

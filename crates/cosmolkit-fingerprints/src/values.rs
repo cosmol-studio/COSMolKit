@@ -348,6 +348,21 @@ impl Fingerprint {
         Ok(())
     }
 
+    pub(crate) fn intersection_count(&self, other: &Self) -> Result<u32, FingerprintError> {
+        // RDKit✔️✔️: intersect_popcount += static_cast<unsigned int>(BUILTIN_POPCOUNT_INSTR(
+        // RDKit✔️✔️:     ((BUILTIN_POPCOUNT_TYPE *)afp)[i] & ((BUILTIN_POPCOUNT_TYPE *)bfp)[i]));
+        // Match CalcBitmapNumBitsInCommon's packed-word fast path: one pass,
+        // no temporary bit vector. Tail bits are always zero, and neither
+        // operand's potentially stale num_on cache participates in the count.
+        self.same_length(other)?;
+        Ok(self
+            .words
+            .iter()
+            .zip(&other.words)
+            .map(|(&a, &b)| (a & b).count_ones())
+            .sum())
+    }
+
     /// Bitwise AND of two equal-length vectors.
     ///
     /// Source: `ExplicitBitVect ExplicitBitVect::operator&(const

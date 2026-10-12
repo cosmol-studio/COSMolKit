@@ -32,7 +32,7 @@ const withAssignedRings: () => Molecule = molecule.withAssignedRings;
 const withAssignedRingFamilies: () => Molecule = molecule.withAssignedRingFamilies;
 const withAssignedAromaticity: () => Molecule = molecule.withAssignedAromaticity;
 const withAssignedRadicals: () => Molecule = molecule.withAssignedRadicals;
-const with2dCoordinates: () => Molecule = molecule.with2dCoordinates;
+const add2dCoordinates: () => Molecule = molecule.add2dCoordinates;
 
 void constructor;
 void fromSmilesWithSanitize;
@@ -63,4 +63,4 @@ void withAssignedRings;
 void withAssignedRingFamilies;
 void withAssignedAromaticity;
 void withAssignedRadicals;
-void with2dCoordinates;
+void add2dCoordinates;

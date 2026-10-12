@@ -71,7 +71,7 @@ def test_smiles_shortcut_preserves_error_type_message_and_context():
 
 
 def test_molecular_format_shortcuts_use_original_factories():
-    source = ck.Molecule.from_smiles("C").with_2d_coordinates()
+    source = ck.Molecule.from_smiles("C").add_2d_coordinates()
     inputs = {
         "mol_from_mol": source.to_mol(),
         "mol_from_sdf": source.to_sdf(),
@@ -97,7 +97,7 @@ def test_batch_shortcuts_inherit_execution_configuration_and_record_state():
     expected = ck.MoleculeBatch.from_smiles_list(inputs, **options)
     assert actual.to_smiles_list(canonical=False) == expected.to_smiles_list(canonical=False)
     assert len(actual.errors()) == len(expected.errors()) == 1
-    mol = ck.mol_from_smiles("C").with_2d_coordinates()
+    mol = ck.mol_from_smiles("C").add_2d_coordinates()
     sdf = mol.to_sdf()
     assert ck.mols_from_sdf_records(sdf, errors="keep", n_jobs=1).to_smiles_list() == ["C"]
     assert ck.mols_from_records([mol], ck.BatchErrorMode.KEEP).to_smiles_list() == ["C"]

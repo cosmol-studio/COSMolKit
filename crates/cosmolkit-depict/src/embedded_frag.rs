@@ -5075,7 +5075,15 @@ impl EmbeddedFrag<'_> {
                             (first[0] + second[0]) * 0.5 - center[0],
                             (first[1] + second[1]) * 0.5 - center[1],
                         ];
-                        let length = vector[0].hypot(vector[1]);
+                        // RDKit✔️✔️:   double length() const override {
+                        // RDKit✔️✔️:     // double res = pow(x,2) + pow(y,2);
+                        // RDKit✔️✔️:     double res = x * x + y * y;
+                        // RDKit✔️✔️:     return sqrt(res);
+                        // RDKit✔️✔️:   }
+                        // Geometry/point.h: preserve the source operations,
+                        // not hypot's differently rounded scaled norm.
+                        // Complexity: two products, one sum and one sqrt.
+                        let length = (vector[0] * vector[0] + vector[1] * vector[1]).sqrt();
                         // RDKit❗✔️:   void normalize() override {
                         // RDKit❗✔️:     double ln = this->length();
                         // RDKit❗✔️:     if (ln < zero_tolerance) {

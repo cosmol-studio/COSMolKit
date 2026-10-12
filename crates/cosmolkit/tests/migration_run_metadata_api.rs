@@ -183,7 +183,7 @@ fn expected_operation_methods() -> Vec<&'static str> {
         ]);
     }
     if cfg!(feature = "cap-depict") {
-        expected.push("with_2d_coordinates_with_params");
+        expected.push("add_2d_coordinates_with_params");
     }
     expected
 }

@@ -1070,12 +1070,20 @@ fn write_smiles_output_with_random_stream<'record>(
         .prop("_StereochemDone")
         .map(|_| record.properties.is_prop_computed("_StereochemDone"))
         .transpose()?;
+    let mut prepared_kekule_fragments: Vec<Option<WriterStereoFragment>> = if params.kekule {
+        components.iter().map(|_| None).collect()
+    } else {
+        Vec::new()
+    };
     prepare_writer_stereochemistry(
         &mut topology,
         stereochem_done_marker_is_computed,
         record.rings,
         params,
         &components,
+        params
+            .kekule
+            .then_some(prepared_kekule_fragments.as_mut_slice()),
     )?;
     let mut dative_donors = Vec::new();
     let mut hydrogen_bond_atoms = Vec::new();
@@ -1266,7 +1274,25 @@ fn write_smiles_output_with_random_stream<'record>(
         // copying each component topology before any source fragment is ranked.
         components
             .iter()
-            .map(|component| {
+            .enumerate()
+            .map(|(component_index, component)| {
+                if let Some(mut prepared) = prepared_kekule_fragments[component_index].take() {
+                    // Carry the intervening writer bond normalization into the
+                    // retained component without re-extracting its atom props.
+                    for (local, source) in prepared.source_bonds.iter().enumerate() {
+                        let source = &topology.bonds[source.index()];
+                        let target = &mut prepared.topology.bonds[local];
+                        target.set_order(source.order());
+                        target.set_direction(source.direction());
+                        target
+                            .set_stereo(source.stereo())
+                            .map_err(SmilesParseError::WriterStereoBond)?;
+                    }
+                    if !doing_cx_smiles {
+                        prepared.topology.stereo_groups.clear();
+                    }
+                    return Ok(prepared);
+                }
                 if components.len() == 1 {
                     Ok(WriterStereoFragment {
                         topology: topology.clone(),
@@ -1714,6 +1740,7 @@ fn prepare_writer_stereochemistry(
     source_rings: Option<&cosmolkit_core::RingInfo>,
     params: &SmilesWriteParams,
     components: &[Vec<usize>],
+    prepared_fragments: Option<&mut [Option<WriterStereoFragment>]>,
 ) -> Result<(), SmilesParseError> {
     // Keep malformed caller-supplied ring-relative state observable even when
     // clean stereo would clear computed ring relations before serialization.
@@ -1747,6 +1774,7 @@ fn prepare_writer_stereochemistry(
         source_rings,
         params.clean_stereo,
         components,
+        prepared_fragments,
     )
 }
 
@@ -1772,6 +1800,7 @@ fn prepare_canonical_nonisomeric_stereo_fallback(
         source_rings,
         false,
         components,
+        None,
     )
 }
 
@@ -1781,6 +1810,7 @@ fn prepare_writer_stereo_components(
     source_rings: Option<&cosmolkit_core::RingInfo>,
     clean_it: bool,
     components: &[Vec<usize>],
+    mut prepared_fragments: Option<&mut [Option<WriterStereoFragment>]>,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags computed-property copy selection
     // RDKit❗❌:       if (comp.size() == 1 ||
@@ -1947,6 +1977,26 @@ fn prepare_writer_stereo_components(
             &fragment.source_atoms,
             &fragment.source_bonds,
         )?;
+
+        // SmilesWrite.cpp::detail::MolToSmiles keeps the same temporary mol:
+        // RDKit✔️✔️:     ROMol *tmol = mols[fragIdx].get();
+        // RDKit✔️✔️:         MolOps::assignStereochemistry(*tmol, params.cleanStereo);
+        // RDKit✔️✔️:       Canon::rankMolAtoms(*tmol, ranks, breakTies, includeChirality,
+        // RDKit✔️✔️:                           includeIsotopes, includeAtomMaps,
+        // RDKit✔️✔️:                           includeChiralPresence, includeStereoGroups,
+        // RDKit✔️✔️:                           useNonStereoRanks);
+        // RDKit✔️✔️:     subSmi = SmilesWrite::FragmentSmilesConstruct(
+        // RDKit✔️✔️:         *tmol, nextAtomIdx, colors, ranks, params, atomOrdering, bondOrdering);
+        // Move the already assigned fragment into Kekulize instead of extracting
+        // it again: extraction clears the newly computed _ringStereoAtoms.
+        // This removes a topology copy/prune pass, with O(1) ownership moves.
+        if let Some(prepared) = prepared_fragments.as_deref_mut() {
+            prepared[component_index] = Some(WriterStereoFragment {
+                topology: assigned,
+                source_atoms: fragment.source_atoms,
+                source_bonds: fragment.source_bonds,
+            });
+        }
 
         // Keep the source's component walk visible in this local anchor. The
         // index is intentionally consumed by debug assertions rather than
@@ -5978,6 +6028,58 @@ mod tests {
     }
 
     #[test]
+    fn writer_kekule_retains_assigned_fragment_ring_stereo() {
+        let mut record =
+            parse_smiles("C[C@H]1CC[C@H](C)CC1.Cl", &SmilesParseParams::default()).unwrap();
+        let components = connected_components(&record.topology);
+        let mut prepared: Vec<_> = components.iter().map(|_| None).collect();
+        prepare_writer_stereochemistry(
+            &mut record.topology,
+            Some(true),
+            None,
+            &SmilesWriteParams::default(),
+            &components,
+            Some(&mut prepared),
+        )
+        .unwrap();
+        let fragment = prepared[0].as_ref().unwrap();
+        // Pinned assignStereochemistry generates signed one-based references
+        // before FragmentSmilesConstruct's canonical Kekulize ranking.
+        for (atom, expected) in [(1, -5), (4, -2)] {
+            assert_eq!(
+                fragment.topology.atoms[atom].prop("_ringStereoAtoms"),
+                Some(&cosmolkit_model::PropertyValue::IntVector(vec![expected]))
+            );
+            assert!(
+                fragment.topology.atoms[atom]
+                    .is_prop_computed("_ringStereoAtoms")
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn writer_kekule_disconnected_ring_stereo_matches_source() {
+        let input = "CCc1nc(C(N)=O)c(Nc2ccc(N3CCN(C(C)C)CC3)c(C)c2)nc1N[C@H]1CC[C@H](O)CC1.O=C(O)/C=C/C(=O)O";
+        let record = parse_smiles(input, &SmilesParseParams::default()).unwrap();
+        let original = record.topology.clone();
+        let expected = "CCC1=C(N[C@H]2CC[C@H](O)CC2)N=C(NC2=CC(C)=C(N3CCN(C(C)C)CC3)C=C2)C(C(N)=O)=N1.O=C(O)/C=C/C(=O)O";
+        for canonical in [false, true] {
+            let actual = write_smiles_with_params(
+                &record,
+                &SmilesWriteParams {
+                    kekule: true,
+                    canonical,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(actual.as_bytes(), expected.as_bytes());
+        }
+        assert_eq!(record.topology, original);
+    }
+
+    #[test]
     fn writer_kekulized_fragment_retains_existing_explicit_cache_and_recalculates_implicit() {
         let record = parse_smiles("CC", &SmilesParseParams::default()).expect("fixed C-C graph");
         // Source Atom::calcImplicitValence sees cached explicit=3 and neutral
@@ -6925,8 +7027,15 @@ mod tests {
         };
         let components = connected_components(&record.topology);
 
-        prepare_writer_stereochemistry(&mut record.topology, None, None, &params, &components)
-            .unwrap();
+        prepare_writer_stereochemistry(
+            &mut record.topology,
+            None,
+            None,
+            &params,
+            &components,
+            None,
+        )
+        .unwrap();
 
         assert!(
             record

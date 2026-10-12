@@ -629,7 +629,7 @@ mod tests {
     fn tautomer_products_drop_source_coordinates_and_canonical_restores() {
         let mut source = Molecule::from_smiles("CC(C)=O")
             .unwrap()
-            .with_2d_coordinates()
+            .add_2d_coordinates()
             .unwrap();
         let coordinates = source.coordinates_arc_runtime();
         let outputs = source.enumerate_tautomers().unwrap();

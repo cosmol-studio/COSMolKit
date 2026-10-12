@@ -1487,7 +1487,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
             }
             Coordinates2dDefault => {
                 let result = mol
-                    .with_2d_coordinates_with_params(&Coordinate2DParams {
+                    .add_2d_coordinates_with_params(&Coordinate2DParams {
                         coordinate_map: Default::default(),
                         canonical_orientation: false,
                         clear_existing_2d: true,

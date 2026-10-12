@@ -4586,29 +4586,29 @@ binding_contract! {
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.with_2d_coordinates",
+            semantic_id: "Molecule.add_2d_coordinates",
             item: callable,
             owner: molecule,
-            rust: crate::Molecule::with_2d_coordinates,
-            python: "with_2d_coordinates",
-            javascript: "with2dCoordinates",
+            rust: crate::Molecule::add_2d_coordinates,
+            python: "add_2d_coordinates",
+            javascript: "add2dCoordinates",
             feature: "cap-depict",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
             error: crate::OperationError,
             state: value_returning,
-            operation: "with_2d_coordinates",
+            operation: "add_2d_coordinates",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.with_2d_coordinates_with_params",
+            semantic_id: "Molecule.add_2d_coordinates_with_params",
             item: callable,
             owner: molecule,
-            rust: crate::Molecule::with_2d_coordinates_with_params,
-            python: "with_2d_coordinates_with_params",
-            javascript: "with2dCoordinatesWithParams",
+            rust: crate::Molecule::add_2d_coordinates_with_params,
+            python: "add_2d_coordinates_with_params",
+            javascript: "add2dCoordinatesWithParams",
             feature: "cap-depict",
             kind: instance,
             parameters: [
@@ -4617,7 +4617,7 @@ binding_contract! {
             output: crate::Molecule,
             error: crate::OperationError,
             state: value_returning,
-            operation: "with_2d_coordinates_with_params",
+            operation: "add_2d_coordinates_with_params",
             signature: for<'a, 'b> fn(
                 &'a crate::Molecule,
                 &'b crate::Coordinate2DParams,
@@ -4661,20 +4661,20 @@ binding_contract! {
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.compute_2d_coordinates_", item: callable, owner: molecule,
-            rust: crate::Molecule::compute_2d_coordinates_, python: "compute_2d_coordinates_", javascript: "compute2dCoordinates",
+            semantic_id: "Molecule.add_2d_coordinates_", item: callable, owner: molecule,
+            rust: crate::Molecule::add_2d_coordinates_, python: "add_2d_coordinates_", javascript: "add2dCoordinates_",
             feature: "cap-depict", kind: instance,
             parameters: [], output: (), error: crate::OperationError,
-            state: in_place, operation: "compute_2d_coordinates_",
+            state: in_place, operation: "add_2d_coordinates_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.compute_2d_coordinates_with_params_", item: callable, owner: molecule,
-            rust: crate::Molecule::compute_2d_coordinates_with_params_, python: "compute_2d_coordinates_with_params_", javascript: "compute2dCoordinatesWithParams",
+            semantic_id: "Molecule.add_2d_coordinates_with_params_", item: callable, owner: molecule,
+            rust: crate::Molecule::add_2d_coordinates_with_params_, python: "add_2d_coordinates_with_params_", javascript: "add2dCoordinatesWithParams_",
             feature: "cap-depict", kind: instance,
             parameters: [{ name: params, type: &crate::Coordinate2DParams, default: required }], output: (), error: crate::OperationError,
-            state: in_place, operation: "compute_2d_coordinates_with_params_",
+            state: in_place, operation: "add_2d_coordinates_with_params_",
             signature: for<'a, 'b> fn(&'a mut crate::Molecule, &'b crate::Coordinate2DParams) -> Result<(), crate::OperationError>,
         },
         #[cfg(feature = "cap-depict")]
@@ -11013,9 +11013,9 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.with_kekulized_bonds_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::with_kekulized_bonds_with_params,python:"with_kekulized_bonds_with_params",javascript:"withKekulizedBondsWithParams",feature:"cap-batch",requires:["cap-kekulize"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::KekulizeParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::KekulizeParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.with_2d_coordinates",item:callable,owner:type_,rust:crate::MoleculeBatch::with_2d_coordinates,python:"with_2d_coordinates",javascript:"with2dCoordinates",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.add_2d_coordinates",item:callable,owner:type_,rust:crate::MoleculeBatch::add_2d_coordinates,python:"add_2d_coordinates",javascript:"add2dCoordinates",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.with_2d_coordinates_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::with_2d_coordinates_with_params,python:"with_2d_coordinates_with_params",javascript:"with2dCoordinatesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::Coordinate2DParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::Coordinate2DParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.add_2d_coordinates_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::add_2d_coordinates_with_params,python:"add_2d_coordinates_with_params",javascript:"add2dCoordinatesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::Coordinate2DParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::Coordinate2DParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchQueryParams",item:type,owner:type_,rust:crate::BatchQueryParams,python:"BatchQueryParams",javascript:"BatchQueryParams",feature:"cap-batch",status:native,
             python_configuration: [

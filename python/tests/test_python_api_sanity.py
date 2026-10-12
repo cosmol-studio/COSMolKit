@@ -128,7 +128,7 @@ def test_molecule_supports_python_pickle_roundtrip():
     mol = (
         cosmolkit.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]")
         .with_hydrogens()
-        .with_2d_coordinates()
+        .add_2d_coordinates()
     )
 
     restored = pickle.loads(pickle.dumps(mol))
@@ -156,7 +156,7 @@ def test_molecule_pickle_rebuild_rejects_invalid_state():
 
 def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
     base = cosmolkit.Molecule.from_smiles("CCO")
-    mol2d = base.with_2d_coordinates()
+    mol2d = base.add_2d_coordinates()
     assert not base.has_2d_coordinates()
     assert mol2d.has_2d_coordinates()
     assert mol2d.num_3d_conformers() == 0
@@ -196,7 +196,7 @@ $$$$
     assert restored3d.num_3d_conformers() == 1
     assert np.allclose(restored3d.coordinates_3d(), mol3d.coordinates_3d())
 
-    both = mol3d.with_2d_coordinates()
+    both = mol3d.add_2d_coordinates()
     assert both.has_2d_coordinates()
     assert both.num_3d_conformers() == 1
     assert_coord_rows_match_atoms(both)
@@ -474,7 +474,7 @@ def test_builder_build_and_explicit_sanitize_boundaries():
 
 
 def test_read_mol_stops_at_m_end_and_ignores_trailing_sdf_text(tmp_path: Path):
-    mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
+    mol2d = cosmolkit.Molecule.from_smiles("CCO").add_2d_coordinates()
     mol_path = tmp_path / "ethanol.mol"
     sdf_text = mol2d.to_sdf_2d(format=cosmolkit.SdfFormat.V2000).replace(
         "$$$$\n",
@@ -855,7 +855,7 @@ def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
 
 
 def test_draw_and_substructure_bindings_are_available():
-    mol = cosmolkit.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+    mol = cosmolkit.Molecule.from_smiles("c1ccccc1O").add_2d_coordinates()
     png = mol.to_png(width=200, height=150)
     assert bytes(png).startswith(b"\x89PNG\r\n\x1a\n")
 
@@ -971,7 +971,7 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     masked = batch[batch.valid_mask()]
     assert len(masked) == 3
 
-    prepared = batch.with_hydrogens(errors="keep").with_2d_coordinates(errors="keep")
+    prepared = batch.with_hydrogens(errors="keep").add_2d_coordinates(errors="keep")
     assert prepared.valid_mask() == [True, True, False, True]
     mols = prepared.to_list()
     assert mols[2] is None

@@ -50,7 +50,7 @@ test("all ten batch transforms preserve value semantics and complete record erro
     const batch=b.MoleculeBatch.fromSmilesList(["CCO","c1ccccc1"]);
     const execution=new b.BatchParams(),keep=new b.BatchParams(b.BatchErrorMode.KeepErrors);
     const before=batch.toList().map(v=>v.toSmiles());
-    const calls=[["sanitize",new b.SanitizeParams()],["withHydrogens",new b.AddHsParams()],["withoutHydrogens",new b.RemoveHsParams()],["withKekulizedBonds",new b.KekulizeParams()],["with2dCoordinates",new b.Coordinate2DParams()]];
+    const calls=[["sanitize",new b.SanitizeParams()],["withHydrogens",new b.AddHsParams()],["withoutHydrogens",new b.RemoveHsParams()],["withKekulizedBonds",new b.KekulizeParams()],["add2dCoordinates",new b.Coordinate2DParams()]];
     for(const [name,params] of calls){
         const standard=batch[name](),explicit=batch[name+"WithParams"](params,execution);
         assert.deepEqual(standard.validMask(),[true,true]);assert.deepEqual(explicit.validMask(),[true,true]);
@@ -59,7 +59,7 @@ test("all ten batch transforms preserve value semantics and complete record erro
     }
     assert.deepEqual(batch.withHydrogens().toList().map(v=>v.numAtoms()),[9,12]);
     assert.deepEqual(batch.withHydrogens().withoutHydrogens().toList().map(v=>v.numAtoms()),[3,6]);
-    assert.equal(batch.with2dCoordinates().toList()[0].coordinates2d().length,6);
+    assert.equal(batch.add2dCoordinates().toList()[0].coordinates2d().length,6);
     assert.equal(batch.toList()[0].coordinates2d().length,0);
     const bad=new b.AddHsParams(false,false,false,false,[99]);
     assert.throws(()=>batch.withHydrogensWithParams(bad,execution),e=>{

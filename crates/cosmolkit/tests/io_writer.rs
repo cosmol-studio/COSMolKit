@@ -728,7 +728,7 @@ fn molblock_writer_marks_rdkit_unspecified_double_bond_as_crossed() {
 fn molblock_writer_marks_unspecified_exocyclic_imine_as_crossed_like_rdkit() {
     let molecule = Molecule::from_smiles("CN=c1ccn(C)cc1")
         .unwrap()
-        .with_2d_coordinates()
+        .add_2d_coordinates()
         .unwrap();
     let v2000 = canonical_mol(
         &molecule,
@@ -760,7 +760,7 @@ fn molblock_writer_crosses_only_rdkit_eligible_unspecified_ring_double_bonds() {
     for (smiles, should_cross) in [("C1C=CCCCC1", false), ("C1C=CCCCCC1", true)] {
         let molecule = Molecule::from_smiles(smiles)
             .unwrap()
-            .with_2d_coordinates()
+            .add_2d_coordinates()
             .unwrap();
         let v3000 = canonical_mol(
             &molecule,

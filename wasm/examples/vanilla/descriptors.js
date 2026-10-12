@@ -13,7 +13,7 @@ console.table({
   heavyAtoms: molecule.numHeavyAtoms(),
 });
 
-const withCoordinates = molecule.with2dCoordinates();
+const withCoordinates = molecule.add2dCoordinates();
 console.log("2D coordinate values:", withCoordinates.coordinates2d());
 
 withCoordinates.free();

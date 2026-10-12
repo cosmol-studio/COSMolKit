@@ -4,6 +4,7 @@
 //! does not construct a live `Molecule`; the facade is responsible for
 //! installing the returned values into its runtime state.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cosmolkit_cx::parse_cx_extensions_with_atom_window;
@@ -275,10 +276,10 @@ impl Default for SmilesParseParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreprocessedSmiles {
-    smiles: String,
-    name: String,
-    cx_part: String,
+struct PreprocessedSmiles<'a> {
+    smiles: Cow<'a, str>,
+    name: &'a str,
+    cx_part: &'a str,
 }
 
 fn replacement_key_is_cyclic(
@@ -300,10 +301,10 @@ fn replacement_key_is_cyclic(
     cyclic
 }
 
-fn apply_replacements(
-    input: &str,
+fn apply_replacements<'a>(
+    input: &'a str,
     replacements: &BTreeMap<String, String>,
-) -> Result<String, SmilesParseError> {
+) -> Result<Cow<'a, str>, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION preprocessSmiles (replacement loop)
     // RDKit✔️✔️:   if (!params.replacements.empty()) {
     // RDKit✔️✔️:     std::string smi = lsmiles;
@@ -327,7 +328,8 @@ fn apply_replacements(
         return Err(SmilesParseError::EmptyReplacementKey);
     }
     if replacements.is_empty() {
-        return Ok(input.to_owned());
+        // No rewrite owns or changes the input; borrow its exact bytes.
+        return Ok(Cow::Borrowed(input));
     }
     let cyclic_keys = replacements
         .keys()
@@ -353,7 +355,7 @@ fn apply_replacements(
             }
         }
         if !changed {
-            return Ok(smiles);
+            return Ok(Cow::Owned(smiles));
         }
         if let Some(key) = cyclic_keys.iter().find(|key| smiles.contains(key.as_str())) {
             return Err(SmilesParseError::ReplacementCycle { key: key.clone() });
@@ -361,10 +363,10 @@ fn apply_replacements(
     }
 }
 
-fn preprocess_smiles(
-    input: &str,
+fn preprocess_smiles<'a>(
+    input: &'a str,
     params: &SmilesParseParams,
-) -> Result<PreprocessedSmiles, SmilesParseError> {
+) -> Result<PreprocessedSmiles<'a>, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION preprocessSmiles (name/CX partition)
     // RDKit✔️✔️:   cxPart = "";
     // RDKit✔️✔️:   name = "";
@@ -386,27 +388,30 @@ fn preprocess_smiles(
     // RDKit✔️✔️:     lsmiles = smiles;
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION preprocessSmiles (name/CX partition)
-    let mut smiles = String::new();
-    let mut name = String::new();
-    let mut cx_part = String::new();
+    // Partition with the same byte boundaries and trim rules, borrowing until
+    // rewriting or model storage actually needs ownership. This avoids two
+    // graph-text copies on the ordinary no-replacements path.
+    let mut smiles = "";
+    let mut name = "";
+    let mut cx_part = "";
     if params.parse_name && !params.allow_cxsmiles {
         if let Some(split) = input.find([' ', '\t'])
             && split != 0
         {
-            smiles = input[..split].to_owned();
-            name = input[split..].trim().to_owned();
+            smiles = &input[..split];
+            name = input[split..].trim();
         }
     } else if params.allow_cxsmiles
         && let Some(split) = input.find([' ', '\t'])
         && split != 0
     {
-        smiles = input[..split].to_owned();
-        cx_part = input[split..].trim().to_owned();
+        smiles = &input[..split];
+        cx_part = input[split..].trim();
     }
     if smiles.is_empty() {
-        smiles = input.to_owned();
+        smiles = input;
     }
-    smiles = apply_replacements(&smiles, &params.replacements)?;
+    let smiles = apply_replacements(smiles, &params.replacements)?;
     Ok(PreprocessedSmiles {
         smiles,
         name,
@@ -1130,6 +1135,11 @@ fn close_ring_closures(
     // RDKit✔️✔️:             matchedBond->setBondType(bondT);
     // RDKit✔️✔️:           }
     // END RDKIT CPP FUNCTION CloseMolRings (pair validation and bond selection)
+    // With no pending closures the loop below has no effects or errors. Avoid
+    // scanning/hashing every existing bond just to discard the unused set.
+    if closures.is_empty() {
+        return Ok(());
+    }
     closures.sort_by_key(|closure| closure.ring);
     let mut bond_pairs = bonds
         .iter()
@@ -1917,7 +1927,7 @@ fn parse_smiles_stages(
                 SmilesParseError::Cx("CX atom count exceeds source unsigned32 domain".into())
             })?;
             let progress =
-                cosmolkit_cx::parse_cx_extensions_progress_with_atom_window(&cx, 0, atom_count);
+                cosmolkit_cx::parse_cx_extensions_progress_with_atom_window(cx, 0, atom_count);
             if cx_lowering::has_enhanced_membership_collision(
                 &progress,
                 record.topology.atoms.len(),
@@ -1938,7 +1948,7 @@ fn parse_smiles_stages(
                     .set_prop("_CXSMILES_Data", &cx[..cursor])?;
                 // Both new rejection forms suppress name parsing in lax mode.
             } else {
-                match parse_cx_extensions_with_atom_window(&cx, 0, record.topology.atoms.len()) {
+                match parse_cx_extensions_with_atom_window(cx, 0, record.topology.atoms.len()) {
                     Ok(parsed) => {
                         match cx_lowering::apply_cx_to_smiles_record(&mut record, &parsed) {
                             Ok(()) => {
@@ -1952,7 +1962,7 @@ fn parse_smiles_stages(
                                         .map(str::trim)
                                         .filter(|name| !name.is_empty())
                                 {
-                                    name = parsed_name.to_owned();
+                                    name = parsed_name;
                                 }
                             }
                             Err(error) if params.strict_cxsmiles => return Err(error),
@@ -1976,7 +1986,7 @@ fn parse_smiles_stages(
                 "CXSMILES extension does not start with | and parseName=false".into(),
             ));
         } else if params.parse_name {
-            name = cx.trim().to_owned();
+            name = cx.trim();
         }
     }
     apply_parser_wedge_stereo(&mut record)?;
@@ -2056,7 +2066,7 @@ fn parse_smiles_stages(
         cleanup_after_parsing_impl(&mut record, complete)?;
     }
     if !name.is_empty() {
-        record.properties = record.properties.with_name(&name);
+        record.properties = record.properties.with_name(name);
     }
     Ok(record)
 }
@@ -2257,6 +2267,65 @@ fn apply_parser_atrop_stereo(record: &mut SmilesRecord) -> Result<(), SmilesPars
 mod tests {
     use super::*;
     use cosmolkit_model::{BondStereo, PropertyValue, StereoGroupKind, SubstanceGroupKind};
+
+    #[test]
+    fn preprocessing_borrows_input_without_changing_partition_rules() {
+        for parse_name in [false, true] {
+            for allow_cxsmiles in [false, true] {
+                let params = SmilesParseParams {
+                    parse_name,
+                    allow_cxsmiles,
+                    ..Default::default()
+                };
+                for input in ["", "CCO", " CCO", "\tCCO", "CCO\n"] {
+                    let parsed = preprocess_smiles(input, &params).unwrap();
+                    assert!(matches!(parsed.smiles, Cow::Borrowed(_)));
+                    assert_eq!(parsed.smiles, input);
+                    assert_eq!((parsed.name, parsed.cx_part), ("", ""));
+                }
+                for suffix in ["ethanol", "|(0,0,0;1,0,0;2,0,0)| ethanol", "乙醇"] {
+                    let input = format!("CCO\t {suffix}  ");
+                    let parsed = preprocess_smiles(&input, &params).unwrap();
+                    assert!(matches!(parsed.smiles, Cow::Borrowed(_)));
+                    let expected = if allow_cxsmiles {
+                        ("CCO", "", suffix)
+                    } else if parse_name {
+                        ("CCO", suffix, "")
+                    } else {
+                        (input.as_str(), "", "")
+                    };
+                    assert_eq!(
+                        (parsed.smiles.as_ref(), parsed.name, parsed.cx_part),
+                        expected
+                    );
+                }
+            }
+        }
+        let params = SmilesParseParams {
+            replacements: BTreeMap::from([("{A}".into(), "N".into())]),
+            ..Default::default()
+        };
+        let parsed = preprocess_smiles("C{A} |$;{A}$| {A}", &params).unwrap();
+        assert!(matches!(parsed.smiles, Cow::Owned(_)));
+        assert_eq!(parsed.smiles, "CN");
+        assert_eq!((parsed.name, parsed.cx_part), ("", "|$;{A}$| {A}"));
+    }
+
+    #[test]
+    fn empty_ring_closure_pass_preserves_existing_bonds_and_placeholders() {
+        let mut record = parse_smiles("CC(O)N", &Default::default()).unwrap();
+        let bonds = record.topology.bonds.clone();
+        let mut placeholders = vec![Vec::new(); record.topology.atoms.len()];
+        close_ring_closures(
+            &record.topology.atoms,
+            &mut record.topology.bonds,
+            &mut [],
+            &mut placeholders,
+        )
+        .unwrap();
+        assert_eq!(record.topology.bonds, bonds);
+        assert!(placeholders.iter().all(Vec::is_empty));
+    }
 
     #[test]
     fn bond_and_separator_tokens_require_the_source_grammar_operands() {

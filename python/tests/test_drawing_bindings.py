@@ -88,9 +88,9 @@ def test_default_and_configured_layout_are_value_transforms():
     configured_source = cosmolkit.Molecule.from_smiles("CCO")
     before = ("CCO", 3, 2, None)
     assert state(short_source) == state(configured_source) == before
-    short = short_source.with_2d_coordinates()
+    short = short_source.add_2d_coordinates()
     assert state(short_source) == before
-    configured = configured_source.with_2d_coordinates_with_params(cosmolkit.Coordinate2DParams())
+    configured = configured_source.add_2d_coordinates_with_params(cosmolkit.Coordinate2DParams())
     assert state(configured_source) == before
     assert coordinate_bits(short.coordinates_2d()) == coordinate_bits(configured.coordinates_2d())
     rows = short.coordinates_2d()
@@ -102,7 +102,7 @@ def test_explicit_two_atom_map_forwarding_preserves_original():
     source = cosmolkit.Molecule.from_smiles("CCO")
     before = state(source)
     params = cosmolkit.Coordinate2DParams({0: [-0.0, 0.0], 1: [1.5, 0.0]}, force_rdkit=True)
-    positioned = source.with_2d_coordinates_with_params(params)
+    positioned = source.add_2d_coordinates_with_params(params)
     assert state(source) == before == ("CCO", 3, 2, None)
     assert positioned.num_atoms() == 3 and positioned.num_bonds() == 2
     rows = positioned.coordinates_2d()
@@ -114,7 +114,7 @@ def test_explicit_two_atom_map_forwarding_preserves_original():
 @pytest.mark.parametrize("method", ["to_svg", "to_png"])
 @pytest.mark.parametrize("dimensions", [(0, 80), (120, 0)])
 def test_drawing_error_typed_payload_and_absent_cause(method: Literal["to_svg", "to_png"], dimensions: tuple[int, int]) -> None:
-    source = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
+    source = cosmolkit.Molecule.from_smiles("CCO").add_2d_coordinates()
     before = state(source)
     with pytest.raises(cosmolkit.DrawingError) as caught:
         _ = (source.to_svg if method == "to_svg" else source.to_png)(*dimensions)
@@ -132,7 +132,7 @@ def test_operation_error_keeps_actual_source_chain():
     before = state(source)
     params = cosmolkit.Coordinate2DParams({0: [0.0, 0.0], 99: [1.5, 0.0]}, force_rdkit=True)
     with pytest.raises(cosmolkit.OperationError) as caught:
-        _ = source.with_2d_coordinates_with_params(params)
+        _ = source.add_2d_coordinates_with_params(params)
     assert state(source) == before
     error = caught.value
     assert isinstance(error, ValueError)
@@ -148,7 +148,7 @@ def test_operation_error_keeps_actual_source_chain():
 @pytest.mark.parametrize("suffix", ["svg", "png"])
 @pytest.mark.parametrize("dimensions", [(120, 80), (300, 200)])
 def test_file_methods_return_none_and_exact_bytes(tmp_path: Path, suffix: Literal["svg", "png"], dimensions: tuple[int, int]) -> None:
-    source = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
+    source = cosmolkit.Molecule.from_smiles("CCO").add_2d_coordinates()
     before = state(source)
     rendered = source.to_svg(*dimensions).encode("utf-8") if suffix == "svg" else source.to_png(*dimensions)
     assert state(source) == before
@@ -208,7 +208,7 @@ def test_file_tilde_expansion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, s
 def test_svg_png_exact_repeats_and_observable_state(smiles: str, dimensions: tuple[int, int], positioned: bool) -> None:
     source = cosmolkit.Molecule.from_smiles(smiles)
     if positioned:
-        source = source.with_2d_coordinates()
+        source = source.add_2d_coordinates()
     before = state(source)
     svg_outputs: list[str] = []
     png_outputs: list[bytes] = []
@@ -247,7 +247,7 @@ def test_svg_png_exact_repeats_and_observable_state(smiles: str, dimensions: tup
     (("120", 80), TypeError), ((), TypeError), ((120,), TypeError),
 ])
 def test_required_dimensions_and_native_extraction(tmp_path: Path, method: Literal["to_svg", "to_png", "write_svg", "write_png"], arguments: tuple[object, ...], category: type[OverflowError] | type[TypeError]) -> None:
-    source = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
+    source = cosmolkit.Molecule.from_smiles("CCO").add_2d_coordinates()
     before = state(source)
     path = tmp_path / "unopened"
     args = (str(path), *arguments) if method.startswith("write_") else arguments

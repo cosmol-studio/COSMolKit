@@ -41,8 +41,8 @@ def test_selected_stub_classes_and_methods():
             methods.setdefault(node.name, node)
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]",
-                "has_2d_coordinates": "builtins.bool", "compute_2d_coordinates_": "None",
-                "compute_2d_coordinates_with_params_": "None", "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
+                "has_2d_coordinates": "builtins.bool", "add_2d_coordinates_": "None",
+                "add_2d_coordinates_with_params_": "None", "add_2d_coordinates": "Molecule", "add_2d_coordinates_with_params": "Molecule",
                 "to_svg": "builtins.str", "to_png": "builtins.bytes", "write_svg": "None", "write_png": "None"}
     expected.update({"new": "Molecule", "from_smiles_with_params": "Molecule", "to_smiles_with_params": "builtins.str",
         "fingerprint_morgan": "Fingerprint", "fingerprint_morgan_sparse": "SparseBitFingerprint",
@@ -64,13 +64,13 @@ def test_selected_stub_classes_and_methods():
         runtime = inspect.signature(descriptor)
         assert list(runtime.parameters) == names
         assert all(cast(object, p.default) is inspect.Parameter.empty for p in runtime.parameters.values())
-    for name in ("has_2d_coordinates", "compute_2d_coordinates_"):
+    for name in ("has_2d_coordinates", "add_2d_coordinates_"):
         assert [a.arg for a in methods[name].args.args] == ["self"]
         assert list(inspect.signature(getattr(cosmolkit.Molecule, name)).parameters) == ["self"]
-    inplace = methods["compute_2d_coordinates_with_params_"]
+    inplace = methods["add_2d_coordinates_with_params_"]
     assert [a.arg for a in inplace.args.args] == ["self", "params"]
     assert ast.unparse(required_expression(inplace.args.args[1].annotation)) == "Coordinate2DParams"
-    configured = methods["with_2d_coordinates_with_params"]
+    configured = methods["add_2d_coordinates_with_params"]
     assert [a.arg for a in configured.args.args] == ["self", "params"]
     assert ast.unparse(required_expression(configured.args.args[1].annotation)) == "Coordinate2DParams"
 

@@ -96,14 +96,14 @@ pub(crate) use runtime::context::{OpParts, PreservationProof};
 pub(crate) use runtime::context::{PendingMolecule, PendingResult, ResultFinalizer};
 pub(crate) use runtime::multiple::MultiOutputOpParts;
 pub use runtime::multiple::StereoisomerIterator;
+#[cfg(feature = "cap-depict")]
+pub(crate) use runtime::registry::Add2dCoordinatesAccess;
 #[cfg(cosmolkit_runtime_privacy_probe)]
 pub(crate) use runtime::registry::LazyOutputProbeAccess;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use runtime::registry::PotentialStereoAccess;
 #[cfg(feature = "cap-sanitize")]
 pub(crate) use runtime::registry::SanitizeAccess;
-#[cfg(feature = "cap-depict")]
-pub(crate) use runtime::registry::With2dCoordinatesAccess;
 #[cfg(feature = "cap-aromaticity")]
 pub(crate) use runtime::registry::WithAssignedAromaticityAccess;
 #[cfg(feature = "cap-radicals")]

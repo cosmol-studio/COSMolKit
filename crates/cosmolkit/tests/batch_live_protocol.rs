@@ -128,7 +128,7 @@ fn batch_configuration_is_preserved_across_transforms() {
         .with_progress_bar(Some(false));
 
     let transformed = batch
-        .with_2d_coordinates()
+        .add_2d_coordinates()
         .expect("2d coordinates should succeed");
 
     assert_eq!(transformed.parallel_jobs(), Some(2));
@@ -157,7 +157,7 @@ fn transform_options_preserve_batch_configuration() {
         .with_progress_bar(Some(true));
 
     let transformed = batch
-        .with_2d_coordinates_with_params(
+        .add_2d_coordinates_with_params(
             &Coordinate2DParams::default(),
             &BatchParams {
                 errors: Some(BatchErrorMode::Strict),
@@ -296,10 +296,10 @@ fn every_authorized_transform_matches_its_scalar_owner_and_leaves_input_unchange
                 .collect(),
         ),
         (
-            batch.with_2d_coordinates().unwrap(),
+            batch.add_2d_coordinates().unwrap(),
             input
                 .iter()
-                .map(|m| m.with_2d_coordinates().unwrap())
+                .map(|m| m.add_2d_coordinates().unwrap())
                 .collect(),
         ),
     ] {

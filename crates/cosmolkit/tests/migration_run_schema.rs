@@ -291,13 +291,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     expected.push("Molecule.has_2d_coordinates");
     if cfg!(feature = "cap-depict") {
         expected.extend([
-            "Molecule.with_2d_coordinates",
-            "Molecule.with_2d_coordinates_with_params",
+            "Molecule.add_2d_coordinates",
+            "Molecule.add_2d_coordinates_with_params",
             "types.DrawingError",
             "Molecule.to_svg",
             "Molecule.to_png",
-            "Molecule.compute_2d_coordinates_",
-            "Molecule.compute_2d_coordinates_with_params_",
+            "Molecule.add_2d_coordinates_",
+            "Molecule.add_2d_coordinates_with_params_",
             "types.DrawingWriteError",
             "Molecule.write_svg",
             "Molecule.write_png",
@@ -2038,8 +2038,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         }
         if cfg!(feature = "cap-depict") {
             expected.extend([
-                "MoleculeBatch.with_2d_coordinates",
-                "MoleculeBatch.with_2d_coordinates_with_params",
+                "MoleculeBatch.add_2d_coordinates",
+                "MoleculeBatch.add_2d_coordinates_with_params",
             ]);
         }
         expected.extend(["types.BatchQueryParams"]);
@@ -2961,8 +2961,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.without_hydrogens_with_params"
                 | "MoleculeBatch.with_kekulized_bonds"
                 | "MoleculeBatch.with_kekulized_bonds_with_params"
-                | "MoleculeBatch.with_2d_coordinates"
-                | "MoleculeBatch.with_2d_coordinates_with_params"
+                | "MoleculeBatch.add_2d_coordinates"
+                | "MoleculeBatch.add_2d_coordinates_with_params"
                 | "types.BatchQueryParams"
                 | "MoleculeBatch.to_smiles_list"
                 | "MoleculeBatch.to_smiles_list_with_params"

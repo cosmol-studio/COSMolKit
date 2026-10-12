@@ -36,8 +36,8 @@ fn next_2d_conformer_id(
         .ok_or(crate::Coordinate2DError::ConformerIdOverflow { max_id })
 }
 
-#[mol_op_body(with_2d_coordinates, parts)]
-pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<(), OperationError> {
+#[mol_op_body(add_2d_coordinates, parts)]
+pub(crate) fn add_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<(), OperationError> {
     let topology = parts.topology()?;
     let properties = parts.properties()?;
     let conformer = cosmolkit_depict::compute_2d_coordinates(topology, properties, params)
@@ -156,7 +156,7 @@ mod prepared_property_tests {
                         ..Default::default()
                     };
                     let before_params = params.clone();
-                    let result = source.with_2d_coordinates_with_params(&params);
+                    let result = source.add_2d_coordinates_with_params(&params);
                     calls += 1;
                     // Both complete four-block source/peer snapshots precede Result inspection.
                     for molecule in [&source, &peer] {
@@ -281,7 +281,7 @@ mod prepared_property_tests {
         params.coordinate_map.insert(2, [-0.0, 1.0]);
         let params_before = params.clone();
         let map_bits = params.coordinate_map[&2].map(f64::to_bits);
-        let result = source.with_2d_coordinates_with_params(&params);
+        let result = source.add_2d_coordinates_with_params(&params);
         for molecule in [&source, &peer] {
             assert_eq!(identities(molecule), ids);
             assert_eq!(molecule.topology(), &topology);

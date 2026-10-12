@@ -116,7 +116,7 @@ fn prepare_molecule_for_drawing(
         })?;
     }
     if force_coords || prepared.coordinates_2d().is_none() {
-        prepared = prepared.with_2d_coordinates_with_params(&cosmolkit::Coordinate2DParams {
+        prepared = prepared.add_2d_coordinates_with_params(&cosmolkit::Coordinate2DParams {
             canonical_orientation: true,
             ..cosmolkit::Coordinate2DParams::default()
         })?;

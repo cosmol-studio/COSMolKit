@@ -271,17 +271,17 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
     }
     #[cfg(feature = "cap-depict")]
-    pub fn with_2d_coordinates(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner.with_2d_coordinates().map(|inner| Self { inner })
+    pub fn add_2d_coordinates(&self) -> Result<Self, ck::BatchValidationError> {
+        self.inner.add_2d_coordinates().map(|inner| Self { inner })
     }
     #[cfg(feature = "cap-depict")]
-    pub fn with_2d_coordinates_with_params(
+    pub fn add_2d_coordinates_with_params(
         &self,
         options: &ck::Coordinate2DParams,
         params: &ck::BatchParams,
     ) -> Result<Self, ck::BatchValidationError> {
         self.inner
-            .with_2d_coordinates_with_params(options, params)
+            .add_2d_coordinates_with_params(options, params)
             .map(|inner| Self { inner })
     }
 }
@@ -363,8 +363,8 @@ mod transform_tests {
             ck::KekulizeParams::default()
         );
         compare!(
-            with_2d_coordinates,
-            with_2d_coordinates_with_params,
+            add_2d_coordinates,
+            add_2d_coordinates_with_params,
             ck::Coordinate2DParams::default()
         );
         let invalid = ck::AddHsParams {

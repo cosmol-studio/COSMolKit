@@ -1253,9 +1253,9 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-depict")]
-    op with_2d_coordinates(params: &crate::Coordinate2DParams) {
-        method: with_2d_coordinates_with_params,
-        impl_fn: crate::ops::depict::with_2d_coordinates_impl,
+    op add_2d_coordinates(params: &crate::Coordinate2DParams) {
+        method: add_2d_coordinates_with_params,
+        impl_fn: crate::ops::depict::add_2d_coordinates_impl,
         domain: coordinate,
         kind: weak,
         access: {
@@ -1278,11 +1278,11 @@ molecule_ops! {
         parity_profile: "compute_2d_coordinates_rdkit",
         io_roundtrip: true,
         invariant_profile: "coordinate_2d_layout",
-        default_method: with_2d_coordinates,
+        default_method: add_2d_coordinates,
         default_args: [&crate::Coordinate2DParams::default()],
         inplace: true,
-        inplace_method: compute_2d_coordinates_with_params_,
-        default_inplace_method: compute_2d_coordinates_,
+        inplace_method: add_2d_coordinates_with_params_,
+        default_inplace_method: add_2d_coordinates_,
     }
 
     #[cfg(test)]
