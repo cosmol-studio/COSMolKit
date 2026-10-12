@@ -3524,7 +3524,10 @@ fn stb_real_to_str(value: f64, mut fraction_digits: u32) -> StbGeneralValue {
     fraction_digits = if fraction_digits & 0x8000_0000 != 0 {
         (fraction_digits & 0x07ff_ffff) + 1
     } else {
-        tens as u32 + fraction_digits
+        // Gemmi✔️✔️:    frac_digits = (frac_digits & 0x80000000) ? ((frac_digits & 0x7ffffff) + 1) : (tens + frac_digits);
+        // C converts signed tens to uint32 before this addition. Preserve
+        // its modulo-2^32 arithmetic in checked builds too, at the same cost.
+        (tens as u32).wrapping_add(fraction_digits)
     };
     if fraction_digits < 24 {
         let mut digit_count = if bits >= POWTEN[9] { 10 } else { 1 };

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish RC versions to PyPI and npm (stable releases require a tag push)"
+        description: "Publish RC versions to PyPI, npm and Anaconda.org (stable releases require a tag push)"
         type: boolean
         default: false
 
@@ -91,6 +91,7 @@ jobs:
                       npm pack --dry-run --json "$package_dir"
                       echo "::endgroup::"
                   done
+
             - name: Upload npm presets
               uses: actions/upload-artifact@v4
               with:
@@ -279,7 +280,7 @@ jobs:
                   path: python/dist
 
     publish:
-        name: publish to PyPI and npm
+        name: publish to PyPI, npm and Anaconda.org
         permissions:
             contents: read
             id-token: write
@@ -292,6 +293,7 @@ jobs:
             - build-wasm
 
         steps:
+            - uses: actions/checkout@v4
             - name: Download wheel artifacts
               uses: actions/download-artifact@v4
               with:
@@ -331,3 +333,19 @@ jobs:
                           npm publish --access public --tag "$npm_tag"
                       )
                   done
+
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: "3.12"
+            - run: python -m pip install anaconda-client==1.15.0 conda-package-handling==2.6.0 installer==1.0.1 packaging
+            - name: Package wheels for conda
+              run: python dev/conda/package_wheels.py dist conda-dist
+            - name: Publish to Anaconda.org
+              env:
+                  ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+                  IS_RC: ${{ needs.generate-stubs.outputs.manual_publish_allowed }}
+              run: |
+                  test -n "$ANACONDA_API_TOKEN" || { echo 'Set the ANACONDA_API_TOKEN repository secret.' >&2; exit 1; }
+                  label=main
+                  if [ "$IS_RC" = true ]; then label=rc; fi
+                  anaconda upload --user cosmol-studio --label "$label" conda-dist/*/*.conda

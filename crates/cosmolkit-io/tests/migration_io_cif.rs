@@ -698,6 +698,20 @@ fn gemmi_cif_typed_numeric_formatting_matches_bundled_source_profile() {
 }
 
 #[test]
+fn gemmi_cif_fixed_precision_preserves_unsigned_decimal_exponent_wraparound() {
+    // Bundled stb adds signed tens to uint32 frac_digits before rounding.
+    // Negative exponents must wrap both across zero and below the precision.
+    for (value, expected) in [
+        (0.012_345_6, "0.012346"),
+        (-0.012_345_6, "-0.012346"),
+        (1e-5, "0.000010"),
+        (1e-8, "0.000000"),
+    ] {
+        assert_eq!(format_cif_f64_precision::<6>(value), expected, "{value:?}");
+    }
+}
+
+#[test]
 fn gemmi_cif_general_format_matches_bundled_stb_rounding_and_signs() {
     let f32_tie = 123_456.5_f32;
     assert_eq!(

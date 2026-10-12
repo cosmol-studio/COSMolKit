@@ -12,13 +12,13 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-types = { version = "0.5.0", path = "../cosmolkit-types" }
-cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model" }
-cosmolkit-core = { version = "0.5.0", path = "../cosmolkit-core" }
-cosmolkit-search = { version = "0.5.0", path = "../cosmolkit-search" }
-cosmolkit-smiles = { version = "0.5.0", path = "../cosmolkit-smiles" }
-cosmolkit-cx = { version = "0.5.0", path = "../cosmolkit-cx" }
+cosmolkit-types = { version = "0.5.1-rc.1", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model" }
+cosmolkit-core = { version = "0.5.1-rc.1", path = "../cosmolkit-core" }
+cosmolkit-search = { version = "0.5.1-rc.1", path = "../cosmolkit-search" }
+cosmolkit-smiles = { version = "0.5.1-rc.1", path = "../cosmolkit-smiles" }
+cosmolkit-cx = { version = "0.5.1-rc.1", path = "../cosmolkit-cx" }
 thiserror = "2"
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }

@@ -296,7 +296,8 @@ mod tests {
             UffParameterCause::ParameterTable(source) => source as &(dyn Error + 'static),
             UffParameterCause::Typing(source) => source as &(dyn Error + 'static),
         };
-        assert!(std::ptr::eq(reported, stored));
+        // Trait-object vtable addresses are not stable object identities.
+        assert!(std::ptr::addr_eq(reported, stored));
         reported
     }
 

@@ -12223,7 +12223,9 @@ mod tests {
                 let expected: &(dyn std::error::Error + 'static) = original;
                 let source = std::error::Error::source(error)
                     .expect("table error preserves its original parse cause");
-                assert!(std::ptr::eq(source, expected));
+                assert!(source.is::<MmffParamParseError>());
+                // Trait-object vtable addresses are not stable object identities.
+                assert!(std::ptr::addr_eq(source, expected));
             }
             MmffVdwParseError::MissingHeader => {
                 assert!(std::error::Error::source(error).is_none());

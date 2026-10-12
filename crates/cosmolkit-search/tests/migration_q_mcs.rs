@@ -222,70 +222,80 @@ fn q134_entry_fused_ring_and_tetrahedral_options_reach_final_mapping() {
 
 #[test]
 fn q134_entry_double_bond_stereo_and_unlimited_search_preserve_complete_result() {
-    let coordinates = CoordinateBlock::default();
-    let mut cis = topology(
-        &[Element::F, Element::C, Element::C, Element::CL],
-        &[
-            (0, 1, BondOrder::Single),
-            (1, 2, BondOrder::Double),
-            (2, 3, BondOrder::Single),
-        ],
-    );
-    cis.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
-    cis.bonds[1].set_stereo(BondStereo::Cis).unwrap();
-    let mut trans = cis.clone();
-    trans.bonds[1].set_stereo(BondStereo::Trans).unwrap();
-    let cis_view = target(&cis, &coordinates, None);
-    let trans_view = target(&trans, &coordinates, None);
-    let mut plain = cis.clone();
-    plain.bonds[1].set_stereo(BondStereo::None).unwrap();
-    let plain_view = target(&plain, &coordinates, None);
-    assert_eq!(
-        find_mcs(&[plain_view, plain_view], &McsParameters::default())
-            .unwrap()
-            .bond_count,
-        3
-    );
-    let mut params = McsParameters::default();
-    params.atom_compare_parameters.match_chiral_tag = true;
-    let mut bond_only = params.clone();
-    bond_only.atom_compare_parameters.match_chiral_tag = false;
-    bond_only.bond_compare_parameters.match_stereo = true;
-    let source_bond_only = find_mcs(&[cis_view, cis_view], &bond_only).unwrap();
-    assert_eq!(source_bond_only.bond_count, 3);
-    let same = find_mcs(&[cis_view, cis_view], &params).unwrap();
-    let opposite = find_mcs(&[cis_view, trans_view], &params).unwrap();
-    // The source checks each partial seed. With MatchChiralTag enabled, the
-    // two-bond intermediate has exactly one mapped stereo neighbor and is
-    // rejected even for equal labels, before the three-bond seed can grow.
-    assert_eq!(same.bond_count, 1);
-    assert!(opposite.bond_count <= same.bond_count);
+    // Unoptimized recursive matching of the 1000-atom path exceeds libtest's
+    // default thread stack. Keep the complete input and result assertions.
+    std::thread::Builder::new()
+        .name("mcs-long-chain-regression".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            let coordinates = CoordinateBlock::default();
+            let mut cis = topology(
+                &[Element::F, Element::C, Element::C, Element::CL],
+                &[
+                    (0, 1, BondOrder::Single),
+                    (1, 2, BondOrder::Double),
+                    (2, 3, BondOrder::Single),
+                ],
+            );
+            cis.bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+            cis.bonds[1].set_stereo(BondStereo::Cis).unwrap();
+            let mut trans = cis.clone();
+            trans.bonds[1].set_stereo(BondStereo::Trans).unwrap();
+            let cis_view = target(&cis, &coordinates, None);
+            let trans_view = target(&trans, &coordinates, None);
+            let mut plain = cis.clone();
+            plain.bonds[1].set_stereo(BondStereo::None).unwrap();
+            let plain_view = target(&plain, &coordinates, None);
+            assert_eq!(
+                find_mcs(&[plain_view, plain_view], &McsParameters::default())
+                    .unwrap()
+                    .bond_count,
+                3
+            );
+            let mut params = McsParameters::default();
+            params.atom_compare_parameters.match_chiral_tag = true;
+            let mut bond_only = params.clone();
+            bond_only.atom_compare_parameters.match_chiral_tag = false;
+            bond_only.bond_compare_parameters.match_stereo = true;
+            let source_bond_only = find_mcs(&[cis_view, cis_view], &bond_only).unwrap();
+            assert_eq!(source_bond_only.bond_count, 3);
+            let same = find_mcs(&[cis_view, cis_view], &params).unwrap();
+            let opposite = find_mcs(&[cis_view, trans_view], &params).unwrap();
+            // The source checks each partial seed. With MatchChiralTag enabled, the
+            // two-bond intermediate has exactly one mapped stereo neighbor and is
+            // rejected even for equal labels, before the three-bond seed can grow.
+            assert_eq!(same.bond_count, 1);
+            assert!(opposite.bond_count <= same.bond_count);
 
-    let long = path(1000);
-    let long_view = target(&long, &coordinates, None);
-    params.atom_compare_parameters.match_chiral_tag = false;
-    // Timeout uses source microseconds, not the former accidental nanoseconds.
-    // A 1000-atom path finishes well below one second on ordinary machines;
-    // wall-clock-dependent cancellation is tested with the private injected
-    // clock boundary instead of relying on that unit-conversion defect.
-    params.timeout = 0;
-    let timed = find_mcs(&[long_view, long_view], &params).unwrap();
-    assert!(timed.completed);
-    assert_eq!(timed.atom_count, 1000);
-    assert_eq!(timed.bond_count, 999);
-    assert!(timed.query.is_some());
+            let long = path(1000);
+            let long_view = target(&long, &coordinates, None);
+            params.atom_compare_parameters.match_chiral_tag = false;
+            // Timeout uses source microseconds, not the former accidental nanoseconds.
+            // A 1000-atom path finishes well below one second on ordinary machines;
+            // wall-clock-dependent cancellation is tested with the private injected
+            // clock boundary instead of relying on that unit-conversion defect.
+            params.timeout = 0;
+            let timed = find_mcs(&[long_view, long_view], &params).unwrap();
+            assert!(timed.completed);
+            assert_eq!(timed.atom_count, 1000);
+            assert_eq!(timed.bond_count, 999);
+            assert!(timed.query.is_some());
 
-    params.store_all = true;
-    let timed_all = find_mcs(&[long_view, long_view], &params).unwrap();
-    assert!(timed_all.completed);
-    assert_eq!(timed_all.atom_count, 1000);
-    assert_eq!(timed_all.bond_count, 999);
-    assert!(timed_all.query.is_none());
-    assert!(!timed_all.degenerate.is_empty());
-    assert!(
-        timed_all
-            .degenerate
-            .values()
-            .all(|graph| graph.num_bonds() == timed_all.bond_count)
-    );
+            params.store_all = true;
+            let timed_all = find_mcs(&[long_view, long_view], &params).unwrap();
+            assert!(timed_all.completed);
+            assert_eq!(timed_all.atom_count, 1000);
+            assert_eq!(timed_all.bond_count, 999);
+            assert!(timed_all.query.is_none());
+            assert!(!timed_all.degenerate.is_empty());
+            assert!(
+                timed_all
+                    .degenerate
+                    .values()
+                    .all(|graph| graph.num_bonds() == timed_all.bond_count)
+            );
+        })
+        .expect("spawn MCS regression thread")
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
 }

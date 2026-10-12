@@ -8303,7 +8303,8 @@ mod fragment_smarts_construct_source_tests {
         assert_eq!(a.len(), 3);
         assert_eq!(b.len(), 3);
         assert!(!r.is_initialized());
-        assert_eq!(r.num_rings(), 0);
+        assert!(r.atom_rings().is_empty());
+        assert!(r.bond_rings().is_empty());
     }
     #[test]
     fn property_cache_updates_excluded_atoms_before_any_traversal() {
