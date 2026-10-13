@@ -41,8 +41,32 @@ class NativeTasks(unittest.TestCase):
             value=geometry(mol,task,dict(variant="MMFF94" if task.startswith("mmff") else "UFF",
                 iterations=2,threshold=100.0,ignore_interfragment=True,add_hs=True,seed=17,
                 fixed_first=False,force_tolerance=1e-4,energy_tolerance=1e-6,
-                coordinate_update="initialize_distances",optimizer_observation="isolated_queries_v1"))
+                coordinate_update="initialize_distances",optimizer_observation=(
+                    "retained_optimizer_v1" if task == "uff_optimize" else "isolated_queries_v1")))
             self.assertTrue(value[0])
+
+    def test_uff_optimizer_energy_comes_from_the_field_that_was_minimized(self):
+        mol = Chem.MolFromSmiles("CP(Br)(c1ccccc1)(c1ccccc1)c1ccccc1")
+        p = dict(variant="UFF", iterations=2, threshold=100.,
+                 ignore_interfragment=True, add_hs=True, seed=17,
+                 optimizer_observation="retained_optimizer_v1")
+        direct = with_coordinates(Chem.AddHs(mol),17,1)
+        original, outcomes = conformers(direct), []
+        for _ in range(2):
+            # Exact FFConvenience.h::OptimizeMolecule sequence, including
+            # querying the SAME field after minimize rather than rebuilding it.
+            field = FF.UFFGetMoleculeForceField(direct,vdwThresh=100.,ignoreInterfragInteractions=True)
+            field.Initialize()
+            status = field.Minimize(maxIts=2)
+            outcomes.append([[status,field.CalcEnergy()],conformers(direct)])
+        rebuilt = FF.UFFGetMoleculeForceField(direct,vdwThresh=100.,ignoreInterfragInteractions=True)
+        rebuilt.Initialize()
+        self.assertNotEqual(encode(outcomes[-1][0][1]),encode(rebuilt.CalcEnergy()))
+        self.assertEqual(encode(geometry(mol,"uff_optimize",p)),
+                         encode([True,outcomes,original,conformers(direct)]))
+        invalid = p | {"optimizer_observation":"rebuilt_field"}
+        with self.assertRaisesRegex(ValueError,"invalid UFF optimizer observation"):
+            geometry(mol,"uff_optimize",invalid)
 
     def test_mmff_optimizer_observations_do_not_prepare_the_live_input(self):
         # This fixed macrocycle exposes non-idempotent setMMFFAromaticity:

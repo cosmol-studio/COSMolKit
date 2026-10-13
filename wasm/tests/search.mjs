@@ -6,7 +6,7 @@ test('Substructure callbacks receive detached values, filter all call forms and 
  assert.deepEqual([params.finalMatch,params.atomMatch,params.bondMatch],[null,null,null]);
  let retainedQuery,retainedAtom,retainedTarget;
  params.atomMatch=(q,atom)=>{assert.ok(q instanceof b.QueryAtom);assert.ok(atom instanceof b.Atom);retainedQuery=q;retainedAtom=atom;return atom.atomicNumber()===8;};
- params.finalMatch=(target,ids)=>{assert.ok(target instanceof b.Molecule);assert.equal(target.toSmiles(),'CCO');retainedTarget=target;target.addHydrogens();assert.equal(target.numAtoms(),9);return ids[0]===2;};
+ params.finalMatch=(target,ids)=>{assert.ok(target instanceof b.Molecule);assert.equal(target.toSmiles(),'CCO');retainedTarget=target;target.addHydrogens_();assert.equal(target.numAtoms(),9);return ids[0]===2;};
  for(const configuration of [params,{atomMatch:params.atomMatch,finalMatch:params.finalMatch}]){
   assert.deepEqual(maps(molecule.substructMatches(query,configuration)),[[2]]);
   assert.deepEqual(molecule.substructMatch(query,configuration).atomMapping(),[2]);

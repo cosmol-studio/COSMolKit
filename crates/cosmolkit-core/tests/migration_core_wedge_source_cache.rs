@@ -42,7 +42,7 @@ fn conformer() -> Conformer3D {
 }
 
 #[test]
-fn source_wedge_updates_only_processed_atom_cache_and_recalculates_after_h_conversion() {
+fn source_wedge_updates_processed_atom_then_atrop_candidate_endpoints() {
     let mut topology = graph(SourceAtomValenceFacts::UNINITIALIZED);
     assign_chiral_types_from_bond_dirs(&mut topology, &conformer(), false).unwrap();
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 1);
@@ -53,16 +53,32 @@ fn source_wedge_updates_only_processed_atom_cache_and_recalculates_after_h_conve
             implicit_valence: 0
         }
     );
-    for i in [0, 2, 3] {
-        assert_eq!(
-            topology.atoms[i].source_valence_facts(),
-            SourceAtomValenceFacts::UNINITIALIZED
-        );
+    // Candidate Atropisomers.cpp:575-590 visits the two non-wedged neighbor
+    // bonds and refreshes their O/Cl endpoints before degree rejection. The
+    // center's converted H makes totalDegree four, so no whole-mol update runs.
+    for (i, expected) in [
+        (0, SourceAtomValenceFacts::UNINITIALIZED),
+        (
+            2,
+            SourceAtomValenceFacts {
+                explicit_valence: 1,
+                implicit_valence: 1,
+            },
+        ),
+        (
+            3,
+            SourceAtomValenceFacts {
+                explicit_valence: 1,
+                implicit_valence: 0,
+            },
+        ),
+    ] {
+        assert_eq!(topology.atoms[i].source_valence_facts(), expected);
     }
 }
 
 #[test]
-fn source_wedge_reuses_initialized_count_instead_of_recomputing_chemistry() {
+fn source_wedge_reuses_initialized_count_then_atrop_refreshes_whole_cache() {
     let facts = SourceAtomValenceFacts {
         explicit_valence: 3,
         implicit_valence: 0,
@@ -70,11 +86,16 @@ fn source_wedge_reuses_initialized_count_instead_of_recomputing_chemistry() {
     let mut topology = graph(facts);
     assign_chiral_types_from_bond_dirs(&mut topology, &conformer(), false).unwrap();
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 0);
-    assert_eq!(topology.atoms[1].source_valence_facts(), facts);
-    for i in [0, 2, 3] {
+    // The wedge stage still consumes the supplied zero H count above. Its
+    // subsequent candidate detector finds center/O totalDegree 3/2 and runs
+    // Atropisomers.cpp:601-610's non-local cache/hybridization preparation.
+    for (i, explicit_valence, implicit_valence) in [(0, 1, 3), (1, 3, 1), (2, 1, 1), (3, 1, 0)] {
         assert_eq!(
             topology.atoms[i].source_valence_facts(),
-            SourceAtomValenceFacts::UNINITIALIZED
+            SourceAtomValenceFacts {
+                explicit_valence,
+                implicit_valence
+            }
         );
     }
 }
@@ -118,7 +139,7 @@ fn source_tiny_reference_vector_throws_after_cache_update_before_chiral_and_h_ch
 }
 
 #[test]
-fn source_no_implicit_bypasses_negative_implicit_cache_without_recalculation() {
+fn source_no_implicit_bypasses_negative_cache_before_atrop_whole_update() {
     let facts = SourceAtomValenceFacts {
         explicit_valence: 3,
         implicit_valence: -1,
@@ -126,20 +147,43 @@ fn source_no_implicit_bypasses_negative_implicit_cache_without_recalculation() {
     let mut topology = graph(facts);
     topology.atoms[1].set_no_implicit(true);
     assign_chiral_types_from_bond_dirs(&mut topology, &conformer(), false).unwrap();
-    assert_eq!(topology.atoms[1].source_valence_facts(), facts);
+    // getNumImplicitHs still bypasses the negative sentinel. The subsequent
+    // source detector's whole-mol update materializes noImplicit as zero.
+    assert_eq!(
+        topology.atoms[1].source_valence_facts(),
+        SourceAtomValenceFacts {
+            explicit_valence: 3,
+            implicit_valence: 0
+        }
+    );
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 0);
 }
 
 #[test]
-fn source_existing_tag_skips_cache_and_unrelated_atoms_are_not_calculated() {
+fn source_existing_tag_skips_wedge_cache_but_atrop_precheck_updates_endpoints() {
     let mut topology = graph(SourceAtomValenceFacts::UNINITIALIZED);
     topology.atoms[1].set_chiral_tag(cosmolkit_types::ChiralTag::TetrahedralCw);
     for i in [0, 2, 3] {
         topology.atoms[i].set_explicit_hydrogens(255);
     }
-    let before = topology.clone();
+    let mut expected = topology.clone();
+    // Candidate's following atrop pass does not skip its endpoint cache
+    // precheck because the wedge stage retained an existing tetrahedral tag.
+    // The wedged bond itself is excluded; only center/O/Cl get touched.
+    expected.atoms[1].set_source_valence_facts(SourceAtomValenceFacts {
+        explicit_valence: 3,
+        implicit_valence: 1,
+    });
+    for (i, implicit_valence) in [(2, 2), (3, 1)] {
+        // One bond plus 255 explicit H narrows 256 to the source i8 cache's 0.
+        // calculateImplicitValence then uses that stored 0, giving O/Cl 2/1.
+        expected.atoms[i].set_source_valence_facts(SourceAtomValenceFacts {
+            explicit_valence: 0,
+            implicit_valence,
+        });
+    }
     assign_chiral_types_from_bond_dirs(&mut topology, &conformer(), false).unwrap();
-    assert_eq!(topology, before);
+    assert_eq!(topology, expected);
 }
 
 #[test]

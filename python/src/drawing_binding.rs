@@ -254,7 +254,7 @@ pub(crate) struct Coordinate2DParams {
 impl Coordinate2DParams {
     /// Configure 2D coordinate generation; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature = (coordinate_map=None, *, canonical_orientation=false, clear_existing_2d=true, flips_per_sample=0, samples=0, sample_seed=0, permute_degree_four=false, force_rdkit=false, use_ring_templates=false))]
+    #[pyo3(signature = (coordinate_map=None, *, canonical_orientation=false, clear_existing_2d=true, flips_per_sample=0, samples=0, sample_seed=0, permute_degree_four=false, force_rdkit=false, use_ring_templates=false, use_path_angle_expansion=true))]
     fn new(
         coordinate_map: Option<std::collections::BTreeMap<usize, [f64; 2]>>,
         canonical_orientation: bool,
@@ -265,6 +265,7 @@ impl Coordinate2DParams {
         permute_degree_four: bool,
         force_rdkit: bool,
         use_ring_templates: bool,
+        use_path_angle_expansion: bool,
     ) -> Self {
         Self {
             inner: ck::Coordinate2DParams {
@@ -277,6 +278,7 @@ impl Coordinate2DParams {
                 permute_degree_four,
                 force_rdkit,
                 use_ring_templates,
+                use_path_angle_expansion,
             },
         }
     }
@@ -333,6 +335,12 @@ impl Coordinate2DParams {
     #[getter]
     fn use_ring_templates(&self) -> bool {
         self.inner.use_ring_templates
+    }
+
+    /// Whether remaining nonbonded collisions use path-angle expansion.
+    #[getter]
+    fn use_path_angle_expansion(&self) -> bool {
+        self.inner.use_path_angle_expansion
     }
 }
 
@@ -3834,9 +3842,9 @@ impl Molecule {
     }
 
     /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
-    fn add_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
+    fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
-            .add_2d_coordinates()
+            .with_2d_coordinates()
             .map(|inner| Self { inner })
             .map_err(|error| operation_pyerr(py, error))
     }
@@ -3851,13 +3859,13 @@ impl Molecule {
     }
 
     /// Apply to a new molecule and return the result: generate and store 2D drawing coordinates. The source molecule is unchanged.
-    fn add_2d_coordinates_with_params(
+    fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
         params: &Coordinate2DParams,
     ) -> PyResult<Self> {
         self.inner
-            .add_2d_coordinates_with_params(&params.inner)
+            .with_2d_coordinates_with_params(&params.inner)
             .map(|inner| Self { inner })
             .map_err(|error| operation_pyerr(py, error))
     }

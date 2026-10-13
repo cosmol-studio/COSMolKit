@@ -269,6 +269,8 @@ fn abort_clears_all_staged_blocks_and_contract_evidence() {
             cleared: DerivedState::VALENCE,
             preserved: DerivedState::STEREO,
             cip_applied: true,
+            #[cfg(feature = "op-contracts")]
+            cip_assignment_checked: true,
         };
 
         parts.abort_in_place();

@@ -1,20 +1,26 @@
 //! CK-owned archive 2.0 wire schema, independent of runtime/model layout.
 //!
-//! Codec 2: CK storage v1, implemented with musli 0.1.9 storage in Binary mode.
+//! New writes use codec 3 / ck-wire-v1 (musli 0.1.9 wire, Binary mode).
+//! Codec 2 / ck-storage-v1 archives written by 0.5.0 remain readable.
 //! The implementation version is not part of the persistent codec identity.
 //! Field and variant identities below are permanent; retired identities must not be reused.
 //! No legacy raw or canonical companion is emitted by this writer.
-//! This is the initial V2 definition, not a migration from an earlier V2 codec.
 
 use super::*;
+use cosmolkit_core::{
+    PersistedRingDecomposition, PersistedRingEdgeId, PersistedRingGraph,
+    ring_persistence::{ComponentState, ComponentView, CycleFamilyState},
+};
 use musli::mode::Binary;
 use musli::{Decode, Encode};
 
 const MAJOR: u16 = 2;
 pub(super) const MAGIC: &[u8; 8] = b"COSMOL\0\0";
 const MINOR: u16 = 0;
-const CODEC: u8 = 2;
-const CODEC_CONTRACT: &str = "ck-storage-v1";
+const CODEC: u8 = 3;
+const CODEC_CONTRACT: &str = "ck-wire-v1";
+const STORAGE_CODEC: u8 = 2;
+const STORAGE_CODEC_CONTRACT: &str = "ck-storage-v1";
 const METADATA_SCHEMA: u16 = 1;
 const MOLECULE_SCHEMA: u16 = 1;
 const DERIVED_SCHEMA: u16 = 1;
@@ -992,6 +998,299 @@ struct RingRecord {
     fused_rings: Vec<Vec<bool>>,
     #[musli(Binary, name = 10)]
     fused_bonds: Vec<u64>,
+    #[musli(Binary, name = 11, default)]
+    decomposition: Option<RdlRecord>,
+    #[musli(Binary, name = 12, default)]
+    atom_members: Option<Vec<Vec<u64>>>,
+    #[musli(Binary, name = 13, default)]
+    bond_members: Option<Vec<Vec<u64>>>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(Binary, name(type = u32))]
+struct RdlGraph {
+    #[musli(Binary, name = 0)]
+    nodes: u64,
+    #[musli(Binary, name = 1)]
+    edges: Vec<[u64; 2]>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(Binary, name(type = u32))]
+struct RdlFamily {
+    #[musli(Binary, name = 0)]
+    weight: u64,
+    #[musli(Binary, name = 1)]
+    root: u64,
+    #[musli(Binary, name = 2)]
+    p: u64,
+    #[musli(Binary, name = 3)]
+    q: u64,
+    #[musli(Binary, name = 4)]
+    x: Option<u64>,
+    #[musli(Binary, name = 5)]
+    prototype: Vec<bool>,
+    #[musli(Binary, name = 6)]
+    relevant: bool,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(Binary, name(type = u32))]
+struct RdlComponent {
+    #[musli(Binary, name = 0)]
+    graph: RdlGraph,
+    #[musli(Binary, name = 1)]
+    original_nodes: Vec<u64>,
+    #[musli(Binary, name = 2)]
+    original_edges: Vec<u64>,
+    #[musli(Binary, name = 3)]
+    predecessor: Vec<Vec<Option<u64>>>,
+    #[musli(Binary, name = 4)]
+    distance: Vec<Vec<Option<u64>>>,
+    #[musli(Binary, name = 5)]
+    reachable: Vec<Vec<bool>>,
+    #[musli(Binary, name = 6)]
+    directed_paths: Vec<Vec<Vec<u64>>>,
+    #[musli(Binary, name = 7)]
+    families: Vec<RdlFamily>,
+    #[musli(Binary, name = 8)]
+    prototype_counts: Vec<u64>,
+    #[musli(Binary, name = 9)]
+    relations: Vec<Vec<Vec<bool>>>,
+    #[musli(Binary, name = 10)]
+    urfs: Vec<Vec<u64>>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+#[musli(Binary, name(type = u32))]
+struct RdlRecord {
+    #[musli(Binary, name = 0)]
+    graph: RdlGraph,
+    #[musli(Binary, name = 1)]
+    family_nodes: Vec<Vec<u64>>,
+    #[musli(Binary, name = 2)]
+    family_edges: Vec<Vec<u64>>,
+    #[musli(Binary, name = 3)]
+    relevant_cycle_count_bits: u64,
+    #[musli(Binary, name = 4)]
+    components: Vec<RdlComponent>,
+}
+
+fn index_rows(values: Vec<Vec<u64>>) -> Result<Vec<Vec<usize>>, PickleError> {
+    rows(values.len())?;
+    values
+        .into_iter()
+        .map(|row| {
+            rows(row.len())?;
+            row.into_iter().map(index).collect()
+        })
+        .collect()
+}
+
+fn wire_rows(values: &[Vec<usize>]) -> Vec<Vec<u64>> {
+    values
+        .iter()
+        .map(|row| row.iter().map(|&v| v as u64).collect())
+        .collect()
+}
+
+impl From<&PersistedRingGraph> for RdlGraph {
+    fn from(graph: &PersistedRingGraph) -> Self {
+        Self {
+            nodes: graph.node_count() as u64,
+            edges: graph
+                .edges()
+                .iter()
+                .map(|e| [e.from() as u64, e.to() as u64])
+                .collect(),
+        }
+    }
+}
+
+impl RdlGraph {
+    fn into_model(self) -> Result<PersistedRingGraph, PickleError> {
+        let nodes = index(self.nodes)?;
+        rows(nodes)?;
+        rows(self.edges.len())?;
+        let mut graph = PersistedRingGraph::new(nodes);
+        for [from, to] in self.edges {
+            graph
+                .add_undirected_edge(index(from)?, index(to)?)
+                .map_err(invalid)?;
+        }
+        Ok(graph)
+    }
+}
+
+impl From<ComponentView<'_>> for RdlComponent {
+    fn from(c: ComponentView<'_>) -> Self {
+        fn optional_rows(values: &[Vec<Option<usize>>]) -> Vec<Vec<Option<u64>>> {
+            values
+                .iter()
+                .map(|row| row.iter().map(|v| v.map(|v| v as u64)).collect())
+                .collect()
+        }
+        Self {
+            graph: c.graph.into(),
+            original_nodes: c.original_nodes.iter().map(|&v| v as u64).collect(),
+            original_edges: c.original_edges.iter().map(|v| v.index() as u64).collect(),
+            predecessor: optional_rows(c.predecessor),
+            distance: optional_rows(c.distance),
+            reachable: c.reachable.to_vec(),
+            directed_paths: c.directed_paths().map(wire_rows).collect(),
+            families: c
+                .cycle_families()
+                .map(|f| RdlFamily {
+                    weight: f.weight as u64,
+                    root: f.root as u64,
+                    p: f.p as u64,
+                    q: f.q as u64,
+                    x: f.x.map(|v| v as u64),
+                    prototype: f.prototype.to_vec(),
+                    relevant: f.relevant,
+                })
+                .collect(),
+            prototype_counts: c.prototype_counts.iter().map(|&v| v as u64).collect(),
+            relations: c.relations.to_vec(),
+            urfs: wire_rows(c.urfs),
+        }
+    }
+}
+
+impl RdlComponent {
+    fn into_model(self) -> Result<ComponentState, PickleError> {
+        fn optional_rows(
+            values: Vec<Vec<Option<u64>>>,
+        ) -> Result<Vec<Vec<Option<usize>>>, PickleError> {
+            rows(values.len())?;
+            values
+                .into_iter()
+                .map(|row| {
+                    rows(row.len())?;
+                    row.into_iter().map(|v| v.map(index).transpose()).collect()
+                })
+                .collect()
+        }
+        for count in [
+            self.original_nodes.len(),
+            self.original_edges.len(),
+            self.directed_paths.len(),
+            self.families.len(),
+            self.prototype_counts.len(),
+            self.reachable.len(),
+            self.relations.len(),
+        ] {
+            rows(count)?;
+        }
+        for row in &self.reachable {
+            rows(row.len())?;
+        }
+        for matrix in &self.relations {
+            rows(matrix.len())?;
+            for row in matrix {
+                rows(row.len())?;
+            }
+        }
+        let families = self
+            .families
+            .into_iter()
+            .map(|f| {
+                rows(f.prototype.len())?;
+                Ok(CycleFamilyState {
+                    weight: index(f.weight)?,
+                    root: index(f.root)?,
+                    p: index(f.p)?,
+                    q: index(f.q)?,
+                    x: f.x.map(index).transpose()?,
+                    prototype: f.prototype,
+                    relevant: f.relevant,
+                })
+            })
+            .collect::<Result<_, PickleError>>()?;
+        Ok(ComponentState {
+            graph: self.graph.into_model()?,
+            original_nodes: self
+                .original_nodes
+                .into_iter()
+                .map(index)
+                .collect::<Result<_, _>>()?,
+            original_edges: self
+                .original_edges
+                .into_iter()
+                .map(|v| index(v).map(PersistedRingEdgeId::new))
+                .collect::<Result<_, _>>()?,
+            predecessor: optional_rows(self.predecessor)?,
+            distance: optional_rows(self.distance)?,
+            reachable: self.reachable,
+            directed_paths: self
+                .directed_paths
+                .into_iter()
+                .map(index_rows)
+                .collect::<Result<_, _>>()?,
+            cycle_families: families,
+            prototype_counts: self
+                .prototype_counts
+                .into_iter()
+                .map(index)
+                .collect::<Result<_, _>>()?,
+            relations: self.relations,
+            urfs: index_rows(self.urfs)?,
+        })
+    }
+}
+
+impl From<&PersistedRingDecomposition> for RdlRecord {
+    fn from(d: &PersistedRingDecomposition) -> Self {
+        Self {
+            graph: d.graph().into(),
+            family_nodes: d
+                .urfs()
+                .iter()
+                .map(|u| u.nodes().iter().map(|&v| v as u64).collect())
+                .collect(),
+            family_edges: d
+                .urfs()
+                .iter()
+                .map(|u| u.edges().iter().map(|v| v.index() as u64).collect())
+                .collect(),
+            relevant_cycle_count_bits: d.relevant_cycle_count().to_bits(),
+            components: d.persisted_components().map(Into::into).collect(),
+        }
+    }
+}
+
+impl RdlRecord {
+    fn into_model(self, atoms: usize) -> Result<PersistedRingDecomposition, PickleError> {
+        if index(self.graph.nodes)? > atoms.max(1) {
+            return Err(invalid("RDL graph extent exceeds topology"));
+        }
+        rows(self.components.len())?;
+        let nodes = index_rows(self.family_nodes)?;
+        let edges = index_rows(self.family_edges)?;
+        if nodes.len() != edges.len() {
+            return Err(invalid("RDL family table length mismatch"));
+        }
+        let urfs = nodes
+            .into_iter()
+            .zip(edges)
+            .map(|(nodes, edges)| {
+                (
+                    nodes,
+                    edges.into_iter().map(PersistedRingEdgeId::new).collect(),
+                )
+            })
+            .collect();
+        PersistedRingDecomposition::from_persisted_state(
+            self.graph.into_model()?,
+            urfs,
+            f64::from_bits(self.relevant_cycle_count_bits),
+            self.components
+                .into_iter()
+                .map(RdlComponent::into_model)
+                .collect::<Result<_, _>>()?,
+        )
+        .map_err(invalid)
+    }
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -1493,6 +1792,9 @@ impl From<&RingInfo> for RingRecord {
                 .iter()
                 .map(|v| *v as u64)
                 .collect(),
+            decomposition: r.persisted_decomposition().map(Into::into),
+            atom_members: Some(wire_rows(r.persisted_atom_members())),
+            bond_members: Some(wire_rows(r.persisted_bond_members())),
         }
     }
 }
@@ -1518,7 +1820,7 @@ impl RingRecord {
         for row in &self.fused_rings {
             rows(row.len())?;
         }
-        RingInfo::from_persisted_components(
+        let mut info = RingInfo::from_persisted_components(
             self.initialized,
             self.find_type.into(),
             ae,
@@ -1546,7 +1848,22 @@ impl RingRecord {
                 .map(index)
                 .collect::<Result<_, _>>()?,
         )
-        .map_err(invalid)
+        .map_err(invalid)?;
+        info.restore_persisted_state(
+            self.decomposition
+                // Source addHs preserves RingInfo/RDL while appending atoms.
+                // Membership rows and RDL have independently stored extents.
+                // AddHs can subsequently enlarge the molecule without
+                // enlarging RDL. Bound its graph by the
+                // live topology here; restore_persisted_state separately
+                // checks that it covers the saved membership rows.
+                .map(|d| d.into_model(atoms))
+                .transpose()?,
+            self.atom_members.map(index_rows).transpose()?,
+            self.bond_members.map(index_rows).transpose()?,
+        )
+        .map_err(invalid)?;
+        Ok(info)
     }
 }
 
@@ -1832,7 +2149,7 @@ pub(super) fn encode(input: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     // Encode by reference, then consume the DTO in the existing model
     // validator instead of deep-cloning its ring tables just for validation.
     // Invalid state still returns an error before any bytes leave this call.
-    let derived_payload = musli::storage::to_vec(&derived);
+    let derived_payload = musli::wire::to_vec(&derived);
     for ring in [derived.rings, derived.ring_families].into_iter().flatten() {
         ring.into_model(input.num_atoms(), input.topology.bonds.len())?;
     }
@@ -1850,12 +2167,12 @@ pub(super) fn encode(input: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
         (
             SECTION_MANIFEST,
             METADATA_SCHEMA,
-            musli::storage::to_vec(&metadata),
+            musli::wire::to_vec(&metadata),
         ),
         (
             SECTION_MOLECULE_STATE,
             MOLECULE_SCHEMA,
-            musli::storage::to_vec(&molecule),
+            musli::wire::to_vec(&molecule),
         ),
         (SECTION_DERIVED_STATE, DERIVED_SCHEMA, derived_payload),
     ] {
@@ -1892,6 +2209,7 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
     let mut metadata = None;
     let mut molecule = None;
     let mut derived = None;
+    let mut codec = None;
     for section in sections {
         if !seen.insert(section.id) {
             return Err(PickleError::DuplicateSection(section.id));
@@ -1913,20 +2231,30 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
                 "archive 2 required block flag absent".into(),
             ));
         }
-        if section.codec != CODEC {
+        if !matches!(section.codec, STORAGE_CODEC | CODEC)
+            || codec
+                .replace(section.codec)
+                .is_some_and(|c| c != section.codec)
+        {
             return Err(PickleError::InvalidArchive(
                 "archive 2 block codec mismatch".into(),
             ));
         }
         match (section.id, section.version) {
             (SECTION_MANIFEST, METADATA_SCHEMA) => {
-                metadata = Some(decode_payload::<Metadata>(section.payload)?)
+                metadata = Some(decode_payload::<Metadata>(section.payload, section.codec)?)
             }
             (SECTION_MOLECULE_STATE, MOLECULE_SCHEMA) => {
-                molecule = Some(decode_payload::<MoleculeState>(section.payload)?)
+                molecule = Some(decode_payload::<MoleculeState>(
+                    section.payload,
+                    section.codec,
+                )?)
             }
             (SECTION_DERIVED_STATE, DERIVED_SCHEMA) => {
-                derived = Some(decode_payload::<DerivedState>(section.payload)?)
+                derived = Some(decode_payload::<DerivedState>(
+                    section.payload,
+                    section.codec,
+                )?)
             }
             (section, version) => {
                 return Err(PickleError::UnsupportedSectionVersion { section, version });
@@ -1934,7 +2262,12 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
         }
     }
     let metadata = metadata.ok_or(PickleError::MissingRequiredSection(SECTION_MANIFEST))?;
-    if metadata.codec_contract != CODEC_CONTRACT
+    let expected_contract = if codec == Some(STORAGE_CODEC) {
+        STORAGE_CODEC_CONTRACT
+    } else {
+        CODEC_CONTRACT
+    };
+    if metadata.codec_contract != expected_contract
         || metadata.molecule_schema != MOLECULE_SCHEMA
         || metadata.derived_schema != DERIVED_SCHEMA
     {
@@ -1948,14 +2281,240 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
 }
 fn decode_payload<'de, T: Decode<'de, Binary, musli::alloc::Global>>(
     data: &'de [u8],
+    codec: u8,
 ) -> Result<T, PickleError> {
-    musli::storage::from_slice(data)
-        .map_err(|e| PickleError::InvalidArchive(format!("archive 2 decode: {e}")))
+    match codec {
+        STORAGE_CODEC => musli::storage::from_slice(data)
+            .map_err(|e| PickleError::InvalidArchive(format!("archive 2 storage decode: {e}"))),
+        CODEC => musli::wire::from_slice(data)
+            .map_err(|e| PickleError::InvalidArchive(format!("archive 2 wire decode: {e}"))),
+        _ => Err(PickleError::InvalidArchive(
+            "archive 2 unknown codec".into(),
+        )),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rdl_fixture() -> (TopologyBlock, RingInfo) {
+        // Three independent paths yield two basis cycles and three relevant
+        // cycles, so restoring only the public family rows cannot pass.
+        let edges = [(0, 2), (2, 1), (0, 3), (3, 1), (0, 4), (4, 1)];
+        let topology = TopologyBlock::try_from_parts(
+            (0..5)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            edges
+                .into_iter()
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let ring = cosmolkit_core::find_ring_families(&topology, &Default::default()).unwrap();
+        (topology, ring)
+    }
+
+    #[test]
+    fn archive20_rdl_full_state_roundtrip_and_legacy_missing_fields() {
+        for (nodes, edges) in [
+            (1, vec![]),
+            (3, vec![(0, 1), (1, 2)]),
+            (3, vec![(0, 1), (1, 2), (2, 0)]),
+            (6, vec![(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)]),
+        ] {
+            let mut graph = PersistedRingGraph::new(nodes);
+            for (from, to) in edges {
+                graph.add_undirected_edge(from, to).unwrap();
+            }
+            let original = PersistedRingDecomposition::calculate(graph).unwrap();
+            let record = RdlRecord::from(&original);
+            let restored = record.into_model(nodes).unwrap();
+            assert_eq!(restored, original);
+            assert_eq!(
+                restored.smallest_ring_basis(),
+                original.smallest_ring_basis()
+            );
+            assert_eq!(
+                restored.relevant_cycles().collect::<Vec<_>>(),
+                original.relevant_cycles().collect::<Vec<_>>()
+            );
+        }
+        let (topology, original) = rdl_fixture();
+        let payload = musli::wire::to_vec(&RingRecord::from(&original)).unwrap();
+        let record: RingRecord = decode_payload(&payload, CODEC).unwrap();
+        let restored = record.into_model(5, 6).unwrap();
+        assert_eq!(restored, original);
+        let before = original.persisted_decomposition().unwrap();
+        let after = restored.persisted_decomposition().unwrap();
+        assert_eq!(after.smallest_ring_basis(), before.smallest_ring_basis());
+        assert_eq!(
+            after.relevant_cycles().collect::<Vec<_>>(),
+            before.relevant_cycles().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            after.relevant_cycle_count().to_bits(),
+            before.relevant_cycle_count().to_bits()
+        );
+        assert_eq!(
+            musli::wire::to_vec(&RingRecord::from(&restored)).unwrap(),
+            payload
+        );
+
+        // Write the real pre-extension field set: no field 11, 12 or 13.
+        #[derive(Encode)]
+        #[musli(Binary, name(type = u32))]
+        struct LegacyRing<'a> {
+            #[musli(Binary, name = 0)]
+            initialized: bool,
+            #[musli(Binary, name = 1)]
+            find_type: &'a RingFindRecord,
+            #[musli(Binary, name = 2)]
+            atom_extent: u64,
+            #[musli(Binary, name = 3)]
+            bond_extent: u64,
+            #[musli(Binary, name = 4)]
+            atom_rings: &'a [Vec<u64>],
+            #[musli(Binary, name = 5)]
+            bond_rings: &'a [Vec<u64>],
+            #[musli(Binary, name = 6)]
+            atom_families: &'a [Vec<u64>],
+            #[musli(Binary, name = 7)]
+            bond_families: &'a [Vec<u64>],
+            #[musli(Binary, name = 8)]
+            relevant_cycles: Option<u64>,
+            #[musli(Binary, name = 9)]
+            fused_rings: &'a [Vec<bool>],
+            #[musli(Binary, name = 10)]
+            fused_bonds: &'a [u64],
+        }
+        let record = RingRecord::from(&original);
+        let legacy = LegacyRing {
+            initialized: record.initialized,
+            find_type: &record.find_type,
+            atom_extent: record.atom_extent,
+            bond_extent: record.bond_extent,
+            atom_rings: &record.atom_rings,
+            bond_rings: &record.bond_rings,
+            atom_families: &record.atom_families,
+            bond_families: &record.bond_families,
+            relevant_cycles: record.relevant_cycles,
+            fused_rings: &record.fused_rings,
+            fused_bonds: &record.fused_bonds,
+        };
+        for codec in [STORAGE_CODEC, CODEC] {
+            let bytes = if codec == STORAGE_CODEC {
+                musli::storage::to_vec(&legacy).unwrap()
+            } else {
+                musli::wire::to_vec(&legacy).unwrap()
+            };
+            let decoded: RingRecord = decode_payload(&bytes, codec).unwrap();
+            let mut old = decoded.into_model(5, 6).unwrap();
+            assert!(!old.are_ring_families_initialized());
+            assert_eq!(old.atom_ring_families(), original.atom_ring_families());
+            assert_eq!(old.bond_ring_families(), original.bond_ring_families());
+            assert_eq!(
+                old.num_relevant_cycles().unwrap(),
+                original.num_relevant_cycles().unwrap()
+            );
+            cosmolkit_core::symmetrized_sssr_with_existing(
+                &topology,
+                &mut old,
+                false,
+                &Default::default(),
+            )
+            .unwrap();
+            assert!(old.are_ring_families_initialized());
+            assert_eq!(old.atom_ring_families(), original.atom_ring_families());
+            assert_eq!(
+                old.persisted_decomposition(),
+                original.persisted_decomposition()
+            );
+            assert_eq!(old.atom_rings().len(), 3);
+        }
+    }
+
+    #[test]
+    fn archive20_rdl_preserves_cache_extent_after_appending_atoms() {
+        // AddHs.cpp::addHs: mol.clearComputedProps(false) retains RingInfo;
+        // appended hydrogens do not expand the existing RDL graph.
+        let (mut cyclic, _) = rdl_fixture();
+        for i in 5..7 {
+            cyclic
+                .atoms
+                .push(Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)));
+        }
+        let cyclic =
+            TopologyBlock::try_from_parts(cyclic.atoms, cyclic.bonds, vec![], vec![]).unwrap();
+        let acyclic = TopologyBlock::try_from_parts(
+            (0..3)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        for topology in [cyclic, acyclic] {
+            let original =
+                cosmolkit_core::find_ring_families(&topology, &Default::default()).unwrap();
+            assert_eq!(original.atom_row_count(), topology.atoms.len());
+            assert_eq!(
+                original
+                    .persisted_decomposition()
+                    .unwrap()
+                    .graph()
+                    .node_count(),
+                topology.atoms.len()
+            );
+            let payload = musli::wire::to_vec(&RingRecord::from(&original)).unwrap();
+            let record: RingRecord = decode_payload(&payload, CODEC).unwrap();
+            assert_eq!(record.into_model(9, 10).unwrap(), original);
+        }
+        let (_, original) = rdl_fixture();
+        let mut invalid_record = RingRecord::from(&original);
+        invalid_record.decomposition.as_mut().unwrap().graph.nodes = 10;
+        assert!(matches!(
+            invalid_record.into_model(9, 10),
+            Err(PickleError::InvalidMolecule(message))
+                if message == "RDL graph extent exceeds topology"
+        ));
+        assert!(RingRecord::from(&original).into_model(4, 6).is_err());
+    }
+
+    #[test]
+    fn archive20_rdl_rejects_invalid_internal_indices_and_paths() {
+        let (_, original) = rdl_fixture();
+        for mutation in 0..4 {
+            let mut record = RingRecord::from(&original);
+            let rdl = record.decomposition.as_mut().unwrap();
+            match mutation {
+                0 => rdl.components[0].original_edges[0] = 99,
+                1 => rdl.components[0].directed_paths[0][0].push(99),
+                2 => rdl.components[0].urfs[0][0] = 99,
+                _ => rdl.relevant_cycle_count_bits = f64::NAN.to_bits(),
+            }
+            let expected = [
+                "RDL component edge out of range",
+                "invalid RDL shortest-path DAG edge",
+                "RDL family index out of range",
+                "invalid RDL graph or relevant-cycle count",
+            ][mutation];
+            assert!(
+                matches!(record.into_model(5, 6), Err(PickleError::InvalidMolecule(message)) if message == expected),
+                "mutation {mutation}"
+            );
+        }
+    }
 
     #[test]
     fn archive20_complete_source_bond_reference_vectors_are_not_pair_truncated() {
@@ -1992,13 +2551,16 @@ mod tests {
 
     #[test]
     fn archive20_pdb_text_preserves_bytes_and_utf8_sequence_encoding() {
-        // Check the library's UTF-8/byte sequence equivalence independently of
-        // the arbitrary-byte PDB round trip; no earlier V2 schema is involved.
+        // Codec 2 encoded strings and byte vectors identically. Preserve this
+        // old-reader guarantee separately from the new wire PDB round trip.
         for value in ["", " CA ", "é\0链"] {
             let text = musli::storage::to_vec(&value.to_owned()).unwrap();
             let bytes = musli::storage::to_vec(&value.as_bytes().to_vec()).unwrap();
             assert_eq!(text, bytes);
-            assert_eq!(decode_payload::<Vec<u8>>(&text).unwrap(), value.as_bytes());
+            assert_eq!(
+                decode_payload::<Vec<u8>>(&text, STORAGE_CODEC).unwrap(),
+                value.as_bytes()
+            );
         }
         let mut record = fixture();
         let info = AtomPdbResidueInfo::new(
@@ -2069,9 +2631,9 @@ mod tests {
     fn mutate_molecule(data: &[u8], f: impl FnOnce(&mut MoleculeState)) -> Vec<u8> {
         let (_, _, sections) = read_archive_envelope(data, MAGIC).unwrap();
         let mut state: MoleculeState =
-            decode_payload(sections.iter().find(|s| s.id == 2).unwrap().payload).unwrap();
+            decode_payload(sections.iter().find(|s| s.id == 2).unwrap().payload, CODEC).unwrap();
         f(&mut state);
-        replace(data, 2, &musli::storage::to_vec(&state).unwrap())
+        replace(data, 2, &musli::wire::to_vec(&state).unwrap())
     }
 
     #[test]
@@ -2085,10 +2647,10 @@ mod tests {
         assert!(
             sections
                 .iter()
-                .all(|s| s.version == 1 && s.codec == 2 && s.is_required())
+                .all(|s| s.version == 1 && s.codec == 3 && s.is_required())
         );
-        let metadata: Metadata = decode_payload(sections[0].payload).unwrap();
-        assert_eq!(metadata.codec_contract, "ck-storage-v1");
+        let metadata: Metadata = decode_payload(sections[0].payload, CODEC).unwrap();
+        assert_eq!(metadata.codec_contract, "ck-wire-v1");
         assert_eq!((metadata.molecule_schema, metadata.derived_schema), (1, 1));
         let restored = decode_molecule_binary(&data).unwrap();
         assert_eq!(restored.topology, r.topology);
@@ -2136,7 +2698,7 @@ mod tests {
             );
         }
         for which in 0..3 {
-            let mut metadata: Metadata = decode_payload(sections[0].payload).unwrap();
+            let mut metadata: Metadata = decode_payload(sections[0].payload, CODEC).unwrap();
             match which {
                 0 => metadata.molecule_schema = 2,
                 1 => metadata.derived_schema = 2,
@@ -2146,7 +2708,7 @@ mod tests {
                 decode(&replace(
                     &data,
                     SECTION_MANIFEST,
-                    &musli::storage::to_vec(&metadata).unwrap()
+                    &musli::wire::to_vec(&metadata).unwrap()
                 ))
                 .unwrap_err(),
                 PickleError::InvalidArchive(
@@ -2263,7 +2825,7 @@ mod tests {
     }
 
     #[test]
-    fn archive20_codec_golden_field_order_defaults_and_missing_fields() {
+    fn archive20_storage_golden_field_order_defaults_and_missing_fields() {
         let r = BinaryRecord {
             topology: TopologyBlock::default(),
             coordinates: CoordinateBlock::default(),
@@ -2280,13 +2842,13 @@ mod tests {
         for pair in golden[1..].chunks_exact(2).rev() {
             reordered.extend_from_slice(pair);
         }
-        assert!(decode_payload::<MoleculeState>(&reordered).is_ok());
+        assert!(decode_payload::<MoleculeState>(&reordered, STORAGE_CODEC).is_ok());
         // A missing optional field uses the declared schema default.
         let mut without_source_order = golden.to_vec();
         without_source_order[0] = 11;
         without_source_order.drain(11..13);
         assert!(
-            decode_payload::<MoleculeState>(&without_source_order)
+            decode_payload::<MoleculeState>(&without_source_order, STORAGE_CODEC)
                 .unwrap()
                 .source_order
                 .is_none()
@@ -2294,11 +2856,143 @@ mod tests {
         let mut missing = golden.to_vec();
         missing[0] = 11;
         missing.drain(1..3);
-        assert!(decode_payload::<MoleculeState>(&missing).is_err());
+        assert!(decode_payload::<MoleculeState>(&missing, STORAGE_CODEC).is_err());
         let mut unknown = golden.to_vec();
         unknown[0] = 13;
         unknown.extend_from_slice(&[99, 0]);
-        assert!(decode_payload::<MoleculeState>(&unknown).is_err());
+        assert!(decode_payload::<MoleculeState>(&unknown, STORAGE_CODEC).is_err());
+    }
+
+    #[test]
+    fn archive20_reads_frozen_storage_archive_and_rewrites_wire() {
+        // Fixed codec-2/schema-1 payloads, not generated by the new writer.
+        // Metadata: producer 0.5.0, ck-storage-v1, molecule/derived schema 1.
+        let metadata = b"\x04\0\x050.5.0\x01\x0dck-storage-v1\x02\x01\x03\x01";
+        let molecule = [
+            12, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0, 11, 0,
+        ];
+        let derived = [4, 0, 0, 1, 0, 2, 0, 3, 0];
+        let sections = [
+            ArchiveSection {
+                id: 1,
+                version: 1,
+                flags: 1,
+                codec: 2,
+                payload: metadata,
+            },
+            ArchiveSection {
+                id: 2,
+                version: 1,
+                flags: 1,
+                codec: 2,
+                payload: &molecule,
+            },
+            ArchiveSection {
+                id: 3,
+                version: 1,
+                flags: 1,
+                codec: 2,
+                payload: &derived,
+            },
+        ];
+        let old_bytes = pack(&sections);
+        let restored = decode_molecule_binary(&old_bytes).unwrap();
+        assert_eq!(restored.topology, TopologyBlock::default());
+        assert_eq!(restored.coordinates, CoordinateBlock::default());
+        assert_eq!(restored.properties, MoleculeProperties::default());
+        assert_eq!(restored.derived.valid_bits, Some(0));
+        let new_bytes = encode_molecule_binary(&input(&restored)).unwrap();
+        let (_, _, new_sections) = read_archive_envelope(&new_bytes, MAGIC).unwrap();
+        assert!(new_sections.iter().all(|s| s.codec == 3));
+        let rewritten = decode_molecule_binary(&new_bytes).unwrap();
+        assert_eq!(rewritten.topology, restored.topology);
+        assert_eq!(rewritten.coordinates, restored.coordinates);
+        assert_eq!(rewritten.properties, restored.properties);
+        assert_eq!(rewritten.derived.valid_bits, restored.derived.valid_bits);
+        assert!(rewritten.derived.rings.is_none());
+        assert!(rewritten.derived.ring_families.is_none());
+        assert!(rewritten.derived.valence.is_none());
+
+        // Known codec IDs must agree across required blocks and with metadata.
+        // Relabeling a payload must never cause a fallback to another decoder.
+        for id in 1..=3 {
+            let mut mislabeled = sections;
+            mislabeled[(id - 1) as usize].codec = 3;
+            assert!(decode(&pack(&mislabeled)).is_err());
+        }
+        let mut bad_contract: Metadata = decode_payload(metadata, STORAGE_CODEC).unwrap();
+        bad_contract.codec_contract = CODEC_CONTRACT.into();
+        let bad_payload = musli::storage::to_vec(&bad_contract).unwrap();
+        assert!(matches!(
+            decode(&replace(&old_bytes, 1, &bad_payload)),
+            Err(PickleError::InvalidArchive(message))
+                if message == "archive 2 metadata disagrees with block contract"
+        ));
+    }
+
+    #[test]
+    fn archive20_wire_golden_field_order_defaults_and_missing_fields() {
+        // Wire uses a sequence of 24 map items, continuation-tagged numeric
+        // keys and empty sequence values. IDs and Binary options are frozen.
+        let golden = [
+            0x98, 0xc0, 0x80, 0xc1, 0x80, 0xc2, 0x80, 0xc3, 0x80, 0xc4, 0x80, 0xc5, 0x80, 0xc6,
+            0x80, 0xc7, 0x80, 0xc8, 0x80, 0xc9, 0x80, 0xca, 0x80, 0xcb, 0x80,
+        ];
+        let state: MoleculeState = decode_payload(&golden, CODEC).unwrap();
+        assert!(state.atoms.is_empty());
+        assert!(state.bonds.is_empty());
+        assert_eq!(musli::wire::to_vec(&state).unwrap(), golden);
+        let mut reordered = vec![0x98];
+        for pair in golden[1..].chunks_exact(2).rev() {
+            reordered.extend_from_slice(pair);
+        }
+        assert!(decode_payload::<MoleculeState>(&reordered, CODEC).is_ok());
+        let mut without_source_order = golden.to_vec();
+        without_source_order[0] = 0x96;
+        without_source_order.drain(11..13);
+        assert!(
+            decode_payload::<MoleculeState>(&without_source_order, CODEC)
+                .unwrap()
+                .source_order
+                .is_none()
+        );
+        let mut missing_required = golden.to_vec();
+        missing_required[0] = 0x96;
+        missing_required.drain(1..3);
+        assert!(decode_payload::<MoleculeState>(&missing_required, CODEC).is_err());
+    }
+
+    #[test]
+    fn archive20_wire_skips_unknown_fields_in_each_block_without_retaining_them() {
+        let data = encode_molecule_binary(&input(&fixture())).unwrap();
+        let expected = decode(&data).unwrap();
+        let (_, _, sections) = read_archive_envelope(&data, MAGIC).unwrap();
+        for section in &sections {
+            // Extend the fixed schema's small map with a nested unknown field.
+            // Müsli, not CK's decoder, must skip its complete value.
+            let mut payload = section.payload.to_vec();
+            assert!((0x80..0xbd).contains(&payload[0]));
+            payload[0] += 2;
+            payload.extend(musli::wire::to_vec(&99_u32).unwrap());
+            payload
+                .extend(musli::wire::to_vec(&vec![("future", vec![Some(1_u64), None])]).unwrap());
+            let extended = replace(&data, section.id, &payload);
+            let restored = decode(&extended).unwrap();
+            assert_eq!(restored.topology, expected.topology, "block {}", section.id);
+            assert_eq!(restored.coordinates, expected.coordinates);
+            assert_eq!(restored.properties, expected.properties);
+            assert_eq!(restored.derived.valid_bits, expected.derived.valid_bits);
+            assert!(restored.derived.rings.is_none());
+            assert!(restored.derived.ring_families.is_none());
+            assert!(restored.derived.valence.is_none());
+            assert_eq!(encode_molecule_binary(&input(&restored)).unwrap(), data);
+            // Truncation inside an unknown value still returns a structured error.
+            payload.pop();
+            assert!(matches!(
+                decode(&replace(&data, section.id, &payload)),
+                Err(PickleError::InvalidArchive(_))
+            ));
+        }
     }
 
     #[test]
@@ -2348,8 +3042,12 @@ mod tests {
     #[test]
     fn archive20_incomplete_sequences_are_rejected_by_musli() {
         // Müsli owns sequence framing, including a declared count without data.
-        assert!(decode_payload::<MoleculeState>(&[12, 0, 0xc1, 0x84, 0x3d]).is_err());
-        assert!(decode_payload::<RingRecord>(&[1, 4, 1, 0xc1, 0x84, 0x3d]).is_err());
+        assert!(
+            decode_payload::<MoleculeState>(&[12, 0, 0xc1, 0x84, 0x3d], STORAGE_CODEC).is_err()
+        );
+        assert!(decode_payload::<RingRecord>(&[1, 4, 1, 0xc1, 0x84, 0x3d], STORAGE_CODEC).is_err());
+        assert!(decode_payload::<MoleculeState>(&[0x82, 0xc0, 0x81], CODEC).is_err());
+        assert!(decode_payload::<RingRecord>(&[0x82, 0xc4, 0x81], CODEC).is_err());
     }
 
     #[test]
@@ -2412,7 +3110,7 @@ mod tests {
         let data = encode_molecule_binary(&input(&r)).unwrap();
         let (_, _, sections) = read_archive_envelope(&data, MAGIC).unwrap();
         let original: DerivedState =
-            decode_payload(sections.iter().find(|s| s.id == 3).unwrap().payload).unwrap();
+            decode_payload(sections.iter().find(|s| s.id == 3).unwrap().payload, CODEC).unwrap();
         for which in 0..3 {
             let mut bad = original.clone();
             match which {
@@ -2431,21 +3129,14 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(
-                decode(&replace(&data, 3, &musli::storage::to_vec(&bad).unwrap())).is_err(),
+                decode(&replace(&data, 3, &musli::wire::to_vec(&bad).unwrap())).is_err(),
                 "derived {which}"
             );
         }
         let mut metadata: Metadata =
-            decode_payload(sections.iter().find(|s| s.id == 1).unwrap().payload).unwrap();
+            decode_payload(sections.iter().find(|s| s.id == 1).unwrap().payload, CODEC).unwrap();
         metadata.molecule_schema = 2;
-        assert!(
-            decode(&replace(
-                &data,
-                1,
-                &musli::storage::to_vec(&metadata).unwrap()
-            ))
-            .is_err()
-        );
+        assert!(decode(&replace(&data, 1, &musli::wire::to_vec(&metadata).unwrap())).is_err());
     }
 
     #[test]
@@ -2461,8 +3152,19 @@ mod tests {
                 let bytes = musli::storage::to_vec(value).unwrap();
                 assert_eq!(bytes[0], *tag);
                 assert_eq!(&musli::storage::from_slice::<T>(&bytes).unwrap(), value);
+                let wire = musli::wire::to_vec(value).unwrap();
+                // Derive encodes unit variants as their bare numeric tag;
+                // payload variants encode a (tag, payload) sequence.
+                if wire.len() == 1 {
+                    assert_eq!(wire, [0xc0 | tag]);
+                } else {
+                    assert_eq!(&wire[..2], &[0x82, 0xc0 | tag]);
+                }
+                assert_eq!(&musli::wire::from_slice::<T>(&wire).unwrap(), value);
             }
             assert!(musli::storage::from_slice::<T>(&[invalid, 0]).is_err());
+            assert!(musli::wire::from_slice::<T>(&[0x82, 0xc0 | invalid, 0x80]).is_err());
+            assert!(musli::wire::from_slice::<T>(&[0xc0 | invalid]).is_err());
         }
         verify(
             &[
@@ -2618,6 +3320,7 @@ mod tests {
             4,
         );
         assert!(musli::storage::from_slice::<Value>(&[7, 0]).is_err());
+        assert!(musli::wire::from_slice::<Value>(&[0x82, 0xc7, 0x80]).is_err());
     }
 
     #[test]

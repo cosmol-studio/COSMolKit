@@ -5,7 +5,7 @@ parseSmirksWithParams,CxSmilesFields} from "cosmolkit-generated";
 declare const molecule:Molecule;
 const tagged:Molecule=molecule.withAtomProperty(0,"tracking_id",42);
 const tracking:boolean|number|string|number[]|string[]|null=tagged.atomProperty(0,"tracking_id");
-tagged.setAtomProperty(0,"tracking_id","tracked");
+tagged.setAtomProperty_(0,"tracking_id","tracked");
 const copying=new ReactionRunParams(undefined,undefined,true);
 copying.copyAtomProperties=false;
 const rxn:Reaction=parseSmirks("[C:1]>>[N:1]");

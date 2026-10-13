@@ -46,8 +46,6 @@ pub use mol_write::{
 #[cfg(feature = "molecule")]
 pub use mol2_post::{Mol2PostError, finish_mol2_record};
 #[cfg(feature = "molecule")]
-mod numeric;
-#[cfg(feature = "molecule")]
 pub mod pdb;
 #[cfg(feature = "molecule")]
 mod pdb_chemistry;

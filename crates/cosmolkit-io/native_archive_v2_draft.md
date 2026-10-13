@@ -4,10 +4,11 @@ Status: implemented by `src/molecule_binary/archive_v2.rs`. The filename is
 retained from the approved draft. Archive 2.0 is a CK-native format, not RDKit
 pickle compatibility; its version is independent of the CK package version.
 
-This is the first V2 definition, using Müsli 0.1.9. There are no earlier
-supported V2 schemas or codecs: no V2-to-V2 compatibility branch, migration,
-codec ID, or schema version is introduced for this update.
-Legacy raw and archive 1.x inputs still use their existing reader branches.
+Archive 2.0 was introduced in COSMolKit 0.5.0 with codec 2 / `ck-storage-v1`.
+During 0.5.1 development, new writes switch to codec 3 / `ck-wire-v1`, using
+Müsli 0.1.9. Both codecs remain readable under the same archive-2 envelope
+and schema-1 records. Legacy raw and archive 1.x inputs still use their
+existing reader branches.
 
 ## 1. Goals and public API
 
@@ -16,7 +17,7 @@ emits archive 2.0; the reader automatically selects the new or legacy format
 from the file header. Users do not rename APIs, pass a format version, or
 manually convert their existing files.
 
-Use `musli::storage` for block payloads. CK owns the envelope, schema, field
+Use `musli::wire` for new block payloads. CK owns the envelope, schema, field
 identities, migration rules, resource limits, and validation. Müsli is the
 encoding implementation, not the compatibility policy.
 
@@ -49,7 +50,9 @@ block: u16 id + u16 schema + u8 flags + u8 codec + u32 payload length + payload
 ```
 
 IDs 1 (metadata), 2 (molecule), and 3 (derived) occur exactly once and are all
-required (`flags = 1`), schema 1, codec 2. No raw or canonical companion is
+required (`flags = 1`), schema 1, codec 3 in new writes. Codec-2 files remain
+readable; all three required blocks must use the same codec and agree with
+the metadata's codec contract. No raw or canonical companion is
 written. Unknown optional blocks are skipped by length without decoding their
 payloads. Unknown required blocks, duplicate IDs, missing required blocks,
 unknown flag bits, and trailing bytes are errors.
@@ -58,13 +61,15 @@ The new magic selects the archive 2 reader. The old `CSMOLPKL` magic selects
 only the legacy archive 1.x reader; legacy raw inputs retain their own branch.
 Neither archive reader falls back to the other after an error.
 
-Codec 2 is CK's `ck-storage-v1`: Müsli storage-compatible encoding, numeric
-field/variant IDs and default Binary-mode options. Its current implementation
+Codec 3 is CK's `ck-wire-v1`: Müsli wire-compatible encoding, numeric
+field/variant IDs and default Binary-mode options. Codec 2 retains its original
+`ck-storage-v1` encoding for reading existing 0.5.0 files. The implementation
 is pinned to `musli = "=0.1.9"` (`default-features = false`, features `std`,
-`alloc`, `storage`); the lockfile resolves `musli`, `musli-core`, and
+`alloc`, `storage`, `wire`); the lockfile resolves `musli`, `musli-core`, and
 `musli-macros` to 0.1.9 together. The library version is an implementation
 dependency, not a permanent on-disk identity. Metadata records
-`codec_contract = "ck-storage-v1"` and molecule/derived schema versions, which
+`codec_contract = "ck-wire-v1"` for new files (`"ck-storage-v1"` for codec 2)
+and molecule/derived schema versions, which
 must agree with their respective block headers. The producer package version
 is informational.
 
@@ -72,7 +77,8 @@ Metadata, molecule and derived blocks have independent schema constants and
 dispatch on `(block ID, block schema)`. All three start at 1; equality of these
 initial values does not couple their future evolution. For example, a future
 `metadata = 1, molecule = 2, derived = 1` requires a molecule-schema-2 reader,
-not new readers for the other two blocks. No schema-2 reader is introduced now.
+not new readers for the other two blocks. Both supported codecs currently use
+schema 1; switching the encoding does not change field meanings or schemas.
 
 | Version or identifier | Controls | Does not control |
 |---|---|---|
@@ -87,14 +93,16 @@ schema version does not automatically require an archive-version bump.
 Changing envelope layout, required-block rules, or an incompatible block
 combination does require an archive-version decision.
 
-After this initial V2 definition is finalized, verify the frozen codec bytes
-and decoding behavior before upgrading the library or its configuration.
-An implementation upgrade that preserves the CK encoding contract retains
-codec 2 and `ck-storage-v1`. An incompatible encoding requires a distinct
-codec ID/contract, for example codec 3 / `ck-storage-v2`, and explicit decoder
-dispatch; it is not represented by changing a third-party version string in
-the existing protocol. A package-version change or different producer string
-alone does not imply a new archive schema.
+Verify the frozen codec bytes and decoding behavior before upgrading the
+library or its configuration. An implementation upgrade that preserves a CK
+encoding contract retains that codec ID and contract. An incompatible encoding
+requires a distinct codec ID/contract and explicit decoder dispatch, retaining
+the old reader. The storage-to-wire change is exactly such a transition:
+codec 2 remains read-only, codec 3 is the new write target. Decoding follows the
+declared codec; a failure never triggers a retry with another codec.
+A package-version change or different producer string alone does not imply
+a new archive schema. Programs that only support codec 2 cannot read codec 3;
+wire forward compatibility starts with programs that support codec 3.
 
 ## 3. Complete state, without duplicate payloads
 
@@ -178,16 +186,57 @@ their own fixed variant IDs; explicit model/wire conversions do not encode or
 decode numeric tags. The regression suite checks defaults and field reordering
 independently of round-trip encoding.
 
-`storage` cannot skip unknown fields inside a recognized record. Consequently,
-this policy does not promise that old software can read newly added fields.
-The user requirement is one-way: new software reads old files; old software
-need not read new files. Optional envelope blocks can still be skipped because
-their lengths are known independently of the payload codec.
+`wire` skips unknown fields inside recognized records, including nested values.
+Readers supporting codec 3 can therefore read a future record with added
+nonessential fields without understanding those fields. Compatible additive
+fields retain the existing block schema; bumping it would cause envelope
+dispatch to reject the record before Müsli can skip the field. Missing fields
+still require explicit, faithful defaults. Required existing fields and
+structural validation are unchanged.
+
+Unknown fields are skipped, not preserved: reserializing with an older reader
+loses those fields. Do not promise a lossless forward roundtrip or use an
+unknown-field extension for indispensable chemistry semantics; those changes
+require an explicit schema/compatibility decision. Unknown enum variants in
+recognized fields and incompatible field types are not made safe by field
+skipping. Codec 2 retains its original inability to skip unknown fields.
+Optional envelope blocks remain skippable by length independently of codec.
 
 ## 5. Changes requiring explicit versioned decoding/migration
 
-These rules govern future changes after the initial V2 definition is finalized;
-they do not introduce older V2 schema readers into the current implementation.
+### RDL state added during 0.5.1 development
+
+The derived block remains schema 1. Ring records add defaultable fields 11
+(`decomposition`), 12 (`atom_members`) and 13 (`bond_members`). Müsli derive
+handles their absence; the existing fields retain their IDs and types.
+
+The decomposition stores the ordered source graph, URF node/edge rows, exact
+relevant-cycle count bits, and every cyclic component's local graph and
+original node/edge mappings. Each component retains predecessor/distance/
+reachability matrices, directed shortest-path DAGs, cycle-family prototypes
+and eligibility, prototype counts, relation matrices and URF memberships.
+Explicit membership rows preserve their source ordering and sparse extents.
+The ring-decomposer owner supplies a borrowed view and validated detached
+restoration; Müsli remains solely responsible for encoding and field decoding.
+
+New archives restore this state directly: no shortest-path calculation, cycle
+enumeration or ring finding runs while reading. Structural equality and
+subsequent basis/relevant-cycle queries retain the original state and order.
+
+Older storage/wire records lacking these fields remain readable. Their
+materialized ring/family rows, relevant-cycle counts and valid cache claims
+remain intact; only the absent RDL decomposition remains absent. The source
+algorithm's existing ring-finding entrypoint calculates RDL when it is actually
+needed and replaces, rather than duplicates, retained family rows. Reading
+does not clear valid results or trigger that calculation. An old wire reader
+can skip the additive fields; old storage readers retain their original
+unknown-field limitation. No global equality rule is relaxed.
+
+### Versioned changes
+
+These rules govern changes to field types and meanings, separately from codec
+dispatch. The current implementation supports codec 2 and 3 at block schema 1;
+it does not introduce other block schema readers speculatively.
 
 | Change | Required handling |
 |---|---|
@@ -195,7 +244,7 @@ they do not introduce older V2 schema readers into the current implementation.
 | Integer width or signedness changes | Versioned decoding and checked conversion; preserve or explicitly handle the old range |
 | Existing field meaning or unit changes | Versioned interpretation even if the Rust type stays identical |
 | New mandatory field with no faithful default | Explicit migration deriving it from preserved information, or a documented unresolved compatibility requirement |
-| Remove a stored field | Explicit migration/retention decision; `storage` cannot simply ignore the old field |
+| Remove a stored field | Wire can skip it, but retire its ID permanently and explicitly decide whether dropping its information is acceptable; storage readers still cannot skip unknown fields |
 | Change an existing enum variant ID, payload type, or meaning | Versioned decoding; never reinterpret old bytes under the new meaning |
 | Add an enum variant with a new stable ID | Extend the new reader; no old-schema branch solely for the additive variant if all old IDs/payloads remain unchanged |
 | Change computed-property representation | Explicit state conversion and collision policy, not a generic default |
@@ -288,6 +337,8 @@ All indices, topology/group references, coordinate dimensions/order, ring-cache
 extents, and valence row counts are validated during detached conversion. The
 existing runtime constructor validates cache validity/payload relationships.
 No sanitation or cache recalculation runs merely because an archive is read.
+Switching codecs does not add missing cache payloads, change cache validity or
+authorize silently rebuilding RDL state.
 Errors are returned through the existing `PickleError` API.
 
 #### Tracked hardening: decode-time allocation budgets
@@ -302,12 +353,17 @@ reading untrusted uploads or internet data. This does not change legacy readers.
 
 ## 7. Validation required before delivery
 
+- Decode frozen codec-2 archive-2 examples and rewrite them as codec 3 without
+  changing their represented state. Reject mislabeled codecs and inconsistent
+  metadata; never fall back between codecs.
 - Decode fixed valid legacy examples for every supported raw/archive/section
   version into the current model, including typed-property conversion and the
   computed-property collision obligation above.
 - Round-trip archive 2.0 complete state, including ordered raw-byte properties,
   every supported value/enum variant, computed records, sparse SGroup roles,
   conformer IDs/order, floating-point bits, cache payloads/extents/validity.
+- Exercise wire unknown-field skipping in every block, including nested values,
+  loss of skipped fields on reserialization, and malformed unknown values.
 - Exercise defaultable fields absent from schema-1 payloads. Add type/meaning
   migration comparisons when a future schema is actually introduced.
 - Reject malformed/truncated payloads, duplicate blocks,
@@ -317,13 +373,15 @@ reading untrusted uploads or internet data. This does not change legacy readers.
   Producer metadata may change without a schema change. A byte difference
   alone is neither proof of incompatibility nor permission to rewrite goldens.
 - Keep focused owner tests in their owner; shared fixtures in repository
-  `testdata/`; corpus preparation/comparison in `parity-tests_fixed/`. Tests must not
+  `testdata/`; corpus preparation/comparison in `parity-tests/`. Tests must not
   generate their own expectations or invoke reference implementations.
 
 ## 8. References and limits
 
+- [Müsli wire documentation](https://docs.rs/musli/latest/musli/wire/):
+  missing defaulted fields are tolerated and unknown record fields are skipped.
 - [Müsli storage documentation](https://docs.rs/musli/latest/musli/storage/):
-  missing defaulted fields are tolerated; unknown record fields are not.
+  the retained codec-2 reader tolerates defaulted missing fields but not unknown fields.
 - [Müsli format and field-identity guidance](https://github.com/udoprog/musli).
 - [Current CK implementation](src/molecule_binary.rs): legacy wire dispatch,
   section validation, canonical reconstruction and checked detached records.
@@ -331,9 +389,9 @@ reading untrusted uploads or internet data. This does not change legacy readers.
   inventory, not the schema or wire format of this CK-native archive.
 
 No performance improvement or cross-release byte stability is claimed. The
-codec regression freezes a `ck-storage-v1` molecule-schema-1 byte example,
-currently verified with Müsli 0.1.9. Future implementation upgrades must verify
-that contract; a library version change alone does not change the protocol or
+codec regressions freeze both `ck-storage-v1` and `ck-wire-v1` molecule-schema-1
+byte examples with Müsli 0.1.9. Future implementation upgrades must verify
+both contracts; a library version change alone does not change the protocol or
 authorize regenerating goldens.
 
 Owner validation commands:

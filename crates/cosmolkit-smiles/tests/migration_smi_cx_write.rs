@@ -1317,7 +1317,7 @@ fn cx_writer_data_sgroups_preserve_typed_members_fields_and_group_order() {
         write_cx_smiles_with_params(&record, &cx_data_sgroup_params(true))
             .map(fixture_writer_text)
             .unwrap(),
-        "CCO |SgD:0,2:first:v1:q:o:i,n:t|g:,SgD:1:second:v2::::|"
+        "CCO |SgD:0,2:first:v1:q:o:i&#44;n:t&#124;g:,SgD:1:second:v2::::|"
     );
     assert_eq!(record, before, "DAT writing must preserve its caller");
 }
@@ -1369,10 +1369,9 @@ fn cx_writer_data_sgroups_emit_all_typed_values_and_empty_members() {
 }
 
 #[test]
-fn cx_writer_data_sgroups_do_not_requote_source_literal_field_bytes() {
-    // read_text_to decodes numeric entities, while get_sgroup_data_block
-    // appends the resulting bytes directly and never calls quote_string.
-    // The deliberately ambiguous output below is the pinned source result.
+fn cx_writer_data_sgroups_quote_decoded_fields_with_source_allowed_characters() {
+    // Candidate get_sgroup_data_block quotes decoded DAT fields, retaining
+    // literal periods/QUERYOP while escaping semicolons, commas and delimiters.
     let record = parse_smiles(
         "CC |SgD:0,1:a&#46;b:c&#59;d:q&#58;o:i&#44;n:t&#124;g:|",
         &Default::default(),
@@ -1384,7 +1383,7 @@ fn cx_writer_data_sgroups_do_not_requote_source_literal_field_bytes() {
         write_cx_smiles_with_params(&record, &cx_data_sgroup_params(false))
             .map(fixture_writer_text)
             .unwrap(),
-        "CC |SgD:0,1:a.b:c;d:q:o:i,n:t|g:|"
+        "CC |SgD:0,1:a.b:c&#59;d:q:o:i&#44;n:t&#124;g:|"
     );
     assert_eq!(record, before, "literal DAT writing must be immutable");
 }
@@ -1823,9 +1822,9 @@ fn cx_writer_atom_label_holes_trailing_slots_and_text_follow_source() {
 }
 
 #[test]
-fn cx_writer_atom_label_clears_semicolon_only_source_block() {
-    // The pinned final find_if_not clears a block made only from separators,
-    // including a literal semicolon returned unchanged by quote_string.
+fn cx_writer_atom_label_quotes_semicolon_before_separator_only_filter() {
+    // Candidate quote_string escapes the literal semicolon, so this is no
+    // longer a separator-only block eligible for clearing.
     let mut record = parse_smiles("C", &Default::default()).expect("parse carbon");
     record.topology.atoms[0]
         .set_prop("atomLabel", ";")
@@ -1834,7 +1833,7 @@ fn cx_writer_atom_label_clears_semicolon_only_source_block() {
         write_cx_smiles_with_params(&record, &cx_atom_label_params())
             .map(fixture_writer_text)
             .unwrap(),
-        "C"
+        "C |$&#59;$|"
     );
 }
 
@@ -2260,7 +2259,7 @@ fn cx_writer_radicals_emit_no_block_when_all_electron_counts_are_zero() {
 }
 
 #[test]
-fn cx_writer_atom_property_escapes_each_period_with_exact_source_token() {
+fn cx_writer_atom_property_retains_periods_in_source_allowed_characters() {
     let mut record = parse_smiles("C", &Default::default()).expect("parse carbon");
     record.topology.atoms[0]
         .set_prop("a.b", "c.d")
@@ -2271,7 +2270,7 @@ fn cx_writer_atom_property_escapes_each_period_with_exact_source_token() {
         write_cx_smiles_with_params(&record, &cx_atom_prop_params())
             .map(fixture_writer_text)
             .unwrap(),
-        "C |atomProp:0.a&#46;b.c&#46;d|"
+        "C |atomProp:0.a.b.c.d|"
     );
     assert_eq!(record, before, "property escaping must preserve input");
 }
@@ -2297,7 +2296,7 @@ fn cx_writer_atom_property_preserves_empty_values() {
 }
 
 #[test]
-fn cx_writer_atom_property_copies_non_ascii_text_without_normalization() {
+fn cx_writer_atom_property_quotes_non_ascii_bytes_with_source_char_signedness() {
     let mut record = parse_smiles("C", &Default::default()).expect("parse carbon");
     record.topology.atoms[0]
         .set_prop("clé", "λ雪")
@@ -2308,7 +2307,11 @@ fn cx_writer_atom_property_copies_non_ascii_text_without_normalization() {
         write_cx_smiles_with_params(&record, &cx_atom_prop_params())
             .map(fixture_writer_text)
             .unwrap(),
-        "C |atomProp:0.clé.λ雪|"
+        if std::ffi::c_char::MIN < 0 {
+            "C |atomProp:0.cl&#4294967235;&#4294967209;.&#4294967246;&#4294967227;&#4294967273;&#4294967195;&#4294967210;|"
+        } else {
+            "C |atomProp:0.cl&#195;&#169;.&#206;&#187;&#233;&#155;&#170;|"
+        }
     );
     assert_eq!(
         record, before,
@@ -2515,7 +2518,7 @@ fn cx_writer_atom_properties_project_typed_values_after_source_filters() {
         write_cx_smiles_with_params(&record, &cx_atom_prop_params())
             .map(fixture_writer_text)
             .unwrap(),
-        "C |atomProp:0.Text.a&#46;b:0.Count.7:0.Real.-0:0.Active.1|"
+        "C |atomProp:0.Text.a.b:0.Count.7:0.Real.-0:0.Active.1|"
     );
     assert_eq!(record, before, "typed property writing preserves input");
 }

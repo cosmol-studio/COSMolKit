@@ -17,7 +17,7 @@ transform, export, and filtering steps.
        errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   prepared = batch.with_hydrogens().add_2d_coordinates()
+   prepared = batch.with_hydrogens().with_2d_coordinates()
 
    print(prepared.valid_mask())
    print(prepared.errors())
@@ -233,7 +233,7 @@ this configuration step does not duplicate the molecular data.
 .. code-block:: python
 
    configured = batch.with_parallel_jobs(8)
-   prepared = configured.add_2d_coordinates(errors="keep")
+   prepared = configured.with_2d_coordinates(errors="keep")
    smiles = prepared.to_smiles_list()
 
 Method-level ``n_jobs`` still overrides the batch default for a single call:
@@ -250,7 +250,7 @@ batch default for one call:
 .. code-block:: python
 
    tracked = batch.with_parallel_jobs(8).with_progress_bar(True)
-   prepared = tracked.add_2d_coordinates(errors="keep")
+   prepared = tracked.with_2d_coordinates(errors="keep")
    smiles = prepared.to_smiles_list(progress_bar=False)
 
 Pass ``None`` to clear the batch-level default and let rayon choose:

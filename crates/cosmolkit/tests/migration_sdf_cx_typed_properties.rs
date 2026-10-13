@@ -73,7 +73,8 @@ fn sdf_typed_atom_properties_flow_to_cx_with_source_order_and_projection() {
             .to_cx_smiles_with_params(&atom_property_params())
             .unwrap(),
         cosmolkit::PropertyText::from(
-            "C |atomProp:0.Text.a&#46;b:0.Count.7:0.Real.-0:0.Active.1:0.Scale.100|"
+            // Candidate CXSmilesOps.cpp's atomPropAllowedSpecialChars includes '.'.
+            "C |atomProp:0.Text.a.b:0.Count.7:0.Real.-0:0.Active.1:0.Scale.100|"
         )
     );
     assert_eq!(molecule.topology(), &topology_before);

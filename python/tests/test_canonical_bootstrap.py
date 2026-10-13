@@ -33,7 +33,7 @@ def test_real_default_module_and_one_class():
     assert ck.Molecule.__module__ == "cosmolkit"
     assert state(ck.Molecule.new()) == ("", 0, 0, None)
     assert type(ck.Molecule.from_smiles("CCO")) is ck.Molecule
-    assert type(ck.Molecule.from_smiles("CCO").add_2d_coordinates()) is ck.Molecule
+    assert type(ck.Molecule.from_smiles("CCO").with_2d_coordinates()) is ck.Molecule
 
 
 @pytest.mark.parametrize("input,output,atoms,bonds", [
@@ -171,7 +171,7 @@ def test_root_usize_conversion(value: int):
         {864662311: 1, 1535166686: 1, 2245384272: 1, 2246728737: 1, 3542456614: 1, 4018048386: 1}),
 ])
 def test_four_morgan_results_and_owned_containers(method: str, result_type: type, width: int, values: object):
-    mol = ck.Molecule.from_smiles("CCO").add_2d_coordinates()
+    mol = ck.Molecule.from_smiles("CCO").with_2d_coordinates()
     before = state(mol)
     assert isinstance(before[3], np.ndarray)
     assert before[3].dtype == np.float64 and before[3].shape == (3, 2)

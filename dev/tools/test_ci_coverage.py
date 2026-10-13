@@ -123,7 +123,7 @@ class CoverageWorkflowTests(unittest.TestCase):
         workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]
         self.assertIn("parity-tests", workspace["members"])
         self.assertNotIn("parity-tests_fixed", workspace["members"])
-        self.assertIn("parity-tests_fixed", workspace["exclude"])
+        self.assertNotIn("parity-tests_fixed", workspace["exclude"])
         lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
         packages = {package["name"] for package in lock["package"]}
         self.assertIn("cosmolkit-parity-tests", packages)

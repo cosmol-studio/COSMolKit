@@ -10,7 +10,7 @@ use std::{
 };
 
 pub const MAGIC: &[u8; 8] = b"CKREF001";
-pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_FRAME_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES - 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

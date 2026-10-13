@@ -16,6 +16,14 @@ const ALLOWED: &[&str] = &[
 
 const ACCESS: &[Case] = &[
     (
+        "cip_assignment_wrong_marker",
+        &["E0599", "apply_cip_assignment_policy"],
+    ),
+    (
+        "cip_assignment_runtime_private",
+        &["validate_cip_assignment_runtime"],
+    ),
+    (
         "cip_cow_missing_writes",
         &["E0599", "stage_topology_properties_cow"],
     ),

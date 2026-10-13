@@ -469,8 +469,11 @@ fn errors_preserve_offsets_ring_context_and_final_model_validation() {
         parse_smiles("C7CC", &Default::default()).unwrap_err(),
         SmilesParseError::UnclosedRing { index: 7 }
     );
-    let coordinate = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
-    assert!(
-        matches!(coordinate, SmilesParseError::Cx(message) if message.contains("invalid CX coordinate"))
+    // Candidate CX parse_coords uses std::atof, including overflow to infinity.
+    let coordinate = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap();
+    assert_eq!(
+        coordinate.coordinates.conformers_3d[0].coordinates(),
+        &[[f64::INFINITY, 0.0, 0.0]]
     );
+    assert!(!coordinate.coordinates.conformers_3d[0].is_3d());
 }

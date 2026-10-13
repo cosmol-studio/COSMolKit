@@ -443,19 +443,19 @@ impl MoleculeBatch {
         )
     }
     #[cfg(feature = "cap-depict")]
-    pub fn add_2d_coordinates(&self) -> Result<Self, BatchValidationError> {
-        self.add_2d_coordinates_with_params(
+    pub fn with_2d_coordinates(&self) -> Result<Self, BatchValidationError> {
+        self.with_2d_coordinates_with_params(
             &crate::Coordinate2DParams::default(),
             &BatchParams::default(),
         )
     }
     #[cfg(feature = "cap-depict")]
-    pub fn add_2d_coordinates_with_params(
+    pub fn with_2d_coordinates_with_params(
         &self,
         options: &crate::Coordinate2DParams,
         params: &BatchParams,
     ) -> Result<Self, BatchValidationError> {
-        // pub fn add_2d_coordinates_with_options(
+        // pub fn with_2d_coordinates_with_options(
         //         &self,
         //         errors: BatchErrorMode,
         //         n_jobs: Option<usize>,
@@ -467,9 +467,9 @@ impl MoleculeBatch {
         //             "Computing 2D coordinates",
         //             |progress| {
         //                 self.transform_with_options(
-        //                     "batch.add_2d_coordinates",
+        //                     "batch.with_2d_coordinates",
         //                     errors,
-        //                     Molecule::add_2d_coordinates,
+        //                     Molecule::with_2d_coordinates,
         //                     progress,
         //                     n_jobs,
         //                 )
@@ -477,10 +477,10 @@ impl MoleculeBatch {
         //         )
         //     }
         self.transform(
-            "batch.add_2d_coordinates",
+            "batch.with_2d_coordinates",
             "Computing 2D coordinates",
             params,
-            |molecule| molecule.add_2d_coordinates_with_params(options),
+            |molecule| molecule.with_2d_coordinates_with_params(options),
         )
     }
 }

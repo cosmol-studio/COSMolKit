@@ -1,4 +1,7 @@
 use std::collections::BTreeMap;
+mod cycles;
+#[doc(hidden)]
+pub mod persistence;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RingDecomposerError {
@@ -1078,6 +1081,21 @@ pub struct RingDecomposition {
     graph: Graph,
     urfs: Vec<UniqueRingFamily>,
     relevant_cycle_count: f64,
+    components: Vec<DecomposedComponent>,
+}
+
+// Construction and mutation are private. calculate accepts only finite cycle
+// counts (including the graph's zero-cycle cases), so the sole f64 member can
+// never be NaN. Existing structural PartialEq is therefore reflexive; this
+// does not replace value equality with Arc/pointer identity.
+impl Eq for RingDecomposition {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DecomposedComponent {
+    component: BiconnectedComponent,
+    shortest_paths: ShortestPathInfo,
+    cycle_families: CycleFamilies,
+    urf_info: UrfInfo,
 }
 
 impl RingDecomposition {
@@ -1212,6 +1230,7 @@ impl RingDecomposition {
                 graph,
                 urfs: Vec::new(),
                 relevant_cycle_count: 0.0,
+                components: Vec::new(),
             });
         }
 
@@ -1221,21 +1240,22 @@ impl RingDecomposition {
                 graph,
                 urfs: Vec::new(),
                 relevant_cycle_count: 0.0,
+                components: Vec::new(),
             });
         }
 
         let mut urfs = Vec::new();
         let mut relevant_cycle_count = 0.0;
-        for component in bcc.components() {
-            let mut component_graph = component.graph().clone();
-            let mut shortest_paths = ShortestPathInfo::calculate(&component_graph);
+        let mut components = Vec::with_capacity(bcc.component_count());
+        for mut component in bcc.components {
+            let mut shortest_paths = ShortestPathInfo::calculate(&component.graph);
             let mut cycle_families =
-                CycleFamilies::calculate(&mut component_graph, &mut shortest_paths);
+                CycleFamilies::calculate(&mut component.graph, &mut shortest_paths);
             if cycle_families.is_empty() {
                 continue;
             }
             let urf_info =
-                UrfInfo::check_urf_relation(&mut cycle_families, &component_graph, &shortest_paths);
+                UrfInfo::check_urf_relation(&mut cycle_families, &component.graph, &shortest_paths);
             let marked_family_count = cycle_families
                 .families()
                 .iter()
@@ -1247,7 +1267,7 @@ impl RingDecomposition {
             let component_relevant_cycle_count = count_relevant_cycles(
                 &urf_info,
                 &cycle_families,
-                &component_graph,
+                &component.graph,
                 &shortest_paths,
             )?;
             relevant_cycle_count += component_relevant_cycle_count;
@@ -1258,15 +1278,27 @@ impl RingDecomposition {
                 urfs.push(unique_ring_family_from_component_urf(
                     urf,
                     &cycle_families,
-                    component,
+                    &component,
                     &shortest_paths,
                 ));
             }
+            // RDL✔️🔝: data->spiPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->spiPerBCC));
+            // RDL✔️🔝: data->CFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->CFsPerBCC));
+            // RDL✔️🔝: data->urfInfoPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->urfInfoPerBCC));
+            // Retain the source decomposition for later SSSR/relevant-cycle
+            // queries; moving the component avoids the previous graph clone.
+            components.push(DecomposedComponent {
+                component,
+                shortest_paths,
+                cycle_families,
+                urf_info,
+            });
         }
         Ok(Self {
             graph,
             urfs,
             relevant_cycle_count,
+            components,
         })
     }
 

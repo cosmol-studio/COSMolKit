@@ -507,7 +507,7 @@ impl MolecularForceField {
             .map(|v| v.into_iter().map(JsValue::from).collect())
             .map_err(|e| field_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name = setPosition)]
+    #[wasm_bindgen(js_name = setPosition_)]
     pub fn set_position_(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "number")] atom_id: JsValue,
@@ -524,7 +524,7 @@ impl MolecularForceField {
     pub fn positions(&self) -> Array {
         rows(&self.inner.positions())
     }
-    #[wasm_bindgen(js_name = setPositions)]
+    #[wasm_bindgen(js_name = setPositions_)]
     pub fn set_positions_(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "(number[] | Float64Array)[]")] positions: JsValue,
@@ -545,7 +545,7 @@ impl MolecularForceField {
             .map(|id| JsValue::from_f64(id.index() as f64))
             .collect()
     }
-    #[wasm_bindgen(js_name = setFixedAtoms)]
+    #[wasm_bindgen(js_name = setFixedAtoms_)]
     pub fn set_fixed_atoms_(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "number[] | Uint32Array")] atoms: JsValue,
@@ -584,7 +584,7 @@ impl MolecularForceField {
             .map(|inner| ForceFieldEnergyGradient { inner })
             .map_err(|e| field_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name = minimize)]
+    #[wasm_bindgen(js_name = minimize_)]
     pub fn minimize_(
         &mut self,
         #[wasm_bindgen(
@@ -595,7 +595,7 @@ impl MolecularForceField {
         let params = ForceFieldMinimizeParams::from_js_configuration(&params)?;
         self.minimize_with_params_(&params)
     }
-    #[wasm_bindgen(js_name = minimizeWithParams)]
+    #[wasm_bindgen(js_name = minimizeWithParams_)]
     pub fn minimize_with_params_(
         &mut self,
         params: &ForceFieldMinimizeParams,

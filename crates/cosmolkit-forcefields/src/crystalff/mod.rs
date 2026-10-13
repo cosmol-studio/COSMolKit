@@ -4,7 +4,8 @@ mod torsion_preferences;
 
 pub(crate) use torsion::TorsionAngleContribs;
 pub use torsion_preferences::{
-    CrystalFFDetails, CrystalffTorsionPreferencesError, get_experimental_torsions_without_bonds,
+    BoundsTorsionPath, CrystalFFDetails, CrystalffTorsionPreferencesError, ForcedTorsionKind,
+    get_experimental_torsions_without_bonds,
 };
 
 #[doc(hidden)]

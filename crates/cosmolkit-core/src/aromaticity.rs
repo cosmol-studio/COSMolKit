@@ -194,8 +194,17 @@ fn validate_inputs(topology: &TopologyBlock, rings: &RingInfo) -> Result<(), Aro
     if !rings.is_initialized() {
         return Err(AromaticityError::RingInfoNotInitialized);
     }
-    if rings.atom_row_count() != topology.atoms.len()
-        || rings.bond_row_count() != topology.bonds.len()
+    // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // Candidate reset(false) retains RDL families but clears membership rows;
+    // addRing grows only through the last ring atom/bond. Trailing nonring
+    // rows are valid source state, queried as zero membership. Preserve the
+    // existing bounds/table checks, without padding or reparsing the cache.
+    // O(1) shape guard; all referenced ring IDs are still checked below.
+    if rings.atom_row_count() > topology.atoms.len()
+        || rings.bond_row_count() > topology.bonds.len()
     {
         return Err(AromaticityError::RingInfoDimensionMismatch {
             ring_atom_count: rings.atom_row_count(),
@@ -3626,6 +3635,9 @@ mod tests {
     #[test]
     fn candidate_validation_rejects_malformed_detached_rows_before_indexing() {
         let graph = topology(vec![AtomSpec::new(Element::C)], vec![]);
+        // Native numAtomRings returns zero for a missing trailing membership
+        // row, including candidate family-preserving symmetrization state.
+        validate_inputs(&graph, &RingInfo::new(RingFindType::Sssr, 0, 0)).unwrap();
         let wrong_rings = RingInfo::new(RingFindType::Sssr, 2, 0);
         assert!(matches!(
             validate_inputs(&graph, &wrong_rings),

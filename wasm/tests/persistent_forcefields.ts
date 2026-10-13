@@ -9,17 +9,17 @@ const handles: MolecularForceField[] = [molecule.mmffForceField(mmff), molecule.
 const params = new ForceFieldMinimizeParams();
 params.maxIterations = 2;
 params.energyTolerance = 1e-6;
-const outcome: ForceFieldMinimizeOutcome = handles[0].minimize(params);
-handles[0].minimize({maxIterations: 2});
+const outcome: ForceFieldMinimizeOutcome = handles[0].minimize_(params);
+handles[0].minimize_({maxIterations: 2});
 const result: ForceFieldEnergyGradient = handles[0].energyGradient();
 const gradient: number[][] = result.gradient();
-handles[0].setPosition(0, new Float64Array([1, 2, 3]));
-handles[0].setPositions(gradient);
-handles[0].setFixedAtoms(new Uint32Array([0]));
+handles[0].setPosition_(0, new Float64Array([1, 2, 3]));
+handles[0].setPositions_(gradient);
+handles[0].setFixedAtoms_(new Uint32Array([0]));
 declare const error: ForceFieldError;
 const kind: MolecularForceFieldErrorKind = error.kind();
 // @ts-expect-error tolerance must be a number
 params.forceTolerance = 'small';
 // @ts-expect-error pin indices are numeric
-handles[0].setFixedAtoms(['0']);
+handles[0].setFixedAtoms_(['0']);
 void [outcome, kind];

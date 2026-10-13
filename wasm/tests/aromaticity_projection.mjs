@@ -18,7 +18,7 @@ test("aromaticity enum, editable parameters and all four operations project cano
         // This fixture explicitly disables sanitization/hybridization assignment.
         assert.equal(value.toSmiles(), model === b.AromaticityModel.Mmff94 ? "C1=CC=CC=C1" : "c1ccccc1");
         assert.equal(source.toSmiles(), before);
-        assert.equal(source.assignAromaticityWithParams(p), undefined);
+        assert.equal(source.assignAromaticityWithParams_(p), undefined);
         assert.equal(source.toSmiles(), value.toSmiles());
         value.free(); source.free(); p.free();
     }
@@ -26,7 +26,7 @@ test("aromaticity enum, editable parameters and all four operations project cano
     const before = source.toSmiles(), value = source.withAssignedAromaticity();
     assert.equal(value.toSmiles(), "c1ccccc1");
     assert.equal(source.toSmiles(), before);
-    assert.equal(source.assignAromaticity(), undefined);
+    assert.equal(source.assignAromaticity_(), undefined);
     assert.equal(source.toSmiles(), value.toSmiles());
     value.free(); source.free();
     assert.throws(() => new b.AromaticityParams(77));
@@ -35,7 +35,7 @@ test("aromaticity enum, editable parameters and all four operations project cano
 test("source-defined unsupported custom model keeps structured cause and failed state", () => {
     const source = b.Molecule.fromSmilesWithSanitize("C1=CC=CC=C1", false);
     const before = source.toSmiles(), params = new b.AromaticityParams(b.AromaticityModel.Custom);
-    for (const invoke of [() => source.withAssignedAromaticityWithParams(params), () => source.assignAromaticityWithParams(params)]) {
+    for (const invoke of [() => source.withAssignedAromaticityWithParams(params), () => source.assignAromaticityWithParams_(params)]) {
         assert.throws(invoke, error => {
             assert.ok(error instanceof Error);
             assert.equal(error.domain, "operation");

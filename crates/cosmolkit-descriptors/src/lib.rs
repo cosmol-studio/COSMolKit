@@ -9684,11 +9684,11 @@ mod tests {
         let b_rows = spiro(13);
         assert_eq!(a_rows.len(), 2, "atom 3 in exactly two rows (A0/A1)");
         assert_eq!(b_rows.len(), 2, "atom 13 in exactly two rows (B0/B1)");
-        // Frozen N12-CLOSE canonical component-order prerequisite: the
-        // A component rows come FIRST in the canonical owner's row list
-        // (source input order), then the B component rows.
-        assert_eq!(a_rows, vec![0, 1], "A0/A1 are canonical rows 0 and 1");
-        assert_eq!(b_rows, vec![2, 3], "B0/B1 are canonical rows 2 and 3");
+        // Candidate RDL orders the two five-membered RCFs before the two
+        // six-membered RCFs, retaining component order within each size.
+        // Keep the same 24 labeled permutations and all six literal preseeds.
+        assert_eq!(a_rows, vec![0, 2], "A0/A1 are candidate rows 0 and 2");
+        assert_eq!(b_rows, vec![1, 3], "B0/B1 are candidate rows 1 and 3");
         for row in a_rows.iter().chain(b_rows.iter()) {
             let contains_both = atom_rows[*row].contains(&AtomId::new(3))
                 && atom_rows[*row].contains(&AtomId::new(13));

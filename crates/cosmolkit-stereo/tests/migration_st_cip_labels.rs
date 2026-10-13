@@ -353,7 +353,7 @@ fn atropisomer_assignment_uses_core_carrier_order_and_preserves_axis_stereo() {
 }
 
 #[test]
-fn source_skipped_configurations_preserve_topology_properties_and_complete() {
+fn source_skipped_configurations_clear_selected_cip_and_preserve_user_properties() {
     for tag in [
         ChiralTag::Unspecified,
         ChiralTag::Tetrahedral,
@@ -379,28 +379,42 @@ fn source_skipped_configurations_preserve_topology_properties_and_complete() {
             ],
         );
         input.atoms[0].set_prop("_CIPCode", "preserved").unwrap();
+        input.atoms[0].set_prop("user", "retained").unwrap();
         let before = input.clone();
+        // Candidate clearSelectedCIPProperties runs before configuration
+        // eligibility; even skipped selected centers lose stale CIP labels.
+        let mut expected = before.clone();
+        expected.atoms[0].clear_prop("_CIPCode").unwrap();
         let mut properties = MoleculeProperties::default();
         properties.set_prop("sentry", "retained").unwrap();
-        for options in [
-            CipLabelOptions::default(),
-            CipLabelOptions::default().with_atoms(vec![AtomId::new(0)]),
+        for (options, full) in [
+            (CipLabelOptions::default(), true),
+            (
+                CipLabelOptions::default().with_atoms(vec![AtomId::new(0)]),
+                false,
+            ),
         ] {
             let result = assign_cip_labels(input.clone(), properties.clone(), &options).unwrap();
-            assert_eq!(result.topology(), &before, "{tag:?}");
+            assert_eq!(result.topology(), &expected, "{tag:?}");
+            assert_eq!(input, before);
             assert_eq!(
                 result.properties().prop("sentry"),
                 Some(&cosmolkit_model::PropertyValue::String("retained".into()))
             );
             assert_eq!(
                 result.properties().prop("_CIPComputed"),
-                Some(&cosmolkit_model::PropertyValue::Bool(true))
+                if full {
+                    Some(&cosmolkit_model::PropertyValue::Bool(true))
+                } else {
+                    None
+                }
             );
-            assert!(
+            assert_eq!(
                 result
                     .properties()
                     .is_prop_computed("_CIPComputed")
-                    .unwrap()
+                    .unwrap(),
+                full
             );
         }
     }
@@ -417,10 +431,20 @@ fn source_visible_limit_and_node_cap_diagnostics_remain_exact() {
         "Digraph generation failed: more than 100000 nodes found."
     );
 
+    // The candidate budget is cumulative, not reset per recursive compare:
+    // one comparison cannot sort four distinct tetrahedral carriers.
+    assert!(matches!(
+        assign_cip_labels(
+            tetrahedral_topology(ChiralTag::TetrahedralCcw),
+            MoleculeProperties::default(),
+            &CipLabelOptions::default().with_max_recursive_iterations(1),
+        ),
+        Err(CipLabelerError::MaxIterationsExceeded)
+    ));
     let assignment = assign_cip_labels(
         tetrahedral_topology(ChiralTag::TetrahedralCcw),
         MoleculeProperties::default(),
-        &CipLabelOptions::default().with_max_recursive_iterations(1),
+        &CipLabelOptions::default(),
     )
     .unwrap();
     assert_eq!(

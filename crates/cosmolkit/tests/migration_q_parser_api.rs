@@ -563,13 +563,17 @@ mod enabled {
 
     #[test]
     fn attachment_cleanup_follows_source_ap_branches() {
-        // SmilesParseOps.cpp CleanupAfterParsing: only atomic number 0 and
-        // exactly _AP1/_AP2 receive the typed attachment-point integer.
+        // Candidate MolOps.cpp:1301-1324 requires a degree-one dummy and
+        // decimal label; CleanupAfterParsing only installs labels 1 and 2.
         for (text, value) in [
-            ("* |$_AP1$|", Some(1)),
-            ("* |$_AP2$|", Some(2)),
+            ("* |$_AP1$|", None),
+            ("* |$_AP2$|", None),
+            ("*C |$_AP1$|", Some(1)),
+            ("*C |$_AP2$|", Some(2)),
+            ("*C |$_AP01$|", Some(1)),
             ("C |$_AP1$|", None),
             ("* |$_AP3$|", None),
+            ("*C |$_AP3$|", None),
         ] {
             assert_eq!(
                 parse(text).atom(0).unwrap().prop("_fromAttchpt"),
@@ -587,7 +591,7 @@ mod enabled {
             ..Default::default()
         };
         assert_eq!(
-            parse_smarts("* |$_AP1$|", &params)
+            parse_smarts("*C |$_AP1$|", &params)
                 .unwrap()
                 .atom(0)
                 .unwrap()

@@ -7,11 +7,14 @@ use crate::{CipLabelOptions, DerivedState, PreservationProof};
 
 #[mol_op_body(with_cip_labels, parts)]
 pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), OperationError> {
-    parts.stage_topology_properties_cow(|topology, properties, _cache| {
-        cosmolkit_stereo::assign_cip_labels_cow(topology, properties, options)
-            .map(|pair| ((), Some(pair)))
-            .map_err(OperationError::CipLabeler)
-    })?;
+    let (_completion, _staged) =
+        parts.stage_topology_properties_cow(|topology, properties, _cache| {
+            cosmolkit_stereo::assign_cip_labels_cow(topology, properties, options)
+                .map(|(topology, properties, completion)| {
+                    (completion, Some((topology, properties)))
+                })
+                .map_err(OperationError::CipLabeler)
+        })?;
     parts.clear_cache(
         DerivedState::STEREO
             .union(DerivedState::DRAWING)
@@ -25,7 +28,14 @@ pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), Op
             .union(DerivedState::COORDINATES),
         PreservationProof::CipLabelAssignment,
     )?;
-    parts.apply_cip_policy()
+    #[cfg(feature = "op-contracts")]
+    return parts.apply_cip_assignment_policy(
+        options.atoms().unwrap_or_default(),
+        options.bonds().unwrap_or_default(),
+        _completion,
+    );
+    #[cfg(not(feature = "op-contracts"))]
+    parts.apply_cip_assignment_policy()
 }
 
 impl crate::Molecule {

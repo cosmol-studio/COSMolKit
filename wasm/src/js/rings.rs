@@ -55,7 +55,7 @@ impl Molecule {
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=assignRings)]
+    #[wasm_bindgen(js_name=assignRings_)]
     pub fn assign_rings_(&self) -> Result<(), JsValue> {
         // COSMolKit❗✔️: self.inner.assign_rings_()
         self.inner
@@ -84,7 +84,7 @@ impl Molecule {
         let configuration_0 = crate::rings::RingSearchParams::from_js_configuration(&params)?;
         self.with_assigned_ring_families_with_params(configuration_0.into())
     }
-    #[wasm_bindgen(js_name=assignRingFamilies)]
+    #[wasm_bindgen(js_name=assignRingFamilies_)]
     pub fn assign_ring_families_(
         &self,
         #[wasm_bindgen(
@@ -122,7 +122,7 @@ impl Molecule {
         })?;
         result.ok_or_else(|| type_error("params"))?
     }
-    #[wasm_bindgen(js_name=assignRingFamiliesWithParams)]
+    #[wasm_bindgen(js_name=assignRingFamiliesWithParams_)]
     pub fn assign_ring_families_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "RingSearchParams")] params: JsValue,

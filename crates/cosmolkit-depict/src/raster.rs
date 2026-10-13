@@ -1,4 +1,4 @@
-//! Frozen legacy SVG rasterization with the identical embedded font/backends.
+//! SVG rasterization using the shared embedded font and raster backends.
 use crate::DrawingError;
 use crate::draw::{EMBEDDED_DRAW_FONT_FAMILY, embedded_draw_font_data};
 

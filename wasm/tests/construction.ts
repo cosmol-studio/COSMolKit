@@ -7,9 +7,9 @@ const molecule:Molecule=builder.build();
 Molecule.fromParts(molecule.topology(),builder.coordinates(),molecule.properties());
 const coordinates:Float64Array=molecule.coordinates3d();
 molecule.with2dCoordinateBlock([[0,0],[1,1]],{zPolicy:'ignore'});
-molecule.set2dCoordinatesWithParams([[0,0],[1,1]],new Coordinate2DInputParams(CoordinateZPolicy.Ignore));
+molecule.set2dCoordinatesWithParams_([[0,0],[1,1]],new Coordinate2DInputParams(CoordinateZPolicy.Ignore));
 molecule.withAdded3dConformer([[0,0,0],[1,1,1]],new Coordinate3DInputParams());
-molecule.set3dCoordinates([[0,0,0],[1,1,1]],new Replace3DCoordinatesParams(0));
+molecule.set3dCoordinates_([[0,0,0],[1,1,1]],new Replace3DCoordinatesParams(0));
 molecule.withAtomPosition(0,[1,2,3],new AtomPositionParams());
 // @ts-expect-error formal charge is checked numeric input
 atom.withFormalCharge('1');

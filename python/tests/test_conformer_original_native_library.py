@@ -119,15 +119,14 @@ def _execute(profile, path, digest, count):
             if (index + 1) % 100 == 0:
                 print(profile, "actual rows", index + 1, "mismatches", len(failures), flush=True)
     native = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(ck.__file__).parent.glob("*.so")}
-    summary = {"profile": profile, "rows_executed": count, "matched": count - len(failures), "failed": len(failures), "actual_stage_counts": stages, "failures": failures, "original_reference": str(path), "original_reference_sha256": digest, "actual_sha256": hashlib.sha256(actual_path.read_bytes()).hexdigest(), "native_sha256": native, "interpreter": sys.version, "source_pin": "0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985", "tolerance": COORD_TOLERANCE, "whole_block_ACCEPTED": False, "independent_review_required": True}
+    summary = {"profile": profile, "rows_executed": count, "matched": count - len(failures), "failed": len(failures), "actual_stage_counts": stages, "failures": failures, "original_reference": str(path), "original_reference_sha256": digest, "actual_sha256": hashlib.sha256(actual_path.read_bytes()).hexdigest(), "native_sha256": native, "interpreter": sys.version, "source_pin": "fece8caa860bdf6c9c82bdb9253f22a0cf87150c", "tolerance": COORD_TOLERANCE, "whole_block_ACCEPTED": False, "independent_review_required": True}
     (output / (profile + "-summary.json")).write_text(json.dumps(summary, indent=2) + "\n")
     assert not failures, f"{profile}: {len(failures)}/{count} native mismatches; all actual outcomes retained at {actual_path}"
 
 
 def test_original_library_native_152():
-    # RDKit 2026.03.6 manifest.json, unchanged original152 generation recipe;
-    # also frozen by crates/cosmolkit/tests/conformer_original_library.rs.
-    _execute("original152", _oracle(152, "smiles_small"), "7948eff11e2a078e88a4526b3e00d2618e515df7d292ae43883454565f84376a", 152)
+    # RDKit 2026.09.1 manifest.json, unchanged original152 generation recipe.
+    _execute("original152", _oracle(152, "smiles_small"), "dcf3580a03c0681ac3ca0b82702b55a08069a0fdb950774790506b2937d0eed4", 152)
 
 
 def configured(params, **changes):

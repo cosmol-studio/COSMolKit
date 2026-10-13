@@ -1,7 +1,5 @@
-//! Original CX numeric boundary regressions, retaining all counted inputs.
-//! Numeric behavior has one production owner in foundational CORE.
-//! The former private implementation and anchors are frozen in v49 custody;
-//! reached source bodies stay inside the sole CORE implementing functions.
+//! CX numeric boundary regressions for counted byte inputs.
+//! Foundational CORE owns numeric behavior and its function-local source anchors.
 
 #[cfg(test)]
 mod tests {

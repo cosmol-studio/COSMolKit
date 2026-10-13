@@ -32,7 +32,8 @@ mod distgeom;
 mod crystalff;
 
 pub use crystalff::{
-    CrystalFFDetails, CrystalffTorsionPreferencesError, get_experimental_torsions_without_bonds,
+    BoundsTorsionPath, CrystalFFDetails, CrystalffTorsionPreferencesError, ForcedTorsionKind,
+    get_experimental_torsions_without_bonds,
 };
 pub use distgeom::{
     ChiralSet, ChiralSetPtr, ChiralSetStructureFlags, ConformerOptimizer, ConformerOptimizerError,

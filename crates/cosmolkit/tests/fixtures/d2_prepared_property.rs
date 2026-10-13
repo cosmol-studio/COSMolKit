@@ -47,6 +47,25 @@ pub fn check(
     line: usize,
     orientation: bool,
 ) -> Vec<String> {
+    check_fields(topology, properties, Some(xy), line, orientation)
+}
+
+pub fn check_chemistry(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    line: usize,
+    orientation: bool,
+) -> Vec<String> {
+    check_fields(topology, properties, None, line, orientation)
+}
+
+fn check_fields(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    xy: Option<&[[f64; 2]]>,
+    line: usize,
+    orientation: bool,
+) -> Vec<String> {
     let fixed = include_str!(
         "../../../../testdata/depict_2d/expected/rdkit/prepared_property_presence.tsv"
     );
@@ -201,6 +220,9 @@ pub fn check(
     {
         errors.push(format!("{label}: modeled MOL scalar properties/computed differ actual={properties:?} expected={expected_mol:?}/{computed_mol:?}"));
     }
+    let Some(xy) = xy else {
+        return errors;
+    };
     let rows = expected_xy.lines().collect::<Vec<_>>();
     if xy.len() != rows.len() {
         errors.push(format!("{label}: XY lengths {}/{}", xy.len(), rows.len()));

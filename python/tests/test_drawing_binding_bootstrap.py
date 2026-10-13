@@ -46,7 +46,7 @@ def test_svg_png_are_real_and_preserve_the_receiver():
 
 def test_layout_value_transform_preserves_original():
     original = cosmolkit.Molecule.from_smiles("CCO")
-    positioned = original.add_2d_coordinates()
+    positioned = original.with_2d_coordinates()
     assert original.coordinates_2d() is None
     before = positioned.coordinates_2d()
     assert before is not None and len(before) == 3

@@ -83,7 +83,7 @@ impl Molecule {
         })?;
         result.ok_or_else(|| crate::host_values::type_error("params"))?
     }
-    #[wasm_bindgen(js_name=addHydrogens)]
+    #[wasm_bindgen(js_name=addHydrogens_)]
     pub fn add_hydrogens_(&self,
         #[wasm_bindgen(unchecked_optional_param_type = "AddHsParams | AddHsParamsOptions")] params: JsValue,
     ) -> Result<(), JsValue> {
@@ -92,7 +92,7 @@ impl Molecule {
             .add_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=addHydrogensWithParams)]
+    #[wasm_bindgen(js_name=addHydrogensWithParams_)]
     pub fn add_hydrogens_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "AddHsParams")] params: JsValue,
@@ -108,7 +108,7 @@ impl Molecule {
         })?;
         result.ok_or_else(|| crate::host_values::type_error("params"))?
     }
-    #[wasm_bindgen(js_name=removeHydrogens)]
+    #[wasm_bindgen(js_name=removeHydrogens_)]
     pub fn remove_hydrogens_(&self,
         #[wasm_bindgen(unchecked_optional_param_type = "RemoveHsParams | RemoveHsParamsOptions")] params: JsValue,
     ) -> Result<(), JsValue> {
@@ -117,7 +117,7 @@ impl Molecule {
             .remove_hydrogens_with_params_(&params.inner)
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=removeHydrogensWithParams)]
+    #[wasm_bindgen(js_name=removeHydrogensWithParams_)]
     pub fn remove_hydrogens_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "RemoveHsParams")] params: JsValue,

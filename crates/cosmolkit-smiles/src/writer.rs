@@ -963,7 +963,14 @@ pub fn write_fragment_cx_smiles<'record>(
         &output.atom_order,
         &output.bond_order,
         None,
-        params.coordinate_selection,
+        if params.fields.contains(crate::CxSmilesFields::COORDS) {
+            crate::cx_writer::select_cx_coordinates(
+                record.coordinates,
+                params.coordinate_selection,
+            )?
+        } else {
+            None
+        },
     )?;
     if extension.is_empty() {
         Ok(output.text)
@@ -1025,16 +1032,14 @@ fn write_smiles_output_with_random_stream<'record>(
     // canonicalization on a private molecule copy. Keep the detached record
     // immutable and make those same temporary changes on this working block.
     let mut topology = record.topology.clone();
-    let original_atom_maps = if params.ignore_atom_map_numbers {
-        let original = params.canonical.then(|| {
-            topology
-                .atoms
-                .iter()
-                .map(|atom| atom.atom_map().filter(|map| *map != 0))
-                .collect::<Vec<_>>()
-        });
+    let original_atom_maps = if params.canonical && params.ignore_atom_map_numbers {
+        let original = topology
+            .atoms
+            .iter()
+            .map(|atom| atom.atom_map().filter(|map| *map != 0))
+            .collect::<Vec<_>>();
         // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles map setup
-        // RDKit✔️✔️:       if (params.ignoreAtomMapNumbers) {
+        // RDKit✔️✔️:       if (params.canonical && params.ignoreAtomMapNumbers) {
         // RDKit✔️✔️:         atomMapNums[atom->getIdx()] = atom->getAtomMapNum();
         // RDKit✔️✔️:         atom->setAtomMapNum(0);
         // RDKit✔️✔️:       }
@@ -1042,7 +1047,7 @@ fn write_smiles_output_with_random_stream<'record>(
         for atom in &mut topology.atoms {
             atom.set_atom_map(None);
         }
-        original
+        Some(original)
     } else {
         None
     };
@@ -1812,6 +1817,16 @@ fn prepare_writer_stereo_components(
     components: &[Vec<usize>],
     mut prepared_fragments: Option<&mut [Option<WriterStereoFragment>]>,
 ) -> Result<(), SmilesParseError> {
+    // RDKit✔️✔️:   auto mols =
+    // RDKit✔️✔️:       MolOps::getMolFrags(mol, false, nullptr, &fragsMolAtomMapping, false);
+    // RDKit✔️✔️:   if (!copyConformers) {
+    // RDKit✔️✔️:     for (auto &frag : res) {
+    // RDKit✔️✔️:       frag->clearConformers();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // SmilesWrite.cpp/MolOps.cpp deliberately remove geometry even for the
+    // one-component case. None below is real source state, not a discarded
+    // caller conformer. SMARTS' full-copy Canon path lends geometry separately.
     // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags computed-property copy selection
     // RDKit❗❌:       if (comp.size() == 1 ||
     // RDKit❗❌:           (nFrags > 3 && !fragmentHasChallengingFeatures(comp, atomsInFrag))) {
@@ -3875,6 +3890,7 @@ pub fn canonicalize_fragment_from_bond_mask_source(
     random_stream: Option<&mut cosmolkit_core::RdkitRandomGenerator<'_>>,
     do_chiral_inversions: bool,
     groups: &BTreeMap<usize, usize>,
+    conformer: Option<cosmolkit_core::AtropisomerConformer<'_>>,
 ) -> Result<(), SmilesParseError> {
     // RDKit❗❌: void canonicalizeFragment(ROMol &mol, int atomIdx,
     // RDKit❗❌:                           std::vector<AtomColors> &colors,
@@ -3943,6 +3959,7 @@ pub fn canonicalize_fragment_from_bond_mask_source(
         random_stream,
         do_chiral_inversions,
         groups,
+        conformer,
     )
 }
 
@@ -3967,6 +3984,7 @@ pub fn canonicalize_fragment_source(
     random_stream: Option<&mut cosmolkit_core::RdkitRandomGenerator<'_>>,
     do_chiral_inversions: bool,
     stereo_group_references: &BTreeMap<usize, usize>,
+    conformer: Option<cosmolkit_core::AtropisomerConformer<'_>>,
 ) -> Result<(), SmilesParseError> {
     canonicalize_fragment_impl(
         topology,
@@ -3985,6 +4003,7 @@ pub fn canonicalize_fragment_source(
         do_chiral_inversions,
         stereo_group_references,
         None,
+        conformer,
     )
 }
 
@@ -4006,6 +4025,7 @@ fn canonicalize_fragment_impl(
     do_chiral_inversions: bool,
     stereo_group_references: &BTreeMap<usize, usize>,
     source_queries: Option<cosmolkit_model::QueryStateRef<'_>>,
+    conformer: Option<cosmolkit_core::AtropisomerConformer<'_>>,
 ) -> Result<(), SmilesParseError> {
     // RDKit❗❌: RDKIT_GRAPHMOL_EXPORT void canonicalizeFragment(
     // RDKit❗❌:     ROMol &mol, int atomIdx, std::vector<AtomColors> &colors,
@@ -4283,18 +4303,27 @@ fn canonicalize_fragment_impl(
     if properties.prop("_StereochemDone").is_none() {
         let mut update = None;
         let mut atom_valence_updates = Vec::new();
-        let result = cosmolkit_core::assign_legacy_stereochemistry_source(
+        // RDKit✔️✔️: if (!mol.hasProp(common_properties::_StereochemDone)) {
+        // RDKit✔️✔️:   MolOps::assignStereochemistry(mol, false);
+        // RDKit✔️✔️: }
+        // The actual caller-owned conformer reaches the one stereo owner only
+        // inside the source guard. No coordinate generation, clone or inferred
+        // is3D flag; None remains the genuine source no-conformer branch.
+        let result = cosmolkit_core::assign_legacy_stereochemistry_source_with_conformer(
             topology,
             valence,
             rings,
             source_queries,
+            conformer,
             false,
             false,
             &mut update,
             &mut atom_valence_updates,
         );
-        // cleanIt=false cannot enter the explicit-H removal branch.
-        debug_assert!(atom_valence_updates.is_empty());
+        // Candidate post-sanitize atropisomer detection can refresh source
+        // valence facts even with cleanIt=false. The shared owner has already
+        // applied those detached updates to topology; this raw Canon caller
+        // owns no additional runtime cache to synchronize.
         if let Some(update) = update {
             *rings = update;
         }
@@ -8268,6 +8297,178 @@ mod source590_fragment_tests {
         )
     }
     #[test]
+    fn candidate_raw_canon_lends_none_two_d_wedges_and_original_three_d_view() {
+        use cosmolkit_core::AtropisomerConformer;
+        use cosmolkit_model::{Conformer2D, Conformer3D};
+        let mut original = graph(6, &[(0, 1), (0, 2), (0, 3), (1, 4), (1, 5)]);
+        original.bonds[2].set_order(BondOrder::Double);
+        original.bonds[4].set_order(BondOrder::Double);
+        original.bonds[1].set_direction(BondDirection::BeginWedge);
+        let v = valence(&original);
+        for (i, atom) in original.atoms.iter_mut().enumerate() {
+            atom.set_source_valence_facts(cosmolkit_model::SourceAtomValenceFacts {
+                explicit_valence: v.explicit_valence[i] as i8,
+                implicit_valence: v.implicit_hydrogens[i] as i8,
+            });
+        }
+        let before = original.clone();
+        let two_d = Conformer2D::new(
+            0,
+            vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, -1.0],
+                [1.0, 1.0],
+                [1.0, -1.0],
+            ],
+        );
+        let three_d = Conformer3D::new(
+            0,
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, -1.0],
+                [0.0, -1.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [1.0, -1.0, 0.0],
+            ],
+            true,
+        );
+        let stored_as_three_d_but_two_d =
+            Conformer3D::new(0, three_d.coordinates().to_vec(), false);
+        let two_before = two_d.clone();
+        let three_before = three_d.clone();
+        let mut observed = Vec::new();
+        for (case, conformer) in [
+            None,
+            Some(AtropisomerConformer::TwoD(&two_d)),
+            Some(AtropisomerConformer::ThreeD(&three_d)),
+            Some(AtropisomerConformer::ThreeD(&stored_as_three_d_but_two_d)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut expected = original.clone();
+            let mut expected_rings =
+                cosmolkit_core::symmetrized_sssr(&expected, &Default::default()).unwrap();
+            cosmolkit_core::assign_legacy_stereochemistry_source_with_conformer(
+                &mut expected,
+                &v,
+                &mut expected_rings,
+                None,
+                conformer,
+                false,
+                false,
+                &mut None,
+                &mut Vec::new(),
+            )
+            .unwrap();
+            let mut actual = original.clone();
+            let mut actual_rings =
+                cosmolkit_core::symmetrized_sssr(&actual, &Default::default()).unwrap();
+            // Canon's global stereo preparation precedes traversal. Visit only
+            // one unvisited leaf here: the later double-direction cleanup then
+            // does not clear the unvisited axial tag we are observing.
+            let mut colors = [AtomColor::Black; 6];
+            colors[2] = AtomColor::White;
+            canonicalize_fragment_source(
+                &mut actual,
+                &mut MoleculeProperties::default(),
+                &v,
+                &mut actual_rings,
+                2,
+                &mut colors,
+                &[0, 1, 2, 3, 4, 5],
+                &mut Vec::new(),
+                None,
+                None,
+                None,
+                true,
+                None,
+                false,
+                &BTreeMap::new(),
+                conformer,
+            )
+            .unwrap();
+            assert_eq!(
+                actual.bonds[0].stereo(),
+                expected.bonds[0].stereo(),
+                "conformer case {case}"
+            );
+            observed.push(actual.bonds[0].stereo());
+            // The actual SMARTS adapter makes a full copy and must preserve
+            // geometry too, unlike ordinary SMILES' geometry-free fragments.
+            use cosmolkit_model::{
+                AtomQueryPredicate, BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode,
+            };
+            let (rows_2d, rows_3d) = match conformer {
+                None => (vec![], vec![]),
+                Some(AtropisomerConformer::TwoD(row)) => (vec![row.clone()], vec![]),
+                Some(AtropisomerConformer::ThreeD(row)) => (vec![], vec![row.clone()]),
+            };
+            let mut query = QueryGraph::from_parts(
+                original
+                    .atoms
+                    .iter()
+                    .map(|atom| {
+                        QueryAtom::from_parts(
+                            atom.clone(),
+                            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                        )
+                    })
+                    .collect(),
+                original
+                    .bonds
+                    .iter()
+                    .map(|bond| {
+                        QueryBond::from_parts(
+                            bond.clone(),
+                            QueryNode::predicate(BondQueryPredicate::Order(bond.order())),
+                        )
+                    })
+                    .collect(),
+                [],
+                rows_2d,
+                rows_3d,
+                vec![],
+            )
+            .unwrap();
+            let original_query = query.clone();
+            let mut query_rings = rings(6, 5);
+            let mut colors = [AtomColor::Black; 6];
+            colors[2] = AtomColor::White;
+            canonicalize_query_fragment_source(
+                &mut query,
+                &mut query_rings,
+                2,
+                &mut colors,
+                &[0, 1, 2, 3, 4, 5],
+                &mut Vec::new(),
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+            assert_eq!(
+                query.bonds()[0].bond().stereo(),
+                expected.bonds[0].stereo(),
+                "query conformer case {case}"
+            );
+            assert_eq!(query.conformers_2d(), original_query.conformers_2d());
+            assert_eq!(query.conformers_3d(), original_query.conformers_3d());
+        }
+        assert_ne!(
+            observed[2], observed[3],
+            "is_3d, not storage width or z, selects the geometry branch"
+        );
+        assert_eq!(original, before);
+        assert_eq!(two_d, two_before);
+        assert_eq!(three_d, three_before);
+        assert!(three_d.is_3d());
+        assert!(!stored_as_three_d_but_two_d.is_3d());
+    }
+    #[test]
     fn source590_fragment_preconditions_precede_all_preparation_effects() {
         let mut g = graph(2, &[(0, 1)]);
         let v = valence(&g);
@@ -8294,7 +8495,8 @@ mod source590_fragment_tests {
                 false,
                 None,
                 true,
-                &BTreeMap::new()
+                &BTreeMap::new(),
+                None,
             ),
             Err(SmilesParseError::TraversalStateIndex {
                 state: "colors",
@@ -8334,6 +8536,7 @@ mod source590_fragment_tests {
             None,
             true,
             &BTreeMap::new(),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -8375,6 +8578,7 @@ mod source590_fragment_tests {
             None,
             true,
             &BTreeMap::new(),
+            None,
         )
         .unwrap();
         assert_eq!(props.prop("_StereochemDone"), Some(&PropertyValue::Int(1)));
@@ -8388,10 +8592,10 @@ mod source590_fragment_tests {
         );
         assert!(r.find_type() == cosmolkit_core::RingFindType::Sssr);
         assert!(r.is_initialized());
-        assert_eq!(r.atom_row_count(), 0);
+        assert_eq!(r.atom_row_count(), 2);
     }
     #[test]
-    fn source590_ring_error_retains_reset_cache_before_startpoint_write() {
+    fn candidate_rdl_preparation_preserves_legacy_dictionary_and_reaches_startpoint_write() {
         let mut g = graph(2, &[(0, 1)]);
         let v = valence(&g);
         let mut props = MoleculeProperties::default();
@@ -8399,30 +8603,48 @@ mod source590_fragment_tests {
         props.set_prop("__computedProps", false).unwrap();
         let mut r = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
         let mut stack = vec![];
-        assert!(matches!(
-            canonicalize_fragment_source(
-                &mut g,
-                &mut props,
-                &v,
-                &mut r,
-                0,
-                &mut [AtomColor::White; 2],
-                &[0; 2],
-                &mut stack,
-                None,
-                None,
-                None,
-                false,
-                None,
-                true,
-                &BTreeMap::new()
-            ),
-            Err(SmilesParseError::WriterRings(_))
-        ));
+        canonicalize_fragment_source(
+            &mut g,
+            &mut props,
+            &v,
+            &mut r,
+            0,
+            &mut [AtomColor::White; 2],
+            &[0; 2],
+            &mut stack,
+            None,
+            None,
+            None,
+            false,
+            None,
+            true,
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
         assert!(r.find_type() == cosmolkit_core::RingFindType::Sssr);
-        assert_eq!(r.atom_row_count(), 0);
-        assert!(g.atoms[0].prop("_TraversalStartPoint").is_none());
-        assert!(stack.is_empty());
+        assert_eq!(r.atom_row_count(), 2);
+        assert_eq!(
+            g.atoms[0].prop("_TraversalStartPoint"),
+            Some(&PropertyValue::Bool(true))
+        );
+        assert_eq!(
+            props.prop("__computedProps"),
+            Some(&PropertyValue::Bool(false))
+        );
+        // Candidate RDL preparation no longer fails while clearing extraRings:
+        // normal Canon traversal emits both atoms and their connecting bond.
+        assert_eq!(
+            stack,
+            vec![
+                MolStackElem::Atom(0),
+                MolStackElem::Bond {
+                    bond: BondId::new(0),
+                    atom_to_left: 0
+                },
+                MolStackElem::Atom(1)
+            ]
+        );
     }
     #[test]
     fn source590_ring_bad_any_cast_follows_actual_tag_change() {
@@ -8713,6 +8935,7 @@ mod source594_mask_tests {
             None,
             true,
             &BTreeMap::new(),
+            None,
         )
     }
     #[test]
@@ -8778,6 +9001,7 @@ mod source594_mask_tests {
             None,
             true,
             &BTreeMap::new(),
+            None,
         )
         .unwrap_err();
         assert!(matches!(
@@ -8917,6 +9141,26 @@ pub fn canonicalize_query_fragment_source(
             .map_err(|_| {
             SmilesParseError::WriterCanonicalInvariant("source query/carrier row alignment")
         })?;
+    // RDKit✔️✔️: ROMol mol(inmol);
+    // SmartsWrite::molToSmarts makes a full copy, unlike ordinary SMILES'
+    // getMolFrags(copyConformers=false). Its Canon caller retains actual
+    // geometry. CK-COORD-002 replaces implicit first with unique selection;
+    // bypass selection entirely when the source assignment guard is closed.
+    let conformer = if properties.prop("_StereochemDone").is_none() {
+        crate::select_cx_coordinates_from_sets(
+            query.conformers_2d(),
+            query.conformers_3d(),
+            crate::CxCoordinateSelection::Auto,
+        )?
+        .map(|row| match row {
+            crate::CoordinateSource::TwoD(row) => cosmolkit_core::AtropisomerConformer::TwoD(row),
+            crate::CoordinateSource::ThreeD(row) => {
+                cosmolkit_core::AtropisomerConformer::ThreeD(row)
+            }
+        })
+    } else {
+        None
+    };
     let result = canonicalize_fragment_impl(
         &mut topology,
         &mut properties,
@@ -8934,6 +9178,7 @@ pub fn canonicalize_query_fragment_source(
         true,
         &BTreeMap::new(),
         Some(source_queries),
+        conformer,
     );
     for (out, carrier) in query.atoms_mut().iter_mut().zip(&topology.atoms) {
         out.replace_source_carrier_members_from(carrier);
@@ -9148,6 +9393,7 @@ pub fn prepare_smarts_serialization_topology(
             None,
             true,
             &BTreeMap::new(),
+            None,
         )?;
     }
     Ok(topology)

@@ -172,8 +172,8 @@ fn binding_contract_exposes_the_exact_eight_public_entries() {
     }
     assert_eq!(rows[4].javascript_name, "withCipLabels");
     assert_eq!(rows[5].javascript_name, "withCipLabelsWithOptions");
-    assert_eq!(rows[6].javascript_name, "assignCipLabels");
-    assert_eq!(rows[7].javascript_name, "assignCipLabelsWithOptions");
+    assert_eq!(rows[6].javascript_name, "assignCipLabels_");
+    assert_eq!(rows[7].javascript_name, "assignCipLabelsWithOptions_");
     assert_eq!(rows[4].callable.unwrap().parameters.len(), 0);
     assert_eq!(rows[5].callable.unwrap().parameters.len(), 1);
     assert_eq!(rows[6].callable.unwrap().parameters.len(), 0);
@@ -341,10 +341,9 @@ fn selection_and_repeated_assignment_preserve_unselected_state_exactly() {
             .prop("_CIPNeighborOrder"),
         Some(&cosmolkit_model::PropertyValue::from("[0]"))
     );
-    assert_eq!(
-        none_selected.property("_CIPComputed"),
-        Some(&cosmolkit::PropertyValue::Bool(true))
-    );
+    // CIPLabeler.cpp::clearSelectedCIPProperties always clears the molecule
+    // marker; only a completed full selection reinstalls it.
+    assert_eq!(none_selected.property("_CIPComputed"), None);
 
     let selected = none_selected
         .with_cip_labels_with_options(
@@ -362,7 +361,31 @@ fn selection_and_repeated_assignment_preserve_unselected_state_exactly() {
             .prop("_CIPNeighborOrder"),
         Some(&cosmolkit_model::PropertyValue::from("[4,3,2,1]"))
     );
-    assert_eq!(selected.with_cip_labels().unwrap(), selected);
+    assert_eq!(selected.property("_CIPComputed"), None);
+    let full = selected.with_cip_labels().unwrap();
+    assert!(full.cip_computed().unwrap());
+    assert_eq!(full.topology(), selected.topology());
+    assert_eq!(full.with_cip_labels().unwrap(), full);
+    let explicit_all = selected
+        .with_cip_labels_with_options(
+            &CipLabelOptions::default()
+                .with_atoms(
+                    selected
+                        .atoms()
+                        .iter()
+                        .map(|atom| atom.id())
+                        .chain([AtomId::new(0)]),
+                )
+                .with_bonds(
+                    selected
+                        .bonds()
+                        .iter()
+                        .map(|bond| bond.id())
+                        .chain([BondId::new(0)]),
+                ),
+        )
+        .unwrap();
+    assert_eq!(explicit_all, full);
 }
 
 #[test]

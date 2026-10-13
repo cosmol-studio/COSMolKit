@@ -54,9 +54,8 @@ fingerprints, descriptors, search, or file IO may be sibling domain crates;
 their dependency on core is determined by actual algorithm reuse, not by a
 public feature alias.
 
-The name `cosmolkit-core` is retained for package continuity; its role is no
-longer "the crate that owns Molecule". It is a reusable implementation crate,
-similar in dependency direction to a fingerprint or search crate, and may be
+`cosmolkit-core` is a reusable implementation crate, similar in dependency
+direction to a fingerprint or search crate, and may be
 depended on by other domain crates when the dependency is acyclic and
 explicit.
 
@@ -91,9 +90,8 @@ result, records contract effects, and commits the result.
 
 `cosmolkit-core` must not depend on `cosmolkit-cx`. CX is shared notation syntax
 owned by the SMILES and SMARTS/search layers; only those target-representation
-crates parse `ParsedCxExtensions` and lower them into a molecule or query. Any
-current core-to-CX edge is migration residue from colocated notation code and
-must be removed when those parsers are extracted.
+crates parse `ParsedCxExtensions` and lower them into a molecule or query.
+Foundational algorithms receive explicit model values, not CX parser state.
 
 ## 3. Model Crate
 
@@ -265,9 +263,8 @@ becomes the authoritative, externally observable `Molecule` state.
 `cosmolkit-core` and every other domain crate operate on detached
 `cosmolkit-model` values and return detached values, assignments, matches, or
 structured errors. They must not accept `Molecule`, `MoleculeBuilder`,
-`OpParts`, derived-cache blocks, or operation runtime types. Any crate-private
-adapter left during migration is transitional and must be removed before the
-architecture is complete; it cannot contain a second algorithm
+`OpParts`, derived-cache blocks, or operation runtime types. Crate-private
+adapters must preserve this boundary and must not contain a second algorithm
 implementation.
 
 ### Operation capability projection
@@ -334,12 +331,12 @@ introduced. Existing eager multiple-output operations retain their lifecycle.
 The split-crate layout is the 0.5.0 architecture.
 When changing an ownership boundary, preserve complete vertical behavior:
 
-1. Extract model values and the query AST without changing chemistry behavior.
-2. Move one low-coupling algorithm family behind a value-based API.
-3. Implement the corresponding `cosmolkit::Molecule` wrapper and preserve the
-   existing public behavior and operation contract.
-4. Add source markers and parity tests at the new algorithm boundary.
-5. Only after the vertical slice is stable, migrate additional domains.
+1. Keep model values and the query AST independent of chemistry algorithms.
+2. Give each algorithm family one owner behind a value-based API.
+3. Keep the corresponding `cosmolkit::Molecule` wrapper consistent with its
+   public behavior and operation contract.
+4. Maintain source markers and tests at the algorithm boundary.
+5. Validate the complete vertical behavior before changing another domain.
 
 Query AST values belong to the model; parser/matcher behavior belongs to search,
 without a model-to-search dependency. Conformer generation, force fields,
@@ -393,13 +390,12 @@ for exact membership and usage.
 
 The supported user entry point is `cosmolkit`. New documentation, examples,
 Python bindings, and integration tests must import `Molecule` and public
-operations from that crate. `use cosmolkit_core::Molecule` is not a supported
-target architecture and must not be preserved by making `cosmolkit-core`
-depend on the facade.
+operations from that crate. Domain crates must not depend on the facade or
+expose an alternative live `Molecule` owner.
 
-During migration, compatibility shims may exist only as deliberate, temporary
-transitions with an explicit removal decision. They must not duplicate a
-second `Molecule` implementation or a second operation runtime.
+Compatibility requirements need an explicit decision and must preserve the
+single `Molecule` implementation and operation runtime. They do not authorize
+duplicate ownership, algorithms or registries.
 
 ## 8. Non-Negotiable Invariants
 

@@ -621,8 +621,10 @@ fn prepare_layered_fingerprint<'a>(
             }
         }),
     };
-    if ring_info.atom_row_count() != graph.atom_count()
-        || ring_info.bond_row_count() != graph.bond_count()
+    // RingInfo's source getters return zero membership beyond a sparse
+    // table's stored extent. Only an extent beyond this target is invalid.
+    if ring_info.atom_row_count() > graph.atom_count()
+        || ring_info.bond_row_count() > graph.bond_count()
     {
         return Err(LayeredFingerprintError::InvalidArguments {
             reason: "ring rows do not match topology",

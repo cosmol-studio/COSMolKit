@@ -16,7 +16,7 @@ def test_query_cache_survives_coordinate_transform_and_clears_on_sanitize():
     mol = ck.Molecule.from_smiles("CCO")
     no_h = mol.crippen_descriptors_with_params(False, False)
     assert (no_h.logp, no_h.molar_refractivity) == (-0.3487, 6.0798000000000005)
-    depicted = mol.add_2d_coordinates()
+    depicted = mol.with_2d_coordinates()
     warm = depicted.crippen_descriptors_with_params(True, False)
     assert (warm.logp, warm.molar_refractivity) == (-0.3487, 6.0798000000000005)
     cleared = mol.sanitize()

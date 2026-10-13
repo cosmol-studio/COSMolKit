@@ -182,7 +182,12 @@ fn detached_typed_error_chain_preserves_sampling_safety_boundary() {
     let absent_properties = MoleculeProperties::default();
     // This is the deterministic CK boundary for an upstream unwritten
     // sampling-cost slot, not an RDKit-parity result or a replacement value.
-    let disconnected = topology(vec![AtomSpec::new(Element::C); 2], &[]);
+    // Candidate skips the partial cost when no movable bond remains. This
+    // chain's nonring bonds still reach the unchanged undefined-slot guard.
+    let disconnected = topology(
+        vec![AtomSpec::new(Element::C); 5],
+        &[(0, 1), (1, 2), (2, 3)],
+    );
     let error = compute_2d_coordinates(
         &disconnected,
         &absent_properties,
@@ -200,7 +205,7 @@ fn detached_typed_error_chain_preserves_sampling_safety_boundary() {
         source.downcast_ref::<cosmolkit_depict::Coordinate2DLayoutError>(),
         Some(
             cosmolkit_depict::Coordinate2DLayoutError::UndefinedSamplingDistance {
-                first: 1,
+                first: 4,
                 second: 0
             }
         )
@@ -317,16 +322,15 @@ fn entry_output_ring_and_stereo_inputs_complete_atom_ordered_finite_rows() {
 #[test]
 fn sampling_boundary_public_partial_fragments_do_not_gain_a_fallback_contract() {
     let absent_properties = MoleculeProperties::default();
-    // Fixed RDKit 2026.03.1 happens to return coordinates for C.C and reaches
-    // map::at for CC.CC, but both first read unwritten sampling-cost storage.
-    // Those observations are retained in DRAW-layout.md, not promoted to a
-    // portable expected value. CK must stop at its deterministic safety
-    // boundary instead of zero-filling, filtering or skipping the sampler.
+    // Candidate EmbeddedFrag.cpp:1694-1699 returns before the partial cost
+    // when the fragment has no movable candidates. C.C now succeeds; CC.CC
+    // retains its old unwritten-slot error because DepictUtils.cpp:366-376
+    // includes every nonring bond, including terminal bonds.
     for disconnected in [
         topology(vec![AtomSpec::new(Element::C); 2], &[]),
         topology(vec![AtomSpec::new(Element::C); 4], &[(0, 1), (2, 3)]),
     ] {
-        let error = compute_2d_coordinates(
+        let sampled = compute_2d_coordinates(
             &disconnected,
             &absent_properties,
             &Compute2DCoordinatesParams {
@@ -335,14 +339,27 @@ fn sampling_boundary_public_partial_fragments_do_not_gain_a_fallback_contract() 
                 sample_seed: 7,
                 ..Default::default()
             },
+        );
+        if !disconnected.bonds.is_empty() {
+            assert!(matches!(
+                sampled,
+                Err(DepictError::Fragment(
+                    cosmolkit_depict::Coordinate2DLayoutError::UndefinedSamplingDistance {
+                        first: 2,
+                        second: 0
+                    }
+                ))
+            ));
+            continue;
+        }
+        let sampled = sampled.unwrap();
+        let unchanged = compute_2d_coordinates(
+            &disconnected,
+            &absent_properties,
+            &Compute2DCoordinatesParams::default(),
         )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            DepictError::Fragment(
-                cosmolkit_depict::Coordinate2DLayoutError::UndefinedSamplingDistance { .. }
-            )
-        ));
+        .unwrap();
+        assert_eq!(sampled, unchanged);
     }
 }
 
@@ -837,7 +854,7 @@ fn collision_discovery_atom_threshold_hetero_factor_and_density() {
         ],
     );
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, false), [(2, 0)]);
+    assert_eq!(frag.find_collisions(&distance, false, true), [(2, 0)]);
     let density_sum = frag.atoms.values().map(|row| row.density).sum::<f64>();
     assert_eq!(frag.total_density().to_bits(), density_sum.to_bits());
     assert!(frag.atoms[&0].density > 1.0 / (0.71 * 0.71));
@@ -845,7 +862,7 @@ fn collision_discovery_atom_threshold_hetero_factor_and_density() {
     let rings = source_rings(&graph);
     let mut frag = collision_fragment(&graph, &rings, &[(0, [0.0, 0.0]), (1, [0.0, 0.0])]);
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, false), [(1, 0)]);
+    assert_eq!(frag.find_collisions(&distance, false, true), [(1, 0)]);
     assert_eq!(frag.total_density(), 2000.0);
 }
 
@@ -866,8 +883,8 @@ fn collision_discovery_bond_crossing_selects_source_first_distance_tie() {
         ],
     );
     let distance = frag.collision_distance_matrix().unwrap();
-    assert!(frag.find_collisions(&distance, false).is_empty());
-    assert_eq!(frag.find_collisions(&distance, true), [(0, 2)]);
+    assert!(frag.find_collisions(&distance, false, true).is_empty());
+    assert_eq!(frag.find_collisions(&distance, true, true), [(0, 2)]);
 }
 
 #[test]
@@ -1018,9 +1035,9 @@ fn collision_bond_flip_repairs_first_collision_with_source_path_order() {
         atom.fixed = false;
     }
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, true), [(4, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(4, 0)]);
     frag.remove_collisions_bond_and_spiro_flip().unwrap();
-    assert!(frag.find_collisions(&distance, true).is_empty());
+    assert!(frag.find_collisions(&distance, true, true).is_empty());
     assert!((frag.atoms[&4].loc[0] - 3.9).abs() < 1e-12);
     assert!((frag.atoms[&4].loc[1] - 0.1).abs() < 1e-12);
 }
@@ -1078,11 +1095,11 @@ fn collision_bond_flip_near_tie_obeys_strict_computed_density() {
         atom.fixed = false;
     }
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, true), [(3, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(3, 0)]);
     let before_density = frag.total_density();
     frag.remove_collisions_bond_and_spiro_flip().unwrap();
     assert!(frag.total_density() < before_density);
-    assert_eq!(frag.find_collisions(&distance, true), [(3, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(3, 0)]);
 }
 
 #[test]
@@ -1206,7 +1223,7 @@ fn collision_open_angle_processes_initial_pair_snapshot_in_source_order() {
         atom.fixed = false;
     }
     let distance = expected.collision_distance_matrix().unwrap();
-    let original_pairs = expected.find_collisions(&distance, false);
+    let original_pairs = expected.find_collisions(&distance, false, true);
     assert_eq!(original_pairs, [(2, 0), (3, 0), (3, 2)]);
     for (first, second) in original_pairs {
         expected.open_angles(&distance, first, second).unwrap();
@@ -1318,9 +1335,9 @@ fn collision_repair_runs_flip_then_open_angle_then_shortening_in_source_order() 
         row.fixed = false;
     }
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, true), [(4, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(4, 0)]);
     frag.remove_collisions_bond_and_spiro_flip().unwrap();
-    assert!(frag.find_collisions(&distance, true).is_empty());
+    assert!(frag.find_collisions(&distance, true, true).is_empty());
     let after_flip = frag
         .atoms
         .iter()
@@ -1357,13 +1374,13 @@ fn collision_repair_leaves_fixed_ring_overlap_unresolved_and_bounded() {
         ],
     );
     let distance = frag.collision_distance_matrix().unwrap();
-    assert_eq!(frag.find_collisions(&distance, true), [(2, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(2, 0)]);
     frag.remove_collisions_bond_and_spiro_flip().unwrap();
     frag.remove_collisions_open_angles().unwrap();
     frag.remove_collisions_shorten_bonds().unwrap();
     assert_eq!(frag.atoms[&0].loc, [0.0, 0.0]);
     assert_eq!(frag.atoms[&2].loc, [0.1, 0.1]);
-    assert_eq!(frag.find_collisions(&distance, true), [(2, 0)]);
+    assert_eq!(frag.find_collisions(&distance, true, true), [(2, 0)]);
 }
 
 #[test]
@@ -1833,18 +1850,39 @@ fn ring_embed_fused_spiro_and_bridged_complete_source_ring_systems() {
     ];
     for (name, count, edges) in cases {
         let graph = topology(vec![AtomSpec::new(Element::C); count], edges);
-        let rings = source_rings(&graph);
-        let actual_rings: Vec<Vec<usize>> = rings
-            .atom_rings()
-            .iter()
-            .map(|ring| ring.iter().map(|atom| atom.index()).collect())
-            .collect();
+        // Numerical ring embedding consumes explicit ordered rows. Keep all
+        // original distance comparisons independent of the upgraded RDL
+        // basis normalization; current source rings are tested by their owner.
+        let mut rings = RingInfo::new(RingFindType::SymmSssr, count, graph.bonds.len());
         let expected_rings: &[&[usize]] = match name {
             "fused" => &[&[0, 1, 2], &[3, 1, 2]],
             "spiro" => &[&[1, 0, 2], &[3, 0, 4]],
             "bridged" => &[&[1, 0, 6, 3, 2], &[4, 0, 6, 3, 5]],
             _ => unreachable!(),
         };
+        for row in expected_rings {
+            let bonds: Vec<_> = row
+                .iter()
+                .copied()
+                .zip(row.iter().copied().cycle().skip(1))
+                .map(|(begin, end)| {
+                    graph
+                        .bonds
+                        .iter()
+                        .position(|bond| {
+                            (bond.begin().index() == begin && bond.end().index() == end)
+                                || (bond.begin().index() == end && bond.end().index() == begin)
+                        })
+                        .unwrap()
+                })
+                .collect();
+            rings.add_ring(row, &bonds).unwrap();
+        }
+        let actual_rings: Vec<Vec<usize>> = rings
+            .atom_rings()
+            .iter()
+            .map(|ring| ring.iter().map(|atom| atom.index()).collect())
+            .collect();
         assert_eq!(actual_rings, expected_rings, "{name} ring traversal");
         let mut templates = templates::CoordinateTemplates::default();
         let fragments =
@@ -2336,13 +2374,12 @@ fn fragment_seed_neighbors_two_and_three_done_neighbors_follow_source_angle_orde
         ]),
     )
     .unwrap();
-    // RDKit .6 enumerates distinct pairs and orders angle ties by neighbor pair.
-    // The winner is (1, 3); the first sorted pair sharing it is (1, 2),
-    // so computeNbrsAndAng assigns nb1=2 and nb2=1.
-    assert_eq!(three.atoms[&0].nbr1, Some(2));
-    assert_eq!(three.atoms[&0].nbr2, Some(1));
+    // Candidate consecutive directions give the wraparound gap (3,1), PI.
+    // computeNbrsAndAng assigns nbr1=end, nbr2=start, rotDir=1.
+    assert_eq!(three.atoms[&0].nbr1, Some(1));
+    assert_eq!(three.atoms[&0].nbr2, Some(3));
     assert!((three.atoms[&0].angle - PI).abs() < 1e-12);
-    assert_eq!(three.atoms[&0].rot_dir, -1);
+    assert_eq!(three.atoms[&0].rot_dir, 1);
     assert_eq!(three.atoms[&0].neighs, vec![4]);
 }
 

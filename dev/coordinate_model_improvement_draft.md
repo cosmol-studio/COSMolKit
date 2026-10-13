@@ -6,8 +6,8 @@ The approved [Coordinate Storage and Selection Contract](./coordinate_selection_
 
 Date: 2026-09-16.
 
-Revisit this document at the final review of the current migration work. Do
-not interrupt, reorder, or expand the active migration based on this draft.
+Revisit this document only during an explicitly authorized design review. Do
+not interrupt, reorder, or expand the active task based on this draft.
 `dev/crate_architecture.md` remains the architectural authority and
 the current user-authorized task plan defines the execution scope.
 Any eventual semantic changes require explicit approval and integration

@@ -28,7 +28,7 @@ Common transformations include:
 - ``with_hydrogens()``
 - ``without_hydrogens()``
 - ``with_kekulized_bonds()``
-- ``add_2d_coordinates()``
+- ``with_2d_coordinates()``
 - ``with_chiral_tags_from_structure()``
 
 Importing an RDKit Molecule
@@ -173,7 +173,7 @@ structure.
 
    import pickle
 
-   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").add_2d_coordinates()
+   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
    print(restored.to_smiles(canonical=False))
@@ -199,7 +199,7 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
 
 .. code-block:: python
 
-   mol = ck.mol_from_smiles("c1ccccc1O").add_2d_coordinates()
+   mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
    svg = mol.to_svg(width=400, height=300)
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)

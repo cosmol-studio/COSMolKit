@@ -8,7 +8,7 @@ import pytest
 import cosmolkit as ck
 
 
-@pytest.mark.parametrize("name", ["with_hydrogens", "without_hydrogens", "sanitize", "with_kekulized_bonds", "add_2d_coordinates"])
+@pytest.mark.parametrize("name", ["with_hydrogens", "without_hydrogens", "sanitize", "with_kekulized_bonds", "with_2d_coordinates"])
 @pytest.mark.parametrize("form", ["default", "keywords", "params"])
 def test_transforms_inherit_keep_in_every_call_form(name: str, form: str):
     batch = ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "O"], errors="keep")

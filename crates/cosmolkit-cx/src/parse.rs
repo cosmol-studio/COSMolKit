@@ -746,13 +746,13 @@ fn parse_coordinates_progress(
     // RDKit✔️❌:         std::vector<std::string> tokens;
     // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
     // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
-    // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit❗✔️:           pt.x = std::atof(tokens[0].c_str());
     // RDKit✔️❌:         }
     // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
-    // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+    // RDKit❗✔️:           pt.y = std::atof(tokens[1].c_str());
     // RDKit✔️❌:         }
     // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
-    // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+    // RDKit❗✔️:           pt.z = std::atof(tokens[2].c_str());
     // RDKit✔️❌:           is3D = true;
     // RDKit✔️❌:         }
     // RDKit✔️❌:       }
@@ -996,13 +996,13 @@ fn parse_coordinate_row(
     // RDKit✔️❌:         std::vector<std::string> tokens;
     // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
     // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
-    // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit❗✔️:           pt.x = std::atof(tokens[0].c_str());
     // RDKit✔️❌:         }
     // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
-    // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+    // RDKit❗✔️:           pt.y = std::atof(tokens[1].c_str());
     // RDKit✔️❌:         }
     // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
-    // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+    // RDKit❗✔️:           pt.z = std::atof(tokens[2].c_str());
     // RDKit✔️❌:           is3D = true;
     // RDKit✔️❌:         }
     // RDKit✔️❌:       }
@@ -1343,27 +1343,24 @@ fn parse_coordinate_row(
 
 fn parse_coordinate_component(
     value: Option<&[u8]>,
-    offset: usize,
+    _offset: usize,
 ) -> Result<Option<f64>, CxParseError> {
-    // RDKit✔️❌: if (tokens.size() >= 1 && tokens[0].size()) {
-    // RDKit✔️❌:   pt.x = boost::lexical_cast<double>(tokens[0]);
-    // RDKit✔️❌: }
-    // The same source-defined absent/empty check applies to x, y and z.
-    // Reuse the sole foundational CORE counted-byte numeric owner, as in
-    // the previously installed acyclic CX-to-existing-CORE source closure.
-    // Keep raw NaN payload bytes, actual source rounding state, range errors
-    // and the existing CX field offset/category. No second float parser.
-    // The exact owner uses bounded rational comparisons and extra heap limbs
-    // instead of GNU extraction: retain that known constant-factor cost.
+    // RDKit❗✔️: if (tokens.size() >= 1 && tokens[0].size()) {
+    // RDKit❗✔️:   pt.x = std::atof(tokens[0].c_str());
+    // RDKit❗✔️: }
+    // The same absent/empty gate applies to x/y/z. Candidate atof consumes
+    // only a numeric prefix and does not throw on suffix/no conversion or
+    // range overflow. Share the approved existing CORE C-locale/nearest
+    // approximation unchanged, without IO's separate format alphabet filter.
+    // Behavior remains ❗: this does not establish all libc/fenv equivalence.
+    // One borrowed byte-prefix conversion; no token copy or duplicate parser.
     let Some(value) = value else {
         return Ok(None);
     };
     if value.is_empty() {
         return Ok(None);
     }
-    cosmolkit_core::source_lexical_double(value)
-        .map(Some)
-        .map_err(|_| CxParseError::new(offset, "invalid CX coordinate"))
+    Ok(Some(cosmolkit_core::parse_rdkit_atof_prefix(value).0))
 }
 
 fn parse_labels_or_values_progress(
@@ -4080,11 +4077,11 @@ mod tests {
             assert_eq!(actual.to_bits(), expected.to_bits(), "{text}");
         }
         for text in ["1e309", "-1e309", "+1e309", "1.7976931348623159e308"] {
-            assert_eq!(
-                parse_coordinate_component(Some(text.as_bytes()), 17),
-                Err(super::CxParseError::new(17, "invalid CX coordinate")),
-                "{text}"
-            );
+            let value = parse_coordinate_component(Some(text.as_bytes()), 17)
+                .unwrap()
+                .unwrap();
+            assert!(value.is_infinite(), "{text}");
+            assert_eq!(value.is_sign_negative(), text.starts_with('-'), "{text}");
         }
     }
 
@@ -4115,13 +4112,33 @@ mod tests {
     }
 
     #[test]
-    fn cx_coordinate_component_malformed_tokens_preserve_the_original_error_offset() {
-        for text in [
-            "x", "+", "-", "1e", "1e+", "1.0E-", " inf", "inf ", "nanx", "nan(", "nan)x", "--inf",
+    fn cx_coordinate_component_prefix_and_no_conversion_follow_candidate_atof() {
+        for (text, expected) in [
+            ("x", 0.0),
+            ("+", 0.0),
+            ("-", 0.0),
+            ("1e", 1.0),
+            ("1e+", 1.0),
+            ("1.0E-", 1.0),
+            (" inf", f64::INFINITY),
+            ("inf ", f64::INFINITY),
+            ("--inf", 0.0),
         ] {
             assert_eq!(
-                parse_coordinate_component(Some(text.as_bytes()), 23),
-                Err(super::CxParseError::new(23, "invalid CX coordinate")),
+                parse_coordinate_component(Some(text.as_bytes()), 23)
+                    .unwrap()
+                    .unwrap()
+                    .to_bits(),
+                expected.to_bits(),
+                "{text}"
+            );
+        }
+        for text in ["nanx", "nan(", "nan)x"] {
+            assert!(
+                parse_coordinate_component(Some(text.as_bytes()), 23)
+                    .unwrap()
+                    .unwrap()
+                    .is_nan(),
                 "{text}"
             );
         }
@@ -4221,11 +4238,11 @@ mod tests {
         assert_eq!(progress.checkpoints()[1].record_index, 1);
         assert_eq!(progress.checkpoints()[1].phase, CxProgressPhase::Complete);
 
-        let malformed_coordinate = parse_cx_extensions_progress("|(no)|");
+        let malformed_coordinate = parse_cx_extensions_progress("|(no");
         assert_eq!(malformed_coordinate.consumed(), 4);
         assert_eq!(
             malformed_coordinate.error().map(|error| error.offset),
-            Some(2)
+            Some(1)
         );
         assert_ne!(
             malformed_coordinate.consumed(),
@@ -4234,6 +4251,26 @@ mod tests {
                 .expect("coordinate error")
                 .offset
         );
+    }
+
+    #[test]
+    fn cx_coordinates_use_shared_atof_prefix_without_io_token_screening() {
+        // Candidate CXSmilesOps.cpp::parse_coords applies std::atof to each
+        // nonempty component, after entity decoding, without IO's alphabet gate.
+        let progress = parse_cx_extensions_progress("|(1tail,no,-2tail;,,;3,4,)|");
+        assert!(progress.is_complete(), "{:?}", progress.error());
+        let CxRecord::Coordinates(coordinates) = &progress.records()[0] else {
+            panic!("coordinate record expected");
+        };
+        assert_eq!(
+            coordinates.values,
+            vec![
+                Some([1.0, 0.0, -2.0]),
+                Some([0.0; 3]),
+                Some([3.0, 4.0, 0.0])
+            ]
+        );
+        assert!(coordinates.is_3d);
     }
 
     #[test]
@@ -4269,39 +4306,41 @@ mod tests {
     }
 
     #[test]
-    fn cx_progress_coordinates_reports_each_component_failure_and_keeps_prior_rows() {
+    fn cx_progress_coordinates_keeps_rows_after_each_no_conversion_component() {
+        // Candidate std::atof no-conversion is zero, not Boost lexical failure.
         for text in ["|(bad,0,0)|", "|(1,bad,0)|", "|(1,0,bad)|"] {
             let progress = parse_cx_extensions_progress(text);
-            assert!(!progress.is_complete(), "{text}");
-            assert_eq!(progress.consumed(), text.find(')').unwrap(), "{text}");
-            assert_eq!(
-                progress.error().map(|error| error.offset),
-                Some(2),
-                "{text}"
-            );
+            assert!(progress.is_complete(), "{text}");
+            assert_eq!(progress.consumed(), text.len(), "{text}");
+            assert!(progress.error().is_none(), "{text}");
             let CxRecord::Coordinates(coordinates) = &progress.records()[0] else {
                 panic!("coordinate record expected");
             };
-            assert!(coordinates.values.is_empty(), "{text}");
-            assert!(coordinates.is_3d, "conversion failure keeps source default");
-            assert_eq!(progress.checkpoints().len(), 1, "{text}");
+            let expected_x = if text.starts_with("|(bad") { 0.0 } else { 1.0 };
+            assert_eq!(
+                coordinates.values,
+                vec![Some([expected_x, 0.0, 0.0])],
+                "{text}"
+            );
+            assert!(!coordinates.is_3d, "zero z finalizes to 2D");
+            assert_eq!(progress.checkpoints().len(), 3, "{text}");
             assert_eq!(progress.checkpoints()[0].phase, CxProgressPhase::Begin);
         }
 
         let text = "|(0,0,0.0011;1,bad,2)|";
         let progress = parse_cx_extensions_progress(text);
-        assert!(!progress.is_complete());
-        assert_eq!(progress.consumed(), text.find(')').unwrap());
-        assert_eq!(
-            progress.error().map(|error| error.offset),
-            Some(text.find("1,bad").unwrap())
-        );
+        assert!(progress.is_complete());
+        assert_eq!(progress.consumed(), text.len());
+        assert!(progress.error().is_none());
         let CxRecord::Coordinates(coordinates) = &progress.records()[0] else {
             panic!("coordinate record expected");
         };
-        assert_eq!(coordinates.values, vec![Some([0.0, 0.0, 0.0011])]);
+        assert_eq!(
+            coordinates.values,
+            vec![Some([0.0, 0.0, 0.0011]), Some([1.0, 0.0, 2.0])]
+        );
         assert!(coordinates.is_3d);
-        assert_eq!(progress.checkpoints().len(), 2);
+        assert_eq!(progress.checkpoints().len(), 4);
         assert_eq!(progress.checkpoints()[1].phase, CxProgressPhase::Item);
         assert_eq!(
             progress.checkpoints()[1].cursor,
@@ -4336,14 +4375,17 @@ mod tests {
     fn cx_progress_coordinates_retains_earlier_record_and_prior_row_effects() {
         let text = "|$label$(0,0,1;bad,0,0)|";
         let progress = parse_cx_extensions_progress(text);
-        assert!(!progress.is_complete());
-        assert_eq!(progress.consumed(), text.find(')').unwrap());
+        assert!(progress.is_complete());
+        assert_eq!(progress.consumed(), text.len());
         assert!(matches!(progress.records()[0], CxRecord::AtomLabels(_)));
         let CxRecord::Coordinates(coordinates) = &progress.records()[1] else {
             panic!("partial coordinate record expected");
         };
-        assert_eq!(coordinates.values, vec![Some([0.0, 0.0, 1.0])]);
-        assert_eq!(progress.checkpoints().len(), 4);
+        assert_eq!(
+            coordinates.values,
+            vec![Some([0.0, 0.0, 1.0]), Some([0.0; 3])]
+        );
+        assert_eq!(progress.checkpoints().len(), 6);
         assert_eq!(progress.checkpoints()[0].record_index, 0);
         assert_eq!(progress.checkpoints()[0].item_index, Some(0));
         assert_eq!(progress.checkpoints()[0].phase, CxProgressPhase::Item);
@@ -4354,6 +4396,9 @@ mod tests {
         assert_eq!(progress.checkpoints()[3].record_index, 1);
         assert_eq!(progress.checkpoints()[3].item_index, Some(0));
         assert_eq!(progress.checkpoints()[3].phase, CxProgressPhase::Item);
+        assert_eq!(progress.checkpoints()[4].item_index, Some(1));
+        assert_eq!(progress.checkpoints()[4].phase, CxProgressPhase::Item);
+        assert_eq!(progress.checkpoints()[5].phase, CxProgressPhase::Complete);
     }
 
     #[test]

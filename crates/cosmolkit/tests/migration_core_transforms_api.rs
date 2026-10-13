@@ -184,8 +184,8 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
     );
     assert_eq!(rows[4].callable.unwrap().state_model, StateModel::InPlace);
     assert_eq!(rows[5].callable.unwrap().state_model, StateModel::InPlace);
-    assert_eq!(rows[4].javascript_name, "setAtomPosition");
-    assert_eq!(rows[5].javascript_name, "setAtomPositionWithParams");
+    assert_eq!(rows[4].javascript_name, "setAtomPosition_");
+    assert_eq!(rows[5].javascript_name, "setAtomPositionWithParams_");
 }
 
 #[test]

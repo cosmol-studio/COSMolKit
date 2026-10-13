@@ -264,6 +264,7 @@ pub(crate) fn substruct_pyerr(py: Python<'_>, source: ck::SubstructMatchError) -
         ck::SubstructMatchError::PropertyString(_) => "PropertyString",
         ck::SubstructMatchError::PropertyInteger { .. } => "PropertyInteger",
         ck::SubstructMatchError::QueryContext(_) => "QueryContext",
+        ck::SubstructMatchError::UninitializedRecursiveQuery => "UninitializedRecursiveQuery",
     };
     let error = crate::canonical_values::annotate(
         py,

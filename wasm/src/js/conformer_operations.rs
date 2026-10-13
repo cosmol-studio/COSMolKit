@@ -80,7 +80,7 @@ impl Molecule {
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=embed3dConformer)]
+    #[wasm_bindgen(js_name=embed3dConformer_)]
     pub fn embed_3d_conformer_(
         &self,
         #[wasm_bindgen(unchecked_optional_param_type = "EmbedParams | EmbedParamsOptions")] params: JsValue,
@@ -88,7 +88,7 @@ impl Molecule {
         let params = EmbedParams::from_js_configuration(&params)?;
         self.embed_3d_conformer_with_params_(&params)
     }
-    #[wasm_bindgen(js_name=embed3dConformerWithParams)]
+    #[wasm_bindgen(js_name=embed3dConformerWithParams_)]
     pub fn embed_3d_conformer_with_params_(&self, params: &EmbedParams) -> Result<(), JsValue> {
         // COSMolKit❗✔️: .embed_3d_conformer_with_params_(&params.inner)
         self.inner
@@ -114,7 +114,7 @@ impl Molecule {
             .map(|inner| EmbedMoleculeResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=embed3dConformerResult)]
+    #[wasm_bindgen(js_name=embed3dConformerResult_)]
     pub fn embed_3d_conformer_result_(
         &self,
         #[wasm_bindgen(unchecked_optional_param_type = "EmbedParams | EmbedParamsOptions")] params: JsValue,
@@ -122,7 +122,7 @@ impl Molecule {
         let params = EmbedParams::from_js_configuration(&params)?;
         self.embed_3d_conformer_result_with_params_(&params)
     }
-    #[wasm_bindgen(js_name=embed3dConformerResultWithParams)]
+    #[wasm_bindgen(js_name=embed3dConformerResultWithParams_)]
     pub fn embed_3d_conformer_result_with_params_(
         &self,
         params: &EmbedParams,
@@ -156,7 +156,7 @@ impl Molecule {
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=embed3dConformers)]
+    #[wasm_bindgen(js_name=embed3dConformers_)]
     pub fn embed_3d_conformers_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] num_confs: JsValue,
@@ -165,7 +165,7 @@ impl Molecule {
         let params = EmbedParams::from_js_configuration(&params)?;
         self.embed_3d_conformers_with_params_(num_confs, &params)
     }
-    #[wasm_bindgen(js_name=embed3dConformersWithParams)]
+    #[wasm_bindgen(js_name=embed3dConformersWithParams_)]
     pub fn embed_3d_conformers_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] num_confs: JsValue,
@@ -200,7 +200,7 @@ impl Molecule {
             .map(|inner| EmbedMultipleConfsResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=embed3dConformersResult)]
+    #[wasm_bindgen(js_name=embed3dConformersResult_)]
     pub fn embed_3d_conformers_result_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] num_confs: JsValue,
@@ -209,7 +209,7 @@ impl Molecule {
         let params = EmbedParams::from_js_configuration(&params)?;
         self.embed_3d_conformers_result_with_params_(num_confs, &params)
     }
-    #[wasm_bindgen(js_name=embed3dConformersResultWithParams)]
+    #[wasm_bindgen(js_name=embed3dConformersResultWithParams_)]
     pub fn embed_3d_conformers_result_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] num_confs: JsValue,

@@ -50,7 +50,7 @@ impl Molecule {
         })?;
         result.ok_or_else(|| type_error("params"))?
     }
-    #[wasm_bindgen(js_name=kekulizeBonds)]
+    #[wasm_bindgen(js_name=kekulizeBonds_)]
     pub fn kekulize_bonds_(&self, #[wasm_bindgen(unchecked_optional_param_type = "KekulizeParams | KekulizeParamsOptions")] params: JsValue) -> Result<(), JsValue> {
         if params.is_undefined() {
             return {
@@ -64,7 +64,7 @@ impl Molecule {
         let configuration_0 = crate::transform_parameters::KekulizeParams::from_js_configuration(&params)?;
         self.kekulize_bonds_with_params_(configuration_0.into())
     }
-    #[wasm_bindgen(js_name=kekulizeBondsWithParams)]
+    #[wasm_bindgen(js_name=kekulizeBondsWithParams_)]
     pub fn kekulize_bonds_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "KekulizeParams")] params: JsValue,

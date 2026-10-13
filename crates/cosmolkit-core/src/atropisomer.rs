@@ -20,6 +20,15 @@ pub enum AtropisomerConformer<'a> {
     ThreeD(&'a Conformer3D),
 }
 
+impl<'a> From<cosmolkit_model::CoordinateSourceConformer<'a>> for AtropisomerConformer<'a> {
+    fn from(value: cosmolkit_model::CoordinateSourceConformer<'a>) -> Self {
+        match value {
+            cosmolkit_model::CoordinateSourceConformer::TwoD(row) => Self::TwoD(row),
+            cosmolkit_model::CoordinateSourceConformer::ThreeD(row) => Self::ThreeD(row),
+        }
+    }
+}
+
 fn conformer_is_3d(conformer: AtropisomerConformer<'_>) -> bool {
     // BEGIN RDKIT CPP FUNCTION getBondFrameOfReference
     // RDKit✔️✔️:   if (!conf->is3D()) {
@@ -1235,22 +1244,34 @@ pub fn detect_atropisomer_chirality(
     topology: &TopologyBlock,
     conformer: Option<AtropisomerConformer<'_>>,
 ) -> Result<AtropisomerAssignment, AtropisomerError> {
+    // RDKit✔️✔️: detectAtropisomerChirality(mol, conf, true);
+    detect_atropisomer_chirality_with_replacement(topology, conformer, true)
+}
+
+pub fn detect_atropisomer_chirality_with_replacement(
+    topology: &TopologyBlock,
+    conformer: Option<AtropisomerConformer<'_>>,
+    replace_existing_tags: bool,
+) -> Result<AtropisomerAssignment, AtropisomerError> {
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
     }
-    // Complete pinned source: detectAtropisomerChirality.
-    // Source candidate storage is std::set<Bond*> (allocation-address order).
-    // BondId ordering below is the existing detached identity order, not a
-    // reproduction of those native addresses. A partially dirty, otherwise
-    // hybridized cache can change the global-update guard and final chemistry
-    // with native pointer order. Retain ❗ pending the source-state decision.
-    // Fresh parser caller invariants require their own proof; extra
-    // detached scalar result/overlay storage makes the cost axis ❌.
-    // RDKit❗❌: void detectAtropisomerChirality(ROMol &mol, const Conformer *conf) {
+    // BEGIN RDKit 2026.09.1 detectAtropisomerChirality replacement overload
+    // RDKit❗❌: void detectAtropisomerChirality(ROMol &mol, const Conformer *conf,
+    // RDKit❗❌:                                 const bool replaceExistingTags) {
     // RDKit❗❌:   PRECONDITION(conf == nullptr || &(conf->getOwningMol()) == &mol,
     // RDKit❗❌:                "conformer does not belong to molecule");
     // RDKit❗❌:
     // RDKit❗❌:   std::set<Bond *> bondsToTry;
+    // RDKit❗❌:
+    // RDKit❗❌:   if (replaceExistingTags && conf && conf->is3D()) {
+    // RDKit❗❌:     for (auto bond : mol.bonds()) {
+    // RDKit❗❌:       if (bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+    // RDKit❗❌:           bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit❗❌:         bondsToTry.insert(bond);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
     // RDKit❗❌:
     // RDKit❗❌:   for (auto bond : mol.bonds()) {
     // RDKit❗❌:     if (canHaveDirection(*bond) &&
@@ -1260,7 +1281,21 @@ pub fn detect_atropisomer_chirality(
     // RDKit❗❌:         if (nbrBond == bond) {
     // RDKit❗❌:           continue;  // a bond is NOT its own neighbor
     // RDKit❗❌:         }
+    // RDKit❗❌:         if (!replaceExistingTags &&
+    // RDKit❗❌:             (nbrBond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+    // RDKit❗❌:              nbrBond->getStereo() == Bond::BondStereo::STEREOATROPCCW)) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
     // RDKit❗❌:         bondsToTry.insert(nbrBond);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (replaceExistingTags) {
+    // RDKit❗❌:     for (auto bond : bondsToTry) {
+    // RDKit❗❌:       if (bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+    // RDKit❗❌:           bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit❗❌:         bond->setStereo(Bond::BondStereo::STEREONONE);
     // RDKit❗❌:       }
     // RDKit❗❌:     }
     // RDKit❗❌:   }
@@ -1327,13 +1362,30 @@ pub fn detect_atropisomer_chirality(
     // RDKit❗❌:     DetectAtropisomerChiralityOneBond(bondToTry, mol, conf);
     // RDKit❗❌:   }
     // RDKit❗❌: }
-    let candidates: BTreeSet<_> = source_atropisomer_candidate_membership(topology)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, present)| present.then_some(BondId::new(index)))
-        .collect();
+    // END RDKit 2026.09.1 detectAtropisomerChirality
+    // Candidate membership and replacement writes reproduce the source.
+    // Native std::set<Bond*> traversal still has no detached address provenance;
+    // retain its explicit behavior uncertainty rather than invent an order.
+    // Scalar overlays retain the existing known detached-model cost.
+    let include_existing_tags = replace_existing_tags
+        && conformer
+            .is_some_and(|row| matches!(row, AtropisomerConformer::ThreeD(value) if value.is_3d()));
+    let candidates: BTreeSet<_> = source_atropisomer_candidate_membership_with_replacement(
+        topology,
+        include_existing_tags,
+        replace_existing_tags,
+    )
+    .into_iter()
+    .enumerate()
+    .filter_map(|(index, present)| present.then_some(BondId::new(index)))
+    .collect();
     let ordered: Vec<_> = candidates.into_iter().collect();
-    let traversal = SourceAtropisomerCandidateTraversal::try_from_parts(topology, &ordered)?;
+    let traversal = SourceAtropisomerCandidateTraversal::try_from_parts_with_replacement(
+        topology,
+        &ordered,
+        include_existing_tags,
+        replace_existing_tags,
+    )?;
     detect_atropisomer_from_candidate_order(traversal, conformer)
 }
 
@@ -1349,6 +1401,7 @@ pub fn detect_atropisomer_chirality(
 struct SourceAtropisomerCandidateTraversal<'a> {
     topology: &'a TopologyBlock,
     candidates: &'a [BondId],
+    replace_existing_tags: bool,
 }
 
 impl<'a> SourceAtropisomerCandidateTraversal<'a> {
@@ -1356,7 +1409,20 @@ impl<'a> SourceAtropisomerCandidateTraversal<'a> {
         topology: &'a TopologyBlock,
         candidates: &'a [BondId],
     ) -> Result<Self, AtropisomerError> {
-        let membership = source_atropisomer_candidate_membership(topology);
+        Self::try_from_parts_with_replacement(topology, candidates, false, true)
+    }
+
+    fn try_from_parts_with_replacement(
+        topology: &'a TopologyBlock,
+        candidates: &'a [BondId],
+        include_existing_tags: bool,
+        replace_existing_tags: bool,
+    ) -> Result<Self, AtropisomerError> {
+        let membership = source_atropisomer_candidate_membership_with_replacement(
+            topology,
+            include_existing_tags,
+            replace_existing_tags,
+        );
         let mut seen = vec![false; membership.len()];
         for &bond in candidates {
             let Some(is_candidate) = membership.get(bond.index()) else {
@@ -1383,12 +1449,21 @@ impl<'a> SourceAtropisomerCandidateTraversal<'a> {
         Ok(Self {
             topology,
             candidates,
+            replace_existing_tags,
         })
     }
 }
 
 // Only called with structurally validated topology.
 fn source_atropisomer_candidate_membership(topology: &TopologyBlock) -> Vec<bool> {
+    source_atropisomer_candidate_membership_with_replacement(topology, false, true)
+}
+
+fn source_atropisomer_candidate_membership_with_replacement(
+    topology: &TopologyBlock,
+    include_existing_tags: bool,
+    replace_existing_tags: bool,
+) -> Vec<bool> {
     // This is the source-defined membership pass, independent of set
     // iteration order. A bool row retains no guessed pointer comparator.
     // RDKit✔️❌:   std::set<Bond *> bondsToTry;
@@ -1409,6 +1484,21 @@ fn source_atropisomer_candidate_membership(topology: &TopologyBlock) -> Vec<bool
     // Cost: two O(E) validation buffers plus structural graph validation
     // exceed the native candidate-only set on sparse candidate inputs.
     let mut membership = vec![false; topology.bonds.len()];
+    // RDKit✔️✔️: if (replaceExistingTags && conf && conf->is3D()) {
+    // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+    // RDKit✔️✔️:         bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit✔️✔️:       bondsToTry.insert(bond);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if include_existing_tags {
+        for bond in topology.bonds.iter() {
+            if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) {
+                membership[bond.id().index()] = true;
+            }
+        }
+    }
     for marker in &topology.bonds {
         if can_have_direction(marker)
             && matches!(
@@ -1418,6 +1508,19 @@ fn source_atropisomer_candidate_membership(topology: &TopologyBlock) -> Vec<bool
         {
             for neighbor in topology.adjacency.neighbors_of(marker.begin().index()) {
                 if neighbor.bond != marker.id() {
+                    // RDKit✔️✔️: if (!replaceExistingTags &&
+                    // RDKit✔️✔️:     (nbrBond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+                    // RDKit✔️✔️:      nbrBond->getStereo() == Bond::BondStereo::STEREOATROPCCW)) {
+                    // RDKit✔️✔️:   continue;
+                    // RDKit✔️✔️: }
+                    if !replace_existing_tags
+                        && matches!(
+                            topology.bonds[neighbor.bond.index()].stereo(),
+                            BondStereo::AtropCw | BondStereo::AtropCcw
+                        )
+                    {
+                        continue;
+                    }
                     membership[neighbor.bond.index()] = true;
                 }
             }
@@ -1436,6 +1539,7 @@ fn detect_atropisomer_from_candidate_order(
     let SourceAtropisomerCandidateTraversal {
         topology,
         candidates,
+        replace_existing_tags,
     } = traversal;
     if let Some(value) = conformer {
         validate_conformer(value, topology.atoms.len())?;
@@ -1505,6 +1609,30 @@ fn detect_atropisomer_from_candidate_order(
     // RDKit❗❌: }
     // END COMPLETE PINNED detectAtropisomerChirality candidate processing
     let mut assignment = AtropisomerAssignment::default();
+    // RDKit✔️✔️: if (replaceExistingTags) {
+    // RDKit✔️✔️:   for (auto bond : bondsToTry) {
+    // RDKit✔️✔️:     if (bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+    // RDKit✔️✔️:         bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit✔️✔️:       bond->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Detection consumes no atrop tag: its reached stereo guards only test
+    // STEREOANY. Emit clearing effects before cache/degree rejection, then later
+    // detection writes supersede them. No graph clone is needed for that state.
+    if replace_existing_tags {
+        for &id in candidates {
+            if matches!(
+                topology.bonds[id.index()].stereo(),
+                BondStereo::AtropCw | BondStereo::AtropCcw
+            ) {
+                assignment.bond_updates.push(AtropisomerBondUpdate {
+                    bond: id,
+                    stereo: BondStereo::None,
+                });
+            }
+        }
+    }
     if candidates.is_empty() {
         return Ok(assignment);
     }
@@ -1648,10 +1776,91 @@ fn effective_stereo(
     assignment
         .bond_updates
         .iter()
+        .rev()
         .find(|update| update.bond == bond)
         .map_or(topology.bonds[bond.index()].stereo(), |update| {
             update.stereo
         })
+}
+
+pub(crate) fn apply_detected_atropisomers(
+    topology: &mut TopologyBlock,
+    assignment: AtropisomerAssignment,
+) -> Result<(), AtropisomerError> {
+    // RDKit❗❌: DetectAtropisomerChiralityOneBond(bondToTry, mol, conf);
+    // Apply detached owner effects in source execution order. This is not a
+    // second perception algorithm; retained scalar overlays are the known
+    // detached-model cost, not extra whole topology/coordinate clones.
+    for (id, facts) in assignment.atom_valence_updates {
+        topology.atoms[id.index()].set_source_valence_facts(facts);
+    }
+    if let Some(values) = assignment.conjugated_bonds {
+        for (bond, value) in topology.bonds.iter_mut().zip(values) {
+            bond.set_conjugated(value);
+        }
+    }
+    if let Some(values) = assignment.hybridization {
+        for (atom, value) in topology.atoms.iter_mut().zip(values.values) {
+            atom.set_hybridization(value);
+        }
+    }
+    for update in assignment.bond_updates {
+        topology.bonds[update.bond.index()]
+            .set_stereo(update.stereo)
+            .map_err(|source| AtropisomerError::BondUpdate {
+                bond: update.bond,
+                source,
+            })?;
+    }
+    Ok(())
+}
+
+pub(crate) fn detect_atropisomers_post_sanitization(
+    topology: &mut TopologyBlock,
+    conformer: Option<AtropisomerConformer<'_>>,
+    rings: &RingInfo,
+    clean: bool,
+    valence_updates: &mut Vec<(AtomId, SourceAtomValenceFacts)>,
+) -> Result<(), AtropisomerError> {
+    // RDKit❗❌: Atropisomers::detectAtropisomerChirality(mol, conf, cleanIt);
+    // RDKit✔️✔️: if (!cleanIt || !ri->isSssrOrBetter()) {
+    // RDKit✔️✔️:   return;
+    // RDKit✔️✔️: }
+    let assignment = detect_atropisomer_chirality_with_replacement(topology, conformer, clean)?;
+    valence_updates.extend(assignment.atom_valence_updates.iter().copied());
+    apply_detected_atropisomers(topology, assignment)?;
+    if !clean || !rings.is_sssr_or_better() {
+        return Ok(());
+    }
+    let mut removed = false;
+    for bond in topology.bonds.iter_mut() {
+        // RDKit✔️✔️: if ((bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
+        // RDKit✔️✔️:      bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) &&
+        // RDKit✔️✔️:     ri->numBondRings(bond->getIdx()) > 0 &&
+        // RDKit✔️✔️:     ri->minBondRingSize(bond->getIdx()) < 9) {
+        // RDKit✔️✔️:   bond->setStereo(Bond::BondStereo::STEREONONE);
+        // RDKit✔️✔️:   removedAny = true;
+        // RDKit✔️✔️: }
+        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
+            && rings.num_bond_rings(bond.id()) > 0
+            && rings.min_bond_ring_size(bond.id()) < 9
+        {
+            bond.set_stereo(BondStereo::None)
+                .map_err(|source| AtropisomerError::BondUpdate {
+                    bond: bond.id(),
+                    source,
+                })?;
+            removed = true;
+        }
+    }
+    // RDKit✔️✔️: if (removedAny) {
+    // RDKit✔️✔️:   Atropisomers::cleanupAtropisomerStereoGroups(mol);
+    // RDKit✔️✔️: }
+    if removed {
+        topology.stereo_groups =
+            cleanup_atropisomer_stereo_groups(topology, &AtropisomerAssignment::default())?.groups;
+    }
+    Ok(())
 }
 
 pub fn cleanup_atropisomer_stereo_groups(
@@ -1665,7 +1874,10 @@ pub fn cleanup_atropisomer_stereo_groups(
                 bond_count: topology.bonds.len(),
             });
         }
-        if !matches!(update.stereo, BondStereo::AtropCw | BondStereo::AtropCcw) {
+        if !matches!(
+            update.stereo,
+            BondStereo::None | BondStereo::AtropCw | BondStereo::AtropCcw
+        ) {
             return Err(AtropisomerError::InvalidAtropisomerStereo {
                 bond: update.bond,
                 stereo: update.stereo,
@@ -4430,12 +4642,12 @@ mod cleanup_ring_state_tests {
                             assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
                             assert_eq!(
                                 row_indices(acquired_state),
-                                vec![vec![0, 5, 4, 3, 2, 1]],
+                                vec![vec![0, 1, 2, 3, 4, 5]],
                                 "{label}"
                             );
                             assert_eq!(
                                 bond_row_indices(acquired_state),
-                                vec![vec![5, 4, 3, 2, 1, 0]],
+                                vec![vec![0, 1, 2, 3, 4, 5]],
                                 "{label}"
                             );
                             assert_eq!(acquired.len(), acquired_before + 1, "{label}");
@@ -4527,11 +4739,10 @@ mod cleanup_ring_state_tests {
                             assert_eq!(find_delta, 1, "{label}: acquisition count");
                             let acquired_state = returned.as_ref().unwrap();
                             assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
-                            // Frozen row convention: atoms start at 0 and
-                            // run backwards to 1; bonds run n-1..0.
-                            let expected_atoms: Vec<usize> =
-                                std::iter::once(0).chain((1..n).rev()).collect();
-                            let expected_bonds: Vec<usize> = (0..n).rev().collect();
+                            // Candidate RingUtils::normalizeRing starts at the
+                            // smallest atom, then takes the smaller neighbor.
+                            let expected_atoms: Vec<usize> = (0..n).collect();
+                            let expected_bonds: Vec<usize> = (0..n).collect();
                             assert_eq!(
                                 row_indices(acquired_state),
                                 vec![expected_atoms],
@@ -4688,6 +4899,148 @@ mod source_atrop_pointer_order_cases {
     use super::*;
     use cosmolkit_model::{Atom, AtomSpec, BondSpec};
     use cosmolkit_types::Element;
+
+    #[test]
+    fn replacement_clears_reached_tags_before_degree_rejection_but_nonreplacement_preserves_them() {
+        let graph = TopologyBlock::try_from_parts(
+            (0..3)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![
+                Bond::from_spec(
+                    BondId::new(0),
+                    BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                        .with_stereo(BondStereo::AtropCw),
+                ),
+                Bond::from_spec(
+                    BondId::new(1),
+                    BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single)
+                        .with_direction(BondDirection::BeginWedge),
+                ),
+            ],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let assignment =
+            detect_atropisomer_chirality_with_replacement(&graph, None, false).unwrap();
+        assert!(assignment.bond_updates.is_empty());
+        let assignment = detect_atropisomer_chirality_with_replacement(&graph, None, true).unwrap();
+        assert_eq!(
+            assignment.bond_updates,
+            [AtropisomerBondUpdate {
+                bond: BondId::new(0),
+                stereo: BondStereo::None
+            }]
+        );
+        assert!(
+            cleanup_atropisomer_stereo_groups(&graph, &assignment)
+                .unwrap()
+                .groups
+                .is_empty()
+        );
+        let mut no_wedge = graph.clone();
+        no_wedge.bonds[1].set_direction(BondDirection::None);
+        let conf = Conformer3D::new(0, vec![[0.0; 3]; 3], true);
+        let assignment = detect_atropisomer_chirality_with_replacement(
+            &no_wedge,
+            Some(AtropisomerConformer::ThreeD(&conf)),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            assignment.bond_updates,
+            [AtropisomerBondUpdate {
+                bond: BondId::new(0),
+                stereo: BondStereo::None
+            }]
+        );
+        let valence = crate::assign_valence_with_options_for_topology(
+            &no_wedge,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let coordinates = cosmolkit_model::CoordinateBlock {
+            conformers_3d: vec![conf],
+            ..Default::default()
+        };
+        let tagged = crate::assign_chiral_tags_from_structure(
+            &no_wedge,
+            &coordinates,
+            &valence,
+            &crate::StructureTagParams::default(),
+        )
+        .unwrap();
+        assert_eq!(tagged.topology.bonds[0].stereo(), BondStereo::None);
+        let mut output = graph.clone();
+        crate::assign_chiral_types_from_bond_dirs_with_optional_conformer(&mut output, None, true)
+            .unwrap();
+        assert_eq!(output.bonds[0].stereo(), BondStereo::None);
+        assert_eq!(graph.bonds[0].stereo(), BondStereo::AtropCw);
+    }
+
+    #[test]
+    fn post_assignment_ring_cleanup_discards_eight_but_keeps_nine_member_atrop_tags() {
+        for size in [8, 9] {
+            let mut graph = TopologyBlock::try_from_parts(
+                (0..size)
+                    .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                    .collect(),
+                (0..size)
+                    .map(|i| {
+                        Bond::from_spec(
+                            BondId::new(i),
+                            BondSpec::new(
+                                AtomId::new(i),
+                                AtomId::new((i + 1) % size),
+                                BondOrder::Single,
+                            )
+                            .with_stereo(if i == 0 {
+                                BondStereo::AtropCw
+                            } else {
+                                BondStereo::None
+                            }),
+                        )
+                    })
+                    .collect(),
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            let rings =
+                crate::symmetrized_sssr(&graph, &crate::RingSearchParams::default()).unwrap();
+            detect_atropisomers_post_sanitization(&mut graph, None, &rings, true, &mut Vec::new())
+                .unwrap();
+            assert_eq!(
+                graph.bonds[0].stereo(),
+                if size < 9 {
+                    BondStereo::None
+                } else {
+                    BondStereo::AtropCw
+                }
+            );
+            graph.bonds[0].set_stereo(BondStereo::AtropCw).unwrap();
+            let valence = crate::assign_valence_with_options_for_topology(
+                &graph,
+                crate::ValenceModel::RdkitLike,
+                false,
+            )
+            .unwrap();
+            let output = crate::assign_legacy_stereochemistry_with_flags(
+                graph, &valence, &rings, true, false,
+            )
+            .unwrap();
+            assert_eq!(
+                output.bonds[0].stereo(),
+                if size < 9 {
+                    BondStereo::None
+                } else {
+                    BondStereo::AtropCw
+                }
+            );
+        }
+    }
 
     #[test]
     fn detached_candidate_traversal_checks_every_identity_without_sorting_or_repair() {
@@ -6679,8 +7032,8 @@ mod source658_whole_atrop_wedge_tests {
         let mut m = WedgeAssignments::default();
         apply(&mut t, &mut r, None, &mut m).unwrap();
         assert!(r.is_sssr_or_better());
-        assert_eq!(r.atom_row_count(), 0);
-        assert_eq!(r.bond_row_count(), 0);
+        assert_eq!(r.atom_row_count(), 6);
+        assert_eq!(r.bond_row_count(), t.bonds.len());
         assert_eq!(t, before);
         assert_eq!(m.iter().count(), 0);
         let mut t = graph(&edges(), BondStereo::AtropCcw);
@@ -6774,7 +7127,7 @@ mod source658_whole_atrop_wedge_tests {
         assert_eq!(t, before);
     }
     #[test]
-    fn source658_ring_property_error_preserves_native_cache_prefix_before_any_candidate_getter() {
+    fn candidate_rdl_ring_preparation_preserves_dictionary_then_reads_candidate_valence() {
         let mut t = graph(&edges(), BondStereo::AtropCcw);
         cache(&mut t, 0, -1);
         let before = t.clone();
@@ -6784,12 +7137,12 @@ mod source658_whole_atrop_wedge_tests {
         props.set_prop("__computedProps", false).unwrap();
         assert!(matches!(
             wedge_bonds_from_atropisomers_source(&mut t, &mut r, Some(&mut props), None, &mut m),
-            Err(AtropisomerError::RingFinding(
-                crate::RingFindingError::MoleculeProperty(_)
-            ))
+            Err(AtropisomerError::Valence(
+                crate::ValenceError::ImplicitValenceCacheNotInitialized { atom }
+            )) if atom == AtomId::new(0)
         ));
         assert!(r.is_sssr_or_better());
-        assert_eq!(r.atom_row_count(), 0);
+        assert_eq!(r.atom_row_count(), 6);
         assert_eq!(t, before);
         assert_eq!(m.iter().count(), 0);
         assert_eq!(

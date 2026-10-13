@@ -30,6 +30,7 @@ fn stereo_error_kind(source: &ck::StereoError) -> &'static str {
     use ck::StereoError as E;
     match source {
         E::StereoGroup(..) => "StereoGroup",
+        E::Atropisomer(..) => "Atropisomer",
         E::InvalidTopology(..) => "InvalidTopology",
         E::DuplicateConformerId { .. } => "DuplicateConformerId",
         E::ConformerNotFound { .. } => "ConformerNotFound",
@@ -306,6 +307,7 @@ fn cip_error_kind(source: &ck::CipLabelerError) -> &'static str {
         E::EdgeEndpointMismatch { .. } => "EdgeEndpointMismatch",
         E::TooManyNodes { .. } => "TooManyNodes",
         E::MaxIterationsExceeded => "MaxIterationsExceeded",
+        E::ControlCCaught => "ControlCCaught",
         E::UnexpectedUpEdgeOrdering => "UnexpectedUpEdgeOrdering",
         E::NoSequenceRuleProvided => "NoSequenceRuleProvided",
         E::EmptyPairListReference => "EmptyPairListReference",

@@ -1,6 +1,6 @@
-//! Legacy drawing primitives inherited from frozen COSMolKit 0.3.0 draw.rs.
-//! Source blocks and two-axis markers are inherited, not newly certified.
-//! DRAW-LEGACY1-68 permits this Rust copy; arithmetic and draw order are preserved.
+//! Drawing primitives with an embedded font and explicit drawing order.
+//! Function-local source anchors and two-axis markers describe reproduction
+//! status; this module summary does not certify individual implementations.
 use cosmolkit_model::{Atom, Bond, BondDirection, BondOrder, PropertyText, TopologyBlock};
 use glam::DVec2;
 use std::sync::{Arc, OnceLock};

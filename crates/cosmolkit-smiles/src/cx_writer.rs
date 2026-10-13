@@ -105,9 +105,10 @@ use cosmolkit_core::{
     pick_bonds_to_wedge_with_ring_info, property_value_to_string, wedge_bonds_from_atropisomers,
 };
 use cosmolkit_model::{
-    AtomId, Bond, BondId, Conformer2D, Conformer3D, PropertyText, PropertyValue, SGroupConnection,
-    StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupKind, ordered_atom_properties,
-    set_stereo_group_write_id, stereo_group_write_id,
+    AtomId, Bond, BondId, Conformer2D, Conformer3D, MoleculeProperties, PropertyText,
+    PropertyValue, SGroupConnection, StereoGroup, StereoGroupKind, SubstanceGroup,
+    SubstanceGroupKind, TopologyBlock, ordered_atom_properties, set_stereo_group_write_id,
+    stereo_group_write_id,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
@@ -370,8 +371,25 @@ pub fn write_cx_smiles_with_params<'record>(
     // record; extensions still use the maps emitted by the base write.
     let post_base_valence =
         prepare_cx_post_base_valence(&prepared_record, writer_params.clean_stereo)?;
+    // CK-COORD-002: resolve once; every coordinate-dependent stage consumes
+    // this selected set, never the source-provenance front. Disabled coords
+    // bypass selection entirely, including cleanStereo's new atrop detector.
+    let selected_source = if fields.contains(CxSmilesFields::COORDS) {
+        select_cx_coordinates(&prepared_record.coordinates, params.coordinate_selection)?
+    } else {
+        None
+    };
     if let Some(valence) = post_base_valence.as_ref() {
-        apply_cx_post_base_stereochemistry(&mut prepared_record, valence)?;
+        let conformer = selected_source.map(|row| match row {
+            CoordinateSource::TwoD(row) => cosmolkit_core::AtropisomerConformer::TwoD(row),
+            CoordinateSource::ThreeD(row) => cosmolkit_core::AtropisomerConformer::ThreeD(row),
+        });
+        apply_cx_post_base_stereochemistry(
+            &mut prepared_record.topology,
+            &mut prepared_record.properties,
+            valence,
+            conformer,
+        )?;
     }
 
     let extension = write_cx_extensions(
@@ -380,7 +398,7 @@ pub fn write_cx_smiles_with_params<'record>(
         &output.atom_order,
         &output.bond_order,
         post_base_valence,
-        params.coordinate_selection,
+        selected_source,
     )?;
     if extension.is_empty() {
         Ok(output.text)
@@ -430,8 +448,10 @@ fn prepare_cx_post_base_valence<'record>(
 }
 
 fn apply_cx_post_base_stereochemistry(
-    prepared_record: &mut SmilesRecord,
+    topology: &mut TopologyBlock,
+    properties: &mut MoleculeProperties,
     valence: &cosmolkit_core::ValenceAssignment,
+    conformer: Option<cosmolkit_core::AtropisomerConformer<'_>>,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles cleanStereo assignment and cleanup
     // RDKit❗❌:   if (params.cleanStereo) {
@@ -453,37 +473,32 @@ fn apply_cx_post_base_stereochemistry(
     // detached storage while RDKit updates its molecule in place. This moves
     // the existing topology through the owner without another record clone,
     // but retains the additional linear storage cost.
-    if prepared_record.properties.prop("_StereochemDone").is_none() {
+    if properties.prop("_StereochemDone").is_none() {
         // BEGIN RDKIT CPP FUNCTION Chirality.cpp::legacyStereoPerception molecule property effect
         // RDKit❗❌: void legacyStereoPerception(ROMol &mol, bool cleanIt,
         // RDKit❗❌:                             bool flagPossibleStereoCenters) {
         // RDKit❗❌:   mol.clearProp("_needsDetectBondStereo");
         // END RDKIT CPP FUNCTION Chirality.cpp::legacyStereoPerception molecule property effect
-        prepared_record
-            .properties
-            .clear_prop("_needsDetectBondStereo")?;
-        let rings = fast_find_rings_from_parts(
-            prepared_record.topology.atoms.len(),
-            &prepared_record.topology.bonds,
-            &prepared_record.topology.adjacency,
-        )
-        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
-        let topology = std::mem::take(&mut prepared_record.topology);
-        prepared_record.topology = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
-            topology, valence, &rings, true, false,
+        properties.clear_prop("_needsDetectBondStereo")?;
+        let rings =
+            fast_find_rings_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)
+                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        let source = std::mem::take(topology);
+        *topology = cosmolkit_core::assign_legacy_stereochemistry_with_conformer(
+            source, valence, &rings, None, conformer, true, false,
         )
         .map_err(|error| match error {
             cosmolkit_core::LegacyStereoError::StereoGroup(cause) => {
                 SmilesParseError::StereoGroup(cause)
             }
             other => SmilesParseError::WriterStereo(other.to_string()),
-        })?;
-        prepared_record
-            .properties
+        })?
+        .topology;
+        properties
             .set_computed_prop("_StereochemDone", 1_i32)
             .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     }
-    cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology)?;
+    cosmolkit_core::cleanup_stereo_groups(topology)?;
     Ok(())
 }
 
@@ -519,7 +534,7 @@ pub(crate) fn write_cx_extensions<'record>(
     atom_order: &[AtomId],
     bond_order: &[BondId],
     post_base_valence: Option<ValenceAssignment>,
-    coordinate_selection: CxCoordinateSelection,
+    selected_source: Option<CoordinateSource<'record>>,
 ) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::getCXExtensions field order
@@ -634,11 +649,6 @@ pub(crate) fn write_cx_extensions<'record>(
         }
     }
 
-    let selected_source = if fields.contains(CxSmilesFields::COORDS) {
-        coordinate_source(record, coordinate_selection)?
-    } else {
-        None
-    };
     if let Some(source) = selected_source {
         let coords = write_cx_coordinates_from_source(source, atom_order)?;
         result.push_byte(b'(');
@@ -1332,22 +1342,24 @@ fn write_atom_labels<'record>(
     // RDKit❗🔝:   const auto atom = mol.getAtomWithIdx(idx);
     // RDKit❗🔝:   if (atom->getPropIfPresent(common_properties::_QueryAtomGenericLabel,
     // RDKit❗🔝:                               lbl)) {
-    // RDKit❗🔝:     res += quote_string(lbl + "_p");
+    // RDKit✔️🔝:     res += quote_string(lbl + "_p", labelAllowedSpecialChars);
     // RDKit❗🔝:   } else if (!atom->getAtomicNum() &&
     // RDKit❗🔝:              atom->getPropIfPresent(common_properties::dummyLabel,
     // RDKit❗🔝:                                     lbl) &&
     // RDKit❗🔝:              std::find(SmilesParseOps::pseudoatoms.begin(),
     // RDKit❗🔝:                        SmilesParseOps::pseudoatoms.end(), lbl) !=
     // RDKit❗🔝:                  SmilesParseOps::pseudoatoms.end()) {
-    // RDKit❗🔝:     res += quote_string(lbl + "_p");
+    // RDKit✔️🔝:     res += quote_string(lbl + "_p", labelAllowedSpecialChars);
     // RDKit❗🔝:   } else if (!atom->getAtomicNum() &&
     // RDKit❗🔝:              atom->getPropIfPresent(common_properties::_fromAttachPoint,
     // RDKit❗🔝:                                         val) &&
     // RDKit❗🔝:              (val == 1 || val == 2)) {
-    // RDKit❗🔝:     res += quote_string("_AP" + std::to_string(val));
+    // RDKit✔️🔝:     res += quote_string(
+    // RDKit✔️🔝:         std::string(MolOps::attachmentPointLabelPrefix) + std::to_string(val),
+    // RDKit✔️🔝:         labelAllowedSpecialChars);
     // RDKit❗🔝:   } else if (atom->getPropIfPresent(common_properties::atomLabel,
     // RDKit❗🔝:                                         lbl)) {
-    // RDKit❗🔝:     res += quote_string(lbl);
+    // RDKit✔️🔝:     res += quote_string(lbl, labelAllowedSpecialChars);
     // RDKit❗🔝:   }
     // RDKit❗🔝: }
     // RDKit❗🔝: // if we didn't find anything return an empty string
@@ -1358,12 +1370,6 @@ fn write_atom_labels<'record>(
     // RDKit❗🔝: }
     // RDKit❗🔝: return res;
     // END RDKIT CPP FUNCTION get_atomlabel_block
-    // BEGIN RDKIT CPP FUNCTION quote_string
-    // RDKit❗🔝: std::string quote_string(const std::string &txt) {
-    // RDKit❗🔝:   // FIX
-    // RDKit❗🔝:   return txt;
-    // RDKit❗🔝: }
-    // END RDKIT CPP FUNCTION quote_string
     // BEGIN RDKIT CPP FUNCTION SmilesParseOps::pseudoatoms
     // RDKit❗🔝: constexpr std::array<std::string_view, 2> pseudoatoms{"Pol", "Mod"};
     // END RDKIT CPP FUNCTION SmilesParseOps::pseudoatoms
@@ -1388,7 +1394,8 @@ fn write_atom_labels<'record>(
         if let Some(label) = atom.prop("_QueryAtomGenericLabel") {
             let label = source_string_property(Some(label), "_QueryAtomGenericLabel")?
                 .expect("present canonical property conversion preserves presence");
-            labels.extend_bytes((&label).as_ref());
+            // RDKit✔️🔝: res += quote_string(lbl + "_p", labelAllowedSpecialChars);
+            append_quoted_cx_text(&mut labels, label.as_ref(), CX_LABEL_ALLOWED);
             labels.extend_bytes(("_p").as_ref());
         } else if atom.atomic_number() == 0 {
             let dummy_label = source_string_property(atom.prop("dummyLabel"), "dummyLabel")?;
@@ -1396,7 +1403,11 @@ fn write_atom_labels<'record>(
                 .as_ref()
                 .is_some_and(|label| PSEUDOATOMS.contains(&label.as_bytes()))
             {
-                labels.extend_bytes((&dummy_label.expect("checked above")).as_ref());
+                append_quoted_cx_text(
+                    &mut labels,
+                    dummy_label.expect("checked above").as_ref(),
+                    CX_LABEL_ALLOWED,
+                );
                 labels.extend_bytes(("_p").as_ref());
             } else if let Some(value) = atom.prop("_fromAttchpt") {
                 let value = source_unsigned_property(value, "_fromAttchpt")?;
@@ -1404,24 +1415,31 @@ fn write_atom_labels<'record>(
                     labels.extend_bytes(("_AP").as_ref());
                     labels.extend_bytes((&value.to_string()).as_ref());
                 } else if let Some(label) = atom.prop("atomLabel") {
-                    labels.extend_bytes(
-                        (&source_string_property(Some(label), "atomLabel")?
-                            .expect("present canonical property conversion preserves presence"))
+                    append_quoted_cx_text(
+                        &mut labels,
+                        source_string_property(Some(label), "atomLabel")?
+                            .expect("present canonical property conversion preserves presence")
                             .as_ref(),
+                        CX_LABEL_ALLOWED,
                     );
                 }
             } else if let Some(label) = atom.prop("atomLabel") {
-                labels.extend_bytes(
-                    (&source_string_property(Some(label), "atomLabel")?
-                        .expect("present canonical property conversion preserves presence"))
+                append_quoted_cx_text(
+                    &mut labels,
+                    source_string_property(Some(label), "atomLabel")?
+                        .expect("present canonical property conversion preserves presence")
                         .as_ref(),
+                    CX_LABEL_ALLOWED,
                 );
             }
         } else if let Some(label) = atom.prop("atomLabel") {
-            labels.extend_bytes(
-                (&source_string_property(Some(label), "atomLabel")?
-                    .expect("present canonical property conversion preserves presence"))
+            // RDKit✔️🔝: res += quote_string(lbl, labelAllowedSpecialChars);
+            append_quoted_cx_text(
+                &mut labels,
+                source_string_property(Some(label), "atomLabel")?
+                    .expect("present canonical property conversion preserves presence")
                     .as_ref(),
+                CX_LABEL_ALLOWED,
             );
         }
     }
@@ -1449,20 +1467,14 @@ fn write_atom_values<'record>(
     // RDKit❗✔️:   }
     // RDKit❗✔️:   std::string lbl;
     // RDKit❗✔️:   if (mol.getAtomWithIdx(idx)->getPropIfPresent(prop, lbl)) {
-    // RDKit❗✔️:     res += quote_string(lbl);
+    // RDKit✔️🔝:     res += quote_string(lbl, atomPropAllowedSpecialChars);
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
     // RDKit❗✔️: return res;
     // END RDKIT CPP FUNCTION get_value_block
-    // BEGIN RDKIT CPP FUNCTION quote_string
-    // RDKit❗✔️: std::string quote_string(const std::string &txt) {
-    // RDKit❗✔️:   // FIX
-    // RDKit❗✔️:   return txt;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION quote_string
     // Behavior review: each base output-map slot gets exactly one separator
-    // after the first and present values are appended literally, including
-    // empty values and punctuation; do not collapse empty slot sequences.
+    // after the first and present values use property-context escaping;
+    // do not collapse empty slot sequences.
     // Complexity review: one atom-order pass and one output String are
     // source-shaped O(atoms + emitted bytes) with no per-slot String vector.
     let mut values = PropertyText::new();
@@ -1474,10 +1486,13 @@ fn write_atom_values<'record>(
             first = false;
         }
         if let Some(value) = record.topology.atoms[atom_id.index()].prop("molFileValue") {
-            values.extend_bytes(
-                (&source_string_property(Some(value), "molFileValue")?
-                    .expect("present canonical property conversion preserves presence"))
+            // RDKit✔️🔝: res += quote_string(lbl, atomPropAllowedSpecialChars);
+            append_quoted_cx_text(
+                &mut values,
+                source_string_property(Some(value), "molFileValue")?
+                    .expect("present canonical property conversion preserves presence")
                     .as_ref(),
+                CX_PROPERTY_ALLOWED,
             );
         }
     }
@@ -1558,35 +1573,44 @@ fn write_radicals<'record>(
 
 #[doc(hidden)]
 pub fn quote_cx_atom_property(text: &[u8]) -> PropertyText {
-    // BEGIN RDKIT CPP FUNCTION quote_atomprop_string
-    // RDKit❗❌: std::string quote_atomprop_string(const std::string &txt) {
-    // RDKit❗❌:   // at a bare minimum, . needs to be escaped
-    // RDKit❗❌:   std::string res;
-    // RDKit❗❌:   for (auto c : txt) {
-    // RDKit❗❌:     if (c == '.') {
-    // RDKit❗❌:       res += "&#46;";
-    // RDKit❗❌:     } else {
-    // RDKit❗❌:       res += c;
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌:   return res;
-    // RDKit❗❌: }
-    // END RDKIT CPP FUNCTION quote_atomprop_string
-    // Behavior review: Rust replaces only ASCII periods with the source token;
-    // empty text and every other counted byte, including NUL/non-UTF8, remain unchanged.
-    // Complexity review: one linear string replacement creates one output
-    // buffer, matching the source's linear scan and output construction.
-    // Cost ❌: short Native std::string results use SSO; the counted byte
-    // vector allocates even for a single period. The scan/buffer stay linear.
+    // RDKit✔️✔️: quote_string(pv, atomPropAllowedSpecialChars)
     let mut result = PropertyText::new();
+    append_quoted_cx_text(&mut result, text, CX_PROPERTY_ALLOWED);
+    result
+}
+
+const CX_PROPERTY_ALLOWED: &[u8] = br#"><"!@#$%()[]./\?-+*^_~= "#;
+const CX_LABEL_ALLOWED: &[u8] = br#"><"!@#%()[]./\?-+*^_~=,: "#;
+
+fn append_quoted_cx_text(result: &mut PropertyText, text: &[u8], allowed: &[u8]) {
+    // RDKit✔️🔝: bool is_alphanumeric(char c) {
+    // RDKit✔️🔝:   return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+    // RDKit✔️🔝:          (c >= 'a' && c <= 'z');
+    // RDKit✔️🔝: }
+    // RDKit✔️🔝: std::string quote_string(const std::string &txt,
+    // RDKit✔️🔝:                          std::string allowedSpecialChars) {
+    // RDKit✔️🔝:   std::string res;
+    // RDKit✔️🔝:   for (auto c : txt) {
+    // RDKit✔️🔝:     if (!allowedSpecialChars.empty() && !is_alphanumeric(c) &&
+    // RDKit✔️🔝:         allowedSpecialChars.find(c) == std::string::npos) {
+    // RDKit✔️🔝:       res += "&#" + std::to_string(static_cast<unsigned int>(c)) + ";";
+    // RDKit✔️🔝:     } else {
+    // RDKit✔️🔝:       res += c;
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   return res;
+    // RDKit✔️🔝: }
+    // One O(bytes) pass. Append directly to the existing output instead of
+    // allocating a temporary quoted string per label/value. c_char preserves
+    // the target's C++ plain-char signedness before the unsigned-int cast.
     for &byte in text {
-        if byte == b'.' {
-            result.extend_bytes(b"&#46;");
+        if !allowed.is_empty() && !byte.is_ascii_alphanumeric() && !allowed.contains(&byte) {
+            write!(result, "&#{};", byte as std::ffi::c_char as u32)
+                .expect("writing a CX byte entity cannot fail");
         } else {
             result.push_byte(byte);
         }
     }
-    result
 }
 
 trait SourceCxAtomProperties {
@@ -3474,8 +3498,8 @@ fn write_data_sgroups<'record>(
     // END RDKIT CPP FUNCTION get_sgroup_data_block
     // Behavior review: canonical typed SGroupData fields project the same
     // RDKit property types; legacy raw properties remain a fallback for CX
-    // lowered records. Field and value bytes are appended literally because
-    // this source function never calls quote_string. The empty-member case
+    // lowered records. Candidate fields and values use SGroup-context quoting;
+    // QUERYOP remains literal. The empty-member case
     // deliberately retains the source seekp result, which removes the usual
     // atom/field delimiter. Output-index bookkeeping is computed without
     // mutation by write_sgroup_hierarchy on the same immutable prepared input.
@@ -3505,7 +3529,12 @@ fn write_data_sgroups<'record>(
         if !group.atoms().is_empty() {
             output.push_byte(b':');
         }
-        output.extend_bytes((data_sgroup_value(group, "FIELDNAME")?).as_ref());
+        // RDKit✔️🔝: res << quote_string(prop, sgroupAllowedSpecialChars);
+        append_quoted_cx_text(
+            &mut output,
+            data_sgroup_value(group, "FIELDNAME")?.as_ref(),
+            CX_PROPERTY_ALLOWED,
+        );
         output.push_byte(b':');
 
         let values = data_sgroup_values(group)?;
@@ -3514,15 +3543,24 @@ fn write_data_sgroups<'record>(
                 if value_index != 0 {
                     output.push_byte(b',');
                 }
-                output.extend_bytes((value).as_ref());
+                // RDKit✔️🔝: res << quote_string(pv, sgroupAllowedSpecialChars) << ",";
+                append_quoted_cx_text(&mut output, value.as_ref(), CX_PROPERTY_ALLOWED);
             }
         }
         output.push_byte(b':');
         output.extend_bytes((data_sgroup_value(group, "QUERYOP")?).as_ref());
         output.push_byte(b':');
-        output.extend_bytes((data_sgroup_value(group, "FIELDINFO")?).as_ref());
+        append_quoted_cx_text(
+            &mut output,
+            data_sgroup_value(group, "FIELDINFO")?.as_ref(),
+            CX_PROPERTY_ALLOWED,
+        );
         output.push_byte(b':');
-        output.extend_bytes((data_sgroup_value(group, "FIELDTAG")?).as_ref());
+        append_quoted_cx_text(
+            &mut output,
+            data_sgroup_value(group, "FIELDTAG")?.as_ref(),
+            CX_PROPERTY_ALLOWED,
+        );
         output.push_byte(b':');
     }
     Ok(output)
@@ -3760,7 +3798,8 @@ fn write_polymer_sgroups<'record>(
             None
         };
         if let Some(label) = group.label().or(raw_label.as_ref()) {
-            block.extend_bytes(label.as_bytes());
+            // RDKit✔️🔝: res << quote_string(label, sgroupAllowedSpecialChars);
+            append_quoted_cx_text(&mut block, label.as_bytes(), CX_PROPERTY_ALLOWED);
         }
         block.push_byte(b':');
         block.extend_bytes(connection_text(group)?.as_bytes());
@@ -4335,7 +4374,11 @@ mod tests {
             atom_order,
             bond_order,
             None,
-            CxCoordinateSelection::Auto,
+            if fields.contains(CxSmilesFields::COORDS) {
+                coordinate_source(record, CxCoordinateSelection::Auto)?
+            } else {
+                None
+            },
         )
         .map(|text| {
             String::from_utf8(text.into_bytes()).expect("original fixture CX extension is UTF-8")
@@ -4439,7 +4482,7 @@ mod tests {
         let input = "*C |$foo;$,$_AV:x;y$,atomProp:0.a&#46;b.c&#46;d,^1:1,(1,2,3;3,4,0)|";
         assert_eq!(
             write_noncanonical(input),
-            "*[CH2] |(1,2,3;3,4,),$foo;$,$_AV:x;y$,^1:1,atomProp:0.a&#46;b.c&#46;d|"
+            "*[CH2] |(1,2,3;3,4,),$foo;$,$_AV:x;y$,^1:1,atomProp:0.a.b.c.d|"
         );
     }
 
@@ -4959,8 +5002,13 @@ mod tests {
         let valence = prepare_cx_post_base_valence(&prepared_record, true)
             .expect("outer cache preparation succeeds")
             .expect("cleanStereo=true prepares valence");
-        apply_cx_post_base_stereochemistry(&mut prepared_record, &valence)
-            .expect("absent done marker runs legacy assignment");
+        apply_cx_post_base_stereochemistry(
+            &mut prepared_record.topology,
+            &mut prepared_record.properties,
+            &valence,
+            None,
+        )
+        .expect("absent done marker runs legacy assignment");
 
         assert_eq!(
             prepared_record.properties.prop("_needsDetectBondStereo"),
@@ -5016,8 +5064,13 @@ mod tests {
         let valence = prepare_cx_post_base_valence(&prepared_record, true)
             .expect("outer cache preparation precedes the guard")
             .expect("cleanStereo=true prepares valence");
-        apply_cx_post_base_stereochemistry(&mut prepared_record, &valence)
-            .expect("zero-like present marker skips assignment and reaches cleanup");
+        apply_cx_post_base_stereochemistry(
+            &mut prepared_record.topology,
+            &mut prepared_record.properties,
+            &valence,
+            None,
+        )
+        .expect("zero-like present marker skips assignment and reaches cleanup");
 
         assert_eq!(
             prepared_record.properties.prop("_StereochemDone"),
@@ -6307,18 +6360,28 @@ mod quote_cx_atom_property_source_tests {
         assert!(quote_cx_atom_property(b"").is_empty());
     }
     #[test]
-    fn only_periods_are_escaped_and_existing_entities_are_unchanged() {
+    fn context_delimiters_are_escaped_but_periods_remain_literal() {
         assert_eq!(
             quote_cx_atom_property(b"a..b&#46;:c,$|\\"),
-            PropertyText::from("a&#46;&#46;b&#46;:c,$|\\")
+            PropertyText::from("a..b&#38;#46&#59;&#58;c&#44;$&#124;\\")
         );
+        let mut label = PropertyText::new();
+        append_quoted_cx_text(&mut label, b"a,$:;&|", CX_LABEL_ALLOWED);
+        assert_eq!(label, PropertyText::from("a,&#36;:&#59;&#38;&#124;"));
     }
     #[test]
-    fn every_other_counted_byte_including_nul_and_nonutf8_is_preserved() {
+    fn every_counted_byte_uses_target_char_signedness_for_entities() {
         let input = (0..=255).collect::<Vec<u8>>();
-        let mut expected = input[..46].to_vec();
-        expected.extend_from_slice(b"&#46;");
-        expected.extend_from_slice(&input[47..]);
+        let mut expected = Vec::new();
+        for &byte in &input {
+            if byte.is_ascii_alphanumeric() || br#"><"!@#$%()[]./\?-+*^_~= "#.contains(&byte) {
+                expected.push(byte);
+            } else {
+                expected.extend_from_slice(
+                    format!("&#{};", byte as std::ffi::c_char as u32).as_bytes(),
+                );
+            }
+        }
         assert_eq!(
             quote_cx_atom_property(&input).as_bytes(),
             expected.as_slice()
@@ -6423,7 +6486,7 @@ mod atom_properties_source_tests {
         );
     }
     #[test]
-    fn counted_binary_property_keys_and_values_escape_only_periods() {
+    fn counted_binary_property_keys_and_values_use_context_byte_entities() {
         let mut a = atom(0, 6);
         a.set_prop(
             PropertyText::from(vec![255, 0, b'.']),
@@ -6431,11 +6494,12 @@ mod atom_properties_source_tests {
         )
         .unwrap();
         let mut expected = PropertyText::from("atomProp:0.");
-        expected.extend_bytes(&[255, 0]);
-        expected.extend_bytes(b"&#46;.");
-        expected.push_byte(128);
-        expected.extend_bytes(b"&#46;");
-        expected.push_byte(0);
+        write!(
+            &mut expected,
+            "&#{};&#0;..&#{};.&#0;",
+            255_u8 as std::ffi::c_char as u32, 128_u8 as std::ffi::c_char as u32
+        )
+        .unwrap();
         assert_eq!(write(&[a]), expected);
     }
     #[test]
@@ -6458,7 +6522,7 @@ mod atom_properties_source_tests {
         assert_eq!(
             write(&[a]),
             PropertyText::from(
-                "atomProp:0.s.x:0.i.-7:0.u.4294967295:0.d.-0:0.b.1:0.iv.[1,-2]:0.sv.[a,b]"
+                "atomProp:0.s.x:0.i.-7:0.u.4294967295:0.d.-0:0.b.1:0.iv.[1&#44;-2]:0.sv.[a&#44;b]"
             )
         );
     }
@@ -6485,7 +6549,7 @@ mod atom_properties_source_tests {
         a.set_prop("a.b", "c.d").unwrap();
         assert_eq!(
             write_cx_atom_properties_impl(&[a], &[AtomId::new(0)]).unwrap(),
-            PropertyText::from("atomProp:0.a&#46;b.c&#46;d")
+            PropertyText::from("atomProp:0.a.b.c.d")
         );
     }
 }

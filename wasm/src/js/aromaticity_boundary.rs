@@ -317,7 +317,7 @@ impl Molecule {
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name = assignAromaticity)]
+    #[wasm_bindgen(js_name = assignAromaticity_)]
     pub fn assign_aromaticity_(
         &self,
         #[wasm_bindgen(
@@ -336,7 +336,7 @@ impl Molecule {
             crate::aromaticity_boundary::AromaticityParams::from_js_configuration(&params)?;
         self.assign_aromaticity_with_params_(&configuration_0)
     }
-    #[wasm_bindgen(js_name = assignAromaticityWithParams)]
+    #[wasm_bindgen(js_name = assignAromaticityWithParams_)]
     pub fn assign_aromaticity_with_params_(
         &self,
         params: &AromaticityParams,

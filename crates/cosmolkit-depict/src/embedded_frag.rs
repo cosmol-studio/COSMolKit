@@ -2707,95 +2707,73 @@ impl<'a> EmbeddedFrag<'a> {
         aid: usize,
         done_neighbors: &[usize],
     ) -> Result<(), FragmentError> {
-        // BEGIN RECOVERY DEP-01 SOURCE compute_nbrs_and_ang
-        // RDKit❗✔️: void EmbeddedFrag::computeNbrsAndAng(unsigned int aid,
-        // RDKit❗✔️:                                      const RDKit::INT_VECT &doneNbrs) {
-        // RDKit❗✔️:   //                                     const RDKit::ROMol *mol) {
-        // RDKit❗✔️:   PRECONDITION(dp_mol, "");
-        // RDKit❗✔️:   PRECONDITION(aid < dp_mol->getNumAtoms(), "");
-        // RDKit❗✔️:
-        // RDKit❗✔️:   PRECONDITION(doneNbrs.size() >= 3, "");
-        // RDKit❗✔️:   // we will find all the inter nbr angles, pick the one with the largest angle
-        // RDKit❗✔️:   // make those neighbors the nbr1 and nbr2 of aid
-        // RDKit❗✔️:   double ang = 0.;
-        // RDKit❗✔️:   std::vector<DOUBLE_INT_PAIR> anglePairs;
-        // RDKit❗✔️:   anglePairs.reserve(doneNbrs.size() * (doneNbrs.size() - 1) / 2);
-        // RDKit❗✔️:   for (auto nbi1 = doneNbrs.begin(); nbi1 != doneNbrs.end(); ++nbi1) {
-        // RDKit❗✔️:     for (auto nbi2 = std::next(nbi1); nbi2 != doneNbrs.end(); ++nbi2) {
-        // RDKit❗✔️:       ang = computeAngle(d_eatoms[aid].loc, d_eatoms[*nbi1].loc,
-        // RDKit❗✔️:                          d_eatoms[*nbi2].loc);
-        // RDKit❗✔️:       auto nbrPair = std::make_pair((*nbi1), (*nbi2));
-        // RDKit❗✔️:       anglePairs.emplace_back(ang, nbrPair);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   std::ranges::sort(anglePairs, [](const auto &pr1, const auto &pr2) {
-        // RDKit❗✔️:     if (pr1.first == pr2.first) {
-        // RDKit❗✔️:       return pr1.second < pr2.second;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     return pr1.first < pr2.first;
-        // RDKit❗✔️:   });
-        // RDKit❗✔️:
-        // RDKit❗✔️:   // more pain, more pain we unfortunately cannot right away pick the largest
-        // RDKit❗✔️:   // angle - it is possible that we pick an angle that is in a fused ring - see
-        // RDKit❗✔️:   // if I can explain this with a diagram
-        // RDKit❗✔️:   //        _     _
-        // RDKit❗✔️:   //       / B   C \                                this space
-        // RDKit❗✔️:   //      /   \ /   \                               intentionally left blank
-        // RDKit❗✔️:   //     |     A     |
-        // RDKit❗✔️:   //     |     |     |
-        // RDKit❗✔️:   //      \    D    /
-        // RDKit❗✔️:   //       \_/   \_/
-        // RDKit❗✔️:   //
-        // RDKit❗✔️:   //  Let's say we are sitting on A with nbrs B, C, D - it is possible that we
-        // RDKit❗✔️:   //  find ang(BAD) to be largest, but a new neighbor in this case will be added
-        // RDKit❗✔️:   //  inside the ring We want to find ang(BAC) instead - which we will this do
-        // RDKit❗✔️:   //  by checking that both our neighbors are not involved in more than one
-        // RDKit❗✔️:   //  ring. Bridged systems - don't even go there
-        // RDKit❗✔️:   auto winner = anglePairs.back();
-        // RDKit❗✔️:   for (const auto &pr : boost::adaptors::reverse(anglePairs)) {
-        // RDKit❗✔️:     if ((dp_mol->getRingInfo()->numAtomRings(pr.second.first) <= 1) &&
-        // RDKit❗✔️:         (dp_mol->getRingInfo()->numAtomRings(pr.second.second) <= 1)) {
-        // RDKit❗✔️:       winner = pr;
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   const auto [wnb1, wnb2] = winner.second;
-        // RDKit❗✔️:
-        // RDKit❗✔️:   // now find the smallest angle that contains one of these nbrs
-        // RDKit❗✔️:   int nb2 = -1;
-        // RDKit❗✔️:   int nb1 = -1;
-        // RDKit❗✔️:   for (const auto &anglePair : anglePairs) {
-        // RDKit❗✔️:     const auto nbrPair = anglePair.second;
-        // RDKit❗✔️:     if (wnb1 == nbrPair.first) {
-        // RDKit❗✔️:       nb2 = wnb1;
-        // RDKit❗✔️:       nb1 = nbrPair.second;
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     } else if (wnb1 == nbrPair.second) {
-        // RDKit❗✔️:       nb2 = wnb1;
-        // RDKit❗✔️:       nb1 = nbrPair.first;
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     } else if (wnb2 == nbrPair.first) {
-        // RDKit❗✔️:       nb2 = wnb2;
-        // RDKit❗✔️:       nb1 = nbrPair.second;
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     } else if (wnb2 == nbrPair.second) {
-        // RDKit❗✔️:       nb2 = wnb2;
-        // RDKit❗✔️:       nb1 = nbrPair.first;
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   // now find the rotation between nb1 and nb2
-        // RDKit❗✔️:   auto wAng = winner.first;
-        // RDKit❗✔️:   d_eatoms[aid].rotDir = rotationDir(d_eatoms[aid].loc, d_eatoms[nb1].loc,
-        // RDKit❗✔️:                                      d_eatoms[nb2].loc, wAng);
-        // RDKit❗✔️:   d_eatoms[aid].nbr1 = nb1;
-        // RDKit❗✔️:   d_eatoms[aid].nbr2 = nb2;
-        // RDKit❗✔️:   d_eatoms[aid].angle = 2 * M_PI - wAng;
-        // RDKit❗✔️: }
-        // END RECOVERY DEP-01 SOURCE compute_nbrs_and_ang
-
+        // RDKit✔️✔️: void EmbeddedFrag::computeNbrsAndAng(unsigned int aid,
+        // RDKit✔️✔️:                                      const RDKit::INT_VECT &doneNbrs) {
+        // RDKit✔️✔️:   //                                     const RDKit::ROMol *mol) {
+        // RDKit✔️✔️:   PRECONDITION(dp_mol, "");
+        // RDKit✔️✔️:   PRECONDITION(aid < dp_mol->getNumAtoms(), "");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   PRECONDITION(doneNbrs.size() >= 3, "");
+        // RDKit✔️✔️:   // Consecutive bond directions bound gaps containing no other bond from aid.
+        // RDKit✔️✔️:   // Pairwise angles are limited to pi and can instead span existing bonds when
+        // RDKit✔️✔️:   // the gap around a bridgehead is larger than a semicircle.
+        // RDKit✔️✔️:   std::vector<std::pair<double, int>> directions;
+        // RDKit✔️✔️:   directions.reserve(doneNbrs.size());
+        // RDKit✔️✔️:   for (auto nbr : doneNbrs) {
+        // RDKit✔️✔️:     const auto delta = d_eatoms[nbr].loc - d_eatoms[aid].loc;
+        // RDKit✔️✔️:     directions.emplace_back(std::atan2(delta.y, delta.x), nbr);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   std::sort(directions.begin(), directions.end());
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::vector<DOUBLE_INT_PAIR> anglePairs;
+        // RDKit✔️✔️:   anglePairs.reserve(directions.size());
+        // RDKit✔️✔️:   for (size_t i = 0; i < directions.size(); ++i) {
+        // RDKit✔️✔️:     const auto &start = directions[i];
+        // RDKit✔️✔️:     const auto &end = directions[(i + 1) % directions.size()];
+        // RDKit✔️✔️:     auto angle = end.first - start.first;
+        // RDKit✔️✔️:     if (i + 1 == directions.size()) {
+        // RDKit✔️✔️:       angle += 2 * M_PI;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     anglePairs.emplace_back(angle, std::make_pair(start.second, end.second));
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   std::sort(anglePairs.begin(), anglePairs.end());
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // more pain, more pain we unfortunately cannot right away pick the largest
+        // RDKit✔️✔️:   // angle - it is possible that we pick an angle that is in a fused ring - see
+        // RDKit✔️✔️:   // if I can explain this with a diagram
+        // RDKit✔️✔️:   //        _     _
+        // RDKit✔️✔️:   //       / B   C \                                this space
+        // RDKit✔️✔️:   //      /   \ /   \                               intentionally left blank
+        // RDKit✔️✔️:   //     |     A     |
+        // RDKit✔️✔️:   //     |     |     |
+        // RDKit✔️✔️:   //      \    D    /
+        // RDKit✔️✔️:   //       \_/   \_/
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   //  Let's say we are sitting on A with nbrs B, C, D - it is possible that we
+        // RDKit✔️✔️:   //  find ang(BAD) to be largest, but a new neighbor in this case will be added
+        // RDKit✔️✔️:   //  inside the ring We want to find ang(BAC) instead - which we will this do
+        // RDKit✔️✔️:   //  by checking that both our neighbors are not involved in more than one
+        // RDKit✔️✔️:   //  ring. Bridged systems - don't even go there
+        // RDKit✔️✔️:   auto winner = anglePairs.back();
+        // RDKit✔️✔️:   for (const auto &pr : boost::adaptors::reverse(anglePairs)) {
+        // RDKit✔️✔️:     if ((dp_mol->getRingInfo()->numAtomRings(pr.second.first) <= 1) &&
+        // RDKit✔️✔️:         (dp_mol->getRingInfo()->numAtomRings(pr.second.second) <= 1)) {
+        // RDKit✔️✔️:       winner = pr;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // New neighbors are placed by rotating nbr2 towards nbr1 through the gap.
+        // RDKit✔️✔️:   // Its direction is known, including for gaps larger than pi.
+        // RDKit✔️✔️:   d_eatoms[aid].rotDir = 1;
+        // RDKit✔️✔️:   d_eatoms[aid].nbr1 = winner.second.second;
+        // RDKit✔️✔️:   d_eatoms[aid].nbr2 = winner.second.first;
+        // RDKit✔️✔️:   d_eatoms[aid].angle = 2 * M_PI - winner.first;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: // constructor to embed a cis/trans system
+        // Consecutive full-circle gaps preserve wraparound and source pair ties.
+        // O(d log d) time and O(d) rows, replacing quadratic pair construction.
         if done_neighbors.len() < 3 {
             return Err(FragmentError::NotEnoughEmbeddedNeighbors {
                 atom: aid,
@@ -2807,21 +2785,31 @@ impl<'a> EmbeddedFrag<'a> {
             .get(&aid)
             .ok_or(FragmentError::AtomNotEmbedded { atom: aid })?
             .loc;
-        let mut pairs = Vec::with_capacity(done_neighbors.len() * (done_neighbors.len() - 1) / 2);
-        for (i, &first) in done_neighbors.iter().enumerate() {
-            for &second in &done_neighbors[i + 1..] {
-                let a = self
-                    .atoms
-                    .get(&first)
-                    .ok_or(FragmentError::AtomNotEmbedded { atom: first })?
-                    .loc;
-                let b = self
-                    .atoms
-                    .get(&second)
-                    .ok_or(FragmentError::AtomNotEmbedded { atom: second })?
-                    .loc;
-                pairs.push((compute_angle(center, a, b)?, first, second));
+        let mut directions = Vec::with_capacity(done_neighbors.len());
+        for &nbr in done_neighbors {
+            let loc = self
+                .atoms
+                .get(&nbr)
+                .ok_or(FragmentError::AtomNotEmbedded { atom: nbr })?
+                .loc;
+            directions.push(((loc[1] - center[1]).atan2(loc[0] - center[0]), nbr));
+        }
+        directions.sort_unstable_by(|a, b| {
+            if a.0 == b.0 {
+                a.1.cmp(&b.1)
+            } else {
+                a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal)
             }
+        });
+        let mut pairs = Vec::with_capacity(directions.len());
+        for i in 0..directions.len() {
+            let start = directions[i];
+            let end = directions[(i + 1) % directions.len()];
+            let mut angle = end.0 - start.0;
+            if i + 1 == directions.len() {
+                angle += 2.0 * PI;
+            }
+            pairs.push((angle, start.1, end.1));
         }
         pairs.sort_unstable_by(|a, b| {
             if a.0 == b.0 {
@@ -2841,33 +2829,13 @@ impl<'a> EmbeddedFrag<'a> {
                 break;
             }
         }
-        let (w_angle, win1, win2) = winner;
-        let mut selected = None;
-        for &(_, first, second) in &pairs {
-            if win1 == first {
-                selected = Some((second, win1));
-            } else if win1 == second {
-                selected = Some((first, win1));
-            } else if win2 == first {
-                selected = Some((second, win2));
-            } else if win2 == second {
-                selected = Some((first, win2));
-            }
-            if selected.is_some() {
-                break;
-            }
-        }
-        let (nb1, nb2) = selected.ok_or(FragmentError::InvalidAngle)?;
-        let a = self.atoms[&nb1].loc;
-        let b = self.atoms[&nb2].loc;
         let atom = self.atoms.get_mut(&aid).expect("checked above");
-        atom.rot_dir = rotation_dir(center, a, b, w_angle);
-        atom.nbr1 = Some(nb1);
-        atom.nbr2 = Some(nb2);
-        atom.angle = 2.0 * PI - w_angle;
+        atom.rot_dir = 1;
+        atom.nbr1 = Some(winner.2);
+        atom.nbr2 = Some(winner.1);
+        atom.angle = 2.0 * PI - winner.0;
         Ok(())
     }
-
     pub(crate) fn find_num_neigh(&self, point: Point2, radius: f64) -> usize {
         // RDKit❗✔️: int EmbeddedFrag::findNumNeigh(const RDGeom::Point2D &pt, double radius) {
         // RDKit❗✔️:   int res = 0;
@@ -2949,79 +2917,81 @@ impl<'a> EmbeddedFrag<'a> {
         aid: usize,
         to_aid: usize,
     ) -> Result<(), FragmentError> {
-        // RDKit❗❌: void EmbeddedFrag::addAtomToAtomWithAng(unsigned int aid, unsigned int toAid) {
-        // RDKit❗❌:   const auto &refAtom = d_eatoms[toAid];
-        // RDKit❗❌:   auto refLoc = refAtom.loc;
-        // RDKit❗❌:   RDGeom::Point2D origin(0.0, 0.0);
-        // RDKit❗❌:   PRECONDITION(refAtom.angle > 0.0, "");
-        // RDKit❗❌:
-        // RDKit❗❌:   // we are adding to either to a ring atom or an atom to which we added at
-        // RDKit❗❌:   // least one substituent previously
-        // RDKit❗❌:
-        // RDKit❗❌:   // determine the angle at which we want to add the new atom based on the
-        // RDKit❗❌:   // number of remaining substituents
-        // RDKit❗❌:   auto nnbr = refAtom.neighs.size();
-        // RDKit❗❌:   double remAngle = 2 * M_PI - refAtom.angle;
-        // RDKit❗❌:   auto currAngle = remAngle / (1 + nnbr);
-        // RDKit❗❌:   d_eatoms[toAid].angle += currAngle;
-        // RDKit❗❌:
-        // RDKit❗❌:   const auto &nb1 = d_eatoms.at(refAtom.nbr1).loc;
-        // RDKit❗❌:   const auto &nb2 = d_eatoms.at(refAtom.nbr2).loc;
-        // RDKit❗❌:   if (d_eatoms[toAid].rotDir == 0) {
-        // RDKit❗❌:     d_eatoms[toAid].rotDir = rotationDir(refLoc, nb1, nb2, remAngle);
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   currAngle *= d_eatoms[toAid].rotDir;
-        // RDKit❗❌:
-        // RDKit❗❌:   RDGeom::Transform2D rtrans;
-        // RDKit❗❌:   rtrans.SetTransform(refLoc, currAngle);
-        // RDKit❗❌:   auto currLoc = nb2;
-        // RDKit❗❌:   rtrans.TransformPoint(currLoc);
-        // RDKit❗❌:   if (fabs(remAngle) - M_PI < 1e-3) {
-        // RDKit❗❌:     auto currLoc2 = nb2;
-        // RDKit❗❌:     rtrans.SetTransform(refLoc, -currAngle);
-        // RDKit❗❌:     rtrans.TransformPoint(currLoc2);
-        // RDKit❗❌:     if (findNumNeigh(currLoc, 0.5) > findNumNeigh(currLoc2, 0.5)) {
-        // RDKit❗❌:       currLoc = currLoc2;
-        // RDKit❗❌:       currAngle *= -1;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       rtrans.SetTransform(refLoc, currAngle);
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   // set the neighbors for the current point
-        // RDKit❗❌:   d_eatoms[toAid].nbr2 = aid;
-        // RDKit❗❌:
-        // RDKit❗❌:   EmbeddedAtom eatm;
-        // RDKit❗❌:   eatm.aid = aid;
-        // RDKit❗❌:   eatm.loc = currLoc;
-        // RDKit❗❌:   eatm.nbr1 = toAid;
-        // RDKit❗❌:   eatm.angle = -1.0;
-        // RDKit❗❌:
-        // RDKit❗❌:   // now compute the normal at this atom - which gives the direction in which we
-        // RDKit❗❌:   // want to add the next atom. We will go in the direction that seem to be
-        // RDKit❗❌:   // least explored
-        // RDKit❗❌:   auto tpt = currLoc - refLoc;
-        // RDKit❗❌:   RDGeom::Point2D norm(-tpt.y, tpt.x);
-        // RDKit❗❌:   auto tp1 = currLoc + norm;
-        // RDKit❗❌:   auto tp2 = currLoc - norm;
-        // RDKit❗❌:
-        // RDKit❗❌:   auto nccw = findNumNeigh(
-        // RDKit❗❌:       tp1, NEIGH_RADIUS);  // number of neighbors if we go counter-clockwise
-        // RDKit❗❌:   auto ncw = findNumNeigh(
-        // RDKit❗❌:       tp2, NEIGH_RADIUS);  // number of neighbors if we go clockwise
-        // RDKit❗❌:
-        // RDKit❗❌:   norm.normalize();
-        // RDKit❗❌:   if (nccw < ncw) {
-        // RDKit❗❌:     eatm.normal = norm;
-        // RDKit❗❌:     eatm.ccw = false;
-        // RDKit❗❌:   } else {
-        // RDKit❗❌:     eatm.normal = (-norm);
-        // RDKit❗❌:     eatm.ccw = true;
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   d_eatoms[aid] = eatm;
-        // RDKit❗❌: }
+        // RDKit❗✔️: void EmbeddedFrag::addAtomToAtomWithAng(unsigned int aid, unsigned int toAid) {
+        // RDKit❗✔️:   const auto &refAtom = d_eatoms[toAid];
+        // RDKit❗✔️:   auto refLoc = refAtom.loc;
+        // RDKit❗✔️:   RDGeom::Point2D origin(0.0, 0.0);
+        // RDKit❗✔️:   PRECONDITION(refAtom.angle > 0.0, "");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // we are adding to either to a ring atom or an atom to which we added at
+        // RDKit❗✔️:   // least one substituent previously
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // determine the angle at which we want to add the new atom based on the
+        // RDKit❗✔️:   // number of remaining substituents
+        // RDKit❗✔️:   auto nnbr = refAtom.neighs.size();
+        // RDKit❗✔️:   double remAngle = 2 * M_PI - refAtom.angle;
+        // RDKit❗✔️:   auto currAngle = remAngle / (1 + nnbr);
+        // RDKit❗✔️:   d_eatoms[toAid].angle += currAngle;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   const auto &nb1 = d_eatoms.at(refAtom.nbr1).loc;
+        // RDKit❗✔️:   const auto &nb2 = d_eatoms.at(refAtom.nbr2).loc;
+        // RDKit❗✔️:   const auto canChooseDirection = refAtom.rotDir == 0;
+        // RDKit❗✔️:   if (canChooseDirection) {
+        // RDKit❗✔️:     d_eatoms[toAid].rotDir = rotationDir(refLoc, nb1, nb2, remAngle);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   currAngle *= d_eatoms[toAid].rotDir;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Transform2D rtrans;
+        // RDKit❗✔️:   rtrans.SetTransform(refLoc, currAngle);
+        // RDKit❗✔️:   auto currLoc = nb2;
+        // RDKit❗✔️:   rtrans.TransformPoint(currLoc);
+        // RDKit❗✔️:   // Either direction is valid only for an unassigned half-plane. Once a gap
+        // RDKit❗✔️:   // has been selected, reversing would place the atom outside that gap.
+        // RDKit❗✔️:   if (canChooseDirection && std::abs(remAngle - M_PI) < 1e-3) {
+        // RDKit❗✔️:     auto currLoc2 = nb2;
+        // RDKit❗✔️:     rtrans.SetTransform(refLoc, -currAngle);
+        // RDKit❗✔️:     rtrans.TransformPoint(currLoc2);
+        // RDKit❗✔️:     if (findNumNeigh(currLoc, 0.5) > findNumNeigh(currLoc2, 0.5)) {
+        // RDKit❗✔️:       currLoc = currLoc2;
+        // RDKit❗✔️:       d_eatoms[toAid].rotDir *= -1;
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       rtrans.SetTransform(refLoc, currAngle);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // set the neighbors for the current point
+        // RDKit❗✔️:   d_eatoms[toAid].nbr2 = aid;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom eatm;
+        // RDKit❗✔️:   eatm.aid = aid;
+        // RDKit❗✔️:   eatm.loc = currLoc;
+        // RDKit❗✔️:   eatm.nbr1 = toAid;
+        // RDKit❗✔️:   eatm.angle = -1.0;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // now compute the normal at this atom - which gives the direction in which we
+        // RDKit❗✔️:   // want to add the next atom. We will go in the direction that seem to be
+        // RDKit❗✔️:   // least explored
+        // RDKit❗✔️:   auto tpt = currLoc - refLoc;
+        // RDKit❗✔️:   RDGeom::Point2D norm(-tpt.y, tpt.x);
+        // RDKit❗✔️:   auto tp1 = currLoc + norm;
+        // RDKit❗✔️:   auto tp2 = currLoc - norm;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   auto nccw = findNumNeigh(
+        // RDKit❗✔️:       tp1, NEIGH_RADIUS);  // number of neighbors if we go counter-clockwise
+        // RDKit❗✔️:   auto ncw = findNumNeigh(
+        // RDKit❗✔️:       tp2, NEIGH_RADIUS);  // number of neighbors if we go clockwise
+        // RDKit❗✔️:
+        // RDKit❗✔️:   norm.normalize();
+        // RDKit❗✔️:   if (nccw < ncw) {
+        // RDKit❗✔️:     eatm.normal = norm;
+        // RDKit❗✔️:     eatm.ccw = false;
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     eatm.normal = (-norm);
+        // RDKit❗✔️:     eatm.ccw = true;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   d_eatoms[aid] = eatm;
         // Pinned EmbeddedFrag.h33–67,84–129: default and COPY assignment.
         // RDKit✔️✔️:   EmbeddedAtom() { neighs.clear(); }
         // RDKit✔️✔️:
@@ -3148,7 +3118,9 @@ impl<'a> EmbeddedFrag<'a> {
         let mut current_angle = rem_angle / (1 + reference.neighs.len()) as f64;
 
         let mut rot_dir = reference.rot_dir;
-        if rot_dir == 0 {
+        // RDKit✔️✔️:   const auto canChooseDirection = refAtom.rotDir == 0;
+        let can_choose_direction = rot_dir == 0;
+        if can_choose_direction {
             rot_dir = rotation_dir(reference.loc, nb1, nb2, rem_angle);
         }
 
@@ -3156,14 +3128,17 @@ impl<'a> EmbeddedFrag<'a> {
 
         let mut current = Transform2D::around(reference.loc, current_angle).transform_point(nb2);
 
-        if rem_angle.abs() - PI < 1e-3 {
+        // RDKit✔️✔️:   if (canChooseDirection && std::abs(remAngle - M_PI) < 1e-3) {
+        // RDKit✔️✔️:       d_eatoms[toAid].rotDir *= -1;
+        // The gap's assigned direction is authoritative; only an unassigned
+        // half-plane may flip it. Constant-cost branching, no extra allocation.
+        if can_choose_direction && (rem_angle - PI).abs() < 1e-3 {
             let other = Transform2D::around(reference.loc, -current_angle).transform_point(nb2);
 
             if self.find_num_neigh(current, 0.5) > self.find_num_neigh(other, 0.5) {
                 current = other;
-                current_angle *= -1.0;
+                rot_dir *= -1;
             }
-        } else {
         }
 
         let delta = [current[0] - reference.loc[0], current[1] - reference.loc[1]];
@@ -3855,10 +3830,64 @@ impl EmbeddedFrag<'_> {
         mimic_distance_weight: f64,
         permute_degree_four: bool,
     ) -> Result<(), FragmentError> {
-        // RDKit❗✔️: const auto &rotBonds = getAllRotatableBonds(*dp_mol);
-        // RDKit❗✔️: auto nb = rotBonds.size();
-        // RDKit❗✔️: unsigned int nt = nb + nd4;
-        // RDKit❗✔️: unsigned int nPerSample = std::min(nt, nBondsPerSample);
+        // RDKit✔️✔️:   const auto &allRotBonds = getAllRotatableBonds(*dp_mol);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Filter to only include bonds where BOTH atoms are in this fragment
+        // RDKit✔️✔️:   RDKit::INT_VECT rotBonds;
+        // RDKit✔️✔️:   for (auto bid : allRotBonds) {
+        // RDKit✔️✔️:     auto bond = dp_mol->getBondWithIdx(bid);
+        // RDKit✔️✔️:     auto aid1 = bond->getBeginAtomIdx();
+        // RDKit✔️✔️:     auto aid2 = bond->getEndAtomIdx();
+        // RDKit✔️✔️:     if (d_eatoms.find(aid1) != d_eatoms.end() &&
+        // RDKit✔️✔️:         d_eatoms.find(aid2) != d_eatoms.end()) {
+        // RDKit✔️✔️:       rotBonds.push_back(bid);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   auto nb = rotBonds.size();  // number of rotatable bonds that can be flipped
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // if we also want to permute deg 4 nodes, find out how many of these are
+        // RDKit✔️✔️:   // around and can be permuted
+        // RDKit✔️✔️:   unsigned int nd4 = 0;
+        // RDKit✔️✔️:   RDKit::INT_VECT deg4nodes;
+        // RDKit✔️✔️:   RDKit::VECT_INT_VECT deg4NbrBids, deg4NbrAids;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (permuteDeg4Nodes) {
+        // RDKit✔️✔️:     for (const auto atom : dp_mol->atoms()) {
+        // RDKit✔️✔️:       auto caid = atom->getIdx();
+        // RDKit✔️✔️:       if ((getDepictDegree(atom) == 4) &&
+        // RDKit✔️✔️:           (!(dp_mol->getRingInfo()->numAtomRings(caid)))) {
+        // RDKit✔️✔️:         RDKit::INT_VECT aids, bids;
+        // RDKit✔️✔️:         getNbrAtomAndBondIds(caid, dp_mol, aids, bids);
+        // RDKit✔️✔️:         // make sure all the atoms in aids are in this embeddedfrag and can be
+        // RDKit✔️✔️:         // perturbed
+        // RDKit✔️✔️:         bool allin = true;
+        // RDKit✔️✔️:         for (auto aid : aids) {
+        // RDKit✔️✔️:           auto nbrIter = d_eatoms.find(aid);
+        // RDKit✔️✔️:           if (nbrIter == d_eatoms.end() || nbrIter->second.df_fixed) {
+        // RDKit✔️✔️:             allin = false;
+        // RDKit✔️✔️:             break;
+        // RDKit✔️✔️:           }
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         if (allin) {
+        // RDKit✔️✔️:           deg4nodes.push_back(caid);
+        // RDKit✔️✔️:           deg4NbrBids.push_back(bids);
+        // RDKit✔️✔️:           deg4NbrAids.push_back(aids);
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     nd4 = deg4nodes.size();
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   unsigned int nt = nb + nd4;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   unsigned int nPerSample = std::min(nt, nBondsPerSample);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Early exit if nothing to flip
+        // RDKit✔️✔️:   if (nt == 0) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
         // RDKit❗✔️: auto &generator = RDKit::getRandomGenerator();
         // RDKit❗✔️: if (seed > 0) {
         // RDKit❗✔️:   generator.seed(seed);
@@ -3901,13 +3930,26 @@ impl EmbeddedFrag<'_> {
         // RDKit❗✔️: for (auto &efi : d_eatoms) {
         // RDKit❗✔️:   efi.second.loc = bestCrdMap.at(efi.first);
         // RDKit❗✔️: }
-        // Behavior: whole-molecule candidate order, one shared Boost stream,
+        // Behavior: fragment-filtered candidate order, one shared Boost stream,
         // cumulative per-sample moves, strict improvement threshold and final
         // coordinate-only restore follow source. Partial cost remains an
         // explicit undefined-source boundary in sampling_cost.
         // Complexity: source-equivalent candidate scans, trial transforms and
         // quadratic cost computations; best coordinates allocate one map.
-        let rotatable_bonds = self.all_rotatable_bonds();
+        // RDKit✔️✔️:     if (d_eatoms.find(aid1) != d_eatoms.end() &&
+        // RDKit✔️✔️:         d_eatoms.find(aid2) != d_eatoms.end()) {
+        // RDKit✔️✔️:       rotBonds.push_back(bid);
+        // RDKit✔️✔️:     }
+        // Retain source bond order and one O(B) membership-filter pass.
+        let rotatable_bonds = self
+            .all_rotatable_bonds()
+            .into_iter()
+            .filter(|&bid| {
+                let bond = &self.topology.bonds[bid];
+                self.atoms.contains_key(&bond.begin().index())
+                    && self.atoms.contains_key(&bond.end().index())
+            })
+            .collect::<Vec<_>>();
         let degree_four = if permute_degree_four {
             self.degree_four_candidates()
         } else {
@@ -3916,6 +3958,12 @@ impl EmbeddedFrag<'_> {
         let rotatable_count = rotatable_bonds.len();
         let candidate_count = rotatable_count + degree_four.len();
         let per_sample = candidate_count.min(bonds_per_sample as usize);
+        // RDKit✔️✔️:   if (nt == 0) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        if candidate_count == 0 {
+            return Ok(());
+        }
         let mut generator = DEPICT_RANDOM.lock().expect("depiction RNG mutex poisoned");
         generator.reset_if_positive(seed);
         let mut best_cost = self.sampling_cost(target_distances, mimic_distance_weight)?;
@@ -4382,7 +4430,7 @@ impl EmbeddedFrag<'_> {
             }
             *done.entry(bond).or_default() += 1;
             self.flip_about_bond(bond, true)?;
-            let collisions = self.find_collisions(distance, true);
+            let collisions = self.find_collisions(distance, true, true);
             let density = self.total_density();
             if collisions.len() < ncols {
                 done.insert(bond, 3);
@@ -4392,7 +4440,7 @@ impl EmbeddedFrag<'_> {
             }
             self.flip_about_bond(bond, true)?;
             self.flip_about_bond(bond, false)?;
-            let collisions = self.find_collisions(distance, true);
+            let collisions = self.find_collisions(distance, true, true);
             let density = self.total_density();
             if collisions.len() < ncols {
                 done.insert(bond, 3);
@@ -4477,7 +4525,7 @@ impl EmbeddedFrag<'_> {
                 continue;
             }
             self.flip_about_spiro_center(id);
-            let collisions = self.find_collisions(distance, true);
+            let collisions = self.find_collisions(distance, true, true);
             let density = self.total_density();
             if collisions.len() < ncols {
                 done.insert(id, 3);
@@ -4546,7 +4594,7 @@ impl EmbeddedFrag<'_> {
             }
         }
         let distance = self.collision_distance_matrix()?;
-        let mut collisions = self.find_collisions(&distance, true);
+        let mut collisions = self.find_collisions(&distance, true, true);
         let mut done_bonds = BTreeMap::new();
         let mut done_spiros = BTreeMap::new();
         let mut iteration = 0;
@@ -4573,7 +4621,7 @@ impl EmbeddedFrag<'_> {
                     &distance,
                 )?;
             }
-            collisions = self.find_collisions(&distance, true);
+            collisions = self.find_collisions(&distance, true, true);
             iteration += 1;
         }
         Ok(())
@@ -4805,7 +4853,7 @@ impl EmbeddedFrag<'_> {
         // Behavior: snapshot the atom-only collision list and process its order.
         // Complexity: one graph matrix and collision discovery; per pair O(degree).
         let distance = self.collision_distance_matrix()?;
-        let collisions = self.find_collisions(&distance, false);
+        let collisions = self.find_collisions(&distance, false, true);
         for (first, second) in collisions {
             self.open_angles(&distance, first, second)?;
         }
@@ -5019,7 +5067,7 @@ impl EmbeddedFrag<'_> {
         // Complexity: one core distance matrix and BFS per iteration; ring
         // path recursion and collision recomputation match source shape.
         let distance = self.collision_distance_matrix()?;
-        let mut collisions = self.find_collisions(&distance, false);
+        let mut collisions = self.find_collisions(&distance, false, true);
         let mut iteration = 0;
         while !collisions.is_empty() && iteration < 15 {
             let (mut aid1, mut aid2) = collisions[0];
@@ -5110,7 +5158,7 @@ impl EmbeddedFrag<'_> {
                         row[1] += movement[1];
                     }
                 }
-                collisions = self.find_collisions(&distance, false);
+                collisions = self.find_collisions(&distance, false, true);
             }
             iteration += 1;
         }
@@ -5150,120 +5198,120 @@ impl EmbeddedFrag<'_> {
         &mut self,
         distance: &DenseMatrix,
         include_bonds: bool,
+        include_bonded_atoms: bool,
     ) -> Vec<(usize, usize)> {
         #[cfg(test)]
         recovery_dep04_tests::record(recovery_dep04_tests::Event::Find);
 
-        // RDKit❗✔️: std::vector<PAIR_I_I> EmbeddedFrag::findCollisions(const double *dmat,
-        // RDKit❗✔️:                                                    bool includeBonds) {
-        // RDKit❗✔️:   // find a pair of atoms that are too close to each other
-        // RDKit❗✔️:   std::vector<PAIR_I_I> res;
-        // RDKit❗✔️:   for (auto &d_eatom : d_eatoms) {
-        // RDKit❗✔️:     d_eatom.second.d_density = 0.0;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   auto colThres2 = COLLISION_THRES * COLLISION_THRES;
-        // RDKit❗✔️:   // if we a re dealing with non carbon atoms we will increase the collision
-        // RDKit❗✔️:   // threshold. This is because only hetero atoms are typically drawn in a
-        // RDKit❗✔️:   // depiction.
-        // RDKit❗✔️:   double atomTypeFactor1, atomTypeFactor2;
-        // RDKit❗✔️:   for (auto efi = d_eatoms.begin(); efi != d_eatoms.end(); ++efi) {
-        // RDKit❗✔️:     atomTypeFactor1 = 1.0;
-        // RDKit❗✔️:     if (dp_mol->getAtomWithIdx(efi->first)->getAtomicNum() != 6) {
-        // RDKit❗✔️:       atomTypeFactor1 = HETEROATOM_COLL_SCALE;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     for (auto efj = d_eatoms.begin(); efj != efi; ++efj) {
-        // RDKit❗✔️:       atomTypeFactor2 = 1.0;
-        // RDKit❗✔️:       if (dp_mol->getAtomWithIdx(efj->first)->getAtomicNum() != 6) {
-        // RDKit❗✔️:         atomTypeFactor2 = HETEROATOM_COLL_SCALE;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       auto ptj = efj->second.loc;
-        // RDKit❗✔️:       ptj -= efi->second.loc;
-        // RDKit❗✔️:       auto d2 = ptj.lengthSq();
-        // RDKit❗✔️:       if (d2 > 1.0e-3) {
-        // RDKit❗✔️:         efi->second.d_density += (1 / d2);
-        // RDKit❗✔️:         efj->second.d_density += (1 / d2);
-        // RDKit❗✔️:       } else {
-        // RDKit❗✔️:         efi->second.d_density += 1000.0;
-        // RDKit❗✔️:         efj->second.d_density += 1000.0;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       d2 /= (atomTypeFactor1 * atomTypeFactor2);
-        // RDKit❗✔️:       if (d2 < colThres2) {
-        // RDKit❗✔️:         PAIR_I_I cAids(efi->first, efj->first);
-        // RDKit❗✔️:         res.push_back(cAids);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   if (includeBonds) {
-        // RDKit❗✔️:     // now find bond collisions
-        // RDKit❗✔️:     double BOND_THRES2 = BOND_THRES * BOND_THRES;
-        // RDKit❗✔️:     for (const auto b1 : dp_mol->bonds()) {
-        // RDKit❗✔️:       auto bid1 = b1->getIdx();
-        // RDKit❗✔️:       auto beg1 = b1->getBeginAtomIdx();
-        // RDKit❗✔️:       auto end1 = b1->getEndAtomIdx();
-        // RDKit❗✔️:       if ((d_eatoms.find(beg1) != d_eatoms.end()) &&
-        // RDKit❗✔️:           (d_eatoms.find(end1) != d_eatoms.end())) {
-        // RDKit❗✔️:         auto v1 = d_eatoms[end1].loc - d_eatoms[beg1].loc;
-        // RDKit❗✔️:         auto avg1 = d_eatoms[end1].loc + d_eatoms[beg1].loc;
-        // RDKit❗✔️:         avg1 *= 0.5;
-        // RDKit❗✔️:         for (const auto b2 : dp_mol->bonds()) {
-        // RDKit❗✔️:           if (b2->getIdx() <= bid1) {
-        // RDKit❗✔️:             continue;
-        // RDKit❗✔️:           }
         //
-        // RDKit❗✔️:           auto beg2 = b2->getBeginAtomIdx();
-        // RDKit❗✔️:           auto end2 = b2->getEndAtomIdx();
-        // RDKit❗✔️:           if ((d_eatoms.find(beg2) != d_eatoms.end()) &&
-        // RDKit❗✔️:               (d_eatoms.find(end2) != d_eatoms.end())) {
-        // RDKit❗✔️:             auto avg2 = d_eatoms[end2].loc + d_eatoms[beg2].loc;
-        // RDKit❗✔️:             avg2 *= 0.5;
-        // RDKit❗✔️:             avg2 -= avg1;
-        // RDKit❗✔️:             if (avg2.lengthSq() < 0.5 && avg2.lengthSq() < BOND_THRES2) {
-        // RDKit❗✔️:               auto v2 = d_eatoms[beg2].loc - d_eatoms[beg1].loc;
-        // RDKit❗✔️:               auto v3 = d_eatoms[end2].loc - d_eatoms[beg1].loc;
-        // RDKit❗✔️:               auto valProd = _crossVal(v1, v2) * _crossVal(v1, v3);
-        // RDKit❗✔️:               if (valProd < -1e-6) {
-        // RDKit❗✔️:                 // we have a collision, find the closest two atoms
-        // RDKit❗✔️:                 auto cAids =
-        // RDKit❗✔️:                     _findClosestPair(beg1, end1, beg2, end2, *dp_mol, dmat);
-        // RDKit❗✔️:                 res.push_back(cAids);
-        // RDKit❗✔️:               }
-        // RDKit❗✔️:             }
-        // RDKit❗✔️:           }
-        // RDKit❗✔️:         }
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return res;
-        // RDKit❗✔️: }
-        // RDKit❗✔️: PAIR_I_I _findClosestPair(unsigned int beg1, unsigned int end1,
-        // RDKit❗✔️:                           unsigned int beg2, unsigned int end2,
-        // RDKit❗✔️:                           const RDKit::ROMol &mol, const double *dmat) {
-        // RDKit❗✔️:   auto na = mol.getNumAtoms();
-        // RDKit❗✔️:   auto d1 = dmat[beg1 * na + beg2];
-        // RDKit❗✔️:   auto d2 = dmat[beg1 * na + end2];
-        // RDKit❗✔️:   auto d3 = dmat[end1 * na + beg2];
-        // RDKit❗✔️:   auto d4 = dmat[end1 * na + end2];
-        // RDKit❗✔️:   auto minPr =
-        // RDKit❗✔️:       std::min(PAIR_D_I_I(d1, PAIR_I_I(beg1, beg2)),
-        // RDKit❗✔️:                PAIR_D_I_I(d2, PAIR_I_I(beg1, end2)), _pairDIICompAscending);
-        // RDKit❗✔️:   minPr = std::min(minPr, PAIR_D_I_I(d3, PAIR_I_I(end1, beg2)),
-        // RDKit❗✔️:                    _pairDIICompAscending);
-        // RDKit❗✔️:   minPr = std::min(minPr, PAIR_D_I_I(d4, PAIR_I_I(end1, end2)),
-        // RDKit❗✔️:                    _pairDIICompAscending);
-        // RDKit❗✔️:   return minPr.second;
-        // RDKit❗✔️: }
-        // RDKit❗✔️: int _pairDIICompAscending(const PAIR_D_I_I &arg1, const PAIR_D_I_I &arg2) {
-        // RDKit❗✔️:   return (arg1.first < arg2.first);
-        // RDKit❗✔️: }
-        // RDKit❗✔️: double _crossVal(const RDGeom::Point2D &v1, const RDGeom::Point2D &v2) {
-        // RDKit❗✔️:   return v1.x * v2.y - v2.x * v1.y;
-        // RDKit❗✔️: }
         // Behavior: source BTreeMap key order, strict thresholds, four-pair
-        // closest comparison and bond-table order are retained. Query carrier
+        // farthest comparison and bond-table order are retained. Query carrier
         // elements are not replaced by inferred predicate atoms.
         // Complexity: O(embedded atoms^2 + topology bonds^2), as source;
         // no topology or coordinate-block clone.
 
+        // RDKit✔️✔️: std::vector<PAIR_I_I> EmbeddedFrag::findCollisions(const double *dmat,
+        // RDKit✔️✔️:                                                    bool includeBonds,
+        // RDKit✔️✔️:                                                    bool includeBondedAtoms) {
+        // RDKit✔️✔️:   // find a pair of atoms that are too close to each other
+        // RDKit✔️✔️:   std::vector<PAIR_I_I> res;
+        // RDKit✔️✔️:   for (auto &d_eatom : d_eatoms) {
+        // RDKit✔️✔️:     d_eatom.second.d_density = 0.0;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   auto colThres2 = COLLISION_THRES * COLLISION_THRES;
+        // RDKit✔️✔️:   // if we a re dealing with non carbon atoms we will increase the collision
+        // RDKit✔️✔️:   // threshold. This is because only hetero atoms are typically drawn in a
+        // RDKit✔️✔️:   // depiction.
+        // RDKit✔️✔️:   double atomTypeFactor1, atomTypeFactor2;
+        // RDKit✔️✔️:   for (auto efi = d_eatoms.begin(); efi != d_eatoms.end(); ++efi) {
+        // RDKit✔️✔️:     atomTypeFactor1 = 1.0;
+        // RDKit✔️✔️:     if (dp_mol->getAtomWithIdx(efi->first)->getAtomicNum() != 6) {
+        // RDKit✔️✔️:       atomTypeFactor1 = HETEROATOM_COLL_SCALE;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     for (auto efj = d_eatoms.begin(); efj != efi; ++efj) {
+        // RDKit✔️✔️:       atomTypeFactor2 = 1.0;
+        // RDKit✔️✔️:       if (dp_mol->getAtomWithIdx(efj->first)->getAtomicNum() != 6) {
+        // RDKit✔️✔️:         atomTypeFactor2 = HETEROATOM_COLL_SCALE;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       auto ptj = efj->second.loc;
+        // RDKit✔️✔️:       ptj -= efi->second.loc;
+        // RDKit✔️✔️:       auto d2 = ptj.lengthSq();
+        // RDKit✔️✔️:       if (d2 > 1.0e-3) {
+        // RDKit✔️✔️:         efi->second.d_density += (1 / d2);
+        // RDKit✔️✔️:         efj->second.d_density += (1 / d2);
+        // RDKit✔️✔️:       } else {
+        // RDKit✔️✔️:         efi->second.d_density += 1000.0;
+        // RDKit✔️✔️:         efj->second.d_density += 1000.0;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       d2 /= (atomTypeFactor1 * atomTypeFactor2);
+        // RDKit✔️✔️:       if (d2 < colThres2 &&
+        // RDKit✔️✔️:           (includeBondedAtoms ||
+        // RDKit✔️✔️:            !dp_mol->getBondBetweenAtoms(efi->first, efj->first))) {
+        // RDKit✔️✔️:         PAIR_I_I cAids(efi->first, efj->first);
+        // RDKit✔️✔️:         res.push_back(cAids);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (includeBonds) {
+        // RDKit✔️✔️:     // now find bond collisions
+        // RDKit✔️✔️:     for (const auto b1 : dp_mol->bonds()) {
+        // RDKit✔️✔️:       auto bid1 = b1->getIdx();
+        // RDKit✔️✔️:       auto beg1 = b1->getBeginAtomIdx();
+        // RDKit✔️✔️:       auto end1 = b1->getEndAtomIdx();
+        // RDKit✔️✔️:       if ((d_eatoms.find(beg1) != d_eatoms.end()) &&
+        // RDKit✔️✔️:           (d_eatoms.find(end1) != d_eatoms.end())) {
+        // RDKit✔️✔️:         for (const auto b2 : dp_mol->bonds()) {
+        // RDKit✔️✔️:           if (b2->getIdx() <= bid1) {
+        // RDKit✔️✔️:             continue;
+        // RDKit✔️✔️:           }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:           auto beg2 = b2->getBeginAtomIdx();
+        // RDKit✔️✔️:           auto end2 = b2->getEndAtomIdx();
+        // RDKit✔️✔️:           if (beg1 == beg2 || beg1 == end2 || end1 == beg2 || end1 == end2) {
+        // RDKit✔️✔️:             continue;
+        // RDKit✔️✔️:           }
+        // RDKit✔️✔️:           if ((d_eatoms.find(beg2) != d_eatoms.end()) &&
+        // RDKit✔️✔️:               (d_eatoms.find(end2) != d_eatoms.end())) {
+        // RDKit✔️✔️:             if (_segmentsIntersect(d_eatoms[beg1].loc, d_eatoms[end1].loc,
+        // RDKit✔️✔️:                                    d_eatoms[beg2].loc,
+        // RDKit✔️✔️:                                    d_eatoms[end2].loc)) {
+        // RDKit✔️✔️:               // Choose the outermost endpoints of the crossed bonds. The
+        // RDKit✔️✔️:               // downstream getRotatableBonds() call deliberately skips the
+        // RDKit✔️✔️:               // two outer bonds on this path, so they will not themselves be
+        // RDKit✔️✔️:               // flipped; their adjacent bonds remain available as candidates.
+        // RDKit✔️✔️:               auto cAids =
+        // RDKit✔️✔️:                   _findFarthestPair(beg1, end1, beg2, end2, *dp_mol, dmat);
+        // RDKit✔️✔️:               res.push_back(cAids);
+        // RDKit✔️✔️:             }
+        // RDKit✔️✔️:           }
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: int _pairDIICompAscending(const PAIR_D_I_I &arg1, const PAIR_D_I_I &arg2) {
+        // RDKit✔️✔️:   return (arg1.first < arg2.first);
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: PAIR_I_I _findFarthestPair(unsigned int beg1, unsigned int end1,
+        // RDKit✔️✔️:                            unsigned int beg2, unsigned int end2,
+        // RDKit✔️✔️:                            const RDKit::ROMol &mol, const double *dmat) {
+        // RDKit✔️✔️:   auto na = mol.getNumAtoms();
+        // RDKit✔️✔️:   auto d1 = dmat[beg1 * na + beg2];
+        // RDKit✔️✔️:   auto d2 = dmat[beg1 * na + end2];
+        // RDKit✔️✔️:   auto d3 = dmat[end1 * na + beg2];
+        // RDKit✔️✔️:   auto d4 = dmat[end1 * na + end2];
+        // RDKit✔️✔️:   auto maxPr =
+        // RDKit✔️✔️:       std::max(PAIR_D_I_I(d1, PAIR_I_I(beg1, beg2)),
+        // RDKit✔️✔️:                PAIR_D_I_I(d2, PAIR_I_I(beg1, end2)), _pairDIICompAscending);
+        // RDKit✔️✔️:   maxPr = std::max(maxPr, PAIR_D_I_I(d3, PAIR_I_I(end1, beg2)),
+        // RDKit✔️✔️:                    _pairDIICompAscending);
+        // RDKit✔️✔️:   maxPr = std::max(maxPr, PAIR_D_I_I(d4, PAIR_I_I(end1, end2)),
+        // RDKit✔️✔️:                    _pairDIICompAscending);
+        // RDKit✔️✔️:   return maxPr.second;
+        // RDKit✔️✔️: }
         for atom in self.atoms.values_mut() {
             atom.density = 0.0;
         }
@@ -5289,7 +5337,15 @@ impl EmbeddedFrag<'_> {
                 self.atoms.get_mut(&aid).expect("embedded").density += increment;
                 self.atoms.get_mut(&bid).expect("embedded").density += increment;
 
-                if d2 / (factor1 * factor2) < 0.70 * 0.70 {
+                if d2 / (factor1 * factor2) < 0.70 * 0.70
+                    && (include_bonded_atoms
+                        || !self
+                            .topology
+                            .adjacency
+                            .neighbors_of(aid)
+                            .iter()
+                            .any(|nbr| nbr.atom_index == bid))
+                {
                     collisions.push((aid, bid));
                 }
             }
@@ -5300,41 +5356,636 @@ impl EmbeddedFrag<'_> {
                 let (Some(pa), Some(pb)) = (self.atoms.get(&a), self.atoms.get(&b)) else {
                     continue;
                 };
-                let v1 = [pb.loc[0] - pa.loc[0], pb.loc[1] - pa.loc[1]];
-                let midpoint1 = [(pa.loc[0] + pb.loc[0]) * 0.5, (pa.loc[1] + pb.loc[1]) * 0.5];
                 for second in &self.topology.bonds[first_index + 1..] {
                     let (c, d) = (second.begin().index(), second.end().index());
+                    if a == c || a == d || b == c || b == d {
+                        continue;
+                    }
                     let (Some(pc), Some(pd)) = (self.atoms.get(&c), self.atoms.get(&d)) else {
                         continue;
                     };
-                    let midpoint2 = [(pc.loc[0] + pd.loc[0]) * 0.5, (pc.loc[1] + pd.loc[1]) * 0.5];
-                    let midpoint_distance2 = (midpoint2[0] - midpoint1[0]).powi(2)
-                        + (midpoint2[1] - midpoint1[1]).powi(2);
-                    if midpoint_distance2 < 0.5 && midpoint_distance2 < 0.50 * 0.50 {
-                        let v2 = [pc.loc[0] - pa.loc[0], pc.loc[1] - pa.loc[1]];
-                        let v3 = [pd.loc[0] - pa.loc[0], pd.loc[1] - pa.loc[1]];
-                        let cross2 = v1[0] * v2[1] - v2[0] * v1[1];
-                        let cross3 = v1[0] * v3[1] - v3[0] * v1[1];
-                        if cross2 * cross3 < -1.0e-6 {
-                            let candidates = [(a, c), (a, d), (b, c), (b, d)];
-                            let mut chosen = candidates[0];
-                            let mut best = distance.get(chosen.0, chosen.1).expect("full matrix");
-                            for candidate in &candidates[1..] {
-                                let value =
-                                    distance.get(candidate.0, candidate.1).expect("full matrix");
-                                if value < best {
-                                    chosen = *candidate;
-                                    best = value;
-                                }
+                    if segments_intersect(pa.loc, pb.loc, pc.loc, pd.loc) {
+                        let candidates = [(a, c), (a, d), (b, c), (b, d)];
+                        let mut chosen = candidates[0];
+                        let mut best = distance.get(chosen.0, chosen.1).expect("full matrix");
+                        for candidate in &candidates[1..] {
+                            let value =
+                                distance.get(candidate.0, candidate.1).expect("full matrix");
+                            if best < value {
+                                chosen = *candidate;
+                                best = value;
                             }
-                            collisions.push(chosen);
                         }
+                        collisions.push(chosen);
                     }
                 }
             }
         }
 
         collisions
+    }
+
+    fn atoms_on_side(&self, center: usize, side_start: usize, exclude: usize) -> Vec<usize> {
+        // RDKit✔️✔️: std::vector<unsigned int> EmbeddedFrag::getAtomsOnSide(unsigned int center,
+        // RDKit✔️✔️:                                                        unsigned int sideStart,
+        // RDKit✔️✔️:                                                        unsigned int exclude) {
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Use BFS to collect all atoms on one side of a bond/angle.
+        // RDKit✔️✔️:   // Starting from sideStart, traverse the molecular graph without
+        // RDKit✔️✔️:   // crossing through the center atom or the exclude atom.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // This partitions the molecule into two subgraphs separated by
+        // RDKit✔️✔️:   // the bond between sideStart and center.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::vector<unsigned int> result;
+        // RDKit✔️✔️:   std::queue<unsigned int> queue;
+        // RDKit✔️✔️:   std::unordered_set<unsigned int> visited;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Don't cross these atoms
+        // RDKit✔️✔️:   visited.insert(center);
+        // RDKit✔️✔️:   visited.insert(exclude);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   queue.push(sideStart);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   while (!queue.empty()) {
+        // RDKit✔️✔️:     auto current = queue.front();
+        // RDKit✔️✔️:     queue.pop();
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     if (visited.count(current)) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     visited.insert(current);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Only include atoms that have embedded coordinates
+        // RDKit✔️✔️:     if (d_eatoms.find(current) != d_eatoms.end()) {
+        // RDKit✔️✔️:       result.push_back(current);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Add neighbors to queue
+        // RDKit✔️✔️:     auto atom = dp_mol->getAtomWithIdx(current);
+        // RDKit✔️✔️:     for (const auto bond : dp_mol->atomBonds(atom)) {
+        // RDKit✔️✔️:       auto neighbor = bond->getOtherAtomIdx(current);
+        // RDKit✔️✔️:       if (!visited.count(neighbor)) {
+        // RDKit✔️✔️:         queue.push(neighbor);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return result;
+        // RDKit✔️✔️: }
+        // Same source adjacency-order BFS and visited-on-pop semantics.
+        // O(V+E) expected work/storage; unembedded nodes are traversed, not emitted.
+        let mut result = Vec::new();
+        let mut queue = std::collections::VecDeque::from([side_start]);
+        let mut visited = std::collections::HashSet::from([center, exclude]);
+        while let Some(current) = queue.pop_front() {
+            if !visited.insert(current) {
+                continue;
+            }
+            if self.atoms.contains_key(&current) {
+                result.push(current);
+            }
+            for nbr in self.topology.adjacency.neighbors_of(current) {
+                if !visited.contains(&nbr.atom_index) {
+                    queue.push_back(nbr.atom_index);
+                }
+            }
+        }
+        result
+    }
+
+    fn open_angle_by_increment(
+        &mut self,
+        previous: usize,
+        center: usize,
+        next: usize,
+        increment: f64,
+        _distance: &DenseMatrix,
+    ) -> bool {
+        // RDKit✔️✔️: bool EmbeddedFrag::openAngleByIncrement(unsigned int prevAtom,
+        // RDKit✔️✔️:                                         unsigned int centerAtom,
+        // RDKit✔️✔️:                                         unsigned int nextAtom,
+        // RDKit✔️✔️:                                         double angleIncrement,
+        // RDKit✔️✔️:                                         const double *dmat) {
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Open the angle at centerAtom by rotating one side.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Key: We want to make the angle LARGER (closer to 180°).
+        // RDKit✔️✔️:   // This straightens out the chain and increases separation along the path.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Try both rotation directions and use the one which actually opens the
+        // RDKit✔️✔️:   // angle. This also handles collinear vectors without an arbitrary choice.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   PRECONDITION(dp_mol, "");
+        // RDKit✔️✔️:   PRECONDITION(dmat, "");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Get vectors from center to the two neighbors
+        // RDKit✔️✔️:   auto v1 = d_eatoms[prevAtom].loc - d_eatoms[centerAtom].loc;
+        // RDKit✔️✔️:   auto v2 = d_eatoms[nextAtom].loc - d_eatoms[centerAtom].loc;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Partition atoms into two sides
+        // RDKit✔️✔️:   auto atomsSide1 = getAtomsOnSide(centerAtom, prevAtom, nextAtom);
+        // RDKit✔️✔️:   auto atomsSide2 = getAtomsOnSide(centerAtom, nextAtom, prevAtom);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // If the two traversals overlap, there is an alternate path around the
+        // RDKit✔️✔️:   // center. Rotating either partial side would distort bonds in that cycle.
+        // RDKit✔️✔️:   std::unordered_set<unsigned int> side1Atoms(atomsSide1.begin(),
+        // RDKit✔️✔️:                                               atomsSide1.end());
+        // RDKit✔️✔️:   if (std::any_of(atomsSide2.begin(), atomsSide2.end(),
+        // RDKit✔️✔️:                   [&](auto aid) { return side1Atoms.count(aid); })) {
+        // RDKit✔️✔️:     return false;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   const auto containsFixedAtom = [&](const auto &atoms) {
+        // RDKit✔️✔️:     return std::any_of(atoms.begin(), atoms.end(), [&](auto aid) {
+        // RDKit✔️✔️:       return d_eatoms.at(aid).df_fixed;
+        // RDKit✔️✔️:     });
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   const auto side1Fixed = containsFixedAtom(atomsSide1);
+        // RDKit✔️✔️:   const auto side2Fixed = containsFixedAtom(atomsSide2);
+        // RDKit✔️✔️:   if (side1Fixed && side2Fixed) {
+        // RDKit✔️✔️:     return false;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Prefer the smaller side, unless that would move a coordinate-constrained
+        // RDKit✔️✔️:   // atom. The center is the pivot and is never moved.
+        // RDKit✔️✔️:   bool rotateSide1 = side2Fixed ||
+        // RDKit✔️✔️:                      (!side1Fixed && atomsSide1.size() < atomsSide2.size());
+        // RDKit✔️✔️:   auto &atomsToMove = rotateSide1 ? atomsSide1 : atomsSide2;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   const auto vectorLength = [](const auto &v) {
+        // RDKit✔️✔️:     return std::sqrt(v.x * v.x + v.y * v.y);
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   const auto angleBetween = [&](const auto &a, const auto &b) {
+        // RDKit✔️✔️:     const auto denominator = vectorLength(a) * vectorLength(b);
+        // RDKit✔️✔️:     if (denominator < 1e-8) {
+        // RDKit✔️✔️:       return -1.0;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     const auto cosine = std::clamp((a.x * b.x + a.y * b.y) / denominator,
+        // RDKit✔️✔️:                                    -1.0, 1.0);
+        // RDKit✔️✔️:     return std::acos(cosine);
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   const auto originalAngle = angleBetween(v1, v2);
+        // RDKit✔️✔️:   if (originalAngle < 0.0) {
+        // RDKit✔️✔️:     return false;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   double rotationAngle = 0.0;
+        // RDKit✔️✔️:   // Trial-rotate only the adjacent atom in each direction. This is inexpensive
+        // RDKit✔️✔️:   // and avoids choosing an arbitrary or angle-closing direction for collinear
+        // RDKit✔️✔️:   // and near-180-degree configurations; the selected side is rotated only once
+        // RDKit✔️✔️:   // below after an angle-increasing direction has been found.
+        // RDKit✔️✔️:   for (const auto candidate : {angleIncrement, -angleIncrement}) {
+        // RDKit✔️✔️:     RDGeom::Transform2D trial;
+        // RDKit✔️✔️:     trial.SetTransform(d_eatoms[centerAtom].loc, candidate);
+        // RDKit✔️✔️:     auto movedPoint = d_eatoms[rotateSide1 ? prevAtom : nextAtom].loc;
+        // RDKit✔️✔️:     trial.TransformPoint(movedPoint);
+        // RDKit✔️✔️:     const auto movedVector = movedPoint - d_eatoms[centerAtom].loc;
+        // RDKit✔️✔️:     const auto fixedVector = rotateSide1 ? v2 : v1;
+        // RDKit✔️✔️:     if (angleBetween(movedVector, fixedVector) > originalAngle + 1e-8) {
+        // RDKit✔️✔️:       rotationAngle = candidate;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (rotationAngle == 0.0) {
+        // RDKit✔️✔️:     return false;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Apply the rotation
+        // RDKit✔️✔️:   RDGeom::Transform2D trans;
+        // RDKit✔️✔️:   trans.SetTransform(d_eatoms[centerAtom].loc, rotationAngle);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   for (auto aid : atomsToMove) {
+        // RDKit✔️✔️:     trans.TransformPoint(d_eatoms[aid].loc);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return true;
+        // RDKit✔️✔️: }
+        // Two source-order side traversals and overlap/fixed membership checks.
+        // Only trial adjacent points are transformed before one accepted O(side)
+        // rotation. Same O(V+E) expected work/storage, no whole graph clone.
+        let previous_point = self
+            .atoms
+            .entry(previous)
+            .or_insert_with(EmbeddedAtom::source_default)
+            .loc;
+        let center_point = self
+            .atoms
+            .entry(center)
+            .or_insert_with(EmbeddedAtom::source_default)
+            .loc;
+        let next_point = self
+            .atoms
+            .entry(next)
+            .or_insert_with(EmbeddedAtom::source_default)
+            .loc;
+        let v1 = [
+            previous_point[0] - center_point[0],
+            previous_point[1] - center_point[1],
+        ];
+        let v2 = [
+            next_point[0] - center_point[0],
+            next_point[1] - center_point[1],
+        ];
+        let side1 = self.atoms_on_side(center, previous, next);
+        let side2 = self.atoms_on_side(center, next, previous);
+        let set1: std::collections::HashSet<_> = side1.iter().copied().collect();
+        if side2.iter().any(|a| set1.contains(a)) {
+            return false;
+        }
+        let fixed1 = side1.iter().any(|a| self.atoms[a].fixed);
+        let fixed2 = side2.iter().any(|a| self.atoms[a].fixed);
+        if fixed1 && fixed2 {
+            return false;
+        }
+        let rotate_first = fixed2 || (!fixed1 && side1.len() < side2.len());
+        let moving = if rotate_first { &side1 } else { &side2 };
+        let angle_between = |a: Point2, b: Point2| {
+            let length = |v: Point2| (v[0] * v[0] + v[1] * v[1]).sqrt();
+            let denominator = length(a) * length(b);
+            if denominator < 1e-8 {
+                return -1.0;
+            }
+            let cosine = (a[0] * b[0] + a[1] * b[1]) / denominator;
+            let cosine = if cosine < -1.0 {
+                -1.0
+            } else if 1.0 < cosine {
+                1.0
+            } else {
+                cosine
+            };
+            cosine.acos()
+        };
+        let original_angle = angle_between(v1, v2);
+        if original_angle < 0.0 {
+            return false;
+        }
+        let mut rotation = 0.0;
+        for candidate in [increment, -increment] {
+            let point = if rotate_first {
+                previous_point
+            } else {
+                next_point
+            };
+            let moved = Transform2D::around(center_point, candidate).transform_point(point);
+            let vector = [moved[0] - center_point[0], moved[1] - center_point[1]];
+            let fixed = if rotate_first { v2 } else { v1 };
+            if angle_between(vector, fixed) > original_angle + 1e-8 {
+                rotation = candidate;
+                break;
+            }
+        }
+        if rotation == 0.0 {
+            return false;
+        }
+        let transform = Transform2D::around(center_point, rotation);
+        for aid in moving {
+            let atom = self.atoms.get_mut(aid).expect("embedded side");
+            atom.loc = transform.transform_point(atom.loc);
+        }
+        true
+    }
+
+    fn path_angle_collisions(&mut self, distance: &DenseMatrix) -> Vec<(usize, usize)> {
+        // RDKit✔️✔️:     auto collisions = this->findCollisions(dmat, 0, 0);
+        // RDKit✔️✔️:     if (collisions.empty()) {
+        // RDKit✔️✔️:       collisions = this->findCollisions(dmat, 1, 0);
+        // RDKit✔️✔️:     }
+        // Source prioritizes nonbonded atom clashes before bond crossings.
+        // One scan, with a second only if empty; no collision reordering.
+        let collisions = self.find_collisions(distance, false, false);
+        if collisions.is_empty() {
+            self.find_collisions(distance, true, false)
+        } else {
+            collisions
+        }
+    }
+
+    pub(crate) fn remove_collisions_path_angle_expansion(&mut self) -> Result<(), FragmentError> {
+        // RDKit✔️✔️: void EmbeddedFrag::removeCollisionsPathAngleExpansion() {
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Path Angle Expansion collision resolution
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Runs after bond flipping, angle opening, and bond shortening.
+        // RDKit✔️✔️:   // Works by systematically opening angles along the chain between colliding
+        // RDKit✔️✔️:   // atoms.
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Algorithm:
+        // RDKit✔️✔️:   //   1. Find shortest path between colliding atoms
+        // RDKit✔️✔️:   //   2. Identify expandable angles in the path
+        // RDKit✔️✔️:   //   3. Incrementally open angles at these positions
+        // RDKit✔️✔️:   //   4. Rotate the smaller fragment on each side
+        // RDKit✔️✔️:   //   5. Stop if collision resolved or max expansion reached
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:   // Key constraints:
+        // RDKit✔️✔️:   //   - Skip angles where all 3 atoms (prev-center-next) are in SAME ring
+        // RDKit✔️✔️:   //   - This preserves ring geometry while allowing ring-chain junction
+        // RDKit✔️✔️:   //   expansion
+        // RDKit✔️✔️:   //   - Maximum 15° expansion per angle (prevents unrealistic geometries)
+        // RDKit✔️✔️:   //   - 5° increments (small steps to detect new collisions early)
+        // RDKit✔️✔️:   //   - Revert if expansion makes things worse
+        // RDKit✔️✔️:   //
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // OPTIMIZATION: Pre-compute ring membership for each atom
+        // RDKit✔️✔️:   // Build a map: atom_id -> ring indices containing that atom
+        // RDKit✔️✔️:   std::unordered_map<int, std::unordered_set<int>> atomRings;
+        // RDKit✔️✔️:   auto ringInfo = dp_mol->getRingInfo();
+        // RDKit✔️✔️:   for (size_t ringIdx = 0; ringIdx < ringInfo->atomRings().size(); ++ringIdx) {
+        // RDKit✔️✔️:     const auto &ring = ringInfo->atomRings()[ringIdx];
+        // RDKit✔️✔️:     for (auto atomId : ring) {
+        // RDKit✔️✔️:       atomRings[atomId].insert(ringIdx);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   auto dmat = RDKit::MolOps::getDistanceMat(*dp_mol);
+        // RDKit✔️✔️:   // Earlier collision-resolution stages historically treat very short bonds
+        // RDKit✔️✔️:   // as collisions. Preserve that behavior there, but do not let a shortened
+        // RDKit✔️✔️:   // bond's own endpoints become an actionable clash for path expansion. Work
+        // RDKit✔️✔️:   // through atom clashes first, then check bond crossings. Mixing both kinds
+        // RDKit✔️✔️:   // in one queue can reject an atom-clash improvement merely because crossings
+        // RDKit✔️✔️:   // remain for the second stage.
+        // RDKit✔️✔️:   auto findPathAngleCollisions = [&]() {
+        // RDKit✔️✔️:     auto collisions = this->findCollisions(dmat, 0, 0);
+        // RDKit✔️✔️:     if (collisions.empty()) {
+        // RDKit✔️✔️:       collisions = this->findCollisions(dmat, 1, 0);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     return collisions;
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   const auto canonicalCollision = [](const PAIR_I_I &collision) {
+        // RDKit✔️✔️:     return PAIR_I_I(std::min(collision.first, collision.second),
+        // RDKit✔️✔️:                     std::max(collision.first, collision.second));
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   struct CollisionHash {
+        // RDKit✔️✔️:     std::size_t operator()(const PAIR_I_I &collision) const noexcept {
+        // RDKit✔️✔️:       size_t res = 0;
+        // RDKit✔️✔️:       boost::hash_combine(res, collision.first);
+        // RDKit✔️✔️:       boost::hash_combine(res, collision.second);
+        // RDKit✔️✔️:       return res;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   std::unordered_set<PAIR_I_I, CollisionHash> skippedCollisions;
+        // RDKit✔️✔️:   auto filterSkippedCollisions = [&](std::vector<PAIR_I_I> collisions) {
+        // RDKit✔️✔️:     collisions.erase(
+        // RDKit✔️✔️:         std::remove_if(collisions.begin(), collisions.end(),
+        // RDKit✔️✔️:                        [&](const auto &collision) {
+        // RDKit✔️✔️:                          return skippedCollisions.count(
+        // RDKit✔️✔️:                                     canonicalCollision(collision)) != 0;
+        // RDKit✔️✔️:                        }),
+        // RDKit✔️✔️:         collisions.end());
+        // RDKit✔️✔️:     return collisions;
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   auto allColls = findPathAngleCollisions();
+        // RDKit✔️✔️:   auto colls = filterSkippedCollisions(allColls);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // Track total rotation applied at each angle
+        // RDKit✔️✔️:   // Key: (collision pair, atom index), Value: cumulative rotation in radians
+        // RDKit✔️✔️:   std::unordered_map<PAIR_I_I, std::unordered_map<unsigned int, double>,
+        // RDKit✔️✔️:                      CollisionHash>
+        // RDKit✔️✔️:       angleTotals;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   unsigned int iter = 0;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   while (iter < MAX_ANGLE_EXPANSION_ITERS && colls.size()) {
+        // RDKit✔️✔️:     auto collision = colls[0];
+        // RDKit✔️✔️:     auto aid1 = collision.first;
+        // RDKit✔️✔️:     auto aid2 = collision.second;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Find shortest path between colliding atoms
+        // RDKit✔️✔️:     auto path = RDKit::MolOps::getShortestPath(*dp_mol, aid1, aid2);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     if (path.size() < 3) {
+        // RDKit✔️✔️:       skippedCollisions.insert(canonicalCollision(collision));
+        // RDKit✔️✔️:       colls.erase(colls.begin());
+        // RDKit✔️✔️:       ++iter;
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Find expandable atoms: interior atoms where the angle can be expanded
+        // RDKit✔️✔️:     // Skip angles where all three atoms (prev-center-next) are in the SAME ring
+        // RDKit✔️✔️:     // This preserves ring geometry while allowing expansion at ring junctions
+        // RDKit✔️✔️:     auto pathVec = std::vector<int>(path.begin(), path.end());
+        // RDKit✔️✔️:     std::vector<unsigned int> expandablePositions;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     for (size_t i = 1; i < pathVec.size() - 1; ++i) {
+        // RDKit✔️✔️:       auto prevAtom = pathVec[i - 1];
+        // RDKit✔️✔️:       auto centerAtom = pathVec[i];
+        // RDKit✔️✔️:       auto nextAtom = pathVec[i + 1];
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // Check if all three atoms are in the SAME ring using ring membership
+        // RDKit✔️✔️:       // lookups.
+        // RDKit✔️✔️:       bool allInSameRing = false;
+        // RDKit✔️✔️:       if (atomRings.count(prevAtom) && atomRings.count(centerAtom) &&
+        // RDKit✔️✔️:           atomRings.count(nextAtom)) {
+        // RDKit✔️✔️:         const auto &prevRings = atomRings.at(prevAtom);
+        // RDKit✔️✔️:         const auto &centerRings = atomRings.at(centerAtom);
+        // RDKit✔️✔️:         const auto &nextRings = atomRings.at(nextAtom);
+        // RDKit✔️✔️:         allInSameRing = std::any_of(
+        // RDKit✔️✔️:             prevRings.begin(), prevRings.end(), [&](const auto ringIdx) {
+        // RDKit✔️✔️:               return centerRings.count(ringIdx) && nextRings.count(ringIdx);
+        // RDKit✔️✔️:             });
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       if (allInSameRing) {
+        // RDKit✔️✔️:         // All three atoms in same ring - skip to preserve ring geometry
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       expandablePositions.push_back(i);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     if (expandablePositions.empty()) {
+        // RDKit✔️✔️:       skippedCollisions.insert(canonicalCollision(collision));
+        // RDKit✔️✔️:       colls.erase(colls.begin());
+        // RDKit✔️✔️:       ++iter;
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Save state
+        // RDKit✔️✔️:     auto prevCollisionCount = allColls.size();
+        // RDKit✔️✔️:     std::unordered_map<int, RDGeom::Point2D> savedPositions;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     for (const auto &ea : d_eatoms) {
+        // RDKit✔️✔️:       savedPositions[ea.first] = ea.second.loc;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Try expanding each angle by one increment
+        // RDKit✔️✔️:     bool anyExpanded = false;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     for (auto pos : expandablePositions) {
+        // RDKit✔️✔️:       auto centerAtom = pathVec[pos];
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // Check if this angle has reached maximum expansion
+        // RDKit✔️✔️:       if (angleTotals[canonicalCollision(collision)][centerAtom] >=
+        // RDKit✔️✔️:           MAX_ANGLE_EXPANSION) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       auto prevAtom = pathVec[pos - 1];
+        // RDKit✔️✔️:       auto nextAtom = pathVec[pos + 1];
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // Try opening this angle (making it larger, towards 180°)
+        // RDKit✔️✔️:       if (openAngleByIncrement(prevAtom, centerAtom, nextAtom,
+        // RDKit✔️✔️:                                ANGLE_EXPANSION_INCREMENT, dmat)) {
+        // RDKit✔️✔️:         angleTotals[canonicalCollision(collision)][centerAtom] +=
+        // RDKit✔️✔️:             ANGLE_EXPANSION_INCREMENT;
+        // RDKit✔️✔️:         anyExpanded = true;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     if (!anyExpanded) {
+        // RDKit✔️✔️:       skippedCollisions.insert(canonicalCollision(collision));
+        // RDKit✔️✔️:       colls.erase(colls.begin());
+        // RDKit✔️✔️:       ++iter;
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // OPTIMIZATION: Only recompute distance matrix after atom positions changed
+        // RDKit✔️✔️:     dmat = RDKit::MolOps::getDistanceMat(*dp_mol);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // Check if expansion helped or made things worse
+        // RDKit✔️✔️:     auto newColls = findPathAngleCollisions();
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // accept if we have fewer or same collisions, otherwise revert
+        // RDKit✔️✔️:     if (newColls.size() > prevCollisionCount) {
+        // RDKit✔️✔️:       // Created MORE collisions - revert
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // Restore all atom positions
+        // RDKit✔️✔️:       for (auto &ea : d_eatoms) {
+        // RDKit✔️✔️:         ea.second.loc = savedPositions[ea.first];
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // Clear rotation tracking for this collision and give up on it
+        // RDKit✔️✔️:       angleTotals.erase(canonicalCollision(collision));
+        // RDKit✔️✔️:       skippedCollisions.insert(canonicalCollision(collision));
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // OPTIMIZATION: Only recompute if we reverted
+        // RDKit✔️✔️:       dmat = RDKit::MolOps::getDistanceMat(*dp_mol);
+        // RDKit✔️✔️:       allColls = findPathAngleCollisions();
+        // RDKit✔️✔️:       colls = filterSkippedCollisions(allColls);
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       allColls = std::move(newColls);
+        // RDKit✔️✔️:       colls = filterSkippedCollisions(allColls);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     // Otherwise accept (fewer or same collisions)
+        // RDKit✔️✔️:     ++iter;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // Retain source collision order, per-pair limits, saved coordinate-only
+        // rollback and accepted-nonincreasing collision rule. Hash membership
+        // is never iterated for choice. O(total ring memberships) setup; bounded
+        // 20 rounds of O(V+E) traversal and existing pair-collision scans.
+        // RDKit✔️✔️: double ANGLE_EXPANSION_INCREMENT = 0.0873;  // 5 degrees per step
+        // RDKit✔️✔️: double MAX_ANGLE_EXPANSION = 3. * ANGLE_EXPANSION_INCREMENT;
+        // RDKit✔️✔️: unsigned int MAX_ANGLE_EXPANSION_ITERS = 20;
+        const INCREMENT: f64 = 0.0873;
+        const MAX_EXPANSION: f64 = 3.0 * INCREMENT;
+        const MAX_ITERATIONS: usize = 20;
+        let mut atom_rings =
+            std::collections::HashMap::<usize, std::collections::HashSet<usize>>::new();
+        for (rid, ring) in self.rings.atom_rings().iter().enumerate() {
+            for atom in ring {
+                atom_rings.entry(atom.index()).or_default().insert(rid);
+            }
+        }
+        let distance = self.collision_distance_matrix()?;
+        let canonical = |(a, b): (usize, usize)| (a.min(b), a.max(b));
+        let mut skipped = std::collections::HashSet::new();
+        let mut all = self.path_angle_collisions(&distance);
+        let mut collisions = all.clone();
+        let mut totals = std::collections::HashMap::<
+            (usize, usize),
+            std::collections::HashMap<usize, f64>,
+        >::new();
+        let mut iteration = 0;
+        while iteration < MAX_ITERATIONS && !collisions.is_empty() {
+            let collision = collisions[0];
+            let key = canonical(collision);
+            let path = shortest_path(
+                self.topology,
+                AtomId::new(collision.0),
+                AtomId::new(collision.1),
+            )?
+            .into_iter()
+            .map(|a| a.index())
+            .collect::<Vec<_>>();
+            if path.len() < 3 {
+                skipped.insert(key);
+                collisions.remove(0);
+                iteration += 1;
+                continue;
+            }
+            let mut expandable = Vec::new();
+            for i in 1..path.len() - 1 {
+                let same_ring = match (
+                    atom_rings.get(&path[i - 1]),
+                    atom_rings.get(&path[i]),
+                    atom_rings.get(&path[i + 1]),
+                ) {
+                    (Some(a), Some(b), Some(c)) => {
+                        a.iter().any(|ring| b.contains(ring) && c.contains(ring))
+                    }
+                    _ => false,
+                };
+                if !same_ring {
+                    expandable.push(i);
+                }
+            }
+            if expandable.is_empty() {
+                skipped.insert(key);
+                collisions.remove(0);
+                iteration += 1;
+                continue;
+            }
+            let previous_count = all.len();
+            let saved: std::collections::HashMap<_, _> = self
+                .atoms
+                .iter()
+                .map(|(&aid, atom)| (aid, atom.loc))
+                .collect();
+            let mut any_expanded = false;
+            for pos in expandable {
+                let center = path[pos];
+                if *totals.entry(key).or_default().entry(center).or_default() >= MAX_EXPANSION {
+                    continue;
+                }
+                if self.open_angle_by_increment(
+                    path[pos - 1],
+                    center,
+                    path[pos + 1],
+                    INCREMENT,
+                    &distance,
+                ) {
+                    *totals.entry(key).or_default().entry(center).or_default() += INCREMENT;
+                    any_expanded = true;
+                }
+            }
+            if !any_expanded {
+                skipped.insert(key);
+                collisions.remove(0);
+                iteration += 1;
+                continue;
+            }
+            // Source getDistanceMat reuses the unchanged topology cache here;
+            // XY rotations cannot change it. Retain the same borrowed matrix.
+            let new_collisions = self.path_angle_collisions(&distance);
+            if new_collisions.len() > previous_count {
+                for (&aid, atom) in &mut self.atoms {
+                    atom.loc = saved[&aid];
+                }
+                totals.remove(&key);
+                skipped.insert(key);
+                all = self.path_angle_collisions(&distance);
+            } else {
+                all = new_collisions;
+            }
+            collisions = all
+                .iter()
+                .copied()
+                .filter(|&c| !skipped.contains(&canonical(c)))
+                .collect();
+            iteration += 1;
+        }
+        Ok(())
     }
 
     pub(crate) fn total_density(&self) -> f64 {
@@ -6490,6 +7141,108 @@ fn compute_sub_angle(degree: usize, hybridization: Hybridization) -> f64 {
         Hybridization::Unspecified | Hybridization::Sp3 | Hybridization::Sp2 => 2.0 * PI / 3.0,
         _ => 2.0 * PI / degree as f64,
     }
+}
+
+const SEGMENT_INTERSECTION_EPSILON: f64 = 1e-6;
+
+fn segment_orientation(a: Point2, b: Point2, c: Point2) -> f64 {
+    // RDKit✔️✔️: double _orientation(const RDGeom::Point2D &a, const RDGeom::Point2D &b,
+    // RDKit✔️✔️:                     const RDGeom::Point2D &c) {
+    // RDKit✔️✔️:   return _crossVal(b - a, c - a);
+    // RDKit✔️✔️: }
+    // Same constant-cost cross-product arithmetic, no allocation.
+    let v1 = [b[0] - a[0], b[1] - a[1]];
+    let v2 = [c[0] - a[0], c[1] - a[1]];
+    v1[0] * v2[1] - v2[0] * v1[1]
+}
+
+fn point_on_segment(a: Point2, b: Point2, point: Point2) -> bool {
+    // RDKit✔️✔️: bool _pointOnSegment(const RDGeom::Point2D &a, const RDGeom::Point2D &b,
+    // RDKit✔️✔️:                      const RDGeom::Point2D &point) {
+    // RDKit✔️✔️:   return std::abs(_orientation(a, b, point)) <=
+    // RDKit✔️✔️:              SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:          point.x >= std::min(a.x, b.x) - SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:          point.x <= std::max(a.x, b.x) + SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:          point.y >= std::min(a.y, b.y) - SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:          point.y <= std::max(a.y, b.y) + SEGMENT_INTERSECTION_EPSILON;
+    // RDKit✔️✔️: }
+    // Retain std::min/max's first-operand rule (including non-finite inputs).
+    // Constant scalar work; no spatial index or temporary storage.
+    let min = |a: f64, b: f64| if b < a { b } else { a };
+    let max = |a: f64, b: f64| if a < b { b } else { a };
+    segment_orientation(a, b, point).abs() <= SEGMENT_INTERSECTION_EPSILON
+        && point[0] >= min(a[0], b[0]) - SEGMENT_INTERSECTION_EPSILON
+        && point[0] <= max(a[0], b[0]) + SEGMENT_INTERSECTION_EPSILON
+        && point[1] >= min(a[1], b[1]) - SEGMENT_INTERSECTION_EPSILON
+        && point[1] <= max(a[1], b[1]) + SEGMENT_INTERSECTION_EPSILON
+}
+
+fn segments_intersect(a: Point2, b: Point2, c: Point2, d: Point2) -> bool {
+    // RDKit✔️✔️: bool _segmentsIntersect(const RDGeom::Point2D &a,
+    // RDKit✔️✔️:                         const RDGeom::Point2D &b,
+    // RDKit✔️✔️:                         const RDGeom::Point2D &c,
+    // RDKit✔️✔️:                         const RDGeom::Point2D &d) {
+    // RDKit✔️✔️:   // Axis-aligned bounding boxes are a cheap, geometry-safe prefilter: two
+    // RDKit✔️✔️:   // intersecting segments must have overlapping projections on both axes.
+    // RDKit✔️✔️:   if (std::max(a.x, b.x) + SEGMENT_INTERSECTION_EPSILON <
+    // RDKit✔️✔️:           std::min(c.x, d.x) ||
+    // RDKit✔️✔️:       std::max(c.x, d.x) + SEGMENT_INTERSECTION_EPSILON <
+    // RDKit✔️✔️:           std::min(a.x, b.x) ||
+    // RDKit✔️✔️:       std::max(a.y, b.y) + SEGMENT_INTERSECTION_EPSILON <
+    // RDKit✔️✔️:           std::min(c.y, d.y) ||
+    // RDKit✔️✔️:       std::max(c.y, d.y) + SEGMENT_INTERSECTION_EPSILON <
+    // RDKit✔️✔️:           std::min(a.y, b.y)) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const auto o1 = _orientation(a, b, c);
+    // RDKit✔️✔️:   const auto o2 = _orientation(a, b, d);
+    // RDKit✔️✔️:   const auto o3 = _orientation(c, d, a);
+    // RDKit✔️✔️:   const auto o4 = _orientation(c, d, b);
+    // RDKit✔️✔️:   const bool firstStraddles =
+    // RDKit✔️✔️:       (o1 > SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:        o2 < -SEGMENT_INTERSECTION_EPSILON) ||
+    // RDKit✔️✔️:       (o1 < -SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:        o2 > SEGMENT_INTERSECTION_EPSILON);
+    // RDKit✔️✔️:   const bool secondStraddles =
+    // RDKit✔️✔️:       (o3 > SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:        o4 < -SEGMENT_INTERSECTION_EPSILON) ||
+    // RDKit✔️✔️:       (o3 < -SEGMENT_INTERSECTION_EPSILON &&
+    // RDKit✔️✔️:        o4 > SEGMENT_INTERSECTION_EPSILON);
+    // RDKit✔️✔️:   if (firstStraddles && secondStraddles) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Also treat collinear overlap and non-adjacent endpoint contact as bond
+    // RDKit✔️✔️:   // collisions. Bonds sharing an atom are excluded by the caller.
+    // RDKit✔️✔️:   return _pointOnSegment(a, b, c) || _pointOnSegment(a, b, d) ||
+    // RDKit✔️✔️:          _pointOnSegment(c, d, a) || _pointOnSegment(c, d, b);
+    // RDKit✔️✔️: }
+    // Source AABB prefilter, signed orientation and endpoint-contact order.
+    // O(1) scalar work and storage, with no midpoint or bond-length heuristic.
+    let min = |a: f64, b: f64| if b < a { b } else { a };
+    let max = |a: f64, b: f64| if a < b { b } else { a };
+    let e = SEGMENT_INTERSECTION_EPSILON;
+    if max(a[0], b[0]) + e < min(c[0], d[0])
+        || max(c[0], d[0]) + e < min(a[0], b[0])
+        || max(a[1], b[1]) + e < min(c[1], d[1])
+        || max(c[1], d[1]) + e < min(a[1], b[1])
+    {
+        return false;
+    }
+    let o1 = segment_orientation(a, b, c);
+    let o2 = segment_orientation(a, b, d);
+    let o3 = segment_orientation(c, d, a);
+    let o4 = segment_orientation(c, d, b);
+    let first = (o1 > e && o2 < -e) || (o1 < -e && o2 > e);
+    let second = (o3 > e && o4 < -e) || (o3 < -e && o4 > e);
+    if first && second {
+        return true;
+    }
+    point_on_segment(a, b, c)
+        || point_on_segment(a, b, d)
+        || point_on_segment(c, d, a)
+        || point_on_segment(c, d, b)
 }
 
 fn normalize(point: Point2) -> Result<Point2, FragmentError> {
@@ -9397,10 +10150,16 @@ mod angled_destination_assignment_tests {
     };
     use std::collections::BTreeMap;
 
-    // Independently frozen native public controls: pinned RDKit351f8f378,
+    // Original independently frozen native public controls: RDKit351f8f378,
     // source-explicit-loc.tsv SHA648222623d0bfc090b32c71f96d8ac21a5372306ef7b9a7db4cbafdf631adda3.
     // Values: aid, angle bits, nbr1,nbr2,CisTransNbr,rotDir,loc x/y bits,
     // normal x/y bits, ccw,density bits,fixed. No oracle execution in tests.
+    // Candidate EmbeddedFrag.cpp:944–965 changes only cases 13–20: with
+    // rotDir=-1 already assigned, a half-plane cannot reverse (+x placement,
+    // reflected normal/ccw); with rotDir=0 the selected opposite half-plane
+    // must flip the stored direction. All input rows and other fields remain
+    // frozen. These literal post rows follow those source branches, not a new
+    // oracle run or coordinates copied from the implementation under test.
     #[derive(Debug, Clone, Copy)]
     struct Row {
         key: usize,
@@ -11765,11 +12524,11 @@ mod angled_destination_assignment_tests {
                         -1,
                         -1,
                         0,
-                        13832806255468478464,
+                        4609434218613702656,
                         4366936075694672394,
-                        13587824233749437447,
+                        4364452196894661639,
                         13830554455654793216,
-                        0,
+                        1,
                         13830554455654793216,
                         0,
                         0,
@@ -11953,11 +12712,11 @@ mod angled_destination_assignment_tests {
                         -1,
                         -1,
                         0,
-                        13832806255468478464,
+                        4609434218613702656,
                         4366936075694672394,
-                        13587824233749437447,
+                        4364452196894661639,
                         13830554455654793216,
-                        0,
+                        1,
                         13830554455654793216,
                         0,
                         0,
@@ -12221,11 +12980,11 @@ mod angled_destination_assignment_tests {
                         -1,
                         -1,
                         0,
-                        13832806255468478464,
+                        4609434218613702656,
                         4366936075694672394,
-                        13587824233749437447,
+                        4364452196894661639,
                         13830554455654793216,
-                        0,
+                        1,
                         13830554455654793216,
                         0,
                         0,
@@ -12409,11 +13168,11 @@ mod angled_destination_assignment_tests {
                         -1,
                         -1,
                         0,
-                        13832806255468478464,
+                        4609434218613702656,
                         4366936075694672394,
-                        13587824233749437447,
+                        4364452196894661639,
                         13830554455654793216,
-                        0,
+                        1,
                         13830554455654793216,
                         0,
                         0,
@@ -12556,7 +13315,7 @@ mod angled_destination_assignment_tests {
                         1,
                         0,
                         -1,
-                        -1,
+                        1,
                         0,
                         0,
                         0,
@@ -12744,7 +13503,7 @@ mod angled_destination_assignment_tests {
                         1,
                         0,
                         -1,
-                        -1,
+                        1,
                         0,
                         0,
                         0,
@@ -12912,7 +13671,7 @@ mod angled_destination_assignment_tests {
                         1,
                         5,
                         -1,
-                        -1,
+                        1,
                         0,
                         0,
                         0,
@@ -13100,7 +13859,7 @@ mod angled_destination_assignment_tests {
                         1,
                         5,
                         -1,
-                        -1,
+                        1,
                         0,
                         0,
                         0,
@@ -17800,6 +18559,101 @@ mod recovery_dep04_tests {
         }
     }
     #[test]
+    fn path_angle_rotation_respects_fixed_sides_and_rejects_overlap() {
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        for (id, loc) in [[0., 0.], [1.5, 0.], [1.5, 1.5], [0.1, 0.1]]
+            .into_iter()
+            .enumerate()
+        {
+            f.atoms.get_mut(&id).unwrap().loc = loc;
+        }
+        let distance = f.collision_distance_matrix().unwrap();
+        f.atoms.get_mut(&0).unwrap().fixed = true;
+        f.atoms.get_mut(&3).unwrap().fixed = true;
+        let before = f.atoms.clone();
+        assert!(!f.open_angle_by_increment(0, 1, 2, 0.0873, &distance));
+        assert_eq!(f.atoms, before);
+        f.atoms.get_mut(&0).unwrap().fixed = false;
+        let fixed_position = f.atoms[&3].loc;
+        assert!(f.open_angle_by_increment(0, 1, 2, 0.0873, &distance));
+        assert_eq!(f.atoms[&3].loc, fixed_position);
+        assert_ne!(f.atoms[&0].loc, before[&0].loc);
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+        let r = rings(&t, &[vec![0, 1, 2, 3]]);
+        let mut f = embedded(&t, &r, false);
+        let before = f.atoms.clone();
+        assert!(!f.open_angle_by_increment(0, 1, 2, 0.0873, &distance));
+        assert_eq!(f.atoms, before);
+    }
+
+    #[test]
+    fn default_path_angle_expansion_resolves_a_chain_end_clash() {
+        assert!(crate::Compute2DCoordinatesParams::default().use_path_angle_expansion);
+        let t = graph(4, &[(0, 1), (1, 2), (2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        for (id, loc) in [[0., 0.], [1.5, 0.], [1.5, 1.5], [0.1, 0.1]]
+            .into_iter()
+            .enumerate()
+        {
+            f.atoms.get_mut(&id).unwrap().loc = loc;
+        }
+        let distance = f.collision_distance_matrix().unwrap();
+        let before = f.atoms.clone();
+        assert_eq!(f.path_angle_collisions(&distance).len(), 1);
+        f.remove_collisions_path_angle_expansion().unwrap();
+        assert!(f.path_angle_collisions(&distance).is_empty());
+        assert_ne!(f.atoms, before);
+        assert_eq!(f.topology, &t);
+    }
+
+    #[test]
+    fn candidate_zero_fragment_trials_preserve_rng_and_bypass_partial_cost() {
+        let t = graph(4, &[(2, 3)]);
+        let r = rings(&t, &[]);
+        let mut f = EmbeddedFrag::from_single(0, &t, &r).unwrap();
+        // Keep the generator locked: source's zero-candidate branch must not
+        // even acquire it or inspect undefined partial-fragment distance rows.
+        let generator = DEPICT_RANDOM.lock().unwrap();
+        let initial = generator.state;
+        f.random_sample_flips_and_permutations(10, 10, 123, None, 0.0, false)
+            .unwrap();
+        assert_eq!(generator.state, initial);
+        assert_eq!(f.atoms.len(), 1);
+    }
+
+    #[test]
+    fn candidate_segment_collisions_use_farthest_pair_and_skip_shared_atoms() {
+        let t = graph(4, &[(0, 1), (2, 3), (0, 2)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        for (id, loc) in [[0., 0.], [10., 0.], [1., -1.], [1., 1.]]
+            .into_iter()
+            .enumerate()
+        {
+            f.atoms.get_mut(&id).unwrap().loc = loc;
+        }
+        let distance = f.collision_distance_matrix().unwrap();
+        assert_eq!(f.find_collisions(&distance, true, true), [(1, 3)]);
+        assert!(segments_intersect([0., 0.], [3., 0.], [2., 0.], [5., 0.]));
+        assert!(segments_intersect([0., 0.], [2., 0.], [2., 0.], [2., 1.]));
+        assert!(!segments_intersect([0., 0.], [1., 0.], [2., 0.], [3., 0.]));
+        let t = graph(3, &[(0, 1), (0, 2)]);
+        let r = rings(&t, &[]);
+        let mut f = embedded(&t, &r, false);
+        for (id, loc) in [[0., 0.], [3., 0.], [5., 0.]].into_iter().enumerate() {
+            f.atoms.get_mut(&id).unwrap().loc = loc;
+        }
+        let distance = f.collision_distance_matrix().unwrap();
+        assert!(f.find_collisions(&distance, true, true).is_empty());
+        f.atoms.get_mut(&1).unwrap().loc = [0.1, 0.];
+        assert!(!f.find_collisions(&distance, false, true).is_empty());
+        assert!(f.find_collisions(&distance, false, false).is_empty());
+    }
+
+    #[test]
     fn recovery_dep04_first_cached_ring_selects_other_side() {
         let (t, _) = spiro(false);
         let r = rings(&t, &[vec![0, 3, 4], vec![0, 1, 2]]);
@@ -17853,7 +18707,7 @@ mod recovery_dep04_tests {
             a.loc = [0., 0.];
         }
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let mut done = BTreeMap::new();
         let g = Guard::start();
@@ -17881,7 +18735,7 @@ mod recovery_dep04_tests {
         let r = rings(&t, &[]);
         let mut f = embedded(&t, &r, true);
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let mut done = BTreeMap::new();
         assert!(
@@ -17896,7 +18750,7 @@ mod recovery_dep04_tests {
         let r = rings(&t, &[]);
         let mut f = embedded(&t, &r, true);
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let mut done = BTreeMap::new();
         assert!(
@@ -17931,7 +18785,7 @@ mod recovery_dep04_tests {
         }
         let last = 2. * (0.5 + 0.2 + 1. / 18. + 1. + 0.125 + 0.2);
         assert!((f.total_density() - last).abs() < 1e-10);
-        f.find_collisions(&d, true);
+        f.find_collisions(&d, true, true);
         assert!((f.total_density() - 4.25).abs() < 1e-10);
     }
     #[test]
@@ -17939,7 +18793,7 @@ mod recovery_dep04_tests {
         let (t, r) = spiro(false);
         let mut f = embedded(&t, &r, true);
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let before = f.atoms.clone();
         let mut done = BTreeMap::new();
@@ -17974,7 +18828,7 @@ mod recovery_dep04_tests {
         let (t, r) = spiro(false);
         let mut f = embedded(&t, &r, true);
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let mut done = BTreeMap::new();
         assert!(
@@ -17995,7 +18849,7 @@ mod recovery_dep04_tests {
         let (t, r) = spiro(false);
         let mut f = embedded(&t, &r, true);
         let d = f.collision_distance_matrix().unwrap();
-        let n = f.find_collisions(&d, true).len();
+        let n = f.find_collisions(&d, true, true).len();
         let density = f.total_density();
         let mut done = BTreeMap::new();
         for count in 1..=3 {
@@ -18132,6 +18986,47 @@ mod recovery_dep01_tests {
         }
     }
     #[test]
+    fn assigned_half_plane_direction_cannot_flip_for_a_nearer_obstacle() {
+        let topo = fixture_topology();
+        let rings = RingInfo::new(RingFindType::Sssr, 4, 0);
+        for assigned in [false, true] {
+            let mut frag = fragment(&topo, &rings, [[0., 0.], [1., 0.], [-1., 0.], [0., -1.]]);
+            let center = frag.atoms.get_mut(&0).unwrap();
+            center.nbr1 = Some(1);
+            center.nbr2 = Some(2);
+            center.angle = PI;
+            center.neighs = vec![3];
+            center.rot_dir = if assigned { 1 } else { 0 };
+            frag.add_atom_to_atom_with_ang(3, 0).unwrap();
+            assert_eq!(frag.atoms[&3].loc[1].is_sign_negative(), assigned);
+            assert_eq!(frag.atoms[&0].rot_dir, if assigned { 1 } else { -1 });
+        }
+    }
+
+    #[test]
+    fn full_circle_bridgehead_gap_larger_than_pi_retains_known_direction() {
+        let topo = fixture_topology();
+        let rings = RingInfo::new(RingFindType::Sssr, 4, 0);
+        let mut frag = fragment(
+            &topo,
+            &rings,
+            [
+                [0., 0.],
+                [1., 0.],
+                [0.5_f64.cos(), 0.5_f64.sin()],
+                [1.0_f64.cos(), 1.0_f64.sin()],
+            ],
+        );
+        frag.compute_nbrs_and_ang(0, &[3, 1, 2]).unwrap();
+        let atom = &frag.atoms[&0];
+        assert_eq!((atom.nbr1, atom.nbr2, atom.rot_dir), (Some(1), Some(3), 1));
+        assert_eq!(
+            atom.angle.to_bits(),
+            (2.0 * PI - (2.0 * PI - 1.0)).to_bits()
+        );
+    }
+
+    #[test]
     fn recovery_dep01_unique_pairs_reserve_equal_angle_lexicographic_tuple() {
         let topo = fixture_topology();
         let rings = RingInfo::new(RingFindType::Sssr, 4, 0);
@@ -18140,21 +19035,21 @@ mod recovery_dep01_tests {
         CAPTURE.with(|c| {
             let b = c.borrow();
             let (rows, capacity) = b.as_ref().unwrap();
-            assert_eq!(rows, &vec![(0., 1, 2), (0., 3, 1), (0., 3, 2)]);
+            assert_eq!(rows, &vec![(0., 1, 2), (0., 2, 3), (2. * PI, 3, 1)]);
             assert!(*capacity >= 3);
             assert!(rows.iter().all(|r| r.1 != r.2));
         });
         let atom = &frag.atoms[&0];
-        assert_eq!((atom.nbr1, atom.nbr2), (Some(1), Some(2)));
-        assert_eq!(atom.angle, 2. * PI);
-        assert_eq!(atom.rot_dir, -1);
+        assert_eq!((atom.nbr1, atom.nbr2), (Some(1), Some(3)));
+        assert_eq!(atom.angle, 0.);
+        assert_eq!(atom.rot_dir, 1);
     }
     #[test]
     fn recovery_dep01_reverse_ring_guard_and_all_fused_fallback() {
         let topo = fixture_topology();
         for (counts, expected) in [
             ([0, 1, 1, 2], (Some(2), Some(1))),
-            ([0, 2, 2, 2], (Some(1), Some(2))),
+            ([0, 2, 2, 2], (Some(1), Some(3))),
         ] {
             let mut rings = RingInfo::new(RingFindType::Sssr, 4, 1);
             // Controlled cache-membership seam only; not a claim of natural cycle perception.
@@ -18179,14 +19074,14 @@ mod recovery_dep01_tests {
             let rows = &b.as_ref().unwrap().0;
             assert_eq!(
                 rows.iter().map(|r| (r.1, r.2)).collect::<Vec<_>>(),
-                [(1, 2), (3, 1), (3, 2)]
+                [(1, 2), (3, 1), (2, 3)]
             );
             assert_eq!(rows[0].0, PI / 2.);
             assert_eq!(rows[2].0, PI);
         });
         assert_eq!(
             (frag.atoms[&0].nbr1, frag.atoms[&0].nbr2),
-            (Some(1), Some(2))
+            (Some(3), Some(2))
         );
         assert_eq!(frag.atoms[&0].angle, PI);
     }

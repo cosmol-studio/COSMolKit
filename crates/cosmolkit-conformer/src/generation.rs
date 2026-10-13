@@ -1484,6 +1484,7 @@ static FAILURE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn source_got_signal() -> bool {
     cosmolkit_core::source_control_c::got_signal()
 }
+#[cfg(test)]
 fn source_reset_interrupt() -> Result<(), GenerationError> {
     if !cosmolkit_core::source_control_c::reset() {
         return Err(GenerationError::Input(
@@ -3335,6 +3336,7 @@ fn embedder_setup_initial_bounds_matrix(
             params.force_trans_amides,
             true,
             true,
+            Some(&mut details.path14_configs),
         )
         .map_err(GenerationFailure::from)?;
     } else {
@@ -3927,6 +3929,44 @@ mod original_complete_preparation_conditions {
         assert!(details.bonds.is_empty());
         assert!(details.angles.is_empty());
         assert!(mmat.get_upper(0, 1).expect("original checked bounds") < DEFAULT_UPPER);
+    }
+
+    #[test]
+    fn forced_bounds_amide_path_reaches_etkdg_before_smarts_terms() {
+        let mol = fixed_smiles("O=C1N(C)CCCCCCCC1");
+        let mut matrix = BoundsMatrix::new(mol.atoms.len()).unwrap();
+        crate::graph_bounds::init_bounds_mat(&mut matrix, 0.0, 1000.0).unwrap();
+        let mut details = CrystalFFDetails::default();
+        let params = EmbedParams {
+            use_basic_knowledge: true,
+            use_exp_torsion_angle_prefs: true,
+            use_macrocycle14config: true,
+            ..EmbedParams::default()
+        };
+        assert!(
+            embedder_setup_initial_bounds_matrix(&mol, &mut matrix, None, &params, &mut details,)
+                .unwrap()
+        );
+        let forced = details
+            .path14_configs
+            .iter()
+            .find(|path| path.forced.is_some())
+            .expect("bounds-produced forced ring amide");
+        let atoms = forced.atoms.map(|atom| atom as i32).to_vec();
+        let expected_sign = match forced.forced.unwrap() {
+            cosmolkit_forcefields::ForcedTorsionKind::Cis => -1,
+            cosmolkit_forcefields::ForcedTorsionKind::Trans => 1,
+        };
+        assert!(details.exp_torsion_atoms.is_empty());
+        embedder_init_etkdg(&mol, &params, &mut details).unwrap();
+        assert_eq!(details.exp_torsion_atoms[0], atoms);
+        assert_eq!(
+            details.exp_torsion_angles[0],
+            (
+                vec![expected_sign, 1, 1, 1, 1, 1],
+                vec![75.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            )
+        );
     }
 
     #[test]
@@ -4793,7 +4833,6 @@ fn embedder_dispatch_workers(
     // END RDKIT CPP BLOCK thread/reset/future dispatch (Embedder.cpp:1636-1661)
 
     let source_count = cosmolkit_core::rdkit_thread_count(params.num_threads)?.get() as i32;
-    source_reset_interrupt()?;
     if args.confs_ok.len() != args.confs.len() {
         return Err(GenerationError::Input(
             "embedding conformer status count mismatch",
@@ -4925,6 +4964,11 @@ mod source_parallel_worker_conditions {
         deadline: Option<Instant>,
     ) -> Result<(), GenerationError> {
         let details = CrystalFFDetails::default();
+        // RDKit✔️✔️:     ControlCHandler hdlr;
+        // Private worker fixture provides the production caller's scoped guard.
+        let _interrupt_handler = cosmolkit_core::source_control_c::ControlCHandler::new().ok_or(
+            GenerationError::Input("cannot install embedding SIGINT handler"),
+        )?;
         let mut args = EmbedHelperArgs {
             confs_ok: ok,
             four_d: true,
@@ -5746,7 +5790,6 @@ pub fn generate_conformers(
         }
         let mut details = CrystalFFDetails::default();
         details.constrained_atoms = constrained_atoms.clone();
-        embedder_init_etkdg(&prepared, params, &mut details)?;
         let mut preparation = Vec::new();
         let local_map = if local_map_enabled {
             params.coord_map.as_ref()
@@ -5792,6 +5835,10 @@ pub fn generate_conformers(
             );
             (**bounds).clone()
         };
+        // RDKit✔️✔️:     EmbeddingOps::initETKDG(piece.get(), params, *etkdgDetails);
+        // Bounds construction supplies forced path14 rows before torsion lookup.
+        // No additional graph walk or temporary molecule is introduced.
+        embedder_init_etkdg(&prepared, params, &mut details)?;
         if !piece_properties
             .props()
             .contains_key(b"_StereochemDone".as_slice())
@@ -5818,6 +5865,13 @@ pub fn generate_conformers(
                 .into_iter()
                 .map(EmbeddingDiagnostic::Preparation),
         );
+        // RDKit✔️✔️:     ControlCHandler hdlr;
+        // Keep the source guard through worker joins and the signal check;
+        // dropping it inside dispatch would clear the flag before inspection.
+        // Allocation-free, one scoped handler per complete fragment embedding.
+        let _interrupt_handler = cosmolkit_core::source_control_c::ControlCHandler::new().ok_or(
+            GenerationError::Input("cannot install embedding SIGINT handler"),
+        )?;
         let mut args = EmbedHelperArgs {
             confs_ok: &mut ok,
             four_d: params.use_random_coords || !chiral.is_empty(),
@@ -6218,6 +6272,34 @@ mod original_complete_generation_conditions {
     }
     // Original distgeom/tests.rs:4999-5010; value transport only. The original
     // public Molecule-returning condition remains required at the facade layer.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn whole_embedding_restores_scoped_native_handler() {
+        const CHILD: &str = "CK_CANDIDATE_EMBED_SCOPED_SIGNAL_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "generation::original_complete_generation_conditions::whole_embedding_restores_scoped_native_handler", "--nocapture"])
+                .env(CHILD, "1").status().unwrap();
+            assert!(status.success());
+            return;
+        }
+        // SAFETY: Only this isolated child changes its process signal handler.
+        let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+        let result = generate_conformers(
+            &carbon(),
+            &Default::default(),
+            &Default::default(),
+            1,
+            &mut random_embed_params(7, 1),
+            unused_projection,
+        )
+        .unwrap();
+        let restored = unsafe { libc::signal(libc::SIGINT, previous) };
+        assert_eq!(restored, libc::SIG_IGN);
+        assert_eq!(result.conformers.len(), 1);
+        assert!(!source_got_signal());
+    }
+
     #[test]
     fn embed_multiple_confs_generates_value_style_conformers() {
         let mol = carbon();
@@ -6566,18 +6648,16 @@ mod etv2_first_numeric_boundary_diagnostic {
         let hybridizations =
             cosmolkit_core::assign_hybridization_with_conjugation(&topology, &valence, &conjugated)
                 .unwrap();
-        let bounds = crate::graph_bounds::build_bounds_matrix(
-            &topology,
-            &rings,
-            &valence,
-            &hybridizations.values,
-            &conjugated,
-            true,
-            false,
-            true,
-            false,
-        )
+        // The numerical optimizer regression owns a fixed distance-bound
+        // input. Candidate BoundsMatrixBuilder changes the 1-3 intervals;
+        // that formula has its own local regression in graph_bounds.rs.
+        let reference: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../testdata/conformer/fixtures/rdkit_2026_03_6_etv2_bounds.json"
+        ))
         .unwrap();
+        let rows: Vec<Vec<f64>> = serde_json::from_value(reference["matrix"].clone()).unwrap();
+        let bounds =
+            BoundsMatrix::from_data(rows.len(), rows.into_iter().flatten().collect()).unwrap();
         let params = EmbedParams::etdg_v2();
         let mut positions = vec![vec![0.; 3]; 17];
         let mut dist = SymmMatrix::new(17);
@@ -6645,6 +6725,7 @@ mod etv2_first_numeric_boundary_diagnostic {
             true,
             true,
             true,
+            None,
         )
         .unwrap();
         let (torsion_energy_before, torsion_energy_after);
@@ -6728,6 +6809,16 @@ mod complete_generated_bounds_regression {
             .topology;
         let mut params = EmbedParams::etdg_v2();
         params.random_seed = 42;
+        // Keep all original coordinates as a regression of the supplied-bounds
+        // embedding path, rather than mixing the changed 1-3 bounds algorithm
+        // into a frozen .03.6 optimizer input.
+        let reference: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../testdata/conformer/fixtures/rdkit_2026_03_6_etv2_bounds.json"
+        ))
+        .unwrap();
+        params
+            .set_bounds_matrix(serde_json::from_value(reference["matrix"].clone()).unwrap())
+            .unwrap();
         let embedded = generate_conformers(
             &topology,
             &coordinates,

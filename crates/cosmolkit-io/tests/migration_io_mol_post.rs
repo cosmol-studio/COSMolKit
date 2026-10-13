@@ -1095,98 +1095,119 @@ fn mol_post_false_flag_xyz_stereo_preserves_wedge_dash_orientation_before_cleari
 }
 
 #[test]
-fn mol_post_false_flag_xyz_stereo_feeds_atropisomer_owner_before_direction_clearing() {
-    // RDKit Atropisomers.cpp:549-580 checks total degree after cache update.
-    // Native 2026.03.1: the original implicit-H input has degree 4/NONE;
-    // noImplicit=true has degree 2/ATROPCCW, including the whole-molecule
-    // hybridization prelude. Retain all three exact native branches.
-    for (no_implicit, recalculate, expected) in [
-        (false, false, BondStereo::None),
-        (true, false, BondStereo::AtropCcw),
-        (true, true, BondStereo::AtropCcw),
-    ] {
-        let atoms = (0..4)
-            .map(|index| {
-                let hybridization = if recalculate {
-                    Hybridization::Unspecified
-                } else if index == 1 || index == 2 {
-                    Hybridization::Sp2
+fn mol_post_chirality_flag_gates_atropisomer_owner_before_direction_clearing() {
+    // Candidate 2026.09.1 MolFileParser.cpp:3486-3500 removes the unconditional
+    // atrop detector. With a non-3D conformer only chiralityPossible enters
+    // assignChiralTypesFromBondDirs, whose final detector is Chirality.cpp:3835.
+    // Keep the three degree/hybridization branches and check both flag paths:
+    // the bypass must leave implicit valence and hybridization untouched.
+    for chirality_possible in [false, true] {
+        for (no_implicit, recalculate, expected) in [
+            (false, false, BondStereo::None),
+            (true, false, BondStereo::AtropCcw),
+            (true, true, BondStereo::AtropCcw),
+        ] {
+            let atoms = (0..4)
+                .map(|index| {
+                    let hybridization = if recalculate {
+                        Hybridization::Unspecified
+                    } else if index == 1 || index == 2 {
+                        Hybridization::Sp2
+                    } else {
+                        Hybridization::Sp3
+                    };
+                    Atom::from_spec(
+                        AtomId::new(index),
+                        AtomSpec::new(Element::C)
+                            .with_hybridization(hybridization)
+                            .with_no_implicit(no_implicit),
+                    )
+                })
+                .collect();
+            let bonds = vec![
+                Bond::from_spec(
+                    BondId::new(0),
+                    BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Single)
+                        .with_conjugated(recalculate)
+                        .with_direction(BondDirection::BeginWedge),
+                ),
+                Bond::from_spec(
+                    BondId::new(1),
+                    BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single)
+                        .with_conjugated(recalculate),
+                ),
+                Bond::from_spec(
+                    BondId::new(2),
+                    BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single)
+                        .with_conjugated(recalculate),
+                ),
+            ];
+            let coordinates = CoordinateBlock {
+                conformers_3d: vec![Conformer3D::new(
+                    7,
+                    vec![
+                        [0.0, 1.0, -0.0],
+                        [0.0, 0.0, 0.0005],
+                        [1.0, 0.0, 0.0],
+                        [1.0, 1.0, 0.0],
+                    ],
+                    false,
+                )],
+                source_coordinate_dim: Some(CoordinateDimension::TwoD),
+                ..CoordinateBlock::default()
+            };
+            let record = MolBlockRecord::Concrete {
+                topology: topology(atoms, bonds, vec![]),
+                coordinates: coordinates.clone(),
+                properties: MoleculeProperties::default(),
+            };
+            let MolBlockRecord::Concrete {
+                topology,
+                coordinates: output_coordinates,
+                ..
+            } = finish_mol_block_record(record, chirality_possible, unsanitized(), None).unwrap()
+            else {
+                panic!("concrete record expected")
+            };
+            assert_eq!(
+                topology.bonds[1].stereo(),
+                if chirality_possible {
+                    expected
                 } else {
-                    Hybridization::Sp3
-                };
-                Atom::from_spec(
-                    AtomId::new(index),
-                    AtomSpec::new(Element::C)
-                        .with_hybridization(hybridization)
-                        .with_no_implicit(no_implicit),
-                )
-            })
-            .collect();
-        let bonds = vec![
-            Bond::from_spec(
-                BondId::new(0),
-                BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Single)
-                    .with_conjugated(recalculate)
-                    .with_direction(BondDirection::BeginWedge),
-            ),
-            Bond::from_spec(
-                BondId::new(1),
-                BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single)
-                    .with_conjugated(recalculate),
-            ),
-            Bond::from_spec(
-                BondId::new(2),
-                BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single)
-                    .with_conjugated(recalculate),
-            ),
-        ];
-        let coordinates = CoordinateBlock {
-            conformers_3d: vec![Conformer3D::new(
-                7,
-                vec![
-                    [0.0, 1.0, -0.0],
-                    [0.0, 0.0, 0.0005],
-                    [1.0, 0.0, 0.0],
-                    [1.0, 1.0, 0.0],
-                ],
-                false,
-            )],
-            source_coordinate_dim: Some(CoordinateDimension::TwoD),
-            ..CoordinateBlock::default()
-        };
-        let record = MolBlockRecord::Concrete {
-            topology: topology(atoms, bonds, vec![]),
-            coordinates: coordinates.clone(),
-            properties: MoleculeProperties::default(),
-        };
-        let MolBlockRecord::Concrete {
-            topology,
-            coordinates: output_coordinates,
-            ..
-        } = finish_mol_block_record(record, false, unsanitized(), None).unwrap()
-        else {
-            panic!("concrete record expected")
-        };
-        assert_eq!(
-            topology.bonds[1].stereo(),
-            expected,
-            "no_implicit={no_implicit}, recalculate={recalculate}"
-        );
-        assert_eq!(topology.bonds[0].direction(), BondDirection::None);
-        assert_eq!(output_coordinates, coordinates);
-        assert_eq!(topology.atoms[1].source_valence_facts().explicit_valence, 2);
-        assert_eq!(
-            topology.atoms[1].source_valence_facts().implicit_valence,
-            if recalculate {
-                0
-            } else if no_implicit {
-                -1
-            } else {
-                2
-            },
-        );
-        assert_eq!(topology.atoms[1].hybridization(), Hybridization::Sp2);
-        assert!(topology.bonds.iter().all(|bond| !bond.is_conjugated()));
+                    BondStereo::None
+                },
+                "chirality_possible={chirality_possible}, no_implicit={no_implicit}, recalculate={recalculate}"
+            );
+            assert_eq!(topology.bonds[0].direction(), BondDirection::None);
+            assert_eq!(output_coordinates, coordinates);
+            assert_eq!(topology.atoms[1].source_valence_facts().explicit_valence, 2);
+            assert_eq!(
+                topology.atoms[1].source_valence_facts().implicit_valence,
+                if !chirality_possible {
+                    -1
+                } else if recalculate {
+                    0
+                } else if no_implicit {
+                    -1
+                } else {
+                    2
+                },
+            );
+            assert_eq!(
+                topology.atoms[1].hybridization(),
+                if !chirality_possible && recalculate {
+                    Hybridization::Unspecified
+                } else {
+                    Hybridization::Sp2
+                }
+            );
+            assert!(
+                topology
+                    .bonds
+                    .iter()
+                    .all(|bond| bond.is_conjugated() == (!chirality_possible && recalculate))
+            );
+        }
     }
 }
 

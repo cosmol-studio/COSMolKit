@@ -73,7 +73,7 @@ pub fn find_chiral_centers(
     let options = CipLabelOptions::default()
         .with_atoms(atoms)
         .with_bonds(bonds);
-    let (labelled, _properties) =
+    let (labelled, _properties, _completion) =
         assign_cip_labels_cow(Cow::Borrowed(topology), Cow::Borrowed(properties), &options)?;
 
     // BEGIN RDKIT PYTHON modern center filtering and source-defined label fallback
@@ -107,8 +107,8 @@ pub fn find_chiral_centers(
             unreachable!("tetrahedral perception uses atom identifiers")
         };
         let code = if let Some(value) = labelled.atoms[atom.index()].prop("_CIPCode") {
-            // GetProp uses canonical lexical conversion, including pre-existing
-            // non-descriptor values on unassigned centers. Preserve empty text.
+            // GetProp uses canonical lexical conversion of the newly assigned
+            // selected label. Candidate CIP clears stale selected labels first.
             let text = cosmolkit_core::property_value_to_string(value)?;
             String::from_utf8(text.into_bytes())
                 .map_err(|source| StereoReadError::CipLabelEncoding { atom, source })?
@@ -237,22 +237,22 @@ mod tests {
     }
 
     #[test]
-    fn chiral_centers_preserve_stored_source_property_strings() {
+    fn chiral_centers_clear_stale_selected_property_strings_before_labeling() {
         use cosmolkit_model::PropertyValue;
-        // Pinned RDKit GetProp projects these existing _CIPCode values even
-        // when the potential center has no chiral tag.
-        for (value, expected) in [
-            (PropertyValue::String("foo".into()), "foo"),
-            (PropertyValue::String("".into()), ""),
-            (PropertyValue::Bool(true), "1"),
-            (PropertyValue::Int(17), "17"),
+        // Candidate CIPLabeler.cpp::clearSelectedCIPProperties clears every
+        // selected potential center, including unassigned non-configurations.
+        for value in [
+            PropertyValue::String("foo".into()),
+            PropertyValue::String("".into()),
+            PropertyValue::Bool(true),
+            PropertyValue::Int(17),
         ] {
             let mut topology = tetrahedron(ChiralTag::Unspecified, BondDirection::None);
             topology.atoms[0].set_prop("_CIPCode", value).unwrap();
             let before = topology.clone();
             assert_eq!(
                 find_chiral_centers(&topology, &MoleculeProperties::default(), true).unwrap(),
-                [(0, expected.to_owned())]
+                [(0, "?".to_owned())]
             );
             assert!(
                 find_chiral_centers(&topology, &MoleculeProperties::default(), false)
@@ -264,15 +264,18 @@ mod tests {
     }
 
     #[test]
-    fn chiral_centers_invalid_label_encoding_is_explicit_and_atomic() {
+    fn chiral_centers_clear_invalid_stale_label_without_mutating_input() {
         use cosmolkit_model::PropertyValue;
         let mut topology = tetrahedron(ChiralTag::Unspecified, BondDirection::None);
         topology.atoms[0]
             .set_prop("_CIPCode", PropertyValue::String(vec![0xff].into()))
             .unwrap();
         let before = topology.clone();
-        assert!(
-            matches!(find_chiral_centers(&topology, &MoleculeProperties::default(), true), Err(StereoReadError::CipLabelEncoding { atom, .. }) if atom.index() == 0)
+        // No string decoding occurs: upstream clears this selected stale
+        // property before configuration discovery. The input stays read-only.
+        assert_eq!(
+            find_chiral_centers(&topology, &MoleculeProperties::default(), true).unwrap(),
+            [(0, "?".to_owned())]
         );
         assert_eq!(topology, before);
     }

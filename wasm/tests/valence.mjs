@@ -39,7 +39,7 @@ test("All four valence operations retain value semantics and typed failure atomi
             : value.withAssignedValence();
         assert.ok(prepared.fingerprintAtomPair() instanceof b.Fingerprint);
         assert.throws(() => value.fingerprintAtomPair(), missing);
-        assert.equal(explicit ? value.assignValenceWithParams(params) : value.assignValence(), undefined);
+        assert.equal(explicit ? value.assignValenceWithParams_(params) : value.assignValence_(), undefined);
         assert.ok(value.fingerprintAtomPair() instanceof b.Fingerprint);
         value.free();
         assert.equal(prepared.toSmiles(), "CCO");
@@ -47,19 +47,19 @@ test("All four valence operations retain value semantics and typed failure atomi
         const invalid = raw("C(F)(F)(F)(F)F"), before = invalid.toSmiles();
         assert.throws(() => explicit ? invalid.withAssignedValenceWithParams(params)
             : invalid.withAssignedValence(), invalidValence);
-        assert.throws(() => explicit ? invalid.assignValenceWithParams(params)
-            : invalid.assignValence(), invalidValence);
+        assert.throws(() => explicit ? invalid.assignValenceWithParams_(params)
+            : invalid.assignValence_(), invalidValence);
         assert.equal(invalid.toSmiles(), before);
         assert.throws(() => invalid.fingerprintAtomPair(), missing);
         const relaxed = new b.ValenceParams(undefined, false);
         assert.ok(invalid.withAssignedValenceWithParams(relaxed).fingerprintAtomPair() instanceof b.Fingerprint);
         assert.throws(() => invalid.fingerprintAtomPair(), missing);
-        invalid.assignValenceWithParams(relaxed);
+        invalid.assignValenceWithParams_(relaxed);
         assert.ok(invalid.fingerprintAtomPair() instanceof b.Fingerprint);
     }
     for (const params of [null, undefined, {}, new b.SmilesParseParams()]) {
         assert.throws(() => raw("CC").withAssignedValenceWithParams(params));
-        assert.throws(() => raw("CC").assignValenceWithParams(params));
+        assert.throws(() => raw("CC").assignValenceWithParams_(params));
     }
 });
 

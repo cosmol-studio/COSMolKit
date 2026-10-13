@@ -107,7 +107,7 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
 
 fn canonical_mol(m: &Molecule, p: &MolBlockWriteParams) -> Result<String, MolecularIoError> {
     let generated = m
-        .add_2d_coordinates_with_params(&Coordinate2DParams {
+        .with_2d_coordinates_with_params(&Coordinate2DParams {
             canonical_orientation: true,
             ..Default::default()
         })

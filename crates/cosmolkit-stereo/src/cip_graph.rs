@@ -47,6 +47,8 @@ pub enum CipLabelerError {
     TooManyNodes { limit: usize },
     #[error("Max Iterations Exceeded in CIP label calculation")]
     MaxIterationsExceeded,
+    #[error("The process was interrupted with Ctrl+c")]
+    ControlCCaught,
     #[error("CIPLabeler unexpected up-edge ordering")]
     UnexpectedUpEdgeOrdering,
     #[error("No sequence rule provided")]
@@ -387,10 +389,6 @@ impl RationalI32 {
         }
     }
 
-    fn assign(&mut self, numerator: i32, denominator: i32) {
-        *self = Self::new(numerator, denominator);
-    }
-
     #[cfg(test)]
     fn tuple(self) -> (i32, i32) {
         (self.numerator, self.denominator)
@@ -409,6 +407,35 @@ fn gcd_i32(a: i32, b: i32) -> i32 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FractionalAtomicNum {
+    numerator: i32,
+    denominator: i32,
+}
+
+impl FractionalAtomicNum {
+    fn new(numerator: i32, denominator: i32) -> Self {
+        // RDKit✔️✔️:   FractionalAtomicNum(int numerator, int denominator)
+        // RDKit✔️✔️:       : d_numerator{numerator}, d_denominator{denominator} {}
+        // Keep the original averaging cardinality, without reduction or work.
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
+    fn value(self) -> RationalI32 {
+        // RDKit✔️✔️:   boost::rational<int> value() const { return {d_numerator, d_denominator}; }
+        // Reduction occurs only at the source numerical-value boundary.
+        RationalI32::new(self.numerator, self.denominator)
+    }
+
+    fn is_averaged(self) -> bool {
+        // RDKit✔️✔️:   bool isAveraged() const { return d_denominator > 1; }
+        self.denominator > 1
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MancudeType {
     Cv4D3,
     Nv3D2,
@@ -423,7 +450,7 @@ pub(crate) struct CipMol<'a> {
     molecule: &'a TopologyBlock,
     rings: Option<RingInfo>,
     kekulized_bond_orders: Option<Vec<BondOrder>>,
-    fractional_atomic_numbers: Option<Vec<RationalI32>>,
+    fractional_atomic_numbers: Option<Vec<FractionalAtomicNum>>,
     valence: Option<ValenceAssignment>,
 }
 
@@ -570,9 +597,9 @@ pub(crate) struct CipNode {
     atomic_num_fraction: RationalI32,
     atomic_mass: f64,
     aux: Descriptor,
-    flags: i32,
+    flags: u8,
     edges: Vec<CipEdgeId>,
-    visit: Vec<i8>,
+    visit: Vec<u32>,
 }
 
 pub(crate) struct CipDigraph<'a> {
@@ -587,6 +614,8 @@ pub(crate) struct CipDigraph<'a> {
 
 pub(crate) struct CipLabelerContext {
     remaining_call_count: u32,
+    has_global_limit: bool,
+    remaining_preliminary: Option<u32>,
 }
 
 impl CipLabelerContext {
@@ -594,28 +623,66 @@ impl CipLabelerContext {
 
     pub(crate) fn new(max_recursive_iterations: u32) -> Self {
         Self {
-            remaining_call_count: if max_recursive_iterations == 0 {
-                u32::MAX
-            } else {
-                max_recursive_iterations
-            },
+            remaining_call_count: max_recursive_iterations,
+            has_global_limit: max_recursive_iterations != 0,
+            remaining_preliminary: None,
         }
     }
 
     pub(crate) fn with_remaining_call_count(remaining_call_count: u32) -> Self {
         Self {
             remaining_call_count,
+            has_global_limit: true,
+            remaining_preliminary: None,
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION decrementRemainingCallCountAndCheck (CIPLabeler.cpp)
-    // RDKit✔️✔️: bool decrementRemainingCallCountAndCheck() {
-    // RDKit✔️✔️:   return (--CIPLabeler::remainingCallCount) > 0;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION decrementRemainingCallCountAndCheck
+    pub(crate) fn begin_preliminary_pass(&mut self) {
+        // RDKit✔️✔️:   void beginPreliminaryPass() {
+        // RDKit✔️✔️:     inPreliminaryPass = true;
+        // RDKit✔️✔️:     remainingPreliminary = constitutionalRuleTimeout;
+        // RDKit✔️✔️:   }
+        // One optional counter; does not reset the independent user budget.
+        self.remaining_preliminary = Some(Self::CONSTITUTIONAL_RULE_TIMEOUT);
+    }
+
+    pub(crate) fn end_preliminary_pass(&mut self) {
+        // RDKit✔️✔️:   void endPreliminaryPass() {
+        // RDKit✔️✔️:     inPreliminaryPass = false;
+        // RDKit✔️✔️:     remainingPreliminary = 0;
+        // RDKit✔️✔️:   }
+        self.remaining_preliminary = None;
+    }
+
     fn decrement_remaining_call_count_and_check(&mut self) -> bool {
-        self.remaining_call_count = self.remaining_call_count.wrapping_sub(1);
-        self.remaining_call_count > 0
+        // RDKit✔️✔️:   bool consume() {
+        // RDKit✔️✔️:     if ((inPreliminaryPass && remainingPreliminary == 0) ||
+        // RDKit✔️✔️:         (hasGlobalLimit && remainingGlobal == 0)) {
+        // RDKit✔️✔️:       return false;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (inPreliminaryPass) {
+        // RDKit✔️✔️:       --remainingPreliminary;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (hasGlobalLimit) {
+        // RDKit✔️✔️:       --remainingGlobal;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     return true;
+        // RDKit✔️✔️:   }
+        // Exact source boundary: the Nth comparison succeeds; exhaustion
+        // never wraps and never revives. O(1), no TLS or allocation needed:
+        // explicit call ownership also isolates nested and consecutive calls.
+        if self.remaining_preliminary == Some(0)
+            || (self.has_global_limit && self.remaining_call_count == 0)
+        {
+            return false;
+        }
+        if let Some(remaining) = &mut self.remaining_preliminary {
+            *remaining -= 1;
+        }
+        if self.has_global_limit {
+            self.remaining_call_count -= 1;
+        }
+        true
     }
 }
 
@@ -623,6 +690,218 @@ impl CipLabelerContext {
 pub(crate) struct CipPriority {
     unique: bool,
     pseudo_asym: bool,
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::CipLabelerContext;
+
+    #[test]
+    fn comparison_budget_is_cumulative_exact_and_does_not_wrap() {
+        let mut context = CipLabelerContext::new(2);
+        context.begin_preliminary_pass();
+        assert!(context.decrement_remaining_call_count_and_check());
+        context.end_preliminary_pass();
+        // A nested call has its own counter and cannot reset the outer one.
+        let mut nested = CipLabelerContext::new(1);
+        assert!(nested.decrement_remaining_call_count_and_check());
+        assert!(!nested.decrement_remaining_call_count_and_check());
+        assert!(context.decrement_remaining_call_count_and_check());
+        assert!(!context.decrement_remaining_call_count_and_check());
+        assert!(!context.decrement_remaining_call_count_and_check());
+        context.begin_preliminary_pass();
+        assert!(!context.decrement_remaining_call_count_and_check());
+        context.end_preliminary_pass();
+
+        let mut unlimited = CipLabelerContext::new(0);
+        unlimited.begin_preliminary_pass();
+        for _ in 0..CipLabelerContext::CONSTITUTIONAL_RULE_TIMEOUT {
+            assert!(unlimited.decrement_remaining_call_count_and_check());
+        }
+        assert!(!unlimited.decrement_remaining_call_count_and_check());
+        unlimited.end_preliminary_pass();
+        assert!(unlimited.decrement_remaining_call_count_and_check());
+        unlimited.begin_preliminary_pass();
+        assert!(unlimited.decrement_remaining_call_count_and_check());
+    }
+}
+
+#[cfg(test)]
+mod fraction_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec};
+
+    #[test]
+    fn integer_average_retains_raw_denominator_for_duplicate_nodes() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let raw = FractionalAtomicNum::new(12, 3);
+        assert!(raw.is_averaged());
+        assert_eq!(raw.value().tuple(), (4, 1));
+        let mut mol = CipMol::new(&topology);
+        mol.fractional_atomic_numbers = Some(vec![raw]);
+        let parent = CipNode::new(0, vec![1], Some(0), RationalI32::new(6, 1), 1, 0, &mol).unwrap();
+        let duplicate = parent
+            .new_terminal_child(Some(0), Some(0), CipNode::BOND_DUPLICATE, &mut mol)
+            .unwrap();
+        assert_eq!(duplicate.get_atomic_num_fraction().tuple(), (4, 1));
+    }
+
+    #[test]
+    fn mancude_pruning_removes_typed_atoms_without_typed_ring_neighbors() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let mut mol = CipMol::new(&topology);
+        let mut types = vec![MancudeType::Cv4D3];
+        relax_types(&mut types, &mut mol).unwrap();
+        assert_eq!(types, [MancudeType::Other]);
+    }
+
+    #[cfg(feature = "enumeration")]
+    #[test]
+    fn resonant_part_distributes_complete_totals_to_every_member() {
+        let topology = cosmolkit_smiles::parse_smiles_complete_source(
+            "C1=CC=C[CH-]1",
+            &cosmolkit_smiles::SmilesParseParams::default(),
+        )
+        .unwrap()
+        .topology;
+        let mut mol = CipMol::new(&topology);
+        let fractions = calc_frac_atom_nums(&mut mol).unwrap();
+        // Two undirected double bonds each contribute two neighboring carbon
+        // atomic numbers: 2*2*6 over the entire five-atom resonance part.
+        assert_eq!(fractions, vec![FractionalAtomicNum::new(24, 5); 5]);
+    }
+}
+
+#[cfg(test)]
+mod graph_limit_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec};
+
+    fn carbon() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn visited_distances_above_byte_width_survive_ring_duplicates() {
+        let topology = carbon();
+        let mut mol = CipMol::new(&topology);
+        for depth in [127, 255, 65535] {
+            let parent =
+                CipNode::new(0, vec![1], Some(0), RationalI32::new(6, 1), depth, 0, &mol).unwrap();
+            let child = parent.new_child(0, Some(0), &mol).unwrap();
+            assert_eq!(child.visit[0], (depth + 1) as u32);
+            let duplicate = child
+                .new_terminal_child(Some(0), Some(0), CipNode::RING_DUPLICATE, &mut mol)
+                .unwrap();
+            assert_eq!(duplicate.get_distance(), depth + 1);
+        }
+    }
+
+    #[test]
+    fn one_branching_expansion_cannot_allocate_past_node_limit() {
+        let topology = carbon();
+        let mut graph = CipDigraph::new(&topology, 0, false).unwrap();
+        graph
+            .nodes
+            .resize(CipDigraph::MAX_NODE_COUNT - 1, graph.nodes[0].clone());
+        let root = graph.get_original_root();
+        assert_eq!(
+            graph.node_edges(root),
+            Err(CipLabelerError::TooManyNodes {
+                limit: CipDigraph::MAX_NODE_COUNT
+            })
+        );
+        assert_eq!(graph.get_num_nodes(), CipDigraph::MAX_NODE_COUNT);
+        assert_eq!(graph.node(root).get_edges().unwrap().len(), 1);
+        // The direct constructor guard also precedes invalid atom access.
+        assert_eq!(
+            graph.add_node(vec![], Some(99), RationalI32::new(6, 1), 1, 0),
+            Err(CipLabelerError::TooManyNodes {
+                limit: CipDigraph::MAX_NODE_COUNT
+            })
+        );
+    }
+}
+
+#[cfg(test)]
+mod sorter_borrow_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, Bond, BondId, BondSpec};
+
+    #[test]
+    fn borrowed_sorters_preserve_rule_prefixes_and_real_ligand_priority() {
+        let rules = cip_all_rules().unwrap();
+        let view = rules.rule_refs();
+        assert!(matches!(view, CipRuleView::Boxed(_)));
+        assert_eq!(view.len(), 9);
+        assert_eq!(view.prefix(3).len(), 3);
+        assert!(std::ptr::addr_eq(view.get(2), rules.rules[2].as_ref()));
+        let sorter = rules.get_sorter();
+        assert!(matches!(
+            sorter.rules,
+            CipSortRules::Borrowed(CipRuleView::Single(_))
+        ));
+        assert!(std::ptr::addr_eq(
+            sorter.get_rules().get(0),
+            &rules as &dyn CipSequenceRule
+        ));
+
+        let atoms = [Element::C, Element::F, Element::CL]
+            .into_iter()
+            .enumerate()
+            .map(|(i, element)| Atom::from_spec(AtomId::new(i), AtomSpec::new(element)))
+            .collect();
+        let bonds = (1..3)
+            .map(|i| {
+                Bond::from_spec(
+                    BondId::new(i - 1),
+                    BondSpec::new(AtomId::new(0), AtomId::new(i), BondOrder::Single),
+                )
+            })
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let mut graph = CipDigraph::new(&topology, 0, false).unwrap();
+        let root = graph.get_original_root();
+        let mut edges = graph.node_edges(root).unwrap();
+        let priority = sorter
+            .prioritize(
+                &mut graph,
+                &mut CipLabelerContext::new(0),
+                root,
+                &mut edges,
+                true,
+            )
+            .unwrap();
+        assert!(!priority.is_unique());
+        let atoms: Vec<_> = edges
+            .iter()
+            .map(|edge| {
+                graph
+                    .node(graph.edge(*edge).get_end())
+                    .get_atomic_num_fraction()
+                    .tuple()
+            })
+            .collect();
+        assert_eq!(atoms, [(17, 1), (9, 1), (1, 1), (1, 1)]);
+    }
 }
 
 impl CipPriority {
@@ -703,7 +982,7 @@ pub(crate) trait CipSequenceRule {
 
     fn get_comparison_with_sort_rules(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -727,7 +1006,7 @@ pub(crate) trait CipSequenceRule {
 
     fn compare_with_sort_rules(
         &self,
-        _sort_rules: Option<&[&dyn CipSequenceRule]>,
+        _sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -741,12 +1020,9 @@ pub(crate) trait CipSequenceRule {
     // RDKit✔️✔️:   if (!CIPLabeler_detail::decrementRemainingCallCountAndCheck()) {
     // RDKit✔️✔️:     throw MaxIterationsExceeded();
     // RDKit✔️✔️:   }
-    // RDKit❌❌:   if (ControlCHandler::getGotSignal()) {
-    // RDKit❌❌:     throw ControlCCaught();
-    // RDKit❌❌:   }
-    // COSMolKit has no source-equivalent process-global ControlCHandler.
-    // Explicit requests for that integration fail before mutation through
-    // CipLabelerError::CancellationUnsupported.
+    // RDKit✔️✔️:   if (ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:     throw ControlCCaught();
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:
     // RDKit✔️✔️:   int cmp = compare(a, b);
     // RDKit✔️✔️:   if (cmp != 0) {
@@ -834,7 +1110,7 @@ pub(crate) trait CipSequenceRule {
 
     fn recursive_compare_with_sort_rules(
         &self,
-        sort_rules: &[&dyn CipSequenceRule],
+        sort_rules: CipRuleView<'_>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -899,7 +1175,7 @@ pub(crate) trait CipSequenceRule {
 
 fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
     rule: &R,
-    sort_rules: Option<&[&dyn CipSequenceRule]>,
+    sort_rules: Option<CipRuleView<'_>>,
     digraph: &mut CipDigraph<'_>,
     context: &mut CipLabelerContext,
     mut a: CipEdgeId,
@@ -907,6 +1183,13 @@ fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
 ) -> Result<i32, CipLabelerError> {
     if !context.decrement_remaining_call_count_and_check() {
         return Err(CipLabelerError::MaxIterationsExceeded);
+    }
+    // RDKit✔️✔️:   if (ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:     throw ControlCCaught();
+    // RDKit✔️✔️:   }
+    // Shared source owner, one atomic load; no duplicate cancellation state.
+    if cosmolkit_core::source_control_c::got_signal() {
+        return Err(CipLabelerError::ControlCCaught);
     }
 
     let mut cmp = rule.compare_with_sort_rules(sort_rules, digraph, context, a, b)?;
@@ -1000,7 +1283,7 @@ fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
 
 fn sort_edges_for_sequence_rule<R: CipSequenceRule + ?Sized>(
     rule: &R,
-    sort_rules: Option<&[&dyn CipSequenceRule]>,
+    sort_rules: Option<CipRuleView<'_>>,
     digraph: &mut CipDigraph<'_>,
     context: &mut CipLabelerContext,
     node: CipNodeId,
@@ -1008,7 +1291,7 @@ fn sort_edges_for_sequence_rule<R: CipSequenceRule + ?Sized>(
     deep: bool,
 ) -> Result<CipPriority, CipLabelerError> {
     if let Some(sort_rules) = sort_rules {
-        CipSort::from_rules(sort_rules.to_vec()).prioritize(digraph, context, node, edges, deep)
+        CipSort::borrowed(sort_rules).prioritize(digraph, context, node, edges, deep)
     } else {
         rule.sort(digraph, context, node, edges, deep)
     }
@@ -1087,8 +1370,59 @@ fn three_way_comparison_i32(x: i32, y: i32) -> i32 {
     }
 }
 
+/// Borrowed source rule-prefix views. Boxed ownership stays in CipRules;
+/// ordinary sorter construction and recursive prefix selection allocate nothing.
+#[derive(Clone, Copy)]
+pub(crate) enum CipRuleView<'r> {
+    Single(&'r dyn CipSequenceRule),
+    Boxed(&'r [Box<dyn CipSequenceRule>]),
+    Refs(&'r [&'r dyn CipSequenceRule]),
+}
+
+impl<'r> CipRuleView<'r> {
+    fn len(self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Boxed(rules) => rules.len(),
+            Self::Refs(rules) => rules.len(),
+        }
+    }
+
+    fn get(self, index: usize) -> &'r dyn CipSequenceRule {
+        match self {
+            Self::Single(rule) => {
+                assert_eq!(index, 0);
+                rule
+            }
+            Self::Boxed(rules) => rules[index].as_ref(),
+            Self::Refs(rules) => rules[index],
+        }
+    }
+
+    fn iter(self) -> impl ExactSizeIterator<Item = &'r dyn CipSequenceRule> {
+        (0..self.len()).map(move |index| self.get(index))
+    }
+
+    fn prefix(self, length: usize) -> Self {
+        match self {
+            Self::Single(_) if length == 0 => Self::Refs(&[]),
+            Self::Single(_) => {
+                assert_eq!(length, 1);
+                self
+            }
+            Self::Boxed(rules) => Self::Boxed(&rules[..length]),
+            Self::Refs(rules) => Self::Refs(&rules[..length]),
+        }
+    }
+}
+
+enum CipSortRules<'r> {
+    Borrowed(CipRuleView<'r>),
+    Replacement(Vec<&'r dyn CipSequenceRule>),
+}
+
 pub(crate) struct CipSort<'r> {
-    rules: Vec<&'r dyn CipSequenceRule>,
+    rules: CipSortRules<'r>,
 }
 
 impl<'r> CipSort<'r> {
@@ -1099,11 +1433,23 @@ impl<'r> CipSort<'r> {
     // RDKit✔️✔️:     : d_rules{std::move(comparators)} {}
     // END RDKIT CPP FUNCTION Sort::Sort
     pub(crate) fn new(rule: &'r dyn CipSequenceRule) -> Self {
-        Self { rules: vec![rule] }
+        // RDKit✔️🔝: SequenceRule::SequenceRule() : dp_sorter{new Sort(this)} {}
+        // RDKit✔️🔝: const Sort *SequenceRule::getSorter() const { return dp_sorter.get(); }
+        // A borrowed singleton needs no self-referential allocation; identical
+        // lifetime/order and O(1) access to the already-owned rule.
+        Self::borrowed(CipRuleView::Single(rule))
+    }
+
+    fn borrowed(rules: CipRuleView<'r>) -> Self {
+        Self {
+            rules: CipSortRules::Borrowed(rules),
+        }
     }
 
     pub(crate) fn from_rules(rules: Vec<&'r dyn CipSequenceRule>) -> Self {
-        Self { rules }
+        Self {
+            rules: CipSortRules::Replacement(rules),
+        }
     }
 
     // BEGIN RDKIT CPP FUNCTION Sort::getRules (CIPLabeler/Sort.cpp)
@@ -1111,8 +1457,11 @@ impl<'r> CipSort<'r> {
     // RDKit✔️✔️:   return d_rules;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Sort::getRules
-    pub(crate) fn get_rules(&self) -> &[&'r dyn CipSequenceRule] {
-        &self.rules
+    pub(crate) fn get_rules(&self) -> CipRuleView<'_> {
+        match &self.rules {
+            CipSortRules::Borrowed(rules) => *rules,
+            CipSortRules::Replacement(rules) => CipRuleView::Refs(rules),
+        }
     }
 
     // BEGIN RDKIT CPP FUNCTION Sort::prioritize (CIPLabeler/Sort.cpp)
@@ -1275,13 +1624,14 @@ impl<'r> CipSort<'r> {
             return Ok(-1);
         }
 
-        for (idx, rule) in self.rules.iter().enumerate() {
+        let rules = self.get_rules();
+        for (idx, rule) in rules.iter().enumerate() {
             // RDKit assigns each SequenceRule the sorter snapshot that existed
             // when Rules::add() installed it.  Keep that prefix when the
             // aggregate sorter dispatches into the rule; passing the final
             // sorter here lets Rule4b/Rule5New see rules that did not exist in
             // their source snapshot and can cause unbounded recursive work.
-            let rule_snapshot = &self.rules[..=idx];
+            let rule_snapshot = rules.prefix(idx + 1);
             let cmp = rule.get_comparison_with_sort_rules(
                 Some(rule_snapshot),
                 digraph,
@@ -1303,43 +1653,15 @@ pub(crate) struct CipRules {
 }
 
 impl CipRules {
-    // BEGIN RDKIT CPP CLASS Rules constructor/add/destructor/getNumSubRules/getSorter (rules/Rules.h)
-    // RDKit✔️❌: Rules() = delete;
-    // RDKit✔️❌:
-    // RDKit✔️❌: Rules(std::initializer_list<SequenceRule *> rules) {
-    // RDKit✔️❌:   for (auto &rule : rules) {
-    // RDKit✔️❌:     add(rule);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // RDKit✔️❌:
-    // RDKit✔️❌: ~Rules() override {
-    // RDKit✔️❌:   for (auto &rule : d_rules) {
-    // RDKit✔️❌:     delete rule;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // RDKit✔️❌:
-    // RDKit✔️❌: void add(SequenceRule *rule) {
-    // RDKit✔️❌:   if (rule == nullptr) {
-    // RDKit✔️❌:     throw std::runtime_error("No sequence rule provided");
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   d_rules.push_back(rule);
-    // RDKit✔️❌:   rule->setSorter(new Sort(d_rules));
-    // RDKit✔️❌: }
-    // RDKit✔️❌:
-    // RDKit✔️❌: int getNumSubRules() const { return d_rules.size(); }
-    // RDKit✔️❌:
-    // RDKit✔️❌: const Sort *getSorter() const override {
-    // RDKit✔️❌:   if (dp_sorter == nullptr) {
-    // RDKit✔️❌:     const_cast<Rules *>(this)->setSorter(new Sort(this));
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return dp_sorter.get();
-    // RDKit✔️❌: }
-    // END RDKIT CPP CLASS Rules constructor/add/destructor/getNumSubRules/getSorter
-    // Performance note: unlike RDKit's sorter snapshot stored on each rule,
-    // the detached Rust representation rebuilds a short borrowed-rule vector
-    // when a comparison starts. The ordering is identical, but the extra
-    // allocation is a known hot-path cost.
     pub(crate) fn new(rules: Vec<Box<dyn CipSequenceRule>>) -> Result<Self, CipLabelerError> {
+        // RDKit✔️🔝:   Rules(std::initializer_list<SequenceRule *>&& rules) {
+        // RDKit✔️🔝:     for (auto &rule : rules) {
+        // RDKit✔️🔝:       add(rule);
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:   }
+        // Fixed source prefixes are borrowed by index, not stored as owning
+        // pointer vectors. Same rule lifetime and ordering, O(n) ownership
+        // instead of O(n^2) copied prefix storage and no self references.
         let mut result = Self { rules: Vec::new() };
         for rule in rules {
             result.add(Some(rule))?;
@@ -1358,14 +1680,13 @@ impl CipRules {
     }
 
     pub(crate) fn get_sorter(&self) -> CipSort<'_> {
+        // RDKit✔️🔝: const Sort *SequenceRule::getSorter() const { return dp_sorter.get(); }
+        // Return the same aggregate comparator as an allocation-free view.
         CipSort::new(self)
     }
 
-    fn rule_refs(&self) -> Vec<&dyn CipSequenceRule> {
-        self.rules
-            .iter()
-            .map(|rule| rule.as_ref() as &dyn CipSequenceRule)
-            .collect()
+    fn rule_refs(&self) -> CipRuleView<'_> {
+        CipRuleView::Boxed(&self.rules)
     }
 }
 
@@ -1415,8 +1736,7 @@ impl CipSequenceRule for CipRules {
     // RDKit✔️❌:   return 0;
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION Rules::compare
-    // `rule_refs()` materializes the source pointer view for Rust's borrow
-    // checker; this preserves behavior but adds an allocation per dispatch.
+    // Existing ownership lends the source-ordered prefix without allocation.
     fn compare(
         &self,
         digraph: &mut CipDigraph<'_>,
@@ -1424,9 +1744,13 @@ impl CipSequenceRule for CipRules {
         a: CipEdgeId,
         b: CipEdgeId,
     ) -> Result<i32, CipLabelerError> {
+        // RDKit✔️✔️:     for (const auto &rule : d_rules) {
+        // RDKit✔️✔️:       int value = rule->recursiveCompare(o1, o2);
+        // No temporary rule vector; each prefix has the source installation
+        // order, including replacement-rule recursion snapshots.
         let sort_rules = self.rule_refs();
         for (idx, rule) in sort_rules.iter().enumerate() {
-            let rule_snapshot = &sort_rules[..=idx];
+            let rule_snapshot = sort_rules.prefix(idx + 1);
             let value =
                 rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
             if value != 0 {
@@ -1464,7 +1788,7 @@ impl CipSequenceRule for CipRules {
     ) -> Result<i32, CipLabelerError> {
         let sort_rules = self.rule_refs();
         for (idx, rule) in sort_rules.iter().enumerate() {
-            let rule_snapshot = &sort_rules[..=idx];
+            let rule_snapshot = sort_rules.prefix(idx + 1);
             let value =
                 rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
             if value != 0 {
@@ -1494,7 +1818,7 @@ impl CipSequenceRule for CipRules {
     // END RDKIT CPP FUNCTION Rules::getComparision
     fn get_comparison_with_sort_rules(
         &self,
-        _sort_rules: Option<&[&dyn CipSequenceRule]>,
+        _sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -1503,7 +1827,7 @@ impl CipSequenceRule for CipRules {
     ) -> Result<i32, CipLabelerError> {
         let sort_rules = self.rule_refs();
         for (idx, rule) in sort_rules.iter().enumerate() {
-            let rule_snapshot = &sort_rules[..=idx];
+            let rule_snapshot = sort_rules.prefix(idx + 1);
             let value =
                 rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
             if value != 0 {
@@ -2113,7 +2437,7 @@ impl CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::getReferenceDescriptors
     fn get_reference_descriptors(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         node: CipNodeId,
@@ -2123,10 +2447,10 @@ impl CipRule4b {
             let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
             let end = sort_rules
                 .iter()
-                .position(|rule| std::ptr::addr_eq(*rule as *const dyn CipSequenceRule, self_ptr))
+                .position(|rule| std::ptr::addr_eq(rule as *const dyn CipSequenceRule, self_ptr))
                 .map(|index| index + 1)
                 .ok_or(CipLabelerError::Rule4bInstanceNotInRuleSet)?;
-            Some(sort_rules[..end].to_vec())
+            Some(sort_rules.prefix(end))
         } else {
             None
         };
@@ -2137,7 +2461,7 @@ impl CipRule4b {
                     return Ok(result);
                 }
             }
-            prev = self.get_next_level(source_sort_rules.as_deref(), digraph, context, &prev)?;
+            prev = self.get_next_level(source_sort_rules, digraph, context, &prev)?;
         }
         Ok(Vec::new())
     }
@@ -2311,7 +2635,7 @@ impl CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::getNextLevel
     fn get_next_level(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         prev_level: &[Vec<CipNodeId>],
@@ -2325,7 +2649,7 @@ impl CipRule4b {
                     self, sort_rules, digraph, context, *node, &mut edges, true,
                 )?;
                 let groups = if let Some(sort_rules) = sort_rules {
-                    CipSort::from_rules(sort_rules.to_vec()).get_groups(digraph, context, &edges)?
+                    CipSort::borrowed(sort_rules).get_groups(digraph, context, &edges)?
                 } else {
                     CipSort::new(self).get_groups(digraph, context, &edges)?
                 };
@@ -2414,7 +2738,7 @@ impl CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::fillPairs
     fn fill_pairs(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         beg: CipNodeId,
@@ -2504,7 +2828,7 @@ impl CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::comparePairs
     fn compare_pairs(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipNodeId,
@@ -2575,20 +2899,20 @@ impl CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::getRefSorter
     fn get_ref_sorter<'r>(
         &'r self,
-        sort_rules: Option<&'r [&'r dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'r>>,
         replacement_rule: &'r dyn CipSequenceRule,
     ) -> Result<Vec<&'r dyn CipSequenceRule>, CipLabelerError> {
-        let mut new_rules = Vec::new();
+        let mut new_rules = Vec::with_capacity(sort_rules.map_or(1, CipRuleView::len));
         if let Some(sort_rules) = sort_rules {
             let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
             let mut found = false;
-            for rule in sort_rules {
-                let rule_ptr = *rule as *const dyn CipSequenceRule;
+            for rule in sort_rules.iter() {
+                let rule_ptr = rule as *const dyn CipSequenceRule;
                 if std::ptr::addr_eq(rule_ptr, self_ptr) {
                     found = true;
                     break;
                 } else {
-                    new_rules.push(*rule);
+                    new_rules.push(rule);
                 }
             }
             if !found {
@@ -2676,7 +3000,7 @@ impl CipSequenceRule for CipRule4b {
     // END RDKIT CPP FUNCTION Rule4b::compare
     fn compare_with_sort_rules(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -2913,7 +3237,7 @@ impl CipRule5New {
     // END RDKIT CPP FUNCTION Rule5New::fillPairs
     fn fill_pairs(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         beg: CipNodeId,
@@ -2979,20 +3303,20 @@ impl CipRule5New {
     // END RDKIT CPP FUNCTION Rule5New::getRefSorter
     fn get_ref_sorter<'r>(
         &'r self,
-        sort_rules: Option<&'r [&'r dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'r>>,
         replacement_rule: &'r dyn CipSequenceRule,
     ) -> Result<Vec<&'r dyn CipSequenceRule>, CipLabelerError> {
-        let mut new_rules = Vec::new();
+        let mut new_rules = Vec::with_capacity(sort_rules.map_or(1, CipRuleView::len));
         if let Some(sort_rules) = sort_rules {
             let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
             let mut found = false;
-            for rule in sort_rules {
-                let rule_ptr = *rule as *const dyn CipSequenceRule;
+            for rule in sort_rules.iter() {
+                let rule_ptr = rule as *const dyn CipSequenceRule;
                 if std::ptr::addr_eq(rule_ptr, self_ptr) {
                     found = true;
                     break;
                 } else {
-                    new_rules.push(*rule);
+                    new_rules.push(rule);
                 }
             }
             if !found {
@@ -3069,7 +3393,7 @@ impl CipSequenceRule for CipRule5New {
     // END RDKIT CPP FUNCTION Rule5New::compare
     fn compare_with_sort_rules(
         &self,
-        sort_rules: Option<&[&dyn CipSequenceRule]>,
+        sort_rules: Option<CipRuleView<'_>>,
         digraph: &mut CipDigraph<'_>,
         context: &mut CipLabelerContext,
         a: CipEdgeId,
@@ -3178,18 +3502,18 @@ impl CipNode {
     // RDKit✔️✔️: static const int DUPLICATE_OR_H =
     // RDKit✔️✔️:     RING_DUPLICATE | BOND_DUPLICATE | IMPL_HYDROGEN;
     // END RDKIT CPP CONSTANTS Node flags
-    pub(crate) const EXPANDED: i32 = 0x1;
-    pub(crate) const RING_DUPLICATE: i32 = 0x2;
-    pub(crate) const BOND_DUPLICATE: i32 = 0x4;
-    pub(crate) const DUPLICATE: i32 = Self::RING_DUPLICATE | Self::BOND_DUPLICATE;
-    pub(crate) const IMPL_HYDROGEN: i32 = 0x8;
-    pub(crate) const DUPLICATE_OR_H: i32 =
+    pub(crate) const EXPANDED: u8 = 0x1;
+    pub(crate) const RING_DUPLICATE: u8 = 0x2;
+    pub(crate) const BOND_DUPLICATE: u8 = 0x4;
+    pub(crate) const DUPLICATE: u8 = Self::RING_DUPLICATE | Self::BOND_DUPLICATE;
+    pub(crate) const IMPL_HYDROGEN: u8 = 0x8;
+    pub(crate) const DUPLICATE_OR_H: u8 =
         Self::RING_DUPLICATE | Self::BOND_DUPLICATE | Self::IMPL_HYDROGEN;
     pub(crate) const NO_ATOM_INDEX: CipSourceIndex = CIP_NO_ATOM;
 
     // BEGIN RDKIT CPP FUNCTION Node::Node (CIPLabeler/Node.cpp)
-    // RDKit✔️✔️: Node::Node(Digraph *g, std::vector<char> &&visit, Atom *atom,
-    // RDKit✔️✔️:            boost::rational<int> &&frac, int dist, int flags)
+    // RDKit✔️✔️: Node::Node(Digraph *g, std::vector<std::uint32_t> &&visit, Atom *atom,
+    // RDKit✔️✔️:            boost::rational<int> &&frac, int dist, uint8_t flags)
     // RDKit✔️✔️:     : dp_g{g},
     // RDKit✔️✔️:       dp_atom{atom},
     // RDKit✔️✔️:       d_dist{dist},
@@ -3216,13 +3540,19 @@ impl CipNode {
     // END RDKIT CPP FUNCTION Node::Node
     pub(crate) fn new(
         digraph: usize,
-        visit: Vec<i8>,
+        visit: Vec<u32>,
         atom_idx: Option<usize>,
         frac: RationalI32,
         dist: i32,
-        flags: i32,
+        flags: u8,
         mol: &CipMol<'_>,
     ) -> Result<Self, CipLabelerError> {
+        // RDKit✔️✔️:       // Fall back to the isotope number if we can't get the mass
+        // RDKit✔️✔️:       if (atomic_number != 0 && d_atomic_mass == 0.0) {
+        // RDKit✔️✔️:         d_atomic_mass = isotope;
+        // RDKit✔️✔️:       }
+        // The existing rdkit_atomic_mass helper already reproduces this
+        // candidate fallback; flags are source uint8_t, visitation is uint32_t.
         let mut flags = flags;
         let (edge_capacity, atomic_mass) = if flags & Self::DUPLICATE != 0 {
             (4, 0.0)
@@ -3256,7 +3586,7 @@ impl CipNode {
     // BEGIN RDKIT CPP FUNCTION Node::newTerminalChild (CIPLabeler/Node.cpp)
     // RDKit✔️✔️: Node *Node::newTerminalChild(int idx, Atom *atom, int flags) const {
     // RDKit✔️✔️:   int new_dist = flags & DUPLICATE ? d_visit[idx] : d_dist + 1;
-    // RDKit✔️✔️:   std::vector<char> new_visit;
+    // RDKit✔️✔️:   std::vector<std::uint32_t> new_visit;
     // RDKit✔️✔️:
     // RDKit✔️✔️:   if (flags & BOND_DUPLICATE) {
     // RDKit✔️✔️:     auto frac = dp_g->getMol().getFractionalAtomicNum(dp_atom);
@@ -3275,30 +3605,35 @@ impl CipNode {
         &self,
         idx: Option<usize>,
         atom_idx: Option<usize>,
-        flags: i32,
+        flags: u8,
         mol: &mut CipMol<'_>,
     ) -> Result<Self, CipLabelerError> {
         let new_dist = if flags & Self::DUPLICATE != 0 {
             let idx = idx.ok_or(CipLabelerError::InvalidInternalState {
                 detail: "Node::newTerminalChild duplicate without atom index",
             })?;
-            i32::from(self.visit[idx])
+            self.visit[idx] as i32
         } else {
             self.distance + 1
         };
         let new_visit = Vec::new();
 
         if flags & Self::BOND_DUPLICATE != 0 {
+            // RDKit✔️✔️:     const auto &frac = dp_g->getMol().getFractionalAtomicNum(dp_atom);
+            // RDKit✔️✔️:     if (frac.isAveraged()) {
+            // RDKit✔️✔️:       return &dp_g->addNode(std::move(new_visit), atom, frac.value(), new_dist,
+            // RDKit✔️✔️:                             flags);
+            // Use raw metadata for eligibility, reduced value only for the node.
             let current_atom = self.atom_idx.ok_or(CipLabelerError::InvalidInternalState {
                 detail: "Node::newTerminalChild bond duplicate from null atom",
             })?;
             let frac = mol.get_fractional_atomic_num(current_atom)?;
-            if frac.denominator > 1 {
+            if frac.is_averaged() {
                 return Self::new(
                     self.digraph,
                     new_visit,
                     atom_idx,
-                    frac,
+                    frac.value(),
                     new_dist,
                     flags,
                     mol,
@@ -3422,7 +3757,7 @@ impl CipNode {
     // BEGIN RDKIT CPP FUNCTION Node::isSet (CIPLabeler/Node.cpp)
     // RDKit✔️✔️: bool Node::isSet(int mask) const { return mask & d_flags; }
     // END RDKIT CPP FUNCTION Node::isSet
-    pub(crate) fn is_set(&self, mask: i32) -> bool {
+    pub(crate) fn is_set(&self, mask: u8) -> bool {
         mask & self.flags != 0
     }
 
@@ -3466,7 +3801,7 @@ impl CipNode {
     // BEGIN RDKIT CPP FUNCTION Node::newChild (CIPLabeler/Node.cpp)
     // RDKit✔️✔️: Node *Node::newChild(int idx, Atom *atom) const {
     // RDKit✔️✔️:   auto new_visit = d_visit;
-    // RDKit✔️✔️:   new_visit[idx] = static_cast<char>(d_dist + 1);
+    // RDKit✔️✔️:   new_visit[idx] = d_dist + 1;
     // RDKit✔️✔️:   auto atomic_num = atom ? atom->getAtomicNum() : 1;
     // RDKit✔️✔️:   return &dp_g->addNode(std::move(new_visit), atom, atomic_num, d_dist + 1, 0);
     // RDKit✔️✔️: }
@@ -3477,8 +3812,12 @@ impl CipNode {
         atom_idx: Option<usize>,
         mol: &CipMol<'_>,
     ) -> Result<Self, CipLabelerError> {
+        // RDKit✔️✔️:   auto new_visit = d_visit;
+        // RDKit✔️✔️:   new_visit[idx] = d_dist + 1;
+        // Source uint32 distances survive depth 127/255; one O(V) copy, same
+        // as the source per-path visitation state, with no narrowing to byte.
         let mut new_visit = self.visit.clone();
-        new_visit[idx] = (self.distance + 1) as i8;
+        new_visit[idx] = (self.distance + 1) as u32;
         let atomic_num = atom_idx
             .map(|idx| mol.atom(idx).map(Atom::atomic_number))
             .transpose()?
@@ -3632,7 +3971,7 @@ impl<'a> CipDigraph<'a> {
     // RDKit✔️✔️:     : d_mol{mol} {
     // RDKit✔️✔️:   PRECONDITION(atom, "cannot init digraph on a nullptr")
     // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto visit = std::vector<char>(d_mol.getNumAtoms());
+    // RDKit✔️✔️:   auto visit = std::vector<std::uint32_t>(d_mol.getNumAtoms());
     // RDKit✔️✔️:   visit[atom->getIdx()] = 1;
     // RDKit✔️✔️:
     // RDKit✔️✔️:   auto dist = 1;
@@ -3660,7 +3999,7 @@ impl<'a> CipDigraph<'a> {
             nodes: Vec::new(),
             edges: Vec::new(),
         };
-        let mut visit = vec![0_i8; digraph.mol.get_num_atoms()];
+        let mut visit = vec![0_u32; digraph.mol.get_num_atoms()];
         visit[atom_idx] = 1;
         let atomic_num = digraph.mol.atom(atom_idx)?.atomic_number();
         let root = digraph.add_node(
@@ -3716,8 +4055,8 @@ impl<'a> CipDigraph<'a> {
     }
 
     // BEGIN RDKIT CPP FUNCTION Digraph::addNode (CIPLabeler/Digraph.cpp)
-    // RDKit✔️✔️: Node &Digraph::addNode(std::vector<char> &&visit, Atom *atom,
-    // RDKit✔️✔️:                        boost::rational<int> &&frac, int dist, int flags) {
+    // RDKit✔️✔️: Node &Digraph::addNode(std::vector<std::uint32_t> &&visit, Atom *atom,
+    // RDKit✔️✔️:                        boost::rational<int> &&frac, int dist, uint8_t flags) {
     // RDKit✔️✔️:   d_nodes.emplace_back(this, std::move(visit), atom, std::move(frac), dist,
     // RDKit✔️✔️:                        flags);
     // RDKit✔️✔️:   return d_nodes.back();
@@ -3725,12 +4064,13 @@ impl<'a> CipDigraph<'a> {
     // END RDKIT CPP FUNCTION Digraph::addNode
     fn add_node(
         &mut self,
-        visit: Vec<i8>,
+        visit: Vec<u32>,
         atom_idx: Option<usize>,
         frac: RationalI32,
         dist: i32,
-        flags: i32,
+        flags: u8,
     ) -> Result<CipNodeId, CipLabelerError> {
+        self.check_node_capacity()?;
         let node = CipNode::new(0, visit, atom_idx, frac, dist, flags, &self.mol)?;
         let id = CipNodeId::new(self.nodes.len());
         self.nodes.push(node);
@@ -3918,12 +4258,6 @@ impl<'a> CipDigraph<'a> {
     // RDKit✔️❌:   if (MAX_NODE_DIST > 0 && beg->getDistance() > MAX_NODE_DIST) {
     // RDKit✔️❌:     return;
     // RDKit✔️❌:   }
-    // RDKit✔️❌:   if (MAX_NODE_COUNT > 0 && d_nodes.size() >= MAX_NODE_COUNT) {
-    // RDKit✔️❌:     std::stringstream errmsg;
-    // RDKit✔️❌:     errmsg << "Digraph generation failed: more than " << MAX_NODE_COUNT
-    // RDKit✔️❌:            << "nodes found.";
-    // RDKit✔️❌:     throw TooManyNodesException(errmsg.str());
-    // RDKit✔️❌:   }
     // RDKit✔️❌:
     // RDKit✔️❌:   // create 'explicit' nodes
     // RDKit✔️❌:   for (const auto &bond : d_mol.getBonds(atom)) {
@@ -3982,8 +4316,8 @@ impl<'a> CipDigraph<'a> {
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION Digraph::expand
-    // `bond_indices_for_atom()` materializes the adjacency span so expansion
-    // can mutably grow the graph; this is a known allocation difference.
+    // `bond_indices_for_atom()` borrows immutable molecule adjacency for its
+    // independent source lifetime, so graph expansion needs no temporary Vec.
     fn expand(&mut self, beg: CipNodeId) -> Result<(), CipLabelerError> {
         let atom_idx =
             self.nodes[beg.index()]
@@ -3999,12 +4333,6 @@ impl<'a> CipDigraph<'a> {
         if Self::MAX_NODE_DIST > 0 && self.nodes[beg.index()].get_distance() > Self::MAX_NODE_DIST {
             return Ok(());
         }
-        if Self::MAX_NODE_COUNT > 0 && self.nodes.len() >= Self::MAX_NODE_COUNT {
-            return Err(CipLabelerError::TooManyNodes {
-                limit: Self::MAX_NODE_COUNT,
-            });
-        }
-
         for bond_idx in self.mol.bond_indices_for_atom(atom_idx)? {
             let nbr_idx = self.mol.other_atom_idx(bond_idx, atom_idx)?;
             let bord = self.mol.get_bond_order(bond_idx)?;
@@ -4013,20 +4341,20 @@ impl<'a> CipDigraph<'a> {
             if !self.nodes[beg.index()].is_visited(nbr_idx) {
                 let end_node =
                     self.nodes[beg.index()].new_child(nbr_idx, Some(nbr_idx), &self.mol)?;
-                let mut end = self.add_existing_node(end_node);
+                let mut end = self.add_existing_node(end_node)?;
                 self.add_edge(beg, Some(bond_idx), end);
 
                 if self.origin != beg || self.atropisomer_mode {
                     let atom_formal_charge = self.mol.atom(atom_idx)?.formal_charge();
                     if atom_formal_charge < 0
-                        && self.mol.get_fractional_atomic_num(atom_idx)?.denominator > 1
+                        && self.mol.get_fractional_atomic_num(atom_idx)?.is_averaged()
                     {
                         let end_node = self.nodes[beg.index()].new_bond_duplicate_child(
                             nbr_idx,
                             Some(nbr_idx),
                             &mut self.mol,
                         )?;
-                        end = self.add_existing_node(end_node);
+                        end = self.add_existing_node(end_node)?;
                         self.add_edge(beg, Some(bond_idx), end);
                     } else {
                         for _ in 0..virtual_nodes {
@@ -4035,7 +4363,7 @@ impl<'a> CipDigraph<'a> {
                                 Some(nbr_idx),
                                 &mut self.mol,
                             )?;
-                            end = self.add_existing_node(end_node);
+                            end = self.add_existing_node(end_node)?;
                             self.add_edge(beg, Some(bond_idx), end);
                         }
                     }
@@ -4050,7 +4378,7 @@ impl<'a> CipDigraph<'a> {
                             Some(nbr_idx),
                             &mut self.mol,
                         )?;
-                        let end = self.add_existing_node(end_node);
+                        let end = self.add_existing_node(end_node)?;
                         self.add_edge(beg, Some(bond_idx), end);
                     }
                 }
@@ -4060,19 +4388,19 @@ impl<'a> CipDigraph<'a> {
                     Some(nbr_idx),
                     &mut self.mol,
                 )?;
-                let mut end = self.add_existing_node(end_node);
+                let mut end = self.add_existing_node(end_node)?;
                 self.add_edge(beg, Some(bond_idx), end);
 
                 let atom_formal_charge = self.mol.atom(atom_idx)?.formal_charge();
                 if atom_formal_charge < 0
-                    && self.mol.get_fractional_atomic_num(atom_idx)?.denominator > 1
+                    && self.mol.get_fractional_atomic_num(atom_idx)?.is_averaged()
                 {
                     let end_node = self.nodes[beg.index()].new_bond_duplicate_child(
                         nbr_idx,
                         Some(nbr_idx),
                         &mut self.mol,
                     )?;
-                    end = self.add_existing_node(end_node);
+                    end = self.add_existing_node(end_node)?;
                     self.add_edge(beg, Some(bond_idx), end);
                 } else {
                     for _ in 0..virtual_nodes {
@@ -4081,7 +4409,7 @@ impl<'a> CipDigraph<'a> {
                             Some(nbr_idx),
                             &mut self.mol,
                         )?;
-                        end = self.add_existing_node(end_node);
+                        end = self.add_existing_node(end_node)?;
                         self.add_edge(beg, Some(bond_idx), end);
                     }
                 }
@@ -4091,16 +4419,36 @@ impl<'a> CipDigraph<'a> {
         let hcnt = self.mol.total_num_hs(atom_idx)?;
         for _ in 0..hcnt {
             let end_node = self.nodes[beg.index()].new_implicit_hydrogen_child(&mut self.mol)?;
-            let end = self.add_existing_node(end_node);
+            let end = self.add_existing_node(end_node)?;
             self.add_edge(beg, None, end);
         }
         Ok(())
     }
 
-    fn add_existing_node(&mut self, node: CipNode) -> CipNodeId {
+    fn check_node_capacity(&self) -> Result<(), CipLabelerError> {
+        // RDKit✔️✔️:   if constexpr (MAX_NODE_COUNT > 0) {
+        // RDKit✔️✔️:     if (d_nodes.size() >= MAX_NODE_COUNT) {
+        // RDKit✔️✔️:       std::stringstream errmsg;
+        // RDKit✔️✔️:       errmsg << "Digraph generation failed: more than " << MAX_NODE_COUNT
+        // RDKit✔️✔️:              << " nodes found.";
+        // RDKit✔️✔️:       throw TooManyNodesException(errmsg.str());
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // One O(1) guard at every graph-node insertion, not expansion entry.
+        // A single branching expansion therefore cannot exceed the source cap.
+        if Self::MAX_NODE_COUNT > 0 && self.nodes.len() >= Self::MAX_NODE_COUNT {
+            return Err(CipLabelerError::TooManyNodes {
+                limit: Self::MAX_NODE_COUNT,
+            });
+        }
+        Ok(())
+    }
+
+    fn add_existing_node(&mut self, node: CipNode) -> Result<CipNodeId, CipLabelerError> {
+        self.check_node_capacity()?;
         let id = CipNodeId::new(self.nodes.len());
         self.nodes.push(node);
-        id
+        Ok(id)
     }
 }
 
@@ -4130,7 +4478,15 @@ impl<'a> CipMol<'a> {
     pub(crate) fn get_fractional_atomic_num(
         &mut self,
         atom_idx: usize,
-    ) -> Result<RationalI32, CipLabelerError> {
+    ) -> Result<FractionalAtomicNum, CipLabelerError> {
+        // RDKit✔️✔️: const FractionalAtomicNum &CIPMol::getFractionalAtomicNum(Atom *atom) const {
+        // RDKit✔️✔️:   PRECONDITION(atom, "bad atom")
+        // RDKit✔️✔️:   if (d_atomnums.empty()) {
+        // RDKit✔️✔️:     const_cast<CIPMol *>(this)->d_atomnums = calcFracAtomNums(*this);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return d_atomnums[atom->getIdx()];
+        // RDKit✔️✔️: }
+        // One cached raw pair copied by value; no reduction or heap copy.
         self.atom(atom_idx)?;
         if self.fractional_atomic_numbers.is_none() {
             self.fractional_atomic_numbers = Some(calc_frac_atom_nums(self)?);
@@ -4191,17 +4547,17 @@ impl<'a> CipMol<'a> {
     }
 
     // BEGIN RDKIT CPP FUNCTION CIPMol::getBonds (CIPMol.cpp)
-    // RDKit✔️❌: CIPMolSpan<Bond *, ROMol::OEDGE_ITER> CIPMol::getBonds(Atom *atom) const {
-    // RDKit✔️❌:   PRECONDITION(atom, "bad atom")
-    // RDKit✔️❌:   return {d_mol, d_mol.getAtomBonds(atom)};
-    // RDKit✔️❌: }
+    // RDKit✔️✔️: CIPMolSpan<Bond *, ROMol::OEDGE_ITER> CIPMol::getBonds(Atom *atom) const {
+    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom")
+    // RDKit✔️✔️:   return {d_mol, d_mol.getAtomBonds(atom)};
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION CIPMol::getBonds
-    // The source returns a lazy span; this detached adapter materializes stable
-    // bond IDs and therefore is behaviorally exact but allocation-heavier.
+    // Lazy borrowed adjacency span, no allocation; returning the immutable
+    // molecule lifetime permits mutable lazy-cache work during iteration.
     pub(crate) fn bond_indices_for_atom(
         &self,
         atom_idx: usize,
-    ) -> Result<Vec<usize>, CipLabelerError> {
+    ) -> Result<impl ExactSizeIterator<Item = usize> + 'a, CipLabelerError> {
         self.atom(atom_idx)?;
         Ok(self
             .molecule
@@ -4209,19 +4565,20 @@ impl<'a> CipMol<'a> {
             .adjacency
             .neighbors_of(atom_idx)
             .iter()
-            .map(|neighbor| neighbor.bond.index())
-            .collect())
+            .map(|neighbor| neighbor.bond.index()))
     }
 
     // BEGIN RDKIT CPP FUNCTION CIPMol::getNeighbors (CIPMol.cpp)
-    // RDKit✔️❌: CIPMolSpan<Atom *, ROMol::ADJ_ITER> CIPMol::getNeighbors(Atom *atom) const {
-    // RDKit✔️❌:   PRECONDITION(atom, "bad atom")
-    // RDKit✔️❌:   return {d_mol, d_mol.getAtomNeighbors(atom)};
-    // RDKit✔️❌: }
+    // RDKit✔️✔️: CIPMolSpan<Atom *, ROMol::ADJ_ITER> CIPMol::getNeighbors(Atom *atom) const {
+    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom")
+    // RDKit✔️✔️:   return {d_mol, d_mol.getAtomNeighbors(atom)};
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION CIPMol::getNeighbors
-    // The source returns a lazy span; this detached adapter materializes stable
-    // atom IDs and therefore is behaviorally exact but allocation-heavier.
-    pub(crate) fn neighbor_indices(&self, atom_idx: usize) -> Result<Vec<usize>, CipLabelerError> {
+    // Same source-ordered lazy span, with no materialized neighbor vector.
+    pub(crate) fn neighbor_indices(
+        &self,
+        atom_idx: usize,
+    ) -> Result<impl ExactSizeIterator<Item = usize> + 'a, CipLabelerError> {
         self.atom(atom_idx)?;
         Ok(self
             .molecule
@@ -4229,8 +4586,7 @@ impl<'a> CipMol<'a> {
             .adjacency
             .neighbors_of(atom_idx)
             .iter()
-            .map(|neighbor| neighbor.atom_index)
-            .collect())
+            .map(|neighbor| neighbor.atom_index))
     }
 
     // BEGIN RDKIT CPP FUNCTION CIPMol::isInRing (CIPMol.cpp)
@@ -4508,49 +4864,85 @@ fn seed_types(types: &mut [MancudeType], mol: &mut CipMol<'_>) -> Result<bool, C
     Ok(result)
 }
 
-fn relax_types(types: &mut [MancudeType], mol: &CipMol<'_>) -> Result<(), CipLabelerError> {
-    // BEGIN RDKIT CPP FUNCTION RelaxTypes (Mancude.cpp)
+fn relax_types(types: &mut [MancudeType], mol: &mut CipMol<'_>) -> Result<(), CipLabelerError> {
+    // BEGIN RDKit 2026.09.1 RelaxTypes
     // RDKit✔️✔️: void RelaxTypes(std::vector<Type> &types, const CIPMol &mol) {
     // RDKit✔️✔️:   std::list<Atom *> queue;
-    // RDKit✔️✔️:   auto counts = std::vector<int>(mol.getNumAtoms());
+    // RDKit✔️✔️:   std::vector<int> counts(mol.getNumAtoms(), 0);
     // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
     // RDKit✔️✔️:     const auto aidx = atom->getIdx();
-    // RDKit✔️✔️:     for (const auto &nbr : mol.getNeighbors(atom)) {
+    // RDKit✔️✔️:     if (types[aidx] == Type::Other) {
+    // RDKit✔️✔️:       // This is already Type::Other, no need to reset it!
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto &bond : mol.getBonds(atom)) {
+    // RDKit✔️✔️:       if (!mol.isInRing(bond)) {
+    // RDKit✔️✔️:         // No non-ring bonds are Type::Other already
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       const auto nbr = bond->getOtherAtom(atom);
     // RDKit✔️✔️:       if (types[nbr->getIdx()] != Type::Other) {
     // RDKit✔️✔️:         ++counts[aidx];
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:
-    // RDKit✔️✔️:     if (counts[aidx] == 1) {
+    // RDKit✔️✔️:     // Atoms that do not have at least two typed neighbors
+    // RDKit✔️✔️:     // go to the queue to be reset to Type::Other.
+    // RDKit✔️✔️:     if (counts[aidx] <= 1) {
     // RDKit✔️✔️:       queue.push_back(atom);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (const auto &atom : queue) {
-    // RDKit✔️✔️:     const auto aidx = atom->getIdx();
-    // RDKit✔️✔️:     if (types[aidx] != Type::Other) {
-    // RDKit✔️✔️:       types[aidx] = Type::Other;
+    // RDKit✔️✔️:   while (!queue.empty()) {
+    // RDKit✔️✔️:     const auto atom = queue.front();
+    // RDKit✔️✔️:     queue.pop_front();
     // RDKit✔️✔️:
-    // RDKit✔️✔️:       for (auto &nbr : mol.getNeighbors(atom)) {
-    // RDKit✔️✔️:         auto nbridx = nbr->getIdx();
-    // RDKit✔️✔️:         --counts[nbridx];
-    // RDKit✔️✔️:         if (counts[nbridx] == 1) {
-    // RDKit✔️✔️:           queue.push_back(nbr);
-    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:     const auto aidx = atom->getIdx();
+    // RDKit✔️✔️:     if (types[aidx] == Type::Other) {
+    // RDKit✔️✔️:       // shouldn't happen, we only enqueue
+    // RDKit✔️✔️:       // typed atoms
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // the actual reset
+    // RDKit✔️✔️:     types[aidx] = Type::Other;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Update the counts for the neighbors, and check
+    // RDKit✔️✔️:     // whether they need to be reset too.
+    // RDKit✔️✔️:     for (const auto &bond : mol.getBonds(atom)) {
+    // RDKit✔️✔️:       if (!mol.isInRing(bond)) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       const auto nbr = bond->getOtherAtom(atom);
+    // RDKit✔️✔️:       const auto nbridx = nbr->getIdx();
+    // RDKit✔️✔️:       if (types[nbridx] == Type::Other) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       --counts[nbridx];
+    // RDKit✔️✔️:       if (counts[nbridx] == 1) {
+    // RDKit✔️✔️:         queue.push_back(nbr);
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RelaxTypes
+    // END RDKit 2026.09.1 RelaxTypes
     let mut queue = VecDeque::new();
     let mut counts = vec![0_i32; mol.get_num_atoms()];
     for atom_idx in 0..mol.get_num_atoms() {
-        for nbr_idx in mol.neighbor_indices(atom_idx)? {
+        if types[atom_idx] == MancudeType::Other {
+            continue;
+        }
+        for bond_idx in mol.bond_indices_for_atom(atom_idx)? {
+            if !mol.is_in_ring(bond_idx)? {
+                continue;
+            }
+            let nbr_idx = mol.other_atom_idx(bond_idx, atom_idx)?;
             if types[nbr_idx] != MancudeType::Other {
                 counts[atom_idx] += 1;
             }
         }
-        if counts[atom_idx] == 1 {
+        if counts[atom_idx] <= 1 {
             queue.push_back(atom_idx);
         }
     }
@@ -4560,7 +4952,14 @@ fn relax_types(types: &mut [MancudeType], mol: &CipMol<'_>) -> Result<(), CipLab
             continue;
         }
         types[atom_idx] = MancudeType::Other;
-        for nbr_idx in mol.neighbor_indices(atom_idx)? {
+        for bond_idx in mol.bond_indices_for_atom(atom_idx)? {
+            if !mol.is_in_ring(bond_idx)? {
+                continue;
+            }
+            let nbr_idx = mol.other_atom_idx(bond_idx, atom_idx)?;
+            if types[nbr_idx] == MancudeType::Other {
+                continue;
+            }
             counts[nbr_idx] -= 1;
             if counts[nbr_idx] == 1 {
                 queue.push_back(nbr_idx);
@@ -4659,169 +5058,171 @@ fn visit_parts(
     Ok(numparts)
 }
 
-fn calc_frac_atom_nums(mol: &mut CipMol<'_>) -> Result<Vec<RationalI32>, CipLabelerError> {
-    // BEGIN RDKIT CPP FUNCTION calcFracAtomNums (Mancude.cpp)
-    // RDKit✔️✔️: std::vector<boost::rational<int>> calcFracAtomNums(const CIPMol &mol) {
+fn calc_frac_atom_nums(mol: &mut CipMol<'_>) -> Result<Vec<FractionalAtomicNum>, CipLabelerError> {
+    // BEGIN RDKit 2026.09.1 calcFracAtomNums
+    // RDKit✔️✔️: std::vector<FractionalAtomicNum> calcFracAtomNums(const CIPMol &mol) {
     // RDKit✔️✔️:   const auto num_atoms = mol.getNumAtoms();
-    // RDKit✔️✔️:   std::vector<boost::rational<int>> fractions;
+    // RDKit✔️✔️:   std::vector<FractionalAtomicNum> fractions;
     // RDKit✔️✔️:   fractions.reserve(num_atoms);
     // RDKit✔️✔️:   for (const auto &atom : mol.atoms()) {
     // RDKit✔️✔️:     fractions.emplace_back(atom->getAtomicNum(), 1);
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Mark all atoms which are potentially part of a resonance system.
+    // RDKit✔️✔️:   auto types = std::vector<Type>(num_atoms, Type::Other);
+    // RDKit✔️✔️:   if (!SeedTypes(types, mol)) {
+    // RDKit✔️✔️:     // No relevant rings.
+    // RDKit✔️✔️:     return fractions;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Filter out atoms which cannot be resonant because
+    // RDKit✔️✔️:   // of not having the proper environment.
+    // RDKit✔️✔️:   RelaxTypes(types, mol);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Find resonant systems: parts stores the ids of the
+    // RDKit✔️✔️:   // systems each atom is involved in.
+    // RDKit✔️✔️:   std::vector<int> parts(num_atoms);
+    // RDKit✔️✔️:   int numparts = VisitParts(parts, types, mol);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (numparts <= 0) {
+    // RDKit✔️✔️:     // No rings (shouldn't happen, we'd seen it before)
+    // RDKit✔️✔️:     return fractions;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // parts are 1-based, so we need to allocate one extra element.
+    // RDKit✔️✔️:   // This means that resonant_parts[0] will never be used, and
+    // RDKit✔️✔️:   // we can use it as a shortcut to check whether any resonant
+    // RDKit✔️✔️:   // systems were found.
+    // RDKit✔️✔️:   std::vector<bool> resonant_parts(numparts + 1, false);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (auto i = 0u; i < num_atoms; ++i) {
+    // RDKit✔️✔️:     if (parts[i] == 0) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto atom = mol.getAtom(i);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Find resonant structures caused by relocation of a negative charge.
+    // RDKit✔️✔️:     if (types[i] == Type::Cv3D3Minus || types[i] == Type::Nv2D2Minus) {
+    // RDKit✔️✔️:       resonant_parts[parts[i]] = true;
+    // RDKit✔️✔️:       resonant_parts[0] = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     int numerator = 0;
+    // RDKit✔️✔️:     int denominator = 0;
+    // RDKit✔️✔️:     for (const auto &nbr : mol.getNeighbors(atom)) {
+    // RDKit✔️✔️:       if (parts[nbr->getIdx()] == parts[i]) {
+    // RDKit✔️✔️:         numerator += nbr->getAtomicNum();
+    // RDKit✔️✔️:         ++denominator;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     fractions[i] = FractionalAtomicNum(numerator, denominator);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!resonant_parts[0]) {
+    // RDKit✔️✔️:     // No resonant systems.
+    // RDKit✔️✔️:     return fractions;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // If there are any resonant parts due to negative charges,
+    // RDKit✔️✔️:   // update the average atomic number considering relocation
+    // RDKit✔️✔️:   // of the charge through higher order bonds.
+    // RDKit✔️✔️:   std::vector<int> numerators(numparts + 1);
+    // RDKit✔️✔️:   std::vector<int> denominators(numparts + 1);
+    // RDKit✔️✔️:   for (auto i = 0u; i < num_atoms; ++i) {
+    // RDKit✔️✔️:     const auto part = parts[i];
+    // RDKit✔️✔️:     if (part == 0 || !resonant_parts[part]) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     ++denominators[part];
+    // RDKit✔️✔️:     const auto atom = mol.getAtom(i);
+    // RDKit✔️✔️:     for (const auto &bond : mol.getBonds(atom)) {
+    // RDKit✔️✔️:       const auto nbr = bond->getOtherAtom(atom);
+    // RDKit✔️✔️:       const auto bord = mol.getBondOrder(bond);
+    // RDKit✔️✔️:       if (bord > 1 && parts[nbr->getIdx()] == part) {
+    // RDKit✔️✔️:         numerators[part] += (bord - 1) * nbr->getAtomicNum();
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Once all the numerators and denominators for the different
+    // RDKit✔️✔️:   // resonant parts of the mol have been calculated, distribute
+    // RDKit✔️✔️:   // the values to the atoms in the corresponding parts.
+    // RDKit✔️✔️:   for (auto i = 0u; i < num_atoms; ++i) {
+    // RDKit✔️✔️:     const auto part = parts[i];
+    // RDKit✔️✔️:     if (part != 0 && resonant_parts[part] && denominators[part] != 0) {
+    // RDKit✔️✔️:       fractions[i] = FractionalAtomicNum(numerators[part], denominators[part]);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return fractions;
+    // RDKit✔️✔️: }
+    // END RDKit 2026.09.1 calcFracAtomNums
+    // Preserve raw averages and compute complete part totals before assigning.
+    // Per-part indexed booleans/totals replace quadratic part membership scans;
+    // every graph/part traversal is O(V+E), with O(V+parts) temporary storage.
     let num_atoms = mol.get_num_atoms();
     let mut fractions = Vec::with_capacity(num_atoms);
     for atom_idx in 0..num_atoms {
-        fractions.push(RationalI32::new(
+        fractions.push(FractionalAtomicNum::new(
             i32::from(mol.atom(atom_idx)?.atomic_number()),
             1,
         ));
     }
-
-    // RDKit✔️✔️:   // Mark all atoms which are potentially part of a resonance system.
-    // RDKit✔️✔️:   auto types = std::vector<Type>(num_atoms, Type::Other);
-    // RDKit✔️✔️:   if (SeedTypes(types, mol)) {
     let mut types = vec![MancudeType::Other; num_atoms];
-    if seed_types(&mut types, mol)? {
-        // RDKit✔️✔️:     // Filter out atoms which cannot be resonant because
-        // RDKit✔️✔️:     // of not having the proper environment.
-        // RDKit✔️✔️:     RelaxTypes(types, mol);
-        relax_types(&mut types, mol)?;
-
-        // RDKit✔️✔️:     // Find resonant systems: parts stores the ids of the
-        // RDKit✔️✔️:     // systems each atom is involved in.
-        // RDKit✔️✔️:     auto parts = std::vector<int>(num_atoms);
-        // RDKit✔️✔️:     int numparts = VisitParts(parts, types, mol);
-        let mut parts = vec![0_i32; num_atoms];
-        let numparts = visit_parts(&mut parts, &types, mol)?;
-
-        // RDKit✔️✔️:     auto resparts = std::vector<int>(numparts);
-        // RDKit✔️✔️:     int numres = 0;
-        let mut resparts = vec![0_i32; usize::try_from(numparts).unwrap_or(0)];
-        let mut numres = 0_usize;
-
-        // RDKit✔️✔️:     if (numparts > 0) {
-        // RDKit✔️✔️:       for (auto i = 0u; i < num_atoms; ++i) {
-        // RDKit✔️✔️:         if (parts[i] == 0) {
-        // RDKit✔️✔️:           continue;
-        // RDKit✔️✔️:         }
-        if numparts > 0 {
-            for i in 0..num_atoms {
-                if parts[i] == 0 {
-                    continue;
-                }
-
-                // RDKit✔️✔️:         // Find resonant structures caused by relocation of a negative charge.
-                // RDKit✔️✔️:         if (types[i] == Type::Cv3D3Minus || types[i] == Type::Nv2D2Minus) {
-                // RDKit✔️✔️:           int j = 0;
-                // RDKit✔️✔️:           for (; j < numres; ++j) {
-                // RDKit✔️✔️:             if (resparts[j] == parts[i]) {
-                // RDKit✔️✔️:               break;
-                // RDKit✔️✔️:             }
-                // RDKit✔️✔️:           }
-                // RDKit✔️✔️:           if (j >= numres) {
-                // RDKit✔️✔️:             resparts[numres] = parts[i];
-                // RDKit✔️✔️:             ++numres;
-                // RDKit✔️✔️:           }
-                // RDKit✔️✔️:         }
-                if matches!(types[i], MancudeType::Cv3D3Minus | MancudeType::Nv2D2Minus) {
-                    let mut j = 0_usize;
-                    while j < numres {
-                        if resparts[j] == parts[i] {
-                            break;
-                        }
-                        j += 1;
-                    }
-                    if j >= numres {
-                        resparts[numres] = parts[i];
-                        numres += 1;
-                    }
-                }
-
-                // RDKit✔️✔️:         int numerator = 0;
-                // RDKit✔️✔️:         int denominator = 0;
-                // RDKit✔️✔️:         for (const auto &nbr : mol.getNeighbors(atom)) {
-                // RDKit✔️✔️:           if (parts[nbr->getIdx()] == parts[i]) {
-                // RDKit✔️✔️:             numerator += nbr->getAtomicNum();
-                // RDKit✔️✔️:             ++denominator;
-                // RDKit✔️✔️:           }
-                // RDKit✔️✔️:         }
-                let mut numerator = 0_i32;
-                let mut denominator = 0_i32;
-                for nbr_idx in mol.neighbor_indices(i)? {
-                    if parts[nbr_idx] == parts[i] {
-                        numerator += i32::from(mol.atom(nbr_idx)?.atomic_number());
-                        denominator += 1;
-                    }
-                }
-
-                // RDKit✔️✔️:         // boost::rational does not accept 0 as denominator.
-                // RDKit✔️✔️:         if (denominator == 0) {
-                // RDKit✔️✔️:           fractions[i].assign(0, 1);
-                // RDKit✔️✔️:         } else {
-                // RDKit✔️✔️:           fractions[i].assign(numerator, denominator);
-                // RDKit✔️✔️:         }
-                if denominator == 0 {
-                    fractions[i].assign(0, 1);
-                } else {
-                    fractions[i].assign(numerator, denominator);
-                }
+    if !seed_types(&mut types, mol)? {
+        return Ok(fractions);
+    }
+    relax_types(&mut types, mol)?;
+    let mut parts = vec![0_i32; num_atoms];
+    let numparts = visit_parts(&mut parts, &types, mol)?;
+    if numparts <= 0 {
+        return Ok(fractions);
+    }
+    let count = numparts as usize + 1;
+    let mut resonant_parts = vec![false; count];
+    for i in 0..num_atoms {
+        if parts[i] == 0 {
+            continue;
+        }
+        if matches!(types[i], MancudeType::Cv3D3Minus | MancudeType::Nv2D2Minus) {
+            resonant_parts[parts[i] as usize] = true;
+            resonant_parts[0] = true;
+        }
+        let mut numerator = 0_i32;
+        let mut denominator = 0_i32;
+        for nbr in mol.neighbor_indices(i)? {
+            if parts[nbr] == parts[i] {
+                numerator += i32::from(mol.atom(nbr)?.atomic_number());
+                denominator += 1;
             }
         }
-
-        // RDKit✔️✔️:     // If there are any resonant structures due to negative charges,
-        // RDKit✔️✔️:     // recalculate the average atomic number considering relocation
-        // RDKit✔️✔️:     // of the charge through higher order bonds.
-        // RDKit✔️✔️:     if (numres > 0) {
-        // RDKit✔️✔️:       for (int j = 0; j < numres; ++j) {
-        // RDKit✔️✔️:         int numerator = 0;
-        // RDKit✔️✔️:         int denominator = 0;
-        // RDKit✔️✔️:         int part = resparts[j];
-        // RDKit✔️✔️:         for (auto i = 0u; i < num_atoms; ++i) {
-        // RDKit✔️✔️:           if (parts[i] == part) {
-        if numres > 0 {
-            for &part in resparts.iter().take(numres) {
-                let mut numerator = 0_i32;
-                let mut denominator = 0_i32;
-                for i in 0..num_atoms {
-                    if parts[i] != part {
-                        continue;
-                    }
-                    // RDKit✔️✔️:             // boost::rational does not accept 0 as denominator
-                    // RDKit✔️✔️:             if (denominator == 0) {
-                    // RDKit✔️✔️:               fractions[i].assign(0, 1);
-                    // RDKit✔️✔️:             } else {
-                    // RDKit✔️✔️:               fractions[i].assign(numerator, denominator);
-                    // RDKit✔️✔️:             }
-                    if denominator == 0 {
-                        fractions[i].assign(0, 1);
-                    } else {
-                        fractions[i].assign(numerator, denominator);
-                    }
-
-                    // RDKit✔️✔️:             ++denominator;
-                    // RDKit✔️✔️:             auto atom = mol.getAtom(i);
-                    // RDKit✔️✔️:             for (auto &bond : mol.getBonds(atom)) {
-                    // RDKit✔️✔️:               auto nbr = bond->getOtherAtom(atom);
-                    // RDKit✔️✔️:               int bord = mol.getBondOrder(bond);
-                    // RDKit✔️✔️:               if (bord > 1 && parts[nbr->getIdx()] == part) {
-                    // RDKit✔️✔️:                 numerator += (bord - 1) * nbr->getAtomicNum();
-                    // RDKit✔️✔️:               }
-                    // RDKit✔️✔️:             }
-                    denominator += 1;
-                    for bond_idx in mol.bond_indices_for_atom(i)? {
-                        let nbr_idx = mol.other_atom_idx(bond_idx, i)?;
-                        let bord = mol.get_bond_order(bond_idx)?;
-                        if bord > 1 && parts[nbr_idx] == part {
-                            numerator += (bord - 1) * i32::from(mol.atom(nbr_idx)?.atomic_number());
-                        }
-                    }
-                }
+        fractions[i] = FractionalAtomicNum::new(numerator, denominator);
+    }
+    if !resonant_parts[0] {
+        return Ok(fractions);
+    }
+    let mut numerators = vec![0_i32; count];
+    let mut denominators = vec![0_i32; count];
+    for i in 0..num_atoms {
+        let part = parts[i] as usize;
+        if part == 0 || !resonant_parts[part] {
+            continue;
+        }
+        denominators[part] += 1;
+        for bond_idx in mol.bond_indices_for_atom(i)? {
+            let nbr = mol.other_atom_idx(bond_idx, i)?;
+            let order = mol.get_bond_order(bond_idx)?;
+            if order > 1 && parts[nbr] as usize == part {
+                numerators[part] += (order - 1) * i32::from(mol.atom(nbr)?.atomic_number());
             }
         }
     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return fractions;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION calcFracAtomNums
+    for i in 0..num_atoms {
+        let part = parts[i] as usize;
+        if part != 0 && resonant_parts[part] && denominators[part] != 0 {
+            fractions[i] = FractionalAtomicNum::new(numerators[part], denominators[part]);
+        }
+    }
     Ok(fractions)
 }

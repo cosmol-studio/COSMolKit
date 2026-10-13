@@ -85,7 +85,7 @@ impl Molecule {
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
 
-    #[wasm_bindgen(js_name = assignValence)]
+    #[wasm_bindgen(js_name = assignValence_)]
     pub fn assign_valence_(
         &self,
         #[wasm_bindgen(unchecked_optional_param_type = "ValenceParams | ValenceParamsOptions")]
@@ -103,7 +103,7 @@ impl Molecule {
         self.assign_valence_with_params_(&configuration_0)
     }
 
-    #[wasm_bindgen(js_name = assignValenceWithParams)]
+    #[wasm_bindgen(js_name = assignValenceWithParams_)]
     pub fn assign_valence_with_params_(&self, params: &ValenceParams) -> Result<(), JsValue> {
         self.inner
             .assign_valence_with_params_(&params.inner)

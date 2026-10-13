@@ -2,20 +2,20 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn add_2d_coordinates(&self) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: .add_2d_coordinates()
-        self.inner.borrow().add_2d_coordinates().map(|inner| Self {
+    pub fn with_2d_coordinates(&self) -> Result<Self, ck::OperationError> {
+        // COSMolKit❗✔️: .with_2d_coordinates()
+        self.inner.borrow().with_2d_coordinates().map(|inner| Self {
             inner: inner.into(),
         })
     }
-    pub fn add_2d_coordinates_with_params(
+    pub fn with_2d_coordinates_with_params(
         &self,
         params: &ck::Coordinate2DParams,
     ) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: .add_2d_coordinates_with_params(&params.inner)
+        // COSMolKit❗✔️: .with_2d_coordinates_with_params(&params.inner)
         self.inner
             .borrow()
-            .add_2d_coordinates_with_params(params)
+            .with_2d_coordinates_with_params(params)
             .map(|inner| Self {
                 inner: inner.into(),
             })
@@ -76,10 +76,10 @@ mod tests {
             force_rdkit: true,
             ..Default::default()
         };
-        let out = m.add_2d_coordinates().unwrap();
+        let out = m.with_2d_coordinates().unwrap();
         assert!(m.coordinates_2d().is_empty());
         assert_eq!(out.coordinates_2d().len(), 6);
-        let pinned = m.add_2d_coordinates_with_params(&p).unwrap();
+        let pinned = m.with_2d_coordinates_with_params(&p).unwrap();
         assert_eq!(&pinned.coordinates_2d()[..2], &[4., 5.]);
         assert!(m.coordinates_2d().is_empty());
         m.add_2d_coordinates_().unwrap();

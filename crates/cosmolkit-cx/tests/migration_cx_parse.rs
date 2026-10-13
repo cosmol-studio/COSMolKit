@@ -68,7 +68,14 @@ fn coordinates_preserve_omissions_ordinals_threshold_and_extra_components() {
 
 #[test]
 fn coordinate_errors_report_exact_source_byte_positions() {
-    assert_error("|(x,0)|", 2, "invalid CX coordinate");
+    // Candidate parse_coords uses std::atof: no numeric prefix becomes zero.
+    let parsed = parse_cx_extensions("|(x,0)|").unwrap();
+    let CxRecord::Coordinates(coords) = &parsed.records()[0] else {
+        panic!("expected coordinates");
+    };
+    assert_eq!(coords.values, vec![Some([0.0, 0.0, 0.0])]);
+    assert!(!coords.is_3d);
+    assert_eq!(parsed.consumed(), 7);
     assert_error("|(0,0", 1, "unterminated CX coordinate record");
 }
 

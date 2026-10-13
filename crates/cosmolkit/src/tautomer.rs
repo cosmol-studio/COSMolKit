@@ -436,6 +436,7 @@ impl TautomerEnumeration {
         let index = cosmolkit_tautomer::select_canonical_index_by(
             entries.iter_mut().map(|(key, molecule)| (&*key, molecule)),
             |molecule| score_live_candidate(molecule, params),
+            |molecule| cosmolkit_tautomer::specified_stereo_count(record_view(molecule).topology),
             |key, _| Ok(std::borrow::Cow::Borrowed(key)),
         )?
         .ok_or_else(|| OperationError::Tautomer(TautomerRunError::NoCanonicalTautomer))?;
@@ -519,6 +520,7 @@ fn select_working_candidates(
     let index = cosmolkit_tautomer::select_canonical_index_by(
         molecules.iter_mut().map(|molecule| ((), molecule)),
         |molecule| score_live_candidate(molecule, params),
+        |molecule| cosmolkit_tautomer::specified_stereo_count(record_view(molecule).topology),
         |(), molecule| {
             cosmolkit_tautomer::canonical_smiles(record_view(molecule))
                 .map(std::borrow::Cow::Owned)
@@ -629,7 +631,7 @@ mod tests {
     fn tautomer_products_drop_source_coordinates_and_canonical_restores() {
         let mut source = Molecule::from_smiles("CC(C)=O")
             .unwrap()
-            .add_2d_coordinates()
+            .with_2d_coordinates()
             .unwrap();
         let coordinates = source.coordinates_arc_runtime();
         let outputs = source.enumerate_tautomers().unwrap();

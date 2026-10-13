@@ -1,13 +1,11 @@
 //! Molfile-specific detached postprocessing.
 
 use cosmolkit_core::{
-    AtropisomerConformer, RemoveHsParams, RingSearchParams, SanitizeOperations, SanitizeParams,
-    StructureTagParams, ValenceModel, assign_chiral_tags_from_structure,
-    assign_chiral_types_from_bond_dirs, assign_legacy_stereochemistry_with_query_state,
+    RemoveHsParams, RingSearchParams, SanitizeOperations, SanitizeParams, StructureTagParams,
+    ValenceModel, assign_chiral_tags_from_structure, assign_chiral_types_from_bond_dirs,
     assign_valence_for_topology, calculate_explicit_valence_for_topology,
-    clear_single_bond_directions, detect_atropisomer_chirality, expand_attachment_points,
-    remove_hydrogens_with_query_state, sanitize_topology_with_query_state,
-    set_double_bond_neighbor_directions, symmetrized_sssr,
+    clear_single_bond_directions, expand_attachment_points, remove_hydrogens_with_query_state,
+    sanitize_topology_with_query_state, set_double_bond_neighbor_directions, symmetrized_sssr,
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, BondQueryPredicate, Conformer3D, CoordinateBlock,
@@ -997,8 +995,6 @@ fn apply_stereo_and_sanitize(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:
-    // RDKit✔️✔️:   Atropisomers::detectAtropisomerChirality(*res, &conf);
-    // RDKit✔️✔️:
     // RDKit✔️✔️:   // now that atom stereochem has been perceived, the wedging
     // RDKit✔️✔️:   // information is no longer needed, so we clear
     // RDKit✔️✔️:   // single bond dir flags:
@@ -1036,6 +1032,9 @@ fn apply_stereo_and_sanitize(
     // preceding bookmark, attachment, explicit-valence and ProcessMolProps
     // statements have distinct owners or the intentionally open attachment
     // gate and are not claimed by this helper.
+    // Candidate 2026.09.1 moved atrop detection into the selected structure/
+    // bond-direction owner. With chiralityPossible=false and conf.is3D=false,
+    // neither owner runs; do not restore the old unconditional detector here.
     // Complexity review: each owner call is linear or owner-defined; this
     // orchestration introduces no repeated whole-graph clone beyond the owned
     // source-equivalent transform results.
@@ -1060,10 +1059,6 @@ fn apply_stereo_and_sanitize(
             assign_chiral_types_from_bond_dirs(&mut topology, conformer, true)
                 .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
-        let assignment =
-            detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(conformer)))
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        apply_atropisomer_assignment(&mut topology, assignment)?;
     } else if let Some(conformer) = coordinates.conformers_2d.first() {
         if chirality_possible {
             let pseudo = Conformer3D::new(
@@ -1078,10 +1073,6 @@ fn apply_stereo_and_sanitize(
             assign_chiral_types_from_bond_dirs(&mut topology, &pseudo, true)
                 .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
-        let assignment =
-            detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(conformer)))
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        apply_atropisomer_assignment(&mut topology, assignment)?;
     }
     topology = clear_single_bond_directions(topology, false)
         .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
@@ -1132,13 +1123,21 @@ fn apply_stereo_and_sanitize(
             .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         let rings = symmetrized_sssr(&topology, &RingSearchParams::default())
             .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        topology = assign_legacy_stereochemistry_with_query_state(
+        let conformer = coordinates
+            .first_source_conformer()
+            .map_err(|source| MolPostError::Processing(MolProcessingError::Coordinates(source)))?
+            .map(Into::into);
+        topology = cosmolkit_core::assign_legacy_stereochemistry_with_conformer(
             topology,
             &valence,
             &rings,
             final_query_state,
+            conformer,
+            true,
+            true,
         )
-        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?
+        .topology;
         // RDKit❗✔️:     MolOps::assignStereochemistry(*res, true, true, true);
         // ROOT io44-move-sanitized-ring-carrier: retain the exact final owner
         // values already used above. Assignment moves are O(1); no finder,
@@ -1171,39 +1170,6 @@ fn apply_stereo_and_sanitize(
         query_rows,
         final_state,
     ))
-}
-
-fn apply_atropisomer_assignment(
-    topology: &mut TopologyBlock,
-    assignment: cosmolkit_core::AtropisomerAssignment,
-) -> Result<(), MolPostError> {
-    // RDKit✔️✔️:       bondToTry->getBeginAtom()->updatePropertyCache(false);
-    // RDKit✔️✔️:       bondToTry->getEndAtom()->updatePropertyCache(false);
-    // RDKit✔️✔️:     mol.updatePropertyCache(false);
-    // RDKit✔️✔️:     MolOps::setConjugation(mol);
-    // RDKit✔️✔️:     MolOps::setHybridization(mol);
-    // The core owner returns the source's ordered writes instead of mutating
-    // the borrowed topology. Apply every effect, not only the final stereo.
-    // Linear assignment over returned rows; no recomputation or graph copy.
-    for (id, facts) in assignment.atom_valence_updates {
-        topology.atoms[id.index()].set_source_valence_facts(facts);
-    }
-    if let Some(conjugated) = assignment.conjugated_bonds {
-        for (bond, value) in topology.bonds.iter_mut().zip(conjugated) {
-            bond.set_conjugated(value);
-        }
-    }
-    if let Some(hybridization) = assignment.hybridization {
-        for (atom, value) in topology.atoms.iter_mut().zip(hybridization.values) {
-            atom.set_hybridization(value);
-        }
-    }
-    for update in assignment.bond_updates {
-        topology.bonds[update.bond.index()]
-            .set_stereo(update.stereo)
-            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-    }
-    Ok(())
 }
 
 pub(super) fn detect_double_bond_stereochemistry(

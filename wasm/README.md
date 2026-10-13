@@ -219,8 +219,13 @@ The complete component is [`examples/vue/MoleculePanel.vue`](./examples/vue/Mole
 
 `Molecule` values own Rust allocations. Keep a value while it is in use and
 call `.free()` when a long-lived UI state or worker no longer needs it. Methods
-such as `withHydrogens()`, `add2dCoordinates()`, and
+such as `withHydrogens()`, `with2dCoordinates()`, and
 `with3dConformer()` return new values and leave the source value unchanged.
+
+In-place molecule operations retain the trailing `_` in JavaScript, such as
+`addHydrogens_()` and `add2dCoordinates_()`. Their configured forms also retain
+it: `add2dCoordinatesWithParams_(params)`. Use `with2dCoordinates()` or
+`with2dCoordinatesWithParams(params)` when a new molecule is required.
 
 Fingerprint methods return `Uint32Array` set-bit lists. Coordinate methods
 return flattened `Float64Array` values. Native binary archives are intentionally

@@ -38,11 +38,13 @@ test('Chiral-center host boolean validation and typed source failures', () => {
 });
 
 
-test('Chiral-center query preserves pre-existing CIP property text', () => {
+test('Chiral-center query clears stale selected CIP labels without changing its source', () => {
   const params = new b.SmilesParseParams(false, true, true, true, false, true);
   const source = b.Molecule.fromSmilesWithParams('CC(O)Cl |atomProp:1._CIPCode.foo|', params);
   try {
-    assert.deepEqual(source.findChiralCenters(true), [[1, 'foo']]);
+    // Candidate clearSelectedCIPProperties runs before configuration discovery.
+    assert.deepEqual(source.findChiralCenters(true), [[1, '?']]);
     assert.deepEqual(source.findChiralCenters(), []);
+    assert.equal(source.atomProperty(1,'_CIPCode'),'foo');
   } finally { source.free(); params.free(); }
 });

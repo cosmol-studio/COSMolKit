@@ -22,6 +22,8 @@ pub enum StereoError {
     InvalidState(String),
     #[error(transparent)]
     Valence(#[from] ValenceError),
+    #[error(transparent)]
+    Atropisomer(#[from] cosmolkit_core::AtropisomerError),
 }
 
 pub fn assign_chiral_types_from_bond_dirs(
@@ -35,6 +37,9 @@ pub fn assign_chiral_types_from_bond_dirs(
                 StereoError::InvalidState(message)
             }
             cosmolkit_core::BondDirectionStereoError::Valence(error) => StereoError::Valence(error),
+            cosmolkit_core::BondDirectionStereoError::Atropisomer(error) => {
+                StereoError::Atropisomer(error)
+            }
         })
 }
 

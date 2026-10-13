@@ -10982,7 +10982,8 @@ mod quote_atomprop_consumer_source_tests {
         let before = query.clone();
         assert_eq!(
             write_query_cx_atom_properties(&query, &[AtomId::new(0)]).unwrap(),
-            PropertyText::from("atomProp:0.a&#46;b.c&#46;d")
+            // Candidate atomPropAllowedSpecialChars includes the period.
+            PropertyText::from("atomProp:0.a.b.c.d")
         );
         assert_eq!(query, before);
     }
@@ -11009,7 +11010,8 @@ mod atom_properties_consumer_source_tests {
                 CxSmilesFields::ATOM_PROPS
             )
             .unwrap(),
-            PropertyText::from("|atomProp:0.a&#46;b.c&#46;d|")
+            // Candidate CXSmilesOps.cpp:1640 passes periods through verbatim.
+            PropertyText::from("|atomProp:0.a.b.c.d|")
         );
         assert_eq!(query, before);
         assert!(matches!(
@@ -12867,6 +12869,18 @@ mod mol_fragment_to_cx_smarts_wrapper_source_tests {
             true,
         ))
         .unwrap();
+        // Canon stereo preparation now sees the actual full-copy conformers.
+        // CK-COORD-002 rejects an implicit choice between two rows, unlike the
+        // source first-row policy. A present done marker closes that source
+        // stage; CX extension emission below keeps its established first row.
+        assert!(matches!(
+            mol_fragment_to_cx_smarts_source(&mut g, &Default::default(), &[AtomId::new(1)], None),
+            Err(SmartsWriteError::CanonicalTraversal(
+                cosmolkit_smiles::SmilesParseError::AmbiguousCoordinateSelection { .. }
+            ))
+        ));
+        g.set_prop("_StereochemDone", PropertyValue::Bool(false))
+            .unwrap();
         assert_eq!(
             mol_fragment_to_cx_smarts_source(&mut g, &Default::default(), &[AtomId::new(1)], None)
                 .unwrap(),

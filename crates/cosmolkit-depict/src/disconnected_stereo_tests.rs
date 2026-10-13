@@ -141,7 +141,33 @@ fn acid_and_linked_rings() -> TopologyBlock {
 #[test]
 fn merging_an_earlier_seed_preserves_the_selected_fragment_position() {
     let topology = acid_and_linked_rings();
-    let rings = symmetrized_sssr(&topology, &RingSearchParams::default()).unwrap();
+    // Freeze the ordered .03.6 seed input: this regression checks fragment
+    // erasure/packing, not the independently tested candidate RDL ring finder.
+    let mut rings = cosmolkit_core::RingInfo::new(
+        cosmolkit_core::RingFindType::SymmSssr,
+        20,
+        topology.bonds.len(),
+    );
+    for atoms in [vec![8, 9, 10, 11, 19], vec![14, 15, 16, 17, 18, 13]] {
+        let bonds = atoms
+            .iter()
+            .zip(atoms.iter().cycle().skip(1))
+            .take(atoms.len())
+            .map(|(&a, &b)| {
+                topology
+                    .bonds
+                    .iter()
+                    .find(|bond| {
+                        let ends = [bond.begin().index(), bond.end().index()];
+                        ends == [a, b] || ends == [b, a]
+                    })
+                    .unwrap()
+                    .id()
+                    .index()
+            })
+            .collect::<Vec<_>>();
+        rings.add_ring(&atoms, &bonds).unwrap();
+    }
     let mut fragments = compute_initial_coordinates(&topology, &rings, None, false).unwrap();
     // Pinned RDKit computeInitialCoords / expandEfrag: seed order [5-ring,
     // 6-ring, E-bond], then expand the 6-ring and erase the preceding 5-ring.

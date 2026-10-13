@@ -7,11 +7,11 @@ import cosmolkit
 
 def test_default_and_configured_mutation_match_value_transform():
     source = cosmolkit.Molecule.from_smiles("CCO")
-    assert not hasattr(source, "with_2d_coordinates")
+    assert not hasattr(source, "add_2d_coordinates")
     assert not hasattr(source, "compute_2d_coordinates_")
-    assert not hasattr(source, "with_2d_coordinates_with_params")
+    assert not hasattr(source, "add_2d_coordinates_with_params")
     assert not hasattr(source, "compute_2d_coordinates_with_params_")
-    value = source.add_2d_coordinates()
+    value = source.with_2d_coordinates()
     assert source.coordinates_2d() is None and not source.has_2d_coordinates()
     assert value.has_2d_coordinates()
     assert source.add_2d_coordinates_() is None
@@ -23,13 +23,13 @@ def test_default_and_configured_mutation_match_value_transform():
     assert configured.to_smiles() == "CCO"
 
 
-def test_add_2d_configuration_call_forms_share_one_operation():
+def test_with_2d_configuration_call_forms_share_one_operation():
     source = cosmolkit.Molecule.from_smiles("CCO")
     params = cosmolkit.Coordinate2DParams(canonical_orientation=True)
-    configured = source.add_2d_coordinates_with_params(params)
+    configured = source.with_2d_coordinates_with_params(params)
     for value in (
-        source.add_2d_coordinates(params),
-        source.add_2d_coordinates(canonical_orientation=True),
+        source.with_2d_coordinates(params),
+        source.with_2d_coordinates(canonical_orientation=True),
     ):
         np.testing.assert_array_equal(value.coordinates_2d(), configured.coordinates_2d())
     assert source.coordinates_2d() is None

@@ -6,7 +6,6 @@ use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, ChiralTag, Element, Hybridization,
     MoleculeProperties, PropertyValue, TopologyBlock,
 };
-use cosmolkit_stereo::CipLabelerError;
 use std::error::Error as _;
 fn star(
     z: u8,
@@ -267,7 +266,19 @@ fn atom_code_include_legacy_all_tags_and_done_presence_source_product() {
         if let Some(done) = done {
             p.set_prop("_CIPComputed", done).unwrap();
         }
-        let before_t = t.clone();
+        let mut before_t = t.clone();
+        // Candidate CIPLabeler.cpp clears all selected CIP properties first
+        // and only creates tetrahedral configurations with four carriers.
+        // This degree-zero fixture has none; full assignment still sets the
+        // computed molecule marker. Other predicate cells keep their source
+        // expectations, including present-but-false/string completion markers.
+        let prepares_cip = include && !legacy && tag != ChiralTag::Unspecified && done.is_none();
+        let (expected, after_done) = if prepares_cip {
+            before_t.atoms[0].clear_prop("_CIPCode").unwrap();
+            (Some(32_u32), Some("1"))
+        } else {
+            (expected, after_done)
+        };
         let result = atom_code(
             input(t, p),
             Some(AtomId::new(0)),
@@ -302,12 +313,9 @@ fn atom_code_include_legacy_all_tags_and_done_presence_source_product() {
                     assert!(r.properties().is_prop_computed("_CIPComputed").unwrap());
                 }
             }
-            None => assert!(matches!(
-                result,
-                Err(AtomCodeError::Cip(
-                    CipLabelerError::TetrahedralConfigurationMustHave4Carriers
-                ))
-            )),
+            None => panic!(
+                "unreconciled source predicate cell: {tag:?} {include} {legacy} {done:?} {label:?}; {result:?}"
+            ),
         }
         count += 1;
     }

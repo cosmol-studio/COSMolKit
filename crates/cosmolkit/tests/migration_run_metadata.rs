@@ -176,7 +176,7 @@ fn expected_operation_methods() -> Vec<&'static str> {
         ]);
     }
     if cfg!(feature = "cap-depict") {
-        expected.push("add_2d_coordinates_with_params");
+        expected.push("with_2d_coordinates_with_params");
     }
     expected
 }
@@ -412,7 +412,7 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     }
     #[cfg(feature = "cap-depict")]
     {
-        let operation = operation_spec("add_2d_coordinates_with_params").unwrap();
+        let operation = operation_spec("with_2d_coordinates_with_params").unwrap();
         let index = expected_methods
             .iter()
             .position(|method| *method == operation.method)
@@ -511,7 +511,7 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
         ));
         let expected_parity = if matches!(
             operation.method,
-            "add_2d_coordinates_with_params"
+            "with_2d_coordinates_with_params"
                 | "with_3d_conformer_with_params"
                 | "with_3d_conformer_result_with_params"
                 | "with_3d_conformers_with_params"

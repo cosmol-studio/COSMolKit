@@ -39,7 +39,7 @@ absent_methods!("cap-aromaticity"; with_assigned_aromaticity);
 absent_methods!("cap-stereo"; potential_stereo);
 absent_methods!("cap-rings"; with_assigned_rings);
 absent_methods!("cap-valence"; with_assigned_valence);
-absent_methods!("cap-depict"; add_2d_coordinates, to_svg, to_png);
+absent_methods!("cap-depict"; with_2d_coordinates, to_svg, to_png);
 absent_types!("cap-depict"; DrawingError);
 absent_types!("cap-reaction"; Reaction, ReactionRunParams, ReactionTemplateRemoval, ReactionApplyResult);
 absent_methods!("cap-forcefields";

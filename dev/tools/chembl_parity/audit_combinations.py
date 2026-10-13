@@ -348,7 +348,7 @@ def audit_batch_chunk(audit: Audit, records: list[dict[str, Any]]):
         for clear_aromatic_flags in (False, True)
     }
     expected_2d = [
-        digest_array(mol.add_2d_coordinates().coordinates_2d()) for mol in scalar
+        digest_array(mol.with_2d_coordinates().coordinates_2d()) for mol in scalar
     ]
     for jobs in (1, 8):
         batch_compare_value(
@@ -436,7 +436,7 @@ def audit_batch_chunk(audit: Audit, records: list[dict[str, Any]]):
                     clear_aromatic_flags, errors="raise", n_jobs=jobs
                 ).to_smiles_list(kekule=True),
             )
-        batch_2d = batch.add_2d_coordinates(errors="raise", n_jobs=jobs).to_list()
+        batch_2d = batch.with_2d_coordinates(errors="raise", n_jobs=jobs).to_list()
         batch_compare_value(
             audit,
             f"batch.jobs_{jobs}.coordinates_2d",

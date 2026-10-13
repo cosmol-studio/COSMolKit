@@ -11,7 +11,7 @@ test('Both hydrogen transforms support immediate HBA and HBD queries without san
         assert.equal(source.toSmiles(), before);
         assert.equal(source.numAtoms(), count);
         const inplace = b.Molecule.fromSmiles(smiles);
-        inplace.addHydrogens();
+        inplace.addHydrogens_();
         for (const result of [value, inplace]) {
             const snapshot = result.toSmiles(), atoms = result.numAtoms();
             assert.equal(result.numHba(), hba, `${smiles}: HBA`);

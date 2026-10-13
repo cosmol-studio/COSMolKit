@@ -9,6 +9,7 @@ use cosmolkit_model::{
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
 use crate::hcount::total_hydrogen_count_from_validated;
+use crate::kekulize::{AtomCompareCode, PotentialStereoCanonicalState};
 use crate::{
     DoubleBondControl, DoubleBondStereoDescriptor, DoubleBondStereoError,
     DoubleBondStereoSpecified, RingInfo, StereoOrderError, ValenceAssignment, ValenceError,
@@ -734,13 +735,63 @@ fn bond_info(
     })
 }
 
-fn atom_symbol(atom: &Atom) -> String {
-    format!(
-        "{}{}{}",
-        atom.isotope().unwrap_or(0),
-        atom.element().symbol(),
-        atom.formal_charge()
-    )
+fn atom_compare_code(
+    atom: &Atom,
+    degree: usize,
+    symbol_rank: u32,
+) -> Result<AtomCompareCode, PotentialStereoError> {
+    // RDKit✔️✔️: int atomMapNumber = 0;
+    // RDKit✔️✔️: if (atom.getAtomicNum() == 0) {
+    // RDKit✔️✔️:   atom.getPropIfPresent(common_properties::molAtomMapNumber, atomMapNumber);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: const auto charge = static_cast<std::uint8_t>(atom.getFormalCharge() + 128);
+    // RDKit✔️✔️: return {atomMapNumber, atom.getDegree(),
+    // RDKit✔️✔️:         (std::uint64_t{atom.getIsotope()} << 40) |
+    // RDKit✔️✔️:             (std::uint64_t{symbolRank} << 8) | charge,
+    // RDKit✔️✔️:         0};
+    let map = if atom.element().atomic_number() == 0 {
+        atom.prop("molAtomMapNumber")
+            .map(|value| {
+                value
+                    .as_int()
+                    .map_err(|_| PotentialStereoError::InvalidPropertyKind {
+                        atom: atom.id(),
+                        property: "molAtomMapNumber",
+                        kind: value.kind(),
+                    })
+            })
+            .transpose()?
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    Ok(AtomCompareCode {
+        atom_map_number: map,
+        degree: degree as u32,
+        primary: (u64::from(atom.isotope().unwrap_or(0)) << 40)
+            | (u64::from(symbol_rank) << 8)
+            | u64::from((i32::from(atom.formal_charge()) + 128) as u8),
+        secondary: 0,
+    })
+}
+
+#[repr(u32)]
+enum AtomCompareState {
+    None,
+    Unknown,
+    Possible,
+    Ccw,
+    Cw,
+    Stereo,
+}
+
+fn set_atom_compare_state(
+    code: &mut AtomCompareCode,
+    state: AtomCompareState,
+    discriminator: usize,
+) {
+    // RDKit✔️✔️: code.secondary = (static_cast<std::uint64_t>(state) << 32) | discriminator;
+    code.secondary = ((state as u64) << 32) | u64::from(discriminator as u32);
 }
 
 fn bond_symbol(bond: &Bond) -> &'static str {
@@ -764,50 +815,19 @@ fn bond_symbol(bond: &Bond) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn connectivity_ranks(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,
-    atom_symbols: &[String],
+    atom_symbols: &[AtomCompareCode],
     bond_symbols: &[String],
 ) -> Result<Vec<u32>, PotentialStereoError> {
-    // BEGIN RDKIT CPP FUNCTION rankFragmentAtoms restricted call from runCleanup
-    // RDKit✔️✔️: const bool includeChirality = false;
-    // RDKit✔️✔️: const bool includeIsotopes = false;
-    // RDKit✔️✔️: const bool breakTies = false;
-    // RDKit✔️✔️: const bool includeAtomMaps = false;
-    // RDKit✔️✔️: const bool includeChiralPresence = false;
-    // RDKit✔️✔️: const bool useRingStereo = false;
-    // RDKit✔️✔️: Canon::rankFragmentAtoms(mol, aranks, atomsInPlay, bondsInPlay,
-    // RDKit✔️✔️:                          &atomSymbols, &bondSymbols, breakTies,
-    // RDKit✔️✔️:                          includeChirality, includeIsotopes, includeAtomMaps,
-    // RDKit✔️✔️:                          includeChiralPresence, useRingStereo);
-    // END RDKIT CPP FUNCTION rankFragmentAtoms restricted call from runCleanup
-    // Reuse the source-shaped canonical partition engine, including its degree
-    // comparison before custom symbols. Borrow prepared state and symbols;
-    // only the O(V + E) participation masks and rank result are materialized.
-    let mut params = crate::CanonicalRankParams::default();
-    params.break_ties = false;
-    params.include_chirality = false;
-    params.include_isotopes = false;
-    params.include_atom_maps = false;
-    params.include_chiral_presence = false;
-    params.include_stereo_groups = false;
-    params.use_non_stereo_ranks = false;
-    params.include_ring_stereo = false;
-    Ok(crate::rank_fragment_atoms_with_prepared_state(
-        topology,
-        valence,
-        Some(rings),
-        &vec![true; topology.atoms.len()],
-        &vec![true; topology.bonds.len()],
-        Some(atom_symbols),
-        Some(bond_symbols),
-        &params,
-    )?
-    .into_iter()
-    .map(|rank| rank as u32)
-    .collect())
+    let mut neighbors = vec![0; 2 * topology.bonds.len()];
+    let mut state = PotentialStereoCanonicalState::new(topology, valence, rings, &mut neighbors)?;
+    let mut ranks = vec![0; topology.atoms.len()];
+    state.update_ranks(atom_symbols, bond_symbols, &mut ranks)?;
+    Ok(ranks)
 }
 
 fn initialize_atoms(
@@ -817,51 +837,142 @@ fn initialize_atoms(
     params: &PotentialStereoParams,
     known: &mut [bool],
     possible: &mut [bool],
-    symbols: &mut [String],
+    symbols: &mut [AtomCompareCode],
 ) -> Result<(), PotentialStereoError> {
-    // BEGIN RDKIT CPP FUNCTION initAtomInfo
-    // RDKit✔️❌: atomSymbols[aidx] = getAtomCompareSymbol(*atom);
-    // RDKit✔️❌: if (detail::isAtomPotentialStereoAtom(atom, allowNontetrahedralStereo)) {
-    // RDKit✔️❌:   auto sinfo = detail::getStereoInfo(atom);
-    // RDKit✔️❌:   switch (sinfo.specified) {
-    // RDKit✔️❌:   case Unknown: knownAtoms.set(aidx); atomSymbols[aidx] += std::to_string(aidx); break;
-    // RDKit✔️❌:   case Chirality::StereoSpecified::Specified:
-    // RDKit✔️❌:     knownAtoms.set(aidx);
-    // RDKit✔️❌:     if (sinfo.descriptor == StereoDescriptor::Tet_CCW) {
-    // RDKit✔️❌:       atomSymbols[aidx] += "_CCW";
-    // RDKit✔️❌:     } else if (sinfo.descriptor == StereoDescriptor::Tet_CW) {
-    // RDKit✔️❌:       atomSymbols[aidx] += "_CW";
-    // RDKit✔️❌:     } else {
-    // RDKit✔️❌:       atomSymbols[aidx] += "_STEREO";
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     break;
-    // RDKit✔️❌:   case Unspecified: if (flagPossible) possibleAtoms.set(aidx); break;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: } else if (cleanIt) atom->setChiralTag(CHI_UNSPECIFIED);
-    // END RDKIT CPP FUNCTION initAtomInfo
+    // RDKit✔️✔️:     ROMol &mol, bool flagPossible, bool cleanIt,
+    // RDKit✔️✔️:     boost::dynamic_bitset<> &knownAtoms,
+    // RDKit✔️✔️:     std::vector<Canon::AtomCompareCode> &atomCompareCodes,
+    // RDKit✔️✔️:     boost::dynamic_bitset<> &possibleAtoms) {
+    // RDKit✔️✔️:   std::vector<std::string> uniqueSymbols;
+    // RDKit✔️✔️:   std::vector<std::uint32_t> symbolIds(mol.getNumAtoms());
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     auto symbol = atom->getSymbol();
+    // RDKit✔️✔️:     auto iter = std::ranges::find(uniqueSymbols, symbol);
+    // RDKit✔️✔️:     if (iter == uniqueSymbols.end()) {
+    // RDKit✔️✔️:       symbolIds[atom->getIdx()] =
+    // RDKit✔️✔️:           static_cast<std::uint32_t>(uniqueSymbols.size());
+    // RDKit✔️✔️:       uniqueSymbols.push_back(std::move(symbol));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       symbolIds[atom->getIdx()] =
+    // RDKit✔️✔️:           static_cast<std::uint32_t>(iter - uniqueSymbols.begin());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::vector<std::uint32_t> symbolOrder(uniqueSymbols.size());
+    // RDKit✔️✔️:   std::iota(symbolOrder.begin(), symbolOrder.end(), 0);
+    // RDKit✔️✔️:   std::ranges::sort(
+    // RDKit✔️✔️:       symbolOrder, {}, [&uniqueSymbols](auto symbolId) -> const std::string & {
+    // RDKit✔️✔️:         return uniqueSymbols[symbolId];
+    // RDKit✔️✔️:       });
+    // RDKit✔️✔️:   std::vector<std::uint32_t> symbolRanks(uniqueSymbols.size());
+    // RDKit✔️✔️:   for (std::uint32_t rank = 0; rank < symbolOrder.size(); ++rank) {
+    // RDKit✔️✔️:     symbolRanks[symbolOrder[rank]] = rank;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool allowNontetrahedralStereo = getAllowNontetrahedralChirality();
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (atom->needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:       atom->updatePropertyCache(false);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     auto aidx = atom->getIdx();
+    // RDKit✔️✔️:     atomCompareCodes[aidx] =
+    // RDKit✔️✔️:         makeAtomCompareCode(*atom, symbolRanks[symbolIds[aidx]]);
+    // RDKit✔️✔️:     if (detail::isAtomPotentialStereoAtom(atom, allowNontetrahedralStereo)) {
+    // RDKit✔️✔️:       auto sinfo = detail::getStereoInfo(atom);
+    // RDKit✔️✔️:       switch (sinfo.specified) {
+    // RDKit✔️✔️:         case Chirality::StereoSpecified::Unknown:
+    // RDKit✔️✔️:           knownAtoms.set(aidx);
+    // RDKit✔️✔️:           setAtomCompareState(atomCompareCodes[aidx], AtomCompareState::Unknown,
+    // RDKit✔️✔️:                               aidx);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case Chirality::StereoSpecified::Specified:
+    // RDKit✔️✔️:           knownAtoms.set(aidx);
+    // RDKit✔️✔️:           if (sinfo.descriptor == StereoDescriptor::Tet_CCW) {
+    // RDKit✔️✔️:             setAtomCompareState(atomCompareCodes[aidx], AtomCompareState::CCW);
+    // RDKit✔️✔️:           } else if (sinfo.descriptor == StereoDescriptor::Tet_CW) {
+    // RDKit✔️✔️:             setAtomCompareState(atomCompareCodes[aidx], AtomCompareState::CW);
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             setAtomCompareState(atomCompareCodes[aidx],
+    // RDKit✔️✔️:                                 AtomCompareState::Stereo);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case Chirality::StereoSpecified::Unspecified:
+    // RDKit✔️✔️:           if (flagPossible) {
+    // RDKit✔️✔️:             possibleAtoms.set(aidx);
+    // RDKit✔️✔️:             if (!cleanIt) {
+    // RDKit✔️✔️:               setAtomCompareState(atomCompareCodes[aidx],
+    // RDKit✔️✔️:                                   AtomCompareState::Possible, aidx);
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         default:
+    // RDKit✔️✔️:           throw ValueErrorException("bad StereoInfo.specified type");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (cleanIt) {
+    // RDKit✔️✔️:       atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKit 2026.09.1 initAtomInfo
+    // RDKit✔️✔️: std::vector<std::string> uniqueSymbols;
+    // RDKit✔️✔️: std::vector<std::uint32_t> symbolIds(mol.getNumAtoms());
+    // One source-ordered dictionary, lexical symbol ranks, fixed numeric codes.
+    // No per-atom comparison String or per-refinement reformatting remains.
+    let mut unique_symbols = Vec::new();
+    let mut symbol_ids = Vec::with_capacity(topology.atoms.len());
+    for atom in topology.atoms.iter() {
+        let symbol = atom.element().symbol();
+        let id = unique_symbols
+            .iter()
+            .position(|&entry| entry == symbol)
+            .unwrap_or_else(|| {
+                unique_symbols.push(symbol);
+                unique_symbols.len() - 1
+            });
+        symbol_ids.push(id);
+    }
+    let mut symbol_order = (0..unique_symbols.len()).collect::<Vec<_>>();
+    symbol_order.sort_unstable_by_key(|&id| unique_symbols[id]);
+    let mut symbol_ranks = vec![0; unique_symbols.len()];
+    for (rank, &id) in symbol_order.iter().enumerate() {
+        symbol_ranks[id] = rank as u32;
+    }
     for index in 0..topology.atoms.len() {
         let atom = AtomId::new(index);
-        symbols[index] = atom_symbol(&topology.atoms[index]);
+        symbols[index] = atom_compare_code(
+            &topology.atoms[index],
+            topology.adjacency.neighbors_of(index).len(),
+            symbol_ranks[symbol_ids[index]],
+        )?;
         if is_potential_atom(topology, valence, rings, atom, params.allow_nontetrahedral)? {
             let info = atom_info(topology, valence, atom, params.allow_nontetrahedral)?;
             match info.specified {
                 PotentialStereoSpecified::Unknown => {
                     known[index] = true;
-                    symbols[index].push_str(&index.to_string());
+                    set_atom_compare_state(&mut symbols[index], AtomCompareState::Unknown, index);
                 }
                 PotentialStereoSpecified::Specified => {
                     known[index] = true;
-                    symbols[index].push_str(match info.descriptor {
-                        PotentialStereoDescriptor::TetrahedralCounterclockwise => "_CCW",
-                        PotentialStereoDescriptor::TetrahedralClockwise => "_CW",
-                        _ => "_STEREO",
-                    });
+                    set_atom_compare_state(
+                        &mut symbols[index],
+                        match info.descriptor {
+                            PotentialStereoDescriptor::TetrahedralCounterclockwise => {
+                                AtomCompareState::Ccw
+                            }
+                            PotentialStereoDescriptor::TetrahedralClockwise => AtomCompareState::Cw,
+                            _ => AtomCompareState::Stereo,
+                        },
+                        0,
+                    );
                 }
                 PotentialStereoSpecified::Unspecified if params.flag_possible => {
                     possible[index] = true;
                     if !params.clean {
-                        symbols[index].push('_');
-                        symbols[index].push_str(&index.to_string());
+                        set_atom_compare_state(
+                            &mut symbols[index],
+                            AtomCompareState::Possible,
+                            index,
+                        );
                     }
                 }
                 PotentialStereoSpecified::Unspecified => {}
@@ -1207,7 +1318,7 @@ fn update_atoms(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     ranks: &[u32],
-    symbols: &mut [String],
+    symbols: &mut [AtomCompareCode],
     possible: &mut [bool],
     known: &[bool],
     fixed: &mut [bool],
@@ -1263,7 +1374,8 @@ fn update_atoms(
             }
         }
         if !duplicate {
-            let mut next_symbol = symbols[index].clone();
+            // RDKit✔️✔️: auto acs = atomCompareCodes[aidx];
+            let mut next_symbol = symbols[index];
             if !possible[index] {
                 let mut sorted = neighbor_ranks.clone();
                 sorted.sort_unstable();
@@ -1280,12 +1392,23 @@ fn update_atoms(
                         descriptor => descriptor,
                     };
                 }
-                next_symbol = atom_symbol(&topology.atoms[index]);
-                next_symbol.push_str(match info.descriptor {
-                    PotentialStereoDescriptor::TetrahedralClockwise => "_CW",
-                    PotentialStereoDescriptor::TetrahedralCounterclockwise => "_CCW",
-                    _ => "",
-                });
+                if info.stereo_type == PotentialStereoType::AtomTetrahedral {
+                    // RDKit✔️✔️: if (sinfo.descriptor == Chirality::StereoDescriptor::Tet_CW) {
+                    // RDKit✔️✔️:   setAtomCompareState(acs, AtomCompareState::CW);
+                    // RDKit✔️✔️: } else if (sinfo.descriptor ==
+                    // RDKit✔️✔️:            Chirality::StereoDescriptor::Tet_CCW) {
+                    // RDKit✔️✔️:   setAtomCompareState(acs, AtomCompareState::CCW);
+                    // RDKit✔️✔️: }
+                    match info.descriptor {
+                        PotentialStereoDescriptor::TetrahedralClockwise => {
+                            set_atom_compare_state(&mut next_symbol, AtomCompareState::Cw, 0)
+                        }
+                        PotentialStereoDescriptor::TetrahedralCounterclockwise => {
+                            set_atom_compare_state(&mut next_symbol, AtomCompareState::Ccw, 0)
+                        }
+                        _ => {}
+                    }
+                }
                 fixed[index] = true;
             }
             if symbols[index] != next_symbol {
@@ -1296,7 +1419,8 @@ fn update_atoms(
         } else {
             another |= possible[index];
             possible[index] = false;
-            symbols[index] = atom_symbol(&topology.atoms[index]);
+            // RDKit✔️✔️: setAtomCompareState(atomCompareCodes[aidx], AtomCompareState::None);
+            set_atom_compare_state(&mut symbols[index], AtomCompareState::None, 0);
             if possible_ring_atoms[index] > 0 {
                 possible_ring_atoms[index] = 0;
                 another = true;
@@ -2040,11 +2164,12 @@ pub(crate) fn special_ring_relations(
 
 #[allow(clippy::too_many_arguments)]
 fn refinement_loop(
+    canonical: &mut PotentialStereoCanonicalState<'_>,
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,
     allow_nontetrahedral: bool,
-    atom_symbols: &mut [String],
+    atom_symbols: &mut [AtomCompareCode],
     bond_symbols: &mut [String],
     possible_atoms: &mut [bool],
     known_atoms: &[bool],
@@ -2060,7 +2185,7 @@ fn refinement_loop(
     let mut result = Vec::new();
     for iteration in 0..limit {
         result.clear();
-        ranks = connectivity_ranks(topology, valence, rings, atom_symbols, bond_symbols)?;
+        canonical.update_ranks(atom_symbols, bond_symbols, &mut ranks)?;
         let mut another = update_atoms(
             topology,
             valence,
@@ -2126,7 +2251,7 @@ pub fn potential_stereo(
     let bond_count = working.bonds.len();
     let mut known_atoms = vec![false; atom_count];
     let mut possible_atoms = vec![false; atom_count];
-    let mut atom_symbols = vec![String::new(); atom_count];
+    let mut atom_symbols = vec![AtomCompareCode::default(); atom_count];
     initialize_atoms(
         &mut working,
         valence,
@@ -2174,7 +2299,11 @@ pub fn potential_stereo(
     );
     let mut fixed_atoms = vec![false; atom_count];
     let mut fixed_bonds = vec![false; bond_count];
+    let mut canonical_neighbors = vec![0; 2 * bond_count];
+    let mut canonical =
+        PotentialStereoCanonicalState::new(topology, valence, rings, &mut canonical_neighbors)?;
     let (mut stereo, mut ranks) = refinement_loop(
+        &mut canonical,
         &working,
         valence,
         rings,
@@ -2209,8 +2338,7 @@ pub fn potential_stereo(
                 known_atoms[index] = false;
             }
             if possible_atoms[index] {
-                atom_symbols[index].push('_');
-                atom_symbols[index].push_str(&index.to_string());
+                set_atom_compare_state(&mut atom_symbols[index], AtomCompareState::Possible, index);
             }
         }
         possible_bonds = original_possible_bonds;
@@ -2235,6 +2363,7 @@ pub fn potential_stereo(
             Some(&possible_bonds),
         );
         (stereo, ranks) = refinement_loop(
+            &mut canonical,
             &working,
             valence,
             rings,
@@ -3095,6 +3224,97 @@ mod connectivity_rank_regressions {
     use cosmolkit_model::{AtomSpec, BondSpec, Element};
 
     #[test]
+    fn typed_potential_keys_compare_numeric_isotopes_and_reuse_current_symbols() {
+        let topology = TopologyBlock::try_from_parts(
+            [10, 2]
+                .into_iter()
+                .enumerate()
+                .map(|(i, isotope)| {
+                    Atom::from_spec(
+                        AtomId::new(i),
+                        AtomSpec::new(Element::C).with_isotope(isotope),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let valence = crate::assign_valence_with_options_for_topology(
+            &topology,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let rings = RingInfo::new(crate::RingFindType::SymmSssr, 2, 0);
+        let mut codes = topology
+            .atoms
+            .iter()
+            .map(|a| atom_compare_code(a, 0, 0).unwrap())
+            .collect::<Vec<_>>();
+        let mut neighbors = [];
+        let mut state =
+            PotentialStereoCanonicalState::new(&topology, &valence, &rings, &mut neighbors)
+                .unwrap();
+        let mut ranks = [0; 2];
+        state.update_ranks(&codes, &[], &mut ranks).unwrap();
+        // Source numeric isotope ordering, not baseline decimal-string ordering.
+        assert_eq!(ranks, [1, 0]);
+        codes[1].primary = codes[0].primary;
+        set_atom_compare_state(&mut codes[0], AtomCompareState::Possible, 10);
+        set_atom_compare_state(&mut codes[1], AtomCompareState::Possible, 2);
+        state.update_ranks(&codes, &[], &mut ranks).unwrap();
+        assert_eq!(ranks, [1, 0]);
+        set_atom_compare_state(&mut codes[0], AtomCompareState::None, 0);
+        state.update_ranks(&codes, &[], &mut ranks).unwrap();
+        assert_eq!(ranks, [0, 1]);
+        assert_eq!(codes[0].primary, codes[1].primary);
+
+        let chain = TopologyBlock::try_from_parts(
+            (0..3)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            [(0, 1), (1, 2)]
+                .into_iter()
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let valence = crate::assign_valence_with_options_for_topology(
+            &chain,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let rings = RingInfo::new(crate::RingFindType::SymmSssr, 3, 2);
+        let codes = chain
+            .atoms
+            .iter()
+            .enumerate()
+            .map(|(i, a)| atom_compare_code(a, chain.adjacency.neighbors_of(i).len(), 0).unwrap())
+            .collect::<Vec<_>>();
+        let mut neighbors = [0; 4];
+        let mut state =
+            PotentialStereoCanonicalState::new(&chain, &valence, &rings, &mut neighbors).unwrap();
+        let mut symbols = ["-".to_owned(), "=".to_owned()];
+        let mut ranks = [0; 3];
+        state.update_ranks(&codes, &symbols, &mut ranks).unwrap();
+        assert_eq!(ranks, [0, 2, 1]);
+        symbols.swap(0, 1);
+        state.update_ranks(&codes, &symbols, &mut ranks).unwrap();
+        assert_eq!(ranks, [1, 2, 0]);
+    }
+
+    #[test]
     fn connectivity_ranking_keeps_degree_before_custom_atom_symbols() {
         let topology = TopologyBlock::try_from_parts(
             [Element::C, Element::C, Element::O]
@@ -3116,7 +3336,19 @@ mod connectivity_rank_regressions {
             vec![],
         )
         .unwrap();
-        let atoms = topology.atoms.iter().map(atom_symbol).collect::<Vec<_>>();
+        let atoms = topology
+            .atoms
+            .iter()
+            .enumerate()
+            .map(|(index, atom)| {
+                atom_compare_code(
+                    atom,
+                    topology.adjacency.neighbors_of(index).len(),
+                    u32::from(atom.element() == Element::O),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
         let bonds = topology
             .bonds
             .iter()
@@ -3185,7 +3417,7 @@ mod source590_scalar_tests {
         )
         .unwrap();
         assert!(rings.is_initialized());
-        assert_eq!(rings.atom_row_count(), 0);
+        assert_eq!(rings.atom_row_count(), 4);
         assert!(
             !potential_tetrahedral_center_from_source(
                 &topology,
@@ -3195,18 +3427,16 @@ mod source590_scalar_tests {
             )
             .unwrap()
         );
-        assert!(matches!(
+        assert_eq!(
             potential_tetrahedral_centers_for_atoms(
                 &topology,
                 &valence,
                 Some(&rings),
                 &[AtomId::new(0)]
-            ),
-            Err(PotentialStereoError::InvalidRingInfo {
-                reason: "atom membership row count mismatch",
-                ..
-            })
-        ));
+            )
+            .unwrap(),
+            vec![false]
+        );
         assert!(matches!(
             potential_tetrahedral_center_from_source(
                 &topology,

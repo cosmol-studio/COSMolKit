@@ -5,8 +5,7 @@ use cosmolkit_core::*;
 use cosmolkit_model::{AtomId, BondId, CoordinateBlock, MoleculeProperties, TopologyBlock};
 use cosmolkit_search::{
     CompiledQuery, SearchTarget, SubstructMatchParams, SubstructMatchResult,
-    build_prepared_query_match_context,
-    try_get_substruct_atom_matches_with_compiled_query_and_context,
+    build_ring_query_match_context, try_get_substruct_atom_matches_with_compiled_query_and_context,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 use std::{collections::BTreeSet, sync::Arc};
@@ -223,7 +222,14 @@ pub(crate) fn query_matches_with_params(
         Some(rings),
         Some(valence),
     );
-    let context = build_prepared_query_match_context(view.topology, rings, valence)?;
+    // RingInfo.cpp getters accept the source-owned sparse non-ring suffix:
+    // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // The candidate owns correspondence to this topology. Borrow the existing
+    // authoritative adapter; no padding, ring search or copied assignments.
+    let context = build_ring_query_match_context(view.topology, rings, Some(valence))?;
     Ok(
         try_get_substruct_atom_matches_with_compiled_query_and_context(
             &target, query, params, &context,
@@ -265,7 +271,13 @@ pub(crate) fn query_match_count(
         Some(rings),
         Some(valence),
     );
-    let context = build_prepared_query_match_context(view.topology, rings, valence)?;
+    // RingInfo.cpp permits a sparse source-owned membership table:
+    // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // Reuse the same borrowed authoritative context for count and match paths.
+    let context = build_ring_query_match_context(view.topology, rings, Some(valence))?;
     Ok(
         cosmolkit_search::try_get_substruct_match_count_with_compiled_query_and_context(
             &target, query, params, &context,
@@ -276,9 +288,34 @@ pub(crate) fn transform_matches(
     candidate: &TautomerRecord,
     coordinates: &CoordinateBlock,
     transform: &TautomerTransform,
+    protected_atoms: &[u64],
 ) -> Result<Vec<SubstructMatchResult>, TautomerRunError> {
+    // RDKit✔️🔝:   std::vector<MatchVectType> tmatches;
+    // RDKit✔️🔝:   SubstructMatch(mol, query, tmatches);
+    // RDKit✔️🔝:   matches.reserve(tmatches.size());
+    // RDKit✔️🔝:   for (auto &match : tmatches) {
+    // RDKit✔️🔝:     bool protectedFound = false;
+    // RDKit✔️🔝:     for (const auto &pair : match) {
+    // RDKit✔️🔝:       if (protectedAtoms.test(pair.second)) {
+    // RDKit✔️🔝:         protectedFound = true;
+    // RDKit✔️🔝:         break;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     if (!protectedFound) {
+    // RDKit✔️🔝:       matches.push_back(std::move(match));
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:   }
+    // Tautomer.cpp:565–584: filter the full match before bond mapping.
+    // Consume ordered rows directly; avoid a second atom-match vector while
+    // preserving the source's limits and O(total matched atoms) bit lookups.
     let rows = query_matches(candidate.view(coordinates), &transform.query)?;
     rows.into_iter()
+        .filter(|row| {
+            protected_atoms.is_empty()
+                || row
+                    .iter()
+                    .all(|&atom| protected_atoms[atom / 64] & (1_u64 << (atom % 64)) == 0)
+        })
         .map(|atom_mapping| {
             let mut bond_mapping = Vec::with_capacity(transform.query().num_bonds());
             for (index, bond) in transform.query().bonds().iter().enumerate() {
@@ -437,7 +474,7 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
     // RDKit❗❌:     }
     // RDKit❗❌:     auto tautBond = tautBonds[bondIdx];
     // RDKit❗❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo ||
-    // RDKit❗❌:         !hasValidSpecifiedDoubleBondStereo(*bond)) {
+    // RDKit❗❌:         !hasPreservableDoubleBondStereo(*bond)) {
     // RDKit❗❌:       // When bond stereo is being removed for bonds involved in tautomerism,
     // RDKit❗❌:       // use STEREOANY (for double bonds not in rings or connecting two ring atoms)
     // RDKit❗❌:       // instead of STEREONONE.
@@ -566,7 +603,7 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
         let candidate_stereo_reference_count = tautomer_bond.stereo_atom_references().len();
         let remove_stereo = tautomer_bond.order() != BondOrder::Double
             || options.remove_bond_stereo()
-            || !has_valid_specified_double_bond_stereo(source_bond);
+            || !has_preservable_double_bond_stereo(source_bond);
         let target_stereo = if remove_stereo {
             let is_ring_bond = tautomer_bond_is_ring(tautomer, bond_id)?;
             if candidate_order == BondOrder::Double && !is_ring_bond {
@@ -587,7 +624,14 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
                 && candidate_stereo_reference_count != source_bond.stereo_atom_references().len());
 
         let tautomer_bond = &mut tautomer.topology.bonds[bond_id.index()];
-        tautomer_bond.set_stereo_atoms(target_stereo_atoms);
+        if remove_stereo || target_stereo_atoms.is_some() {
+            // RDKit✔️✔️:       if (sa.size() == 2) {
+            // RDKit✔️✔️:         tautBond->setStereoAtoms(sa.front(), sa.back());
+            // RDKit✔️✔️:       }
+            // Unknown stereo with a non-pair source preserves the candidate's
+            // existing controller vector, exactly as the source else branch.
+            tautomer_bond.set_stereo_atoms(target_stereo_atoms);
+        }
         tautomer_bond.set_stereo(target_stereo)?;
         for adjacent_bond_id in bonds_to_clear_directions {
             let direction = if remove_stereo {
@@ -1233,7 +1277,7 @@ mod search04_lazy_tests {
             .unwrap()
             .clone();
         let coordinates = CoordinateBlock::default();
-        let matched = transform_matches(&kmol, &coordinates, &transform)
+        let matched = transform_matches(&kmol, &coordinates, &transform, &[])
             .unwrap()
             .remove(0);
         let attempt = apply_tautomer_transform_match(
@@ -1361,20 +1405,24 @@ mod search04_registered_detached_tests {
     }
 }
 
-fn has_valid_specified_double_bond_stereo(bond: &cosmolkit_model::Bond) -> bool {
-    // BEGIN RDKIT CPP FUNCTION RDKit::MolStandardize::hasValidSpecifiedDoubleBondStereo
-    // RDKit✔️✔️: bool hasValidSpecifiedDoubleBondStereo(const Bond &bond) {
+fn has_preservable_double_bond_stereo(bond: &cosmolkit_model::Bond) -> bool {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MolStandardize::hasPreservableDoubleBondStereo
+    // RDKit✔️✔️: bool hasPreservableDoubleBondStereo(const Bond &bond) {
     // RDKit✔️✔️:   const auto stereo = bond.getStereo();
-    // RDKit✔️✔️:   return bond.getBondType() == Bond::DOUBLE && stereo >= Bond::STEREOZ &&
-    // RDKit✔️✔️:          stereo <= Bond::STEREOTRANS && bond.getStereoAtoms().size() == 2;
+    // RDKit✔️✔️:   // STEREOANY explicitly means undefined stereo; preserve it rather than
+    // RDKit✔️✔️:   // normalizing it to STEREONONE.
+    // RDKit✔️✔️:   return bond.getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:          (stereo == Bond::STEREOANY ||
+    // RDKit✔️✔️:           (stereo >= Bond::STEREOZ && stereo <= Bond::STEREOTRANS &&
+    // RDKit✔️✔️:            bond.getStereoAtoms().size() == 2));
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RDKit::MolStandardize::hasValidSpecifiedDoubleBondStereo
+    // END RDKIT CPP FUNCTION RDKit::MolStandardize::hasPreservableDoubleBondStereo
     bond.order() == BondOrder::Double
-        && matches!(
-            bond.stereo(),
-            BondStereo::Z | BondStereo::E | BondStereo::Cis | BondStereo::Trans
-        )
-        && bond.stereo_atom_references().len() == 2
+        && (bond.stereo() == BondStereo::Any
+            || (matches!(
+                bond.stereo(),
+                BondStereo::Z | BondStereo::E | BondStereo::Cis | BondStereo::Trans
+            ) && bond.stereo_atom_references().len() == 2))
 }
 
 /// Exclusive authority for the scoreRings source cache write. Graph and all

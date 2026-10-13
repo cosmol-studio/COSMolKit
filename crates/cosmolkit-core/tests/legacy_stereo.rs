@@ -134,7 +134,7 @@ fn mol_post_legacy_audit_potential_center_materializes_lazy_rank_state() {
 }
 
 #[test]
-fn mol_post_legacy_closure_cleans_stale_wedge_but_preserves_atrop_control() {
+fn mol_post_legacy_closure_cleans_stale_wedge_and_rejected_atrop_control() {
     let stale = topology(
         2,
         vec![
@@ -155,10 +155,13 @@ fn mol_post_legacy_closure_cleans_stale_wedge_but_preserves_atrop_control() {
         ],
         vec![],
     );
-    assert_eq!(
-        finish(atrop_control).bonds[0].direction(),
-        BondDirection::BeginDash
-    );
+    // Candidate Chirality.cpp::detectAtropisomersPostSanitization calls the
+    // detector with cleanIt=true. Atropisomers.cpp clears a selected existing
+    // axial tag before its degree rejection; this three-atom path cannot be
+    // an atropisomer and its hash is no longer an axial control bond.
+    let output = finish(atrop_control);
+    assert_eq!(output.bonds[1].stereo(), BondStereo::None);
+    assert_eq!(output.bonds[0].direction(), BondDirection::None);
 }
 
 #[test]

@@ -20,7 +20,7 @@ fn first_transform_match(
     candidate: &TautomerRecord,
     transform: &TautomerTransform,
 ) -> SubstructMatchResult {
-    transform_matches(candidate, &CoordinateBlock::default(), transform)
+    transform_matches(candidate, &CoordinateBlock::default(), transform, &[])
         .unwrap()
         .into_iter()
         .next()
@@ -269,7 +269,7 @@ fn single_transform_application_records_bonds_changed_only_by_sanitization() {
 
     'transforms: for transform in catalog.transforms() {
         for matched in
-            transform_matches(&candidate, &CoordinateBlock::default(), transform).unwrap()
+            transform_matches(&candidate, &CoordinateBlock::default(), transform, &[]).unwrap()
         {
             let directly_edited = matched
                 .bond_mapping

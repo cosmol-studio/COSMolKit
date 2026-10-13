@@ -404,9 +404,8 @@ pub enum ResidueInfoKind {
 impl ResidueInfoKind {
     /// Return the stable Gemmi residue-kind name.
     ///
-    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
-    /// method; the exact legacy body (published cosmolkit-core-0.3.0,
-    /// resinfo.rs) is copied below as the anchor.
+    /// This COSMolKit helper maps the Gemmi residue-kind vocabulary; it is
+    /// not a Gemmi C++ method. Implementation anchors remain in the body.
     ///
     /// Behavior review: ONE exhaustive match over the same 12 variants
     /// returning the frozen stable uppercase names. Debug strings (e.g.
@@ -598,9 +597,8 @@ impl ResidueInfo {
     /// for modified amino acids in lowercase. Blank or unmappable entries
     /// do not acquire an inferred parent.
     ///
-    /// Legacy-CK provenance: this helper is CK-derived Rust logic, NOT a
-    /// Gemmi C++ function; its exact legacy body (published
-    /// cosmolkit-core-0.3.0, resinfo.rs) is copied below as the anchor.
+    /// This COSMolKit helper uses Gemmi residue metadata; implementation
+    /// anchors remain in the body.
     ///
     /// Behavior review: non-amino rows return `None`; the ASCII-uppercase
     /// of the existing `one_letter_code` is served ONLY when the existing
@@ -635,16 +633,9 @@ impl ResidueInfo {
     /// table-defined parent. Entries without a mappable one-letter code
     /// return `None` rather than using a name-based guess.
     ///
-    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
-    /// function; the exact legacy body (published cosmolkit-core-0.3.0,
-    /// resinfo.rs) is copied below as the anchor.
-    ///
-    /// Canonical-lookup equivalence: the legacy body's final
-    /// `name.parse().ok()` was the old registered canonical-name
-    /// recognition. This migration routes the SAME canonical expansion
-    /// result through the current `find_residue_info`/`residue_code`
-    /// owner — ONE existing lookup, no duplicate parser and no FromStr
-    /// compatibility layer. The expansion range is the frozen 25
+    /// Canonical expansion uses the shared `find_residue_info`/`residue_code`
+    /// owner: one lookup, no duplicate parser or conversion layer.
+    /// Implementation provenance remains in the body. Expansion covers 25
     /// canonical amino names (all recognized): ASX/B, GLX/Z, UNK/X,
     /// SEC/U, PYL/O included — NOT narrowed to the usual 20. UNK's
     /// parent is UNK (not absence); non-amino/unmappable inputs return
@@ -659,9 +650,8 @@ impl ResidueInfo {
     /// allocation. Absence (None) is distinct from a successful known
     /// parent; both go through the same single lookup path. The lookup
     /// runs exactly ONCE: ONE retained `find_residue_info(name)` result
-    /// supplies BOTH the found guard and `Some(row.code)` — no second
-    /// lookup (BIO-PARENT-LOOKUP1-4 correction of the double-lookup
-    /// defect found by ROOT final-body review).
+    /// supplies both the found guard and `Some(row.code)`, without a second
+    /// lookup.
     #[must_use]
     pub fn parent_standard_code(self) -> Option<ResidueCode> {
         // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
@@ -679,11 +669,10 @@ impl ResidueInfo {
 
     /// Return whether Gemmi classifies this as a non-standard amino acid.
     ///
-    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
-    /// function; the exact legacy body (published cosmolkit-core-0.3.0,
-    /// resinfo.rs) is copied below as the anchor.
+    /// This COSMolKit helper combines the Gemmi-backed kind and standard-code
+    /// predicates; implementation anchors remain in the body.
     ///
-    /// Behavior review: exactly the legacy conjunction
+    /// Behavior review: the conjunction
     /// `is_amino_acid() && !is_standard()`, routing both predicates
     /// through the ONE existing Gemmi-anchored owners — the source bit
     /// test `(one_letter_code & 0x20) == 0` with Rust char semantics is
@@ -704,7 +693,7 @@ impl ResidueInfo {
     }
 }
 
-/// Legacy field-wise metadata wire for [`ResidueInfo`]; full anchor and
+/// Field-wise metadata serialization for [`ResidueInfo`]; full anchor and
 /// reviews live inside the implementing `serialize` body.
 impl serde::Serialize for ResidueInfo {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -853,9 +842,7 @@ impl<'de> serde::Deserialize<'de> for ResidueCode {
 
 /// Error returned when a name is not present in the source residue table.
 ///
-/// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
-/// method/serde implementation; the exact legacy bodies (published
-/// cosmolkit-core-0.3.0, bio/resinfo.rs) are copied below as anchors.
+/// A COSMolKit-defined error; implementation provenance is recorded below.
 // Legacy-CK source anchor (published cosmolkit-core-0.3.0 bio/resinfo.rs):
 // #[derive(Debug, Clone, PartialEq, Eq, Error)]
 // #[error("unknown residue code name '{input}'")]
@@ -966,10 +953,8 @@ pub const UNKNOWN_TABULATED_RESIDUE_INDEX: usize = 367;
 /// survive roundtrips. The classified code is private and is always derived
 /// by the source-aligned table lookup, preventing contradictory identities.
 ///
-/// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++ type; the
-/// exact legacy declaration/bodies (published cosmolkit-core-0.3.0,
-/// bio/resinfo.rs :544-620) are copied below as anchors. Behavior review:
-/// the raw caller name is stored verbatim (aliases like "wat" and unknown
+/// This COSMolKit value uses the shared residue table. The raw caller name
+/// is stored verbatim (aliases like "wat" and unknown
 /// names included) and the code field is ALWAYS the ONE existing
 /// `residue_code` lookup result, so no contradictory {name, code} pair can
 /// be constructed. Allocation/complexity review: construction moves the

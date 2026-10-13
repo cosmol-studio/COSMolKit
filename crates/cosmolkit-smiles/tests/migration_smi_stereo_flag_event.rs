@@ -72,8 +72,9 @@ fn source_flag_effect_is_cleared_after_successful_direction_processing() {
 #[test]
 fn source_computed_list_cast_failure_is_propagated_by_actual_smiles_finalizer() {
     // RDProps setProp(computed=false) does not cast __computedProps; clearProp
-    // always casts it. findSSSR clears extraRings first, before direction
-    // processing or later stereo assignment. Preserve the original cast cause.
+    // does. Candidate default ring preparation no longer clears absent
+    // extraRings through the old finder path. SmilesParse.cpp next clears
+    // _needsDetectBondStereo, so preserve its direct property cast cause.
     let mut input = record();
     input.properties.set_prop("__computedProps", 3_i32).unwrap();
     let before = input.clone();
@@ -87,14 +88,15 @@ fn source_computed_list_cast_failure_is_propagated_by_actual_smiles_finalizer() 
         &mut None,
         &mut None,
     );
-    assert!(matches!(
-        result,
-        Err(SmilesStereoError::Rings(
-            cosmolkit_core::RingFindingError::MoleculeProperty(
+    assert!(
+        matches!(
+            &result,
+            Err(SmilesStereoError::Properties(
                 cosmolkit_model::MoleculePropertyError::ComputedListKind(_)
-            )
-        ))
-    ));
+            ))
+        ),
+        "actual source finalization error: {result:?}"
+    );
     assert_eq!(
         before.properties.prop("_needsDetectBondStereo"),
         Some(&PropertyValue::Int(0))

@@ -8,13 +8,13 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=add2dCoordinates)]
-    pub fn add_2d_coordinates(&self, #[wasm_bindgen(unchecked_optional_param_type = "Coordinate2DParams | Coordinate2DParamsOptions")] params: JsValue) -> Result<Molecule, JsValue> {
+    #[wasm_bindgen(js_name=with2dCoordinates)]
+    pub fn with_2d_coordinates(&self, #[wasm_bindgen(unchecked_optional_param_type = "Coordinate2DParams | Coordinate2DParamsOptions")] params: JsValue) -> Result<Molecule, JsValue> {
         if params.is_undefined() {
             return {
-        // COSMolKit❗✔️: .add_2d_coordinates()
+        // COSMolKit❗✔️: .with_2d_coordinates()
         self.inner
-            .add_2d_coordinates()
+            .with_2d_coordinates()
             .map(|inner| Molecule {
                 inner: Arc::new(inner),
             })
@@ -23,16 +23,16 @@ impl Molecule {
             };
         }
         let configuration_0 = crate::transform_parameters::Coordinate2DParams::from_js_configuration(&params)?;
-        self.add_2d_coordinates_with_params(&configuration_0)
+        self.with_2d_coordinates_with_params(&configuration_0)
     }
-    #[wasm_bindgen(js_name=add2dCoordinatesWithParams)]
-    pub fn add_2d_coordinates_with_params(
+    #[wasm_bindgen(js_name=with2dCoordinatesWithParams)]
+    pub fn with_2d_coordinates_with_params(
         &self,
         params: &Coordinate2DParams,
     ) -> Result<Molecule, JsValue> {
-        // COSMolKit❗✔️: .add_2d_coordinates_with_params(&params.inner)
+        // COSMolKit❗✔️: .with_2d_coordinates_with_params(&params.inner)
         self.inner
-            .add_2d_coordinates_with_params(&params.inner)
+            .with_2d_coordinates_with_params(&params.inner)
             .map(|inner| Molecule {
                 inner: Arc::new(inner),
             })

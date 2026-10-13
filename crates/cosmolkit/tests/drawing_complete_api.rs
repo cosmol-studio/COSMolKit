@@ -25,7 +25,7 @@ fn draw_complete_value_inplace_and_presence_preserve_peer_and_3d() {
     let three_d = source.conformers_3d().to_vec();
     let peer_before = peer.to_builder().coordinates().clone();
     assert!(!source.has_2d_coordinates());
-    let value = source.add_2d_coordinates().unwrap();
+    let value = source.with_2d_coordinates().unwrap();
     assert!(value.has_2d_coordinates());
     assert!(!source.has_2d_coordinates());
     source.add_2d_coordinates_().unwrap();

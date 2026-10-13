@@ -29,12 +29,17 @@ test('CIP configuration forwards selected atoms and propagates concrete errors a
  const options=new ck.CipLabelOptions([1],null,1000);
  options.maxRecursiveIterations=2000;options.atoms=[1];
  const assigned=mol.withCipLabels(options);
- assert.equal(assigned.cipComputed(),true);
+ // Candidate CIPLabeler.cpp sets the molecule marker only for a full selection.
+ assert.equal(assigned.cipComputed(),false);
+ assert.equal(assigned.atomProperty(1,'_CIPCode'),'R');
  assert.deepEqual(assigned.findChiralCenters(),[[1,'R']]);
- assert.equal(mol.withCipLabels({atoms:[1],maxRecursiveIterations:2000}).cipComputed(),true);
- mol.assignCipLabelsWithOptions(options);assert.equal(mol.cipComputed(),true);
- assert.throws(()=>mol.assignCipLabels({atoms:[99]}),e=>e.name==='OperationError'&&e.cause.name==='CipLabelerError'&&e.cause.detail instanceof ck.CipLabelerError);
- assert.equal(mol.toSmiles(),before);assert.equal(mol.cipComputed(),true);
+ assert.equal(mol.withCipLabels({atoms:[1],maxRecursiveIterations:2000}).cipComputed(),false);
+ mol.assignCipLabelsWithOptions_(options);assert.equal(mol.cipComputed(),false);
+ assert.equal(mol.atomProperty(1,'_CIPCode'),'R');
+ assert.throws(()=>mol.assignCipLabels_({atoms:[99]}),e=>e.name==='OperationError'&&e.cause.name==='CipLabelerError'&&e.cause.detail instanceof ck.CipLabelerError);
+ assert.equal(mol.toSmiles(),before);assert.equal(mol.cipComputed(),false);
+ assert.equal(mol.atomProperty(1,'_CIPCode'),'R');
+ const complete=mol.withCipLabels();assert.equal(complete.cipComputed(),true);complete.free();
  const frames=assigned.tetrahedralStereo();assert.equal(frames.length,1);
  assert.equal(frames[0].center,1);assert.equal(frames[0].ligands.length,4);
  assert.equal(frames[0].ligands.filter(v=>v.isImplicitHydrogen).length,1);
@@ -51,7 +56,7 @@ test('Structure tag parameters retain defaults and actual conformer errors',()=>
  const params=new ck.StructureTagParams();assert.equal(params.conformerId,-1);
  params.replaceExistingTags=false;params.conformerId=99;
  assert.throws(()=>mol.withChiralTagsFromStructure(params),e=>e.name==='OperationError'&&e.cause.name==='StereoError'&&e.cause.detail instanceof ck.StereoError);
- assert.throws(()=>mol.assignChiralTagsFromStructure({conformerId:99}),e=>e.name==='OperationError');
+ assert.throws(()=>mol.assignChiralTagsFromStructure_({conformerId:99}),e=>e.name==='OperationError');
  assert.equal(mol.toSmiles(),before);
  assert.throws(()=>{params.conformerId=0.5;},RangeError);
  assert.equal(params.conformerId,99);

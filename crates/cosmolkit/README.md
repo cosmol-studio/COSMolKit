@@ -2,8 +2,8 @@
 
 `cosmolkit` is the public Rust API and runtime owner for COSMolKit 0.5.0, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
 
-The current chemistry reference is RDKit **2026.03.6** (Python distribution
-`2026.3.6`), revision `0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`.
+The current chemistry reference is RDKit **2026.09.1** (Python distribution
+`2026.9.1`), revision `fece8caa860bdf6c9c82bdb9253f22a0cf87150c`.
 
 ## Feature dependency tree
 
@@ -174,7 +174,7 @@ values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
 bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
 MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
 The standard preparation and comparison workflow is documented in
-[`parity-tests_fixed/README.md`](../../parity-tests_fixed/README.md).
+[`parity-tests/README.md`](../../parity-tests/README.md).
 
 ## Installation
 
@@ -189,7 +189,7 @@ use cosmolkit::{Molecule, SmilesWriteParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mol = Molecule::from_smiles("CCO")?;
-    let mol = mol.add_2d_coordinates()?;
+    let mol = mol.with_2d_coordinates()?;
 
     let smiles = mol.to_smiles_with_params(&SmilesWriteParams::default())?;
     let svg = mol.to_svg(300, 300)?;
@@ -262,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let batch = MoleculeBatch::from_smiles_list(&smiles)?
         .with_parallel_jobs(Some(8))?
-        .add_2d_coordinates()?;
+        .with_2d_coordinates()?;
 
     let out = batch.to_smiles_list()?;
     println!("{out:?}");
@@ -361,7 +361,7 @@ assert_eq!(torsion.n_bits(), 2048);
 
 Use `*_with_params` for explicit settings and the family's supported output
 collector for atom/bit/path provenance. Batch APIs preserve input order and
-record positions for failures. Current corpus comparisons use RDKit 2026.03.6;
+record positions for failures. Current corpus comparisons use RDKit 2026.09.1;
 completed coverage is recorded in [VALIDATION.md](../../VALIDATION.md).
 
 Layered retains the upstream algorithm's `0.7.0` metadata; this is not the

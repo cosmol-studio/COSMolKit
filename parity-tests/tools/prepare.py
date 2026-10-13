@@ -28,7 +28,7 @@ import bio
 import special
 
 RDLogger.DisableLog("rdApp.*")
-MAX_FRAME = 64 * 1024 * 1024
+MAX_FRAME = 128 * 1024 * 1024
 MAX_RECORD = MAX_FRAME - 4
 
 

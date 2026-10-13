@@ -1043,7 +1043,7 @@ fn molecule_to_2d_sdf_record_string(
     let with_coords = if mol.coordinates_2d().is_some() {
         mol.clone()
     } else {
-        mol.add_2d_coordinates()?
+        mol.with_2d_coordinates()?
     };
     molblock::mol_to_sdf_record_with_params(&with_coords, &params)
 }
@@ -1344,7 +1344,7 @@ A molecule value.
 ``Molecule`` stores atoms, bonds, stereochemistry, and optional coordinate
 data. Transformation methods such as ``with_hydrogens()``,
 ``without_hydrogens()``, ``with_kekulized_bonds()``, and
-``add_2d_coordinates()`` return new molecule values. The original molecule is
+``with_2d_coordinates()`` return new molecule values. The original molecule is
 left unchanged.
 
 Internally COSMolKit uses copy-on-write storage to share unchanged molecular
@@ -1356,7 +1356,7 @@ reserves the trailing underscore for this single public ``Molecule`` meaning.
 Examples
 --------
 Create molecules with ``Molecule.from_smiles()``, transform them with value
-methods such as ``add_2d_coordinates()``, then export strings, arrays, or
+methods such as ``with_2d_coordinates()``, then export strings, arrays, or
 depiction files.
 "#]
 pub(crate) struct Molecule {
@@ -4082,7 +4082,7 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
     #[doc = r#"
 Return a new batch with 2D coordinates computed for each valid molecule.
 "#]
-    fn add_2d_coordinates(
+    fn with_2d_coordinates(
         &self,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
@@ -4091,7 +4091,7 @@ Return a new batch with 2D coordinates computed for each valid molecule.
         let mode = parse_batch_error_mode(errors)?;
         let inner = self
             .inner
-            .add_2d_coordinates_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .with_2d_coordinates_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
@@ -6173,7 +6173,7 @@ or ``(num_atoms, 3)``. Three-column input uses ``z_policy``:
 ``"error"``
     Reject three-column input.
 "#]
-    fn add_2d_coordinates(
+    fn with_2d_coordinates(
         &self,
         coords: Option<&Bound<'_, PyAny>>,
         z_policy: &str,
@@ -6181,11 +6181,11 @@ or ``(num_atoms, 3)``. Three-column input uses ``z_policy``:
         let out = if let Some(coords) = coords {
             let coords = extract_2d_coordinates(coords, self.inner.atoms().len(), z_policy)?;
             self.inner.with_2d_coordinate_block(coords).map_err(|err| {
-                PyValueError::new_err(format!("add_2d_coordinates failed: {err}"))
+                PyValueError::new_err(format!("with_2d_coordinates failed: {err}"))
             })?
         } else {
-            self.inner.add_2d_coordinates().map_err(|err| {
-                PyValueError::new_err(format!("add_2d_coordinates failed: {err}"))
+            self.inner.with_2d_coordinates().map_err(|err| {
+                PyValueError::new_err(format!("with_2d_coordinates failed: {err}"))
             })?
         };
         Ok(Self::from_inner(out))
@@ -6194,7 +6194,7 @@ or ``(num_atoms, 3)``. Three-column input uses ``z_policy``:
     #[doc = r#"
 Compute 2D coordinates in place.
 
-This is the in-place version of ``add_2d_coordinates()``.
+This is the in-place version of ``with_2d_coordinates()``.
 "#]
     fn add_2d_coordinates_(&mut self) -> PyResult<()> {
         self.inner
@@ -6208,7 +6208,7 @@ Set 2D coordinates in place.
 
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 2)`` or
 ``(num_atoms, 3)``. Three-column input follows the same ``z_policy`` values as
-``add_2d_coordinates(coords=...)``.
+``with_2d_coordinates(coords=...)``.
 "#]
     fn set_2d_coordinates_(&mut self, coords: &Bound<'_, PyAny>, z_policy: &str) -> PyResult<()> {
         let coords = extract_2d_coordinates(coords, self.inner.atoms().len(), z_policy)?;
@@ -6526,7 +6526,7 @@ The z column is zero-filled.
     fn coordinates_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let Some(coords) = self.inner.coordinates_2d() else {
             return Err(PyValueError::new_err(
-                "no 2D coordinates present; call add_2d_coordinates() first",
+                "no 2D coordinates present; call with_2d_coordinates() first",
             ));
         };
         let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p[0], p[1], 0.0]).collect();

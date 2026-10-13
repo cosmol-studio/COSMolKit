@@ -1048,7 +1048,9 @@ fn q102_cx_query_output_maps_properties_coordinates_stereo_and_supported_bonds()
         query_graph_to_cx_smarts(&query, &rooted)
             .map(fixture_written_text)
             .unwrap(),
-        "[#7]~[#8]-[#6] |(3,4,5;1.25,2.5,;0,0,),$;;left$,$_AV:;mid;$,^2:0,atomProp:2.a&#46;b.v&#46;x,C:2.1,Z:0,a:0,2,o1:1|"
+        // RDKit 2026.09.1 CXSmilesOps.cpp::get_atom_props_block calls
+        // quote_string(pn/pv, atomPropAllowedSpecialChars), which includes '.'.
+        "[#7]~[#8]-[#6] |(3,4,5;1.25,2.5,;0,0,),$;;left$,$_AV:;mid;$,^2:0,atomProp:2.a.b.v.x,C:2.1,Z:0,a:0,2,o1:1|"
     );
     assert_eq!(
         query_graph_fragment_to_cx_smarts(
@@ -1059,14 +1061,37 @@ fn q102_cx_query_output_maps_properties_coordinates_stereo_and_supported_bonds()
         )
         .map(fixture_written_text)
         .unwrap(),
-        "[#6]->[#8] |(0,0,;1.25,2.5,),$left;$,$_AV:;mid$,atomProp:0.a&#46;b.v&#46;x,C:0.0,a:0,0,o1:1|"
+        "[#6]->[#8] |(0,0,;1.25,2.5,),$left;$,$_AV:;mid$,atomProp:0.a.b.v.x,C:0.0,a:0,0,o1:1|"
     );
     assert_eq!(query, before);
 }
 
+fn assert_cx_stereo_preparation_is_ambiguous(query: &QueryGraph) {
+    use cosmolkit_smiles::SmilesParseError;
+    let before = query.clone();
+    let error = query_graph_to_cx_smarts(query, &Default::default()).unwrap_err();
+    assert!(matches!(
+        error,
+        SmartsWriteError::CanonicalTraversal(SmilesParseError::AmbiguousCoordinateSelection {
+            two_d_count: 1,
+            three_d_count: 1,
+        })
+    ));
+    assert!(matches!(
+        std::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<SmilesParseError>(),
+        Some(SmilesParseError::AmbiguousCoordinateSelection {
+            two_d_count: 1,
+            three_d_count: 1,
+        })
+    ));
+    assert_eq!(query, &before);
+}
+
 #[test]
-fn source_cx_coordinates_follow_actual_mixed_conformer_order() {
-    use cosmolkit_model::{Conformer2D, CoordinateDimension};
+fn source_cx_prepared_coordinates_follow_actual_mixed_conformer_order() {
+    use cosmolkit_model::{Conformer2D, CoordinateDimension, PropertyValue};
     let mut query = QueryGraph::from_parts(
         vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
         vec![],
@@ -1076,37 +1101,40 @@ fn source_cx_coordinates_follow_actual_mixed_conformer_order() {
         vec![],
     )
     .unwrap();
-    query
-        .set_source_conformer_order(Some(vec![
-            CoordinateDimension::TwoD,
-            CoordinateDimension::ThreeD,
-        ]))
-        .unwrap();
-    let before = query.clone();
-    assert_eq!(
-        query_graph_to_cx_smarts(&query, &Default::default())
-            .map(fixture_written_text)
-            .unwrap(),
-        "[#6] |(1,2,)|"
-    );
-    assert_eq!(query, before);
-    query
-        .set_source_conformer_order(Some(vec![
-            CoordinateDimension::ThreeD,
-            CoordinateDimension::TwoD,
-        ]))
-        .unwrap();
-    assert_eq!(
-        query_graph_to_cx_smarts(&query, &Default::default())
-            .map(fixture_written_text)
-            .unwrap(),
-        "[#6] |(3,4,9)|"
-    );
+    for (order, expected) in [
+        (
+            vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD],
+            "[#6] |(1,2,)|",
+        ),
+        (
+            vec![CoordinateDimension::ThreeD, CoordinateDimension::TwoD],
+            "[#6] |(3,4,9)|",
+        ),
+    ] {
+        query.set_source_conformer_order(Some(order)).unwrap();
+        // The full-copy SMARTS Canon stage now sees actual conformers.
+        // CK-COORD-002 rejects implicit stereo preparation for either order.
+        assert_cx_stereo_preparation_is_ambiguous(&query);
+        // Canon.cpp tests property presence, not its bool value. Close that
+        // earlier stage to isolate the established source CX emission branch.
+        query
+            .set_prop("_StereochemDone", PropertyValue::Bool(false))
+            .unwrap();
+        let before = query.clone();
+        assert_eq!(
+            query_graph_to_cx_smarts(&query, &Default::default())
+                .map(fixture_written_text)
+                .unwrap(),
+            expected
+        );
+        assert_eq!(query, before);
+        query.clear_prop("_StereochemDone").unwrap();
+    }
 }
 
 #[test]
 fn source_cx_false_is3d_omits_z_without_discarding_xyz_storage() {
-    use cosmolkit_model::{Conformer2D, CoordinateDimension};
+    use cosmolkit_model::{Conformer2D, CoordinateDimension, PropertyValue};
     let mut query = QueryGraph::from_parts(
         vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
         vec![],
@@ -1122,6 +1150,12 @@ fn source_cx_false_is3d_omits_z_without_discarding_xyz_storage() {
             CoordinateDimension::TwoD,
         ]))
         .unwrap();
+    assert_cx_stereo_preparation_is_ambiguous(&query);
+    // is_3d=false controls serialization, not the typed storage dimension.
+    // Close Canon's preparation guard to reach get_coords_block independently.
+    query
+        .set_prop("_StereochemDone", PropertyValue::Bool(false))
+        .unwrap();
     let before = query.clone();
     assert_eq!(
         query_graph_to_cx_smarts(&query, &Default::default())
@@ -1135,8 +1169,8 @@ fn source_cx_false_is3d_omits_z_without_discarding_xyz_storage() {
 
 #[test]
 fn source_cx_missing_mixed_conformer_order_is_a_typed_failure() {
-    use cosmolkit_model::{Conformer2D, CoordinateValidationError};
-    let query = QueryGraph::from_parts(
+    use cosmolkit_model::{Conformer2D, CoordinateValidationError, PropertyValue};
+    let mut query = QueryGraph::from_parts(
         vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
         vec![],
         BTreeMap::new(),
@@ -1145,6 +1179,13 @@ fn source_cx_missing_mixed_conformer_order_is_a_typed_failure() {
         vec![],
     )
     .unwrap();
+    // Canon's ambiguity is earlier than the CX source-order error. Preserve
+    // both typed failures instead of expecting the later error unconditionally.
+    assert_cx_stereo_preparation_is_ambiguous(&query);
+    query
+        .set_prop("_StereochemDone", PropertyValue::Bool(false))
+        .unwrap();
+    let before = query.clone();
     let error = query_graph_to_cx_smarts(&query, &Default::default()).unwrap_err();
     assert!(matches!(
         error,
@@ -1152,12 +1193,13 @@ fn source_cx_missing_mixed_conformer_order_is_a_typed_failure() {
             CoordinateValidationError::MissingSourceConformerOrder
         )
     ));
-    assert!(
+    assert!(matches!(
         std::error::Error::source(&error)
             .unwrap()
-            .downcast_ref::<CoordinateValidationError>()
-            .is_some()
-    );
+            .downcast_ref::<CoordinateValidationError>(),
+        Some(CoordinateValidationError::MissingSourceConformerOrder)
+    ));
+    assert_eq!(query, before);
 }
 
 #[test]

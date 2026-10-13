@@ -33,7 +33,7 @@ DEPENDENCIES = [
     ("crates/cosmolkit-forcefields/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles cosmolkit-io"),
     ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-depict cosmolkit-model cosmolkit-search cosmolkit-types"),
     ("crates/cosmolkit-io/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-model/Cargo.toml", "dependencies", "cosmolkit-types"),
+    ("crates/cosmolkit-model/Cargo.toml", "dependencies", "cosmolkit-types cosmolkit-ringdecomposer"),
     ("crates/cosmolkit-reaction/Cargo.toml", "dependencies", "cosmolkit-types cosmolkit-model cosmolkit-core cosmolkit-search cosmolkit-smiles cosmolkit-cx"),
     ("crates/cosmolkit-reaction/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-search/Cargo.toml", "dependencies", "cosmolkit-cx cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles"),

@@ -42,6 +42,11 @@ pub fn profiles(task: &str) -> Result<Vec<Json>> {
             p["optimizer_observation"] = json!("isolated_queries_v1");
         }
     }
+    if task == "uff_optimize" {
+        for p in &mut rows {
+            p["optimizer_observation"] = json!("retained_optimizer_v1");
+        }
+    }
     Ok(rows)
 }
 pub fn normalize(task: &str, p: Json) -> Result<Json> {
@@ -56,6 +61,9 @@ pub fn normalize(task: &str, p: Json) -> Result<Json> {
         && p["optimizer_observation"] != "isolated_queries_v1"
     {
         return Err("invalid MMFF optimizer observation policy".into());
+    }
+    if task == "uff_optimize" && p["optimizer_observation"] != "retained_optimizer_v1" {
+        return Err("invalid UFF optimizer observation policy".into());
     }
     let object = p.as_object().ok_or("geometry profile must be an object")?;
     let schema = defaults[0].as_object().unwrap();
@@ -478,7 +486,7 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
 }
 fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
     Ok(match task {
-        "coordinates_2d" => two_d_value(&m.add_2d_coordinates_with_params(&two_d_params(p))?)?,
+        "coordinates_2d" => two_d_value(&m.with_2d_coordinates_with_params(&two_d_params(p))?)?,
         "svg" => Value::Bytes(
             namespace(m.to_svg(integer(p, "width") as u32, integer(p, "height") as u32)?)
                 .into_bytes(),
@@ -599,7 +607,7 @@ pub fn evaluate(
                     .unwrap_or_else(|e| tasks::failed_error(e.as_ref())),
             });
         }
-        let transformed = batch.add_2d_coordinates_with_params(&two_d_params(p), &params)?;
+        let transformed = batch.with_2d_coordinates_with_params(&two_d_params(p), &params)?;
         for (slot, (before, after)) in output[split..]
             .iter_mut()
             .zip(batch.records().iter().zip(transformed.records()))
@@ -750,6 +758,17 @@ fn query_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn uff_optimizer_cache_requires_its_own_final_energy() {
+        let p = profiles("uff_optimize").unwrap().remove(0);
+        let mut old = p.clone();
+        old.as_object_mut().unwrap().remove("optimizer_observation");
+        assert!(normalize("uff_optimize", old).is_err());
+        let mut wrong = p.clone();
+        wrong["optimizer_observation"] = json!("rebuilt_field");
+        assert!(normalize("uff_optimize", wrong).is_err());
+        assert_eq!(normalize("uff_optimize", p.clone()).unwrap(), p);
+    }
     #[test]
     fn mmff_optimizer_cache_requires_nonmutating_observations() {
         for task in ["mmff_optimize", "mmff_optimize_conformers"] {

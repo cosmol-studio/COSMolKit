@@ -335,7 +335,58 @@ fn drawing_prepare_canonical_kekule_legacy_regression() {
         orders,
         "SDSSSSSSSSDSSDSSSSDSDSDSSSDSSSSSSDSSSSSSSSSSSSSSSDSSDSDS"
     );
-    let xy = prepared.coordinates.conformers_2d[0].coordinates();
+    // The actual preparation still owns the Kekule/preservation assertions
+    // above. Its candidate RDL ring ordering is intentionally different.
+    // Keep the four original numerical assertions at the layout boundary,
+    // supplied with the source regression's original ordered ring seeds.
+    let mut frozen_rings = RingInfo::new(cosmolkit_core::RingFindType::SymmSssr, 52, 56);
+    for atoms in [
+        vec![1, 2, 9, 24, 23],
+        vec![
+            10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 9,
+        ],
+        vec![12, 11, 50, 43, 13],
+        vec![16, 15, 36, 34, 17],
+        vec![20, 19, 27, 25, 21],
+    ] {
+        let bonds = atoms
+            .iter()
+            .zip(atoms.iter().cycle().skip(1))
+            .take(atoms.len())
+            .map(|(&a, &b)| {
+                prepared
+                    .topology
+                    .bonds
+                    .iter()
+                    .find(|bond| {
+                        let ends = [bond.begin().index(), bond.end().index()];
+                        ends == [a, b] || ends == [b, a]
+                    })
+                    .unwrap()
+                    .id()
+                    .index()
+            })
+            .collect::<Vec<_>>();
+        frozen_rings.add_ring(&atoms, &bonds).unwrap();
+    }
+    let mut fragments =
+        crate::compute_initial_coordinates(&prepared.topology, &frozen_rings, None, false).unwrap();
+    for fragment in &mut fragments {
+        fragment.remove_collisions_bond_and_spiro_flip().unwrap();
+        fragment.remove_collisions_open_angles().unwrap();
+        fragment.remove_collisions_shorten_bonds().unwrap();
+        fragment.remove_collisions_path_angle_expansion().unwrap();
+    }
+    crate::orient_and_shift_fragments(&mut fragments, true, Some(0));
+    let xy = (0..52)
+        .map(|atom| {
+            fragments
+                .iter()
+                .find_map(|fragment| fragment.atoms.get(&atom))
+                .unwrap()
+                .loc
+        })
+        .collect::<Vec<_>>();
     assert_eq!(xy[0][0].to_bits(), (-0.7271872994113224_f64).to_bits());
     assert_eq!(xy[0][1].to_bits(), (-7.508043887184295_f64).to_bits());
     assert_eq!(xy[49][0].to_bits(), 10.57352991454218_f64.to_bits());

@@ -1,10 +1,7 @@
-//! Private legacy mmCIF `_struct`/`_struct_keywords` category emitter
-//! (BIO-TITLE-KEYWORDS1-32).
+//! Private mmCIF `_struct`/`_struct_keywords` category emitter.
 //!
-//! Complete selected-category helper only: the coordinate composer is NOT
-//! dispatched here and caller group dispatch remains ROOT-owned. Reuses the
-//! ONE existing quote owner and the ONE existing category setter; no
-//! copied quoting/setter algorithm.
+//! Writes only these categories; the caller selects categories and composes
+//! coordinates. Uses shared quoting and category-update helpers.
 
 use std::collections::BTreeMap;
 

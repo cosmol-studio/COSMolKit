@@ -1392,7 +1392,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.translate_", item: callable, owner: type_,
-            rust: crate::BioStructure::translate_, python: "translate_", javascript: "translate",
+            rust: crate::BioStructure::translate_, python: "translate_", javascript: "translate_",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: offset, type: [f64; 3], default: required }],
             output: (), error: crate::BioOperationError,
@@ -1412,7 +1412,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.translate_", item: callable, owner: type_,
-            rust: crate::Protein::translate_, python: "translate_", javascript: "translate",
+            rust: crate::Protein::translate_, python: "translate_", javascript: "translate_",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: offset, type: [f64; 3], default: required }],
             output: (), error: crate::BioOperationError,
@@ -1432,7 +1432,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.retain_selection_", item: callable, owner: type_,
-            rust: crate::BioStructure::retain_selection_, python: "retain_selection_", javascript: "retainSelection",
+            rust: crate::BioStructure::retain_selection_, python: "retain_selection_", javascript: "retainSelection_",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
             output: (), error: crate::BioOperationError,
@@ -1452,7 +1452,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.retain_selection_", item: callable, owner: type_,
-            rust: crate::Protein::retain_selection_, python: "retain_selection_", javascript: "retainSelection",
+            rust: crate::Protein::retain_selection_, python: "retain_selection_", javascript: "retainSelection_",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
             output: (), error: crate::BioOperationError,
@@ -4542,6 +4542,7 @@ binding_contract! {
                 { name: permute_degree_four, python_type: "builtins.bool", default: "False" },
                 { name: force_rdkit, python_type: "builtins.bool", default: "False" },
                 { name: use_ring_templates, python_type: "builtins.bool", default: "False" },
+                { name: use_path_angle_expansion, python_type: "builtins.bool", default: "True" },
             ], role: parameter,
         },
         #[cfg(feature = "cap-depict")]
@@ -4586,29 +4587,29 @@ binding_contract! {
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.add_2d_coordinates",
+            semantic_id: "Molecule.with_2d_coordinates",
             item: callable,
             owner: molecule,
-            rust: crate::Molecule::add_2d_coordinates,
-            python: "add_2d_coordinates",
-            javascript: "add2dCoordinates",
+            rust: crate::Molecule::with_2d_coordinates,
+            python: "with_2d_coordinates",
+            javascript: "with2dCoordinates",
             feature: "cap-depict",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
             error: crate::OperationError,
             state: value_returning,
-            operation: "add_2d_coordinates",
+            operation: "with_2d_coordinates",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
         #[cfg(feature = "cap-depict")]
         {
-            semantic_id: "Molecule.add_2d_coordinates_with_params",
+            semantic_id: "Molecule.with_2d_coordinates_with_params",
             item: callable,
             owner: molecule,
-            rust: crate::Molecule::add_2d_coordinates_with_params,
-            python: "add_2d_coordinates_with_params",
-            javascript: "add2dCoordinatesWithParams",
+            rust: crate::Molecule::with_2d_coordinates_with_params,
+            python: "with_2d_coordinates_with_params",
+            javascript: "with2dCoordinatesWithParams",
             feature: "cap-depict",
             kind: instance,
             parameters: [
@@ -4617,7 +4618,7 @@ binding_contract! {
             output: crate::Molecule,
             error: crate::OperationError,
             state: value_returning,
-            operation: "add_2d_coordinates_with_params",
+            operation: "with_2d_coordinates_with_params",
             signature: for<'a, 'b> fn(
                 &'a crate::Molecule,
                 &'b crate::Coordinate2DParams,
@@ -4797,7 +4798,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::set_atom_position_,
             python: "set_atom_position_",
-            javascript: "setAtomPosition",
+            javascript: "setAtomPosition_",
             feature: "cap-transforms",
             kind: instance,
             parameters: [
@@ -4821,7 +4822,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::set_atom_position_with_params_,
             python: "set_atom_position_with_params_",
-            javascript: "setAtomPositionWithParams",
+            javascript: "setAtomPositionWithParams_",
             feature: "cap-transforms",
             kind: instance,
             parameters: [
@@ -5079,7 +5080,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::kekulize_bonds_,
             python: "kekulize_bonds_",
-            javascript: "kekulizeBonds",
+            javascript: "kekulizeBonds_",
             feature: "cap-kekulize",
             kind: instance,
             parameters: [],
@@ -5096,7 +5097,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::kekulize_bonds_with_params_,
             python: "kekulize_bonds_with_params_",
-            javascript: "kekulizeBondsWithParams",
+            javascript: "kekulizeBondsWithParams_",
             feature: "cap-kekulize",
             kind: instance,
             parameters: [
@@ -5195,7 +5196,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_aromaticity_,
             python: "assign_aromaticity_",
-            javascript: "assignAromaticity",
+            javascript: "assignAromaticity_",
             feature: "cap-aromaticity",
             kind: instance,
             parameters: [],
@@ -5212,7 +5213,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_aromaticity_with_params_,
             python: "assign_aromaticity_with_params_",
-            javascript: "assignAromaticityWithParams",
+            javascript: "assignAromaticityWithParams_",
             feature: "cap-aromaticity",
             kind: instance,
             parameters: [
@@ -5309,7 +5310,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_valence_,
             python: "assign_valence_",
-            javascript: "assignValence",
+            javascript: "assignValence_",
             feature: "cap-valence",
             kind: instance,
             parameters: [],
@@ -5326,7 +5327,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_valence_with_params_,
             python: "assign_valence_with_params_",
-            javascript: "assignValenceWithParams",
+            javascript: "assignValenceWithParams_",
             feature: "cap-valence",
             kind: instance,
             parameters: [{ name: params, type: &crate::ValenceParams, default: required }],
@@ -5379,7 +5380,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_radicals_,
             python: "assign_radicals_",
-            javascript: "assignRadicals",
+            javascript: "assignRadicals_",
             feature: "cap-radicals",
             kind: instance,
             parameters: [],
@@ -5428,7 +5429,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_rings_,
             python: "assign_rings_",
-            javascript: "assignRings",
+            javascript: "assignRings_",
             feature: "cap-rings",
             kind: instance,
             parameters: [],
@@ -5480,7 +5481,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_ring_families_,
             python: "assign_ring_families_",
-            javascript: "assignRingFamilies",
+            javascript: "assignRingFamilies_",
             feature: "cap-rings",
             kind: instance,
             parameters: [],
@@ -5497,7 +5498,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_ring_families_with_params_,
             python: "assign_ring_families_with_params_",
-            javascript: "assignRingFamiliesWithParams",
+            javascript: "assignRingFamiliesWithParams_",
             feature: "cap-rings",
             kind: instance,
             parameters: [{ name: params, type: &crate::RingSearchParams, default: required }],
@@ -5586,7 +5587,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_chiral_tags_from_structure_,
             python: "assign_chiral_tags_from_structure_",
-            javascript: "assignChiralTagsFromStructure",
+            javascript: "assignChiralTagsFromStructure_",
             feature: "cap-stereo",
             kind: instance,
             parameters: [],
@@ -5603,7 +5604,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_chiral_tags_from_structure_with_params_,
             python: "assign_chiral_tags_from_structure_with_params_",
-            javascript: "assignChiralTagsFromStructureWithParams",
+            javascript: "assignChiralTagsFromStructureWithParams_",
             feature: "cap-stereo",
             kind: instance,
             parameters: [
@@ -5871,7 +5872,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_cip_labels_,
             python: "assign_cip_labels_",
-            javascript: "assignCipLabels",
+            javascript: "assignCipLabels_",
             feature: "cap-stereo",
             kind: instance,
             parameters: [],
@@ -5888,7 +5889,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::assign_cip_labels_with_options_,
             python: "assign_cip_labels_with_options_",
-            javascript: "assignCipLabelsWithOptions",
+            javascript: "assignCipLabelsWithOptions_",
             feature: "cap-stereo",
             kind: instance,
             parameters: [
@@ -6951,7 +6952,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::add_hydrogens_,
             python: "add_hydrogens_",
-            javascript: "addHydrogens",
+            javascript: "addHydrogens_",
             feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
@@ -6968,7 +6969,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::add_hydrogens_with_params_,
             python: "add_hydrogens_with_params_",
-            javascript: "addHydrogensWithParams",
+            javascript: "addHydrogensWithParams_",
             feature: "cap-hydrogens",
             kind: instance,
             parameters: [
@@ -7029,7 +7030,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::remove_hydrogens_,
             python: "remove_hydrogens_",
-            javascript: "removeHydrogens",
+            javascript: "removeHydrogens_",
             feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
@@ -7046,7 +7047,7 @@ binding_contract! {
             owner: molecule,
             rust: crate::Molecule::remove_hydrogens_with_params_,
             python: "remove_hydrogens_with_params_",
-            javascript: "removeHydrogensWithParams",
+            javascript: "removeHydrogensWithParams_",
             feature: "cap-hydrogens",
             kind: instance,
             parameters: [
@@ -10270,17 +10271,17 @@ binding_contract! {
 #[cfg(feature="cap-alignment")]
 {semantic_id:"Molecule.with_alignment_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_alignment_to_with_params,python:"with_alignment_to_with_params",javascript:"withAlignmentToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:(crate::Molecule,crate::AlignmentResult),error:crate::OperationError,state:value_returning,operation:"with_alignment_to_with_params",signature:fn(&crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<(crate::Molecule,crate::AlignmentResult),crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"Molecule.align_to_",item:callable,owner:molecule,rust:crate::Molecule::align_to_,python:"align_to_",javascript:"alignTo",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_",signature:fn(&mut crate::Molecule,&crate::Molecule)->Result<crate::AlignmentResult,crate::OperationError>,},
+{semantic_id:"Molecule.align_to_",item:callable,owner:molecule,rust:crate::Molecule::align_to_,python:"align_to_",javascript:"alignTo_",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_",signature:fn(&mut crate::Molecule,&crate::Molecule)->Result<crate::AlignmentResult,crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"Molecule.align_to_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_to_with_params_,python:"align_to_with_params_",javascript:"alignToWithParams",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_with_params_",signature:fn(&mut crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<crate::AlignmentResult,crate::OperationError>,},
+{semantic_id:"Molecule.align_to_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_to_with_params_,python:"align_to_with_params_",javascript:"alignToWithParams_",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_with_params_",signature:fn(&mut crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<crate::AlignmentResult,crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
 {semantic_id:"Molecule.with_aligned_conformers",item:callable,owner:molecule,rust:crate::Molecule::with_aligned_conformers,python:"with_aligned_conformers",javascript:"withAlignedConformers",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[],output:(crate::Molecule,crate::ConformerAlignmentReport),error:crate::OperationError,state:value_returning,operation:"with_aligned_conformers",signature:fn(&crate::Molecule)->Result<(crate::Molecule,crate::ConformerAlignmentReport),crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
 {semantic_id:"Molecule.with_aligned_conformers_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_aligned_conformers_with_params,python:"with_aligned_conformers_with_params",javascript:"withAlignedConformersWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:(crate::Molecule,crate::ConformerAlignmentReport),error:crate::OperationError,state:value_returning,operation:"with_aligned_conformers_with_params",signature:fn(&crate::Molecule,&crate::ConformerAlignmentParameters)->Result<(crate::Molecule,crate::ConformerAlignmentReport),crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"Molecule.align_conformers_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_,python:"align_conformers_",javascript:"alignConformers",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_",signature:fn(&mut crate::Molecule)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
+{semantic_id:"Molecule.align_conformers_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_,python:"align_conformers_",javascript:"alignConformers_",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_",signature:fn(&mut crate::Molecule)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"Molecule.align_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_with_params_,python:"align_conformers_with_params_",javascript:"alignConformersWithParams",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_with_params_",signature:fn(&mut crate::Molecule,&crate::ConformerAlignmentParameters)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
+{semantic_id:"Molecule.align_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_with_params_,python:"align_conformers_with_params_",javascript:"alignConformersWithParams_",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_with_params_",signature:fn(&mut crate::Molecule,&crate::ConformerAlignmentParameters)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
 {semantic_id:"AlignmentResult.rmsd",item:callable,owner:type_,rust:crate::AlignmentResult::rmsd,python:"rmsd",javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::AlignmentResult)->f64,},
 #[cfg(feature="cap-alignment")]
@@ -10426,37 +10427,37 @@ binding_contract! {
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_2d_coordinate_block_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_2d_coordinate_block_with_params,python:"with_2d_coordinate_block_with_params",javascript:"with2dCoordinateBlockWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate2DInputParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_2d_coordinate_block_with_params",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate2DInputParams)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_2d_coordinates_",item:callable,owner:molecule,rust:crate::Molecule::set_2d_coordinates_,python:"set_2d_coordinates_",javascript:"set2dCoordinates",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_2d_coordinates_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<(),crate::OperationError>,},
+        {semantic_id:"Molecule.set_2d_coordinates_",item:callable,owner:molecule,rust:crate::Molecule::set_2d_coordinates_,python:"set_2d_coordinates_",javascript:"set2dCoordinates_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_2d_coordinates_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<(),crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_2d_coordinates_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_2d_coordinates_with_params_,python:"set_2d_coordinates_with_params_",javascript:"set2dCoordinatesWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate2DInputParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_2d_coordinates_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate2DInputParams)->Result<(),crate::OperationError>,},
+        {semantic_id:"Molecule.set_2d_coordinates_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_2d_coordinates_with_params_,python:"set_2d_coordinates_with_params_",javascript:"set2dCoordinatesWithParams_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate2DInputParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_2d_coordinates_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate2DInputParams)->Result<(),crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_3d_coordinates",item:callable,owner:molecule,rust:crate::Molecule::with_3d_coordinates,python:"with_3d_coordinates",javascript:"with3dCoordinates",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_coordinates",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_3d_coordinates_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_3d_coordinates_with_params,python:"with_3d_coordinates_with_params",javascript:"with3dCoordinatesWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Replace3DCoordinatesParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_coordinates_with_params",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>, &'b crate::Replace3DCoordinatesParams)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_3d_coordinates_",item:callable,owner:molecule,rust:crate::Molecule::set_3d_coordinates_,python:"set_3d_coordinates_",javascript:"set3dCoordinates",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_3d_coordinates_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<(),crate::OperationError>,},
+        {semantic_id:"Molecule.set_3d_coordinates_",item:callable,owner:molecule,rust:crate::Molecule::set_3d_coordinates_,python:"set_3d_coordinates_",javascript:"set3dCoordinates_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_3d_coordinates_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<(),crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_3d_coordinates_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_3d_coordinates_with_params_,python:"set_3d_coordinates_with_params_",javascript:"set3dCoordinatesWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Replace3DCoordinatesParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_3d_coordinates_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Replace3DCoordinatesParams)->Result<(),crate::OperationError>,},
+        {semantic_id:"Molecule.set_3d_coordinates_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_3d_coordinates_with_params_,python:"set_3d_coordinates_with_params_",javascript:"set3dCoordinatesWithParams_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Replace3DCoordinatesParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"set_3d_coordinates_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Replace3DCoordinatesParams)->Result<(),crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_added_3d_conformer",item:callable,owner:molecule,rust:crate::Molecule::with_added_3d_conformer,python:"with_added_3d_conformer",javascript:"withAdded3dConformer",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_added_3d_conformer",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_added_3d_conformer_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_added_3d_conformer_with_params,python:"with_added_3d_conformer_with_params",javascript:"withAdded3dConformerWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_added_3d_conformer_with_params",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.add_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::add_3d_conformer_,python:"add_3d_conformer_",javascript:"add3dConformer",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"add_3d_conformer_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<usize,crate::OperationError>,},
+        {semantic_id:"Molecule.add_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::add_3d_conformer_,python:"add_3d_conformer_",javascript:"add3dConformer_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"add_3d_conformer_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<usize,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.add_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::add_3d_conformer_with_params_,python:"add_3d_conformer_with_params_",javascript:"add3dConformerWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"add_3d_conformer_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<usize,crate::OperationError>,},
+        {semantic_id:"Molecule.add_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::add_3d_conformer_with_params_,python:"add_3d_conformer_with_params_",javascript:"add3dConformerWithParams_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"add_3d_conformer_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<usize,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_only_3d_conformer",item:callable,owner:molecule,rust:crate::Molecule::with_only_3d_conformer,python:"with_only_3d_conformer",javascript:"withOnly3dConformer",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_only_3d_conformer",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_only_3d_conformer_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_only_3d_conformer_with_params,python:"with_only_3d_conformer_with_params",javascript:"withOnly3dConformerWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_only_3d_conformer_with_params",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_only_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::set_only_3d_conformer_,python:"set_only_3d_conformer_",javascript:"setOnly3dConformer",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"set_only_3d_conformer_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<usize,crate::OperationError>,},
+        {semantic_id:"Molecule.set_only_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::set_only_3d_conformer_,python:"set_only_3d_conformer_",javascript:"setOnly3dConformer_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"set_only_3d_conformer_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>)->Result<usize,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.set_only_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_only_3d_conformer_with_params_,python:"set_only_3d_conformer_with_params_",javascript:"setOnly3dConformerWithParams",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"set_only_3d_conformer_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<usize,crate::OperationError>,},
+        {semantic_id:"Molecule.set_only_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::set_only_3d_conformer_with_params_,python:"set_only_3d_conformer_with_params_",javascript:"setOnly3dConformerWithParams_",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required},{name:params,type:&'b crate::Coordinate3DInputParams,default:required}],output:usize,error:crate::OperationError,state:in_place,operation:"set_only_3d_conformer_with_params_",signature:for<'a,'b> fn(&'a mut crate::Molecule,Vec<Vec<f64>>, &'b crate::Coordinate3DInputParams)->Result<usize,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_cleared_3d_conformers",item:callable,owner:molecule,rust:crate::Molecule::with_cleared_3d_conformers,python:"with_cleared_3d_conformers",javascript:"withCleared3dConformers",feature:"cap-transforms",kind:instance,parameters:[],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_cleared_3d_conformers",signature:for<'a> fn(&'a crate::Molecule)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.clear_3d_conformers_",item:callable,owner:molecule,rust:crate::Molecule::clear_3d_conformers_,python:"clear_3d_conformers_",javascript:"clear3dConformers",feature:"cap-transforms",kind:instance,parameters:[],output:(),error:crate::OperationError,state:in_place,operation:"clear_3d_conformers_",signature:for<'a> fn(&'a mut crate::Molecule)->Result<(),crate::OperationError>,},
+        {semantic_id:"Molecule.clear_3d_conformers_",item:callable,owner:molecule,rust:crate::Molecule::clear_3d_conformers_,python:"clear_3d_conformers_",javascript:"clear3dConformers_",feature:"cap-transforms",kind:instance,parameters:[],output:(),error:crate::OperationError,state:in_place,operation:"clear_3d_conformers_",signature:for<'a> fn(&'a mut crate::Molecule)->Result<(),crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"types.EmbedMoleculeResult",item:type,owner:type_,rust:crate::EmbedMoleculeResult,python:"EmbedMoleculeResult",javascript:"EmbedMoleculeResult",feature:"cap-conformer",status:experimental,role:result,},
 #[cfg(feature="cap-conformer")]
@@ -10484,33 +10485,33 @@ binding_contract! {
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformer_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformer_with_params,python:"with_3d_conformer_with_params",javascript:"with3dConformerWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_conformer_with_params",signature:fn(&crate::Molecule,&crate::EmbedParams)->Result<crate::Molecule,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_,python:"embed_3d_conformer_",javascript:"embed3dConformer",feature:"cap-conformer",kind:instance,parameters:[],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_",signature:fn(&mut crate::Molecule)->Result<(),crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformer_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_,python:"embed_3d_conformer_",javascript:"embed3dConformer_",feature:"cap-conformer",kind:instance,parameters:[],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_",signature:fn(&mut crate::Molecule)->Result<(),crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_with_params_,python:"embed_3d_conformer_with_params_",javascript:"embed3dConformerWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_with_params_",signature:fn(&mut crate::Molecule,&crate::EmbedParams)->Result<(),crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformer_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_with_params_,python:"embed_3d_conformer_with_params_",javascript:"embed3dConformerWithParams_",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_with_params_",signature:fn(&mut crate::Molecule,&crate::EmbedParams)->Result<(),crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformer_result",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformer_result,python:"with_3d_conformer_result",javascript:"with3dConformerResult",feature:"cap-conformer",kind:instance,parameters:[],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:value_returning,operation:"with_3d_conformer_result",signature:fn(&crate::Molecule)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformer_result_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformer_result_with_params,python:"with_3d_conformer_result_with_params",javascript:"with3dConformerResultWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:value_returning,operation:"with_3d_conformer_result_with_params",signature:fn(&crate::Molecule,&crate::EmbedParams)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformer_result_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_result_,python:"embed_3d_conformer_result_",javascript:"embed3dConformerResult",feature:"cap-conformer",kind:instance,parameters:[],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_result_",signature:fn(&mut crate::Molecule)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformer_result_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_result_,python:"embed_3d_conformer_result_",javascript:"embed3dConformerResult_",feature:"cap-conformer",kind:instance,parameters:[],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_result_",signature:fn(&mut crate::Molecule)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformer_result_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_result_with_params_,python:"embed_3d_conformer_result_with_params_",javascript:"embed3dConformerResultWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_result_with_params_",signature:fn(&mut crate::Molecule,&crate::EmbedParams)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformer_result_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformer_result_with_params_,python:"embed_3d_conformer_result_with_params_",javascript:"embed3dConformerResultWithParams_",feature:"cap-conformer",kind:instance,parameters:[{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMoleculeResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformer_result_with_params_",signature:fn(&mut crate::Molecule,&crate::EmbedParams)->Result<crate::EmbedMoleculeResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformers",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformers,python:"with_3d_conformers",javascript:"with3dConformers",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_conformers",signature:fn(&crate::Molecule,u32)->Result<crate::Molecule,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformers_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformers_with_params,python:"with_3d_conformers_with_params",javascript:"with3dConformersWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_conformers_with_params",signature:fn(&crate::Molecule,u32,&crate::EmbedParams)->Result<crate::Molecule,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformers_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_,python:"embed_3d_conformers_",javascript:"embed3dConformers",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_",signature:fn(&mut crate::Molecule,u32)->Result<(),crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformers_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_,python:"embed_3d_conformers_",javascript:"embed3dConformers_",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_",signature:fn(&mut crate::Molecule,u32)->Result<(),crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_with_params_,python:"embed_3d_conformers_with_params_",javascript:"embed3dConformersWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_with_params_",signature:fn(&mut crate::Molecule,u32,&crate::EmbedParams)->Result<(),crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_with_params_,python:"embed_3d_conformers_with_params_",javascript:"embed3dConformersWithParams_",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_with_params_",signature:fn(&mut crate::Molecule,u32,&crate::EmbedParams)->Result<(),crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformers_result",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformers_result,python:"with_3d_conformers_result",javascript:"with3dConformersResult",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:value_returning,operation:"with_3d_conformers_result",signature:fn(&crate::Molecule,u32)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformers_result_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformers_result_with_params,python:"with_3d_conformers_result_with_params",javascript:"with3dConformersResultWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:value_returning,operation:"with_3d_conformers_result_with_params",signature:fn(&crate::Molecule,u32,&crate::EmbedParams)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformers_result_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_result_,python:"embed_3d_conformers_result_",javascript:"embed3dConformersResult",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_result_",signature:fn(&mut crate::Molecule,u32)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformers_result_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_result_,python:"embed_3d_conformers_result_",javascript:"embed3dConformersResult_",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_result_",signature:fn(&mut crate::Molecule,u32)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.embed_3d_conformers_result_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_result_with_params_,python:"embed_3d_conformers_result_with_params_",javascript:"embed3dConformersResultWithParams",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_result_with_params_",signature:fn(&mut crate::Molecule,u32,&crate::EmbedParams)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
+{semantic_id:"Molecule.embed_3d_conformers_result_with_params_",item:callable,owner:molecule,rust:crate::Molecule::embed_3d_conformers_result_with_params_,python:"embed_3d_conformers_result_with_params_",javascript:"embed3dConformersResultWithParams_",feature:"cap-conformer",kind:instance,parameters:[{name:num_confs,type:u32,default:required},{name:params,type:&crate::EmbedParams,default:required}],output:crate::EmbedMultipleConfsResult,error:crate::OperationError,state:in_place,operation:"embed_3d_conformers_result_with_params_",signature:fn(&mut crate::Molecule,u32,&crate::EmbedParams)->Result<crate::EmbedMultipleConfsResult,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"types.EmbedParams",item:type,owner:type_,rust:crate::EmbedParams,python:"EmbedParams",javascript:"EmbedParams",feature:"cap-conformer",status:experimental,
             python_configuration: [
@@ -11013,9 +11014,9 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.with_kekulized_bonds_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::with_kekulized_bonds_with_params,python:"with_kekulized_bonds_with_params",javascript:"withKekulizedBondsWithParams",feature:"cap-batch",requires:["cap-kekulize"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::KekulizeParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::KekulizeParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.add_2d_coordinates",item:callable,owner:type_,rust:crate::MoleculeBatch::add_2d_coordinates,python:"add_2d_coordinates",javascript:"add2dCoordinates",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.with_2d_coordinates",item:callable,owner:type_,rust:crate::MoleculeBatch::with_2d_coordinates,python:"with_2d_coordinates",javascript:"with2dCoordinates",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.add_2d_coordinates_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::add_2d_coordinates_with_params,python:"add_2d_coordinates_with_params",javascript:"add2dCoordinatesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::Coordinate2DParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::Coordinate2DParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.with_2d_coordinates_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::with_2d_coordinates_with_params,python:"with_2d_coordinates_with_params",javascript:"with2dCoordinatesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::Coordinate2DParams,default:required},{name:params,type:&crate::BatchParams,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::Coordinate2DParams,&'c crate::BatchParams)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchQueryParams",item:type,owner:type_,rust:crate::BatchQueryParams,python:"BatchQueryParams",javascript:"BatchQueryParams",feature:"cap-batch",status:native,
             python_configuration: [
@@ -11221,17 +11222,17 @@ binding_contract! {
         #[cfg(feature="cap-forcefields")] {semantic_id:"Molecule.uff_force_field",item:callable,owner:molecule,rust:crate::Molecule::uff_force_field,python:"uff_force_field",javascript:"uffForceField",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::MolecularForceField,error:crate::UffForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule)->Result<crate::MolecularForceField,crate::UffForceFieldError>,python_keywords:{parameters:"UffForceFieldParams.new",target:"Molecule.uff_force_field_with_params"}},
         #[cfg(feature="cap-forcefields")] {semantic_id:"Molecule.uff_force_field_with_params",item:callable,owner:molecule,rust:crate::Molecule::uff_force_field_with_params,python:"uff_force_field_with_params",javascript:"uffForceFieldWithParams",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::UffForceFieldParams,default:required}],output:crate::MolecularForceField,error:crate::UffForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule, &crate::UffForceFieldParams)->Result<crate::MolecularForceField,crate::UffForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.position",item:callable,owner:type_,rust:crate::MolecularForceField::position,python:"position",javascript:"position",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[{name:atom_id,type:crate::AtomId,default:required}],output:[f64;3],error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField, crate::AtomId)->Result<[f64;3],crate::ForceFieldError>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_position_",item:callable,owner:type_,rust:crate::MolecularForceField::set_position_,python:"set_position_",javascript:"setPosition",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_id,type:crate::AtomId,default:required},{name:position,type:[f64;3],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, crate::AtomId,[f64;3])->Result<(),crate::ForceFieldError>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_position_",item:callable,owner:type_,rust:crate::MolecularForceField::set_position_,python:"set_position_",javascript:"setPosition_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_id,type:crate::AtomId,default:required},{name:position,type:[f64;3],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, crate::AtomId,[f64;3])->Result<(),crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.positions",item:callable,owner:type_,rust:crate::MolecularForceField::positions,python:"positions",javascript:"positions",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<[f64;3]>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_positions_",item:callable,owner:type_,rust:crate::MolecularForceField::set_positions_,python:"set_positions_",javascript:"setPositions",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:positions,type:&[[f64;3]],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[[f64;3]])->Result<(),crate::ForceFieldError>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_positions_",item:callable,owner:type_,rust:crate::MolecularForceField::set_positions_,python:"set_positions_",javascript:"setPositions_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:positions,type:&[[f64;3]],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[[f64;3]])->Result<(),crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.fixed_atoms",item:callable,owner:type_,rust:crate::MolecularForceField::fixed_atoms,python:"fixed_atoms",javascript:"fixedAtoms",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<crate::AtomId>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<crate::AtomId>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_fixed_atoms_",item:callable,owner:type_,rust:crate::MolecularForceField::set_fixed_atoms_,python:"set_fixed_atoms_",javascript:"setFixedAtoms",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_ids,type:&[crate::AtomId],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[crate::AtomId])->Result<(),crate::ForceFieldError>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_fixed_atoms_",item:callable,owner:type_,rust:crate::MolecularForceField::set_fixed_atoms_,python:"set_fixed_atoms_",javascript:"setFixedAtoms_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_ids,type:&[crate::AtomId],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[crate::AtomId])->Result<(),crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.energy",item:callable,owner:type_,rust:crate::MolecularForceField::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:f64,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<f64,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.gradient",item:callable,owner:type_,rust:crate::MolecularForceField::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<Vec<[f64;3]>,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.gradient_unconstrained",item:callable,owner:type_,rust:crate::MolecularForceField::gradient_unconstrained,python:"gradient_unconstrained",javascript:"gradientUnconstrained",feature:"cap-forcefields",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<Vec<[f64;3]>,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.energy_gradient",item:callable,owner:type_,rust:crate::MolecularForceField::energy_gradient,python:"energy_gradient",javascript:"energyGradient",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::ForceFieldEnergyGradient,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<crate::ForceFieldEnergyGradient,crate::ForceFieldError>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_,python:"minimize_",javascript:"minimize",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>,python_keywords:{parameters:"ForceFieldMinimizeParams.new",target:"MolecularForceField.minimize_with_params_"}},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_with_params_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_with_params_,python:"minimize_with_params_",javascript:"minimizeWithParams",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ForceFieldMinimizeParams,default:required}],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &crate::ForceFieldMinimizeParams)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_,python:"minimize_",javascript:"minimize_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>,python_keywords:{parameters:"ForceFieldMinimizeParams.new",target:"MolecularForceField.minimize_with_params_"}},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.minimize_with_params_",item:callable,owner:type_,rust:crate::MolecularForceField::minimize_with_params_,python:"minimize_with_params_",javascript:"minimizeWithParams_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ForceFieldMinimizeParams,default:required}],output:crate::ForceFieldMinimizeOutcome,error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &crate::ForceFieldMinimizeParams)->Result<crate::ForceFieldMinimizeOutcome,crate::ForceFieldError>},
 #[cfg(feature="cap-reaction")]
 { semantic_id:"types.ReactionParseParams", item:type, owner:type_, rust:crate::ReactionParseParams, python:"ReactionParseParams", javascript:"ReactionParseParams", feature:"cap-reaction", status:experimental,
             python_configuration: [
@@ -11483,7 +11484,7 @@ binding_contract! {
           signature:for<'a,'b,'c> fn(&'a crate::Molecule,crate::AtomId,&'b str,&'c crate::PropertyValue)->Result<crate::Molecule,crate::OperationError>, },
         #[cfg(feature = "cap-transforms")]
         { semantic_id:"Molecule.set_atom_property_", item:callable, owner:molecule,
-          rust:crate::Molecule::set_atom_property_, python:"set_atom_property_", javascript:"setAtomProperty",
+          rust:crate::Molecule::set_atom_property_, python:"set_atom_property_", javascript:"setAtomProperty_",
           feature:"cap-transforms", kind:instance, receiver:mutable,
           parameters:[{name:atom,type:crate::AtomId,default:required},{name:key,type:&str,default:required},{name:value,type:&crate::PropertyValue,default:required}],
           output:(), error:crate::OperationError, state:in_place, operation:"set_atom_property_",

@@ -35,7 +35,7 @@ def test_original_mol_hash_with_ranks():
 
 
 def test_full_original_chembl_hash_morgan_2d_and_binary_pickle_condition():
-    molecule = cosmolkit.Molecule.from_smiles("CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO").add_2d_coordinates()
+    molecule = cosmolkit.Molecule.from_smiles("CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO").with_2d_coordinates()
     before = molecule.to_binary()
     expected_hash = molecule.molecular_hash()
     expected_morgan = molecule.fingerprint_morgan()

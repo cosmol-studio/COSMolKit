@@ -274,7 +274,7 @@ fn compute_dihedral_from_points(
     // RDKit✔️✔️:   if (!cosPhi) {
     // RDKit✔️✔️:     cosPhi = &cosPhiLocal;
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   *cosPhi = (std::max)(-1.0, (std::min)(t[0].dotProduct(t[1]), 1.0));
+    // RDKit✔️✔️:   *cosPhi = std::clamp(t[0].dotProduct(t[1]), -1.0, 1.0);
     // RDKit✔️✔️:   // we want a signed dihedral, that's why we use atan2 instead of acos
     // RDKit✔️✔️:   if (dihedral) {
     // RDKit✔️✔️:     RDGeom::Point3D m = t[0].crossProduct(r[1]);
@@ -316,13 +316,9 @@ fn compute_dihedral_from_points(
 
     let mut cos_phi_local = 0.0;
     let cos_phi = cos_phi.unwrap_or(&mut cos_phi_local);
-    let normal_dot = t[0].dot_product(&t[1]);
-    let clamped_upper = if 1.0 < normal_dot { 1.0 } else { normal_dot };
-    *cos_phi = if -1.0 < clamped_upper {
-        clamped_upper
-    } else {
-        -1.0
-    };
+    // Candidate ForceField.cpp:81: ordered bound comparisons retain an
+    // unordered (NaN) input; fixed-size arithmetic remains allocation-free.
+    *cos_phi = t[0].dot_product(&t[1]).clamp(-1.0, 1.0);
 
     if let Some(dihedral) = dihedral {
         let m = t[0].cross_product(&r[1]);
@@ -896,13 +892,13 @@ mod tests {
     }
 
     #[test]
-    fn cf3d_f02_nested_source_min_max_preserves_nan_order() {
+    fn dihedral_clamp_preserves_nan_normal_dot() {
         let nan_point = point(f64::NAN, 0.0, 0.0);
         let p2 = point(0.0, 0.0, 0.0);
         let p3 = point(0.0, 1.0, 0.0);
         let p4 = point(1.0, 1.0, 0.0);
         let (dihedral, cos_phi, _, _, d) = calculate_all(&nan_point, &p2, &p3, &p4);
-        assert_eq!(cos_phi, -1.0);
+        assert!(cos_phi.is_nan());
         assert!(dihedral.is_nan());
         assert!(d[0].is_nan());
     }

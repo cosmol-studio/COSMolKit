@@ -33,8 +33,8 @@ COSMolKit combines a native Rust API with Python interfaces for scientific and m
 
 ## COSMolKit 0.5.0
 
-The current chemistry reference is RDKit **2026.03.6** (Python distribution
-`2026.3.6`). See the [source-upgrade record](dev/source_provenance/rdkit_2026_03_1_to_2026_03_6.md)
+The current chemistry reference is RDKit **2026.09.1** (Python distribution
+`2026.9.1`). See the [upstream-diff audit](dev/source_provenance/rdkit_2026_03_6_to_2026_09_1.md)
 for the exact revision and upstream-diff scope.
 
 - **Modular Rust architecture:** separate crates own model values and domain
@@ -107,7 +107,7 @@ are published as separate packages.
 ## Core Concepts
 
 - **Value-style molecules:** methods such as `with_hydrogens()`,
-  `without_hydrogens()`, `with_kekulized_bonds()`, and `add_2d_coordinates()` return new molecule values, keeping topology-changing operations explicit and preventing derived chemistry state from being silently invalidated.
+  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coordinates()` return new molecule values, keeping topology-changing operations explicit and preventing derived chemistry state from being silently invalidated.
 - **Explicit mutation:** in-place `Molecule` operations always end with `_`.
   The trailing underscore has no other public `Molecule` meaning.
 - **Explicit errors:** invalid input and unsupported behavior are surfaced as
@@ -143,7 +143,7 @@ assert mol is not mol_h
 import cosmolkit as ck
 
 mol = ck.mol_from_smiles("c1ccccc1O")
-mol_2d = mol.add_2d_coordinates()
+mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
 print(mol_2d.coordinates_2d())
@@ -177,7 +177,7 @@ batch = (
     .with_progress_bar(False)
 )
 
-prepared = batch.with_hydrogens().add_2d_coordinates()
+prepared = batch.with_hydrogens().with_2d_coordinates()
 print(prepared.valid_mask())
 print(prepared.to_smiles_list())
 
@@ -195,7 +195,7 @@ import init, * as ck from "@cosmol-studio/cosmolkit";
 await init();
 
 const mol = ck.Molecule.fromSmiles("c1ccccc1O");
-const mol2d = mol.add2dCoordinates();
+const mol2d = mol.with2dCoordinates();
 const fp = mol.fingerprintMorgan();
 const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "c1ccccc1", "CC(=O)O"]);
 

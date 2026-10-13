@@ -9672,7 +9672,9 @@ mod cx_progress_coordinate_tests {
             .finish()
             .expect("query graph");
         let progress = cosmolkit_cx::parse_cx_extensions_progress("|(1,2,3;bad,0,0)|");
-        assert!(!progress.is_complete());
+        // Candidate std::atof maps the no-conversion token to zero; it is no
+        // longer a structural failure of the CX coordinate block.
+        assert!(progress.is_complete());
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed CX effects");
 
         assert_eq!(graph.conformers_3d().len(), 1);

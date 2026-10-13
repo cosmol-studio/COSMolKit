@@ -2648,7 +2648,7 @@ mod tests {
         ));
     }
     #[test]
-    fn source606_real_ring_cache_reset_and_property_error_precede_scoring() {
+    fn candidate_rdl_ring_cache_preparation_preserves_computed_dictionary_before_scoring() {
         let g = topology(
             &[(6, ChiralTag::Unspecified), (6, ChiralTag::Unspecified)],
             vec![edge(0, 1, BondOrder::Single)],
@@ -2656,7 +2656,7 @@ mod tests {
         let mut rings = RingInfo::new(RingFindType::Fast, 2, 1);
         let mut props = cosmolkit_model::MoleculeProperties::default();
         props.set_prop("__computedProps", false).unwrap();
-        let error = super::pick_bond_to_wedge_with_source_properties(
+        let selected = super::pick_bond_to_wedge_with_source_properties(
             &g,
             &mut rings,
             AtomId::new(0),
@@ -2665,14 +2665,12 @@ mod tests {
             100,
             Some(&mut props),
         )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            WedgeError::RingFinding(crate::RingFindingError::MoleculeProperty(_))
-        ));
+        .unwrap();
+        assert_eq!(selected, 0);
         assert_eq!(rings.find_type(), RingFindType::Sssr);
         assert!(rings.is_initialized());
-        assert_eq!(rings.atom_row_count(), 0);
+        assert_eq!(rings.atom_row_count(), 2);
+        assert_eq!(rings.bond_row_count(), 1);
         assert_eq!(
             props.prop("__computedProps"),
             Some(&cosmolkit_model::PropertyValue::Bool(false))
@@ -2708,7 +2706,7 @@ mod tests {
         );
     }
     #[test]
-    fn source606_actual_properties_clear_only_source_computed_extra_rings_when_preparing() {
+    fn candidate_rdl_preparation_preserves_computed_extra_rings() {
         let g = topology(
             &[(6, ChiralTag::Unspecified), (6, ChiralTag::Unspecified)],
             vec![edge(0, 1, BondOrder::Single)],
@@ -2730,7 +2728,10 @@ mod tests {
             .unwrap(),
             0
         );
-        assert!(props.prop("extraRings").is_none());
+        assert_eq!(
+            props.prop("extraRings"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
         assert_eq!(
             props.prop("ordinary"),
             Some(&cosmolkit_model::PropertyValue::String("kept".into()))
@@ -4537,8 +4538,8 @@ mod source662_explicit_picker_tests {
         let mut r = weak();
         let m = pick_bonds_to_wedge_source(&mut t, None, &mut r, None).unwrap();
         assert!(r.is_sssr_or_better());
-        assert_eq!(r.atom_row_count(), 0);
-        assert_eq!(r.bond_row_count(), 0);
+        assert_eq!(r.atom_row_count(), 4);
+        assert_eq!(r.bond_row_count(), 3);
         assert!(
             matches!(m.get(BondId::new(1)),Some(WedgeInfo::Atropisomer {update}) if update.atropisomer_bond==BondId::new(0))
         );
@@ -4610,7 +4611,7 @@ mod source662_explicit_picker_tests {
         assert_eq!(projected.0.iter().count(), 0);
     }
     #[test]
-    fn source662_real_property_error_precedes_chiral_scoring_and_atrop_reads() {
+    fn candidate_rdl_preserves_dictionary_then_reaches_real_valence_error() {
         let mut t = graph(BondStereo::AtropCcw, true, BondDirection::None);
         t.atoms[0].set_no_implicit(false);
         t.atoms[0].set_source_valence_facts(SourceAtomValenceFacts::UNINITIALIZED);
@@ -4618,12 +4619,16 @@ mod source662_explicit_picker_tests {
         let mut r = weak();
         let mut props = cosmolkit_model::MoleculeProperties::default();
         props.set_prop("__computedProps", false).unwrap();
-        assert!(matches!(
-            pick_bonds_to_wedge_source(&mut t, None, &mut r, Some(&mut props)),
-            Err(WedgeError::RingFinding(
-                crate::RingFindingError::MoleculeProperty(_)
-            ))
-        ));
+        let error = pick_bonds_to_wedge_source(&mut t, None, &mut r, Some(&mut props)).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                WedgeError::Atropisomer(crate::AtropisomerError::Valence(
+                    crate::ValenceError::ImplicitValenceCacheNotInitialized { atom }
+                )) if atom == AtomId::new(0)
+            ),
+            "{error:?}"
+        );
         assert!(r.is_sssr_or_better());
         assert_eq!(t, before);
         assert_eq!(
@@ -6075,7 +6080,7 @@ mod query_cx_producers_source_tests {
         assert!(r.is_sssr_or_better());
     }
     #[test]
-    fn source_ring_property_clearing_uses_actual_computed_dictionary() {
+    fn candidate_rdl_query_ring_preparation_preserves_legacy_properties() {
         let mut q = graph(3, &[(0, 1), (1, 2), (2, 0)]);
         let mut r = rings();
         let mut p = MoleculeProperties::default();
@@ -6086,7 +6091,10 @@ mod query_cx_producers_source_tests {
         .unwrap();
         p.set_prop("keep", PropertyValue::Int(7)).unwrap();
         pick_query_bonds_to_wedge_source(&mut q, None, &mut r, Some(&mut p)).unwrap();
-        assert!(p.prop("extraRings").is_none());
+        assert_eq!(
+            p.prop("extraRings"),
+            Some(&PropertyValue::String("stale".into()))
+        );
         assert_eq!(p.prop("keep"), Some(&PropertyValue::Int(7)));
     }
     #[test]

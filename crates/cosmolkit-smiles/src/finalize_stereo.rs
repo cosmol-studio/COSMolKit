@@ -2,7 +2,7 @@
 
 use cosmolkit_core::{
     DoubleBondStereoError, LegacyStereoError, RingFindType, RingFindingError, RingInfo,
-    RingSearchParams, ValenceAssignment, ValenceError, ValenceModel, assign_legacy_stereochemistry,
+    RingSearchParams, ValenceAssignment, ValenceError, ValenceModel,
     assign_valence_state_for_atom_from_parts, assign_valence_with_options_for_topology,
     clear_single_bond_directions, fast_find_rings, set_double_bond_neighbor_directions,
     symmetrized_sssr,
@@ -200,6 +200,47 @@ mod smiles_stereo_ring_matrix_tests {
             sanitize,
             remove_hs,
             ..SmilesParseParams::default()
+        }
+    }
+
+    #[test]
+    fn candidate_finalizer_accepts_sparse_rdl_membership_after_selective_reset() {
+        let base = g2();
+        let mut atoms = base.atoms;
+        atoms.push(Atom::from_spec(AtomId::new(6), AtomSpec::new(Element::C)));
+        let input = topology(atoms, base.bonds);
+        let mut rings = find_sssr(&input, &Default::default()).unwrap();
+        cosmolkit_core::symmetrized_sssr_with_existing(
+            &input,
+            &mut rings,
+            false,
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(rings.atom_row_count(), 6);
+        assert_eq!(input.atoms.len(), 7);
+        assert!(rings.atom_members(AtomId::new(6)).is_empty());
+        for marker in [false, true] {
+            let mut value = record(input.clone());
+            if marker {
+                value
+                    .properties
+                    .set_prop("_needsDetectBondStereo", true)
+                    .unwrap();
+            }
+            let mut prepared = Some(rings.clone());
+            let output =
+                finalize_smiles_stereo(value, &params(true, false), &mut None, &mut prepared)
+                    .unwrap();
+            assert_eq!(output.topology.atoms.len(), 7);
+            assert_eq!(prepared.as_ref().unwrap().atom_row_count(), 6);
+            assert!(
+                prepared
+                    .as_ref()
+                    .unwrap()
+                    .atom_members(AtomId::new(6))
+                    .is_empty()
+            );
         }
     }
 
@@ -1386,15 +1427,22 @@ pub(crate) fn finalize_smiles_stereo_with_conformer(
         // the core ring read. Core RingInfo's checked constructors own
         // index/member invariants; only membership DIMENSIONS are checked
         // here, never same-sized stale rows or num_rings()>0 inference.
+        // RDKit✔️✔️: if (idx < d_atomMembers.size()) {
+        // RDKit✔️✔️:   return d_atomMembers[idx];
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: return emptyVect;
+        // Candidate reset(false) retains RDL and rebuilds only ring-member
+        // prefixes. Missing trailing rows are source-defined empty membership.
+        // Two constant-cost upper-bound checks; no padding or repeated finding.
         let (atom_rows, bond_rows) = (rings.atom_row_count(), rings.bond_row_count());
-        if atom_rows != record.topology.atoms.len() {
+        if atom_rows > record.topology.atoms.len() {
             return Err(SmilesStereoError::RingRows {
                 dimension: "atom",
                 actual: atom_rows,
                 expected: record.topology.atoms.len(),
             });
         }
-        if bond_rows != record.topology.bonds.len() {
+        if bond_rows > record.topology.bonds.len() {
             return Err(SmilesStereoError::RingRows {
                 dimension: "bond",
                 actual: bond_rows,
@@ -1510,15 +1558,21 @@ pub(crate) fn finalize_smiles_stereo_with_conformer(
         .as_ref()
         .expect("fast-or-better carrier present at the legacy owner");
     {
+        // RDKit✔️✔️: if (idx < d_atomMembers.size()) {
+        // RDKit✔️✔️:   return d_atomMembers[idx];
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: return emptyVect;
+        // Same source-defined sparse membership as the direction stage above;
+        // retain out-of-topology storage rejection with O(1) metadata reads.
         let (atom_rows, bond_rows) = (rings.atom_row_count(), rings.bond_row_count());
-        if atom_rows != record.topology.atoms.len() {
+        if atom_rows > record.topology.atoms.len() {
             return Err(SmilesStereoError::RingRows {
                 dimension: "atom",
                 actual: atom_rows,
                 expected: record.topology.atoms.len(),
             });
         }
-        if bond_rows != record.topology.bonds.len() {
+        if bond_rows > record.topology.bonds.len() {
             return Err(SmilesStereoError::RingRows {
                 dimension: "bond",
                 actual: bond_rows,
@@ -1545,7 +1599,17 @@ pub(crate) fn finalize_smiles_stereo_with_conformer(
         .collect::<Vec<_>>();
     #[cfg(test)]
     ring_probe::record_legacy_entry();
-    record.topology = assign_legacy_stereochemistry(record.topology, valence, rings)?;
+    let conformer = record.coordinates.first_source_conformer()?.map(Into::into);
+    record.topology = cosmolkit_core::assign_legacy_stereochemistry_with_conformer(
+        record.topology,
+        valence,
+        rings,
+        None,
+        conformer,
+        true,
+        true,
+    )?
+    .topology;
     // RDKit✔️✔️:       atom->setNumExplicitHs(0);
     // RDKit✔️✔️:       atom->setNoImplicit(false);
     // RDKit✔️✔️:       atom->calcExplicitValence(false);

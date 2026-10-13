@@ -1,5 +1,76 @@
 use super::*;
 #[test]
+fn prepared_tautomer_queries_preserve_sparse_nonring_suffix() {
+    let mut record = fixture_from_smiles("C1CC1C").unwrap();
+    let atoms: Vec<_> = record.rings.atom_rings()[0]
+        .iter()
+        .map(|id| id.index())
+        .collect();
+    let bonds: Vec<_> = record.rings.bond_rings()[0]
+        .iter()
+        .map(|id| id.index())
+        .collect();
+    record.rings.reset();
+    record.rings.initialize(RingFindType::SymmSssr);
+    record.rings.add_ring(&atoms, &bonds).unwrap();
+    assert_eq!(
+        (0..4)
+            .map(|i| record.rings.num_atom_rings(AtomId::new(i)))
+            .collect::<Vec<_>>(),
+        [1, 1, 1, 0]
+    );
+    let coordinates = CoordinateBlock::default();
+    let query = cosmolkit_search::parse_smarts("[R0]", &Default::default()).unwrap();
+    let compiled = CompiledQuery::compile(query).unwrap();
+    let matches = query_matches(record.view(&coordinates), &compiled).unwrap();
+    assert_eq!(matches, vec![vec![3]]);
+    assert_eq!(
+        query_match_count(record.view(&coordinates), &compiled, &Default::default()).unwrap(),
+        1
+    );
+    assert_eq!(record.rings.atom_row_count(), 3);
+}
+
+#[test]
+fn unknown_ring_double_stereo_is_preserved_without_controllers() {
+    let mut source = fixture_from_smiles("C1=CCCCC1").unwrap();
+    let id = source
+        .topology
+        .bonds
+        .iter()
+        .find(|bond| bond.order() == BondOrder::Double)
+        .unwrap()
+        .id();
+    source.topology.bonds[id.index()].set_stereo_atoms(None);
+    source.topology.bonds[id.index()]
+        .set_stereo(BondStereo::Any)
+        .unwrap();
+    let mut candidate = source.clone();
+    candidate.topology.bonds[id.index()]
+        .set_stereo(BondStereo::None)
+        .unwrap();
+    set_tautomer_stereo_and_isotopic_hydrogens(
+        &source,
+        &mut candidate,
+        &BTreeSet::new(),
+        &marked_bonds([id.index()]),
+        TautomerParams::default()
+            .with_remove_bond_stereo(false)
+            .with_reassign_stereo(false),
+    )
+    .unwrap();
+    assert_eq!(
+        candidate.topology.bonds[id.index()].stereo(),
+        BondStereo::Any
+    );
+    assert!(
+        candidate.topology.bonds[id.index()]
+            .stereo_atom_references()
+            .is_empty()
+    );
+}
+
+#[test]
 fn stereo_cleanup_retains_recalculated_hydrogens_for_subsequent_query_matching() {
     let mut record = fixture_from_smiles("CC(C)O").unwrap();
     record.topology.atoms[1].set_chiral_tag(ChiralTag::TetrahedralCcw);
@@ -623,7 +694,8 @@ fn single_query_endpoint_transfers_hydrogen_in_source_order() {
     let candidate = kekulized(&source).unwrap();
     let catalog = crate::TautomerCatalog::from_data(&[("same endpoint", "[CH4]", "", "")]).unwrap();
     let transform = &catalog.transforms()[0];
-    let matches = transform_matches(&candidate, &CoordinateBlock::default(), transform).unwrap();
+    let matches =
+        transform_matches(&candidate, &CoordinateBlock::default(), transform, &[]).unwrap();
     assert_eq!(matches.len(), 1);
     let before = source.clone();
     let attempt = apply_tautomer_transform_match(
@@ -745,14 +817,14 @@ fn search05_modified_source_double_validity_and_controller_width_matrix() {
                                 (0..candidate_width).map(|i| refs[i % 2]).collect(),
                             );
                             let valid = source_order == BondOrder::Double
-                                && matches!(
-                                    stereo,
-                                    BondStereo::Z
-                                        | BondStereo::E
-                                        | BondStereo::Cis
-                                        | BondStereo::Trans
-                                )
-                                && source_width == 2;
+                                && (stereo == BondStereo::Any
+                                    || (matches!(
+                                        stereo,
+                                        BondStereo::Z
+                                            | BondStereo::E
+                                            | BondStereo::Cis
+                                            | BondStereo::Trans
+                                    ) && source_width == 2));
                             let removed = candidate_order != BondOrder::Double || remove || !valid;
                             let expected = if removed {
                                 if candidate_order == BondOrder::Double {
@@ -775,18 +847,23 @@ fn search05_modified_source_double_validity_and_controller_width_matrix() {
                             .unwrap();
                             let actual = &candidate.topology.bonds[id.index()];
                             assert_eq!(actual.stereo(), expected);
+                            let expected_width = if removed {
+                                0
+                            } else if source_width == 2 {
+                                2
+                            } else {
+                                candidate_width
+                            };
                             assert_eq!(
                                 actual.stereo_atoms(),
-                                if removed { None } else { Some(refs) }
+                                (expected_width == 2).then_some(refs)
                             );
-                            assert_eq!(
-                                actual.stereo_atom_references().len(),
-                                if removed { 0 } else { 2 }
-                            );
+                            assert_eq!(actual.stereo_atom_references().len(), expected_width);
                             // Source removed branch counts stereo change only, not clearing refs.
                             assert_eq!(
                                 changed,
-                                BondStereo::Any != expected || (!removed && candidate_width != 2)
+                                BondStereo::Any != expected
+                                    || (!removed && candidate_width != source_width)
                             );
                             assert_eq!(source, before);
                         }

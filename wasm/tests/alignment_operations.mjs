@@ -49,13 +49,13 @@ test("all eighteen alignment operations expose canonical results and mutation se
         assert.ok(report instanceof binding.ConformerAlignmentReport);
         assert.deepEqual([...report.rmsds()], []);
     }
-    assert.ok(probe.alignTo(probe).rmsd() < 1e-12);
-    assert.ok(probe.alignToWithParams(probe, params).rmsd() < 1e-12);
-    assert.ok(probe.alignTo(reference).rmsd() < 1e-12);
-    assert.ok(probe.alignToWithParams(reference, params).rmsd() < 1e-12);
+    assert.ok(probe.alignTo_(probe).rmsd() < 1e-12);
+    assert.ok(probe.alignToWithParams_(probe, params).rmsd() < 1e-12);
+    assert.ok(probe.alignTo_(reference).rmsd() < 1e-12);
+    assert.ok(probe.alignToWithParams_(reference, params).rmsd() < 1e-12);
     assert.ok(probe.coordinateRmsdTo(reference) < 1e-12);
-    assert.deepEqual([...probe.alignConformers().rmsds()], []);
-    assert.deepEqual([...probe.alignConformersWithParams(conformers).rmsds()], []);
+    assert.deepEqual([...probe.alignConformers_().rmsds()], []);
+    assert.deepEqual([...probe.alignConformersWithParams_(conformers).rmsds()], []);
     assert.equal(reference.numAtoms(), 2);
 });
 
@@ -78,7 +78,7 @@ test("alignment errors preserve domain, kind, fields, cause and wrapper empty-li
         assert.equal(error.detail.kind, error.kind);
         return true;
     });
-    assert.throws(() => probe.alignToWithParams(reference, params), error => {
+    assert.throws(() => probe.alignToWithParams_(reference, params), error => {
         assert.equal(error.domain, "operation");
         assert.equal(error.kind, "Alignment");
         assert.equal(error.cause.domain, "alignment");

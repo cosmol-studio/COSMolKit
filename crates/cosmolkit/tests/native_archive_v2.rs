@@ -61,6 +61,8 @@ fn public_archive20_roundtrip_preserves_state_and_does_not_detach_input() {
     let properties_before = molecule.properties() as *const _;
     let bytes = molecule.to_binary().unwrap();
     assert_eq!(&bytes[..12], b"COSMOL\0\0\x02\0\0\0");
+    // The first block's codec byte: new writes use ck-wire-v1, not storage.
+    assert_eq!(bytes[19], 3);
     let restored = Molecule::from_binary(&bytes).unwrap();
     assert_eq!(restored.topology(), molecule.topology());
     assert_eq!(restored.properties(), molecule.properties());
@@ -75,6 +77,29 @@ fn public_archive20_roundtrip_preserves_state_and_does_not_detach_input() {
     assert_eq!(properties_before, molecule.properties() as *const _);
     assert!(std::ptr::eq(molecule.topology(), peer.topology()));
     assert!(std::ptr::eq(molecule.properties(), peer.properties()));
+}
+
+#[test]
+fn public_archive20_reads_storage_from_050_and_writes_wire() {
+    // Fixed codec-2/schema-1 empty molecule, producer 0.5.0. The public reader
+    // must dispatch from the file, without a caller-supplied format option.
+    let bytes = [
+        b"COSMOL\0\0\x02\0\0\0\x03\0".as_slice(),
+        b"\x01\0\x01\0\x01\x02\x1b\0\0\0",
+        b"\x04\0\x050.5.0\x01\x0dck-storage-v1\x02\x01\x03\x01",
+        b"\x02\0\x01\0\x01\x02\x19\0\0\0",
+        &[
+            12, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0, 11, 0,
+        ],
+        b"\x03\0\x01\0\x01\x02\x09\0\0\0",
+        &[4, 0, 0, 1, 0, 2, 0, 3, 0],
+    ]
+    .concat();
+    let molecule = Molecule::from_binary(&bytes).unwrap();
+    assert_eq!(molecule, Molecule::new());
+    let rewritten = molecule.to_binary().unwrap();
+    assert_eq!(rewritten[19], 3);
+    assert_eq!(Molecule::from_binary(&rewritten).unwrap(), molecule);
 }
 
 #[test]
@@ -101,9 +126,9 @@ fn public_archive20_rejects_corruption_without_changing_an_existing_molecule() {
             u32::from_le_bytes(baseline[offset + 6..offset + 10].try_into().unwrap()) as usize;
         let payload = offset + 10;
         if id == 3 {
-            // Derived schema 1: four fields, field 0, validity bits 0.
-            assert_eq!(&baseline[payload..payload + 3], &[4, 0, 0]);
-            inconsistent_cache[payload + 2] = 1;
+            // Wire derived schema 1: eight map items, field 0, validity bits 0.
+            assert_eq!(&baseline[payload..payload + 3], &[0x88, 0xc0, 0xc0]);
+            inconsistent_cache[payload + 2] = 0xc1;
             checked = true;
             break;
         }

@@ -1559,14 +1559,14 @@ impl MoleculeBatch {
     }
 
     /// Apply to a new batch: generate and store 2D drawing coordinates. Preserve record order and retained errors; the source batch is unchanged.
-    fn add_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
+    fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
-            .add_2d_coordinates()
+            .with_2d_coordinates()
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }
     /// Apply to a new batch: generate and store 2D drawing coordinates. Preserve record order and retained errors; the source batch is unchanged.
-    fn add_2d_coordinates_with_params(
+    fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
         options: &crate::drawing_binding::Coordinate2DParams,
@@ -1574,7 +1574,7 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn add_2d_coordinates(
+        //     fn with_2d_coordinates(
         //         &self,
         //         errors: Option<&Bound<'_, PyAny>>,
         //         n_jobs: Option<usize>,
@@ -1583,12 +1583,12 @@ impl MoleculeBatch {
         //         let mode = parse_batch_error_mode(errors)?;
         //         let inner = self
         //             .inner
-        //             .add_2d_coordinates_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+        //             .with_2d_coordinates_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
         //             .map_err(batch_validation_pyerr)?;
         //         Ok(Self { inner })
         //     }
         self.inner
-            .add_2d_coordinates_with_params(&options.inner, &params.inner)
+            .with_2d_coordinates_with_params(&options.inner, &params.inner)
             .map(|inner| Self { inner })
             .map_err(|source| batch_error(py, source))
     }

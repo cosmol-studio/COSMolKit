@@ -48,7 +48,7 @@ fn bio_selection_copy_public_methods_and_registry_contract() {
                 "withSelection",
                 StateModel::ValueReturning,
             ),
-            ("retain_selection_", "retainSelection", StateModel::InPlace),
+            ("retain_selection_", "retainSelection_", StateModel::InPlace),
         ] {
             let id = format!("{target}.{method}");
             let entry = BINDING_CONTRACT

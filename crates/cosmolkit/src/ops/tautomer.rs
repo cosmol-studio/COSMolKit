@@ -143,14 +143,9 @@ pub(crate) fn assign_symm_sssr_impl() -> Result<(), OperationError> {
             expected: 1,
         });
     }
-    if rings.are_ring_families_initialized() || rings.num_ring_families() != 0 {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_assigned_symm_sssr",
-            field: "unexpected-ring-family",
-            actual: 1,
-            expected: 0,
-        });
-    }
+    // Candidate symmetrizeSSSR obtains relevant cycles from retained RDL data.
+    // Runtime validates aligned families/IDs together with this RINGS cache;
+    // the presence of that source-owned payload is no longer an algorithm error.
     if let Some((atoms, bonds)) = rings
         .atom_rings()
         .iter()
@@ -202,14 +197,8 @@ pub(crate) fn install_tautomer_score_cache_impl(
             expected: 1,
         });
     }
-    if rings.are_ring_families_initialized() || rings.num_ring_families() != 0 {
-        return Err(OperationError::InvalidAlgorithmResult {
-            operation: "with_installed_tautomer_score_cache",
-            field: "unexpected-ring-family",
-            actual: 1,
-            expected: 0,
-        });
-    }
+    // The retained decomposition travels with the ordinary ring rows. It does
+    // not grant this operation independent RING_FAMILIES mutation authority.
     if let Some((atoms, bonds)) = rings
         .atom_rings()
         .iter()

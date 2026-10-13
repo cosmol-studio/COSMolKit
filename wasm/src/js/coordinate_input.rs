@@ -188,7 +188,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=set2dCoordinates)]
+    #[wasm_bindgen(js_name=set2dCoordinates_)]
     pub fn set_2d_coordinates_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -202,7 +202,7 @@ impl Molecule {
             &Coordinate2DInputParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=set2dCoordinatesWithParams)]
+    #[wasm_bindgen(js_name=set2dCoordinatesWithParams_)]
     pub fn set_2d_coordinates_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -241,7 +241,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=set3dCoordinates)]
+    #[wasm_bindgen(js_name=set3dCoordinates_)]
     pub fn set_3d_coordinates_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -255,7 +255,7 @@ impl Molecule {
             &Replace3DCoordinatesParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=set3dCoordinatesWithParams)]
+    #[wasm_bindgen(js_name=set3dCoordinatesWithParams_)]
     pub fn set_3d_coordinates_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -294,7 +294,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=add3dConformer)]
+    #[wasm_bindgen(js_name=add3dConformer_)]
     pub fn add_3d_conformer_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -308,7 +308,7 @@ impl Molecule {
             &Coordinate3DInputParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=add3dConformerWithParams)]
+    #[wasm_bindgen(js_name=add3dConformerWithParams_)]
     pub fn add_3d_conformer_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -347,7 +347,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=setOnly3dConformer)]
+    #[wasm_bindgen(js_name=setOnly3dConformer_)]
     pub fn set_only_3d_conformer_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -361,7 +361,7 @@ impl Molecule {
             &Coordinate3DInputParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=setOnly3dConformerWithParams)]
+    #[wasm_bindgen(js_name=setOnly3dConformerWithParams_)]
     pub fn set_only_3d_conformer_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
@@ -378,7 +378,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=clear3dConformers)]
+    #[wasm_bindgen(js_name=clear3dConformers_)]
     pub fn clear_3d_conformers_(&self) -> Result<(), JsValue> {
         operation(self.inner.clear_3d_conformers_())
     }
@@ -414,7 +414,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=setAtomPosition)]
+    #[wasm_bindgen(js_name=setAtomPosition_)]
     pub fn set_atom_position_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] atom: JsValue,
@@ -430,7 +430,7 @@ impl Molecule {
             &AtomPositionParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=setAtomPositionWithParams)]
+    #[wasm_bindgen(js_name=setAtomPositionWithParams_)]
     pub fn set_atom_position_with_params_(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] atom: JsValue,

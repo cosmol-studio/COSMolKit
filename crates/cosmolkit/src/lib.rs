@@ -248,8 +248,6 @@ mod legacy_topological_torsion;
 pub use legacy_topological_torsion::LegacyTopologicalTorsionParams;
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion;
-#[cfg(feature = "cap-depict")]
-pub(crate) use ops::Add2dCoordinatesAccess;
 pub(crate) use ops::DerivedState;
 #[cfg(cosmolkit_runtime_privacy_probe)]
 pub(crate) use ops::LazyOutputProbeAccess;
@@ -260,6 +258,8 @@ pub(crate) use ops::PotentialStereoAccess;
 pub use ops::PotentialStereoResult;
 #[cfg(feature = "cap-sanitize")]
 pub(crate) use ops::SanitizeAccess;
+#[cfg(feature = "cap-depict")]
+pub(crate) use ops::With2dCoordinatesAccess;
 #[cfg(feature = "cap-aromaticity")]
 pub(crate) use ops::WithAssignedAromaticityAccess;
 #[cfg(feature = "cap-radicals")]

@@ -54,6 +54,7 @@ fn substruct_error_kind(source: &ck::SubstructMatchError) -> &'static str {
         E::PeriodicTable(..) => "PeriodicTable",
         E::PropertyString(..) => "PropertyString",
         E::QueryContext(..) => "QueryContext",
+        E::UninitializedRecursiveQuery => "UninitializedRecursiveQuery",
     }
 }
 pub(crate) fn substruct_error(source: &ck::SubstructMatchError) -> Result<JsValue, JsValue> {

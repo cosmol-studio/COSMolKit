@@ -134,7 +134,8 @@ fn new_exact_method_still_requires_computed_assignment_evidence() {
     }
     let mut parts = OpParts::<Probe>::new(&source, spec).unwrap();
     let mut properties = parts.checkout_properties_runtime().unwrap();
-    properties.set_computed_prop("_CIPComputed", "1").unwrap();
+    // Successful assignment installs BoolTag true, not a string projection.
+    properties.set_computed_prop("_CIPComputed", true).unwrap();
     parts.install_properties_runtime(properties).unwrap();
     parts.apply_cip_policy_runtime().unwrap();
 }

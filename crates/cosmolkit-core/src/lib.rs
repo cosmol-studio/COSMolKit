@@ -86,8 +86,9 @@ pub use atropisomer::{
     AtropisomerWedgeUpdate, StereoGroupAssignment, atropisomer_carriers,
     atropisomer_carriers_for_bonds, cleanup_atropisomer_stereo_groups,
     collect_query_stereo_group_atom_ids_source, collect_stereo_group_atom_ids_source,
-    detect_atropisomer_chirality, does_topology_have_atropisomers,
-    get_all_atom_ids_for_stereo_group, get_all_atom_ids_for_stereo_groups, stereo_group_atom_ids,
+    detect_atropisomer_chirality, detect_atropisomer_chirality_with_replacement,
+    does_topology_have_atropisomers, get_all_atom_ids_for_stereo_group,
+    get_all_atom_ids_for_stereo_groups, stereo_group_atom_ids,
     wedge_atropisomer_no_conformer_source, wedge_atropisomer_three_d_source,
     wedge_atropisomer_two_d_source, wedge_bonds_from_atropisomers,
     wedge_bonds_from_atropisomers_projected_source, wedge_bonds_from_atropisomers_source,
@@ -98,7 +99,10 @@ pub use aromaticity::{
     assign_aromaticity, assign_aromaticity_with_query_state, assign_mmff_aromaticity_prepared,
 };
 
-pub use bond_dirs::{BondDirectionStereoError, assign_chiral_types_from_bond_dirs};
+pub use bond_dirs::{
+    BondDirectionStereoError, assign_chiral_types_from_bond_dirs,
+    assign_chiral_types_from_bond_dirs_with_optional_conformer,
+};
 
 pub use hydrogens::{
     AddHsParams, AddHydrogensResult, HydrogenError, HydrogenWarning, RemoveHsParams,
@@ -150,8 +154,9 @@ pub use kekulize::{
 pub use legacy_stereo::{
     LegacyStereoAssignment, LegacyStereoError, assign_legacy_stereochemistry,
     assign_legacy_stereochemistry_for_depiction, assign_legacy_stereochemistry_source,
-    assign_legacy_stereochemistry_with_assignments, assign_legacy_stereochemistry_with_flags,
-    assign_legacy_stereochemistry_with_query_state,
+    assign_legacy_stereochemistry_source_with_conformer,
+    assign_legacy_stereochemistry_with_assignments, assign_legacy_stereochemistry_with_conformer,
+    assign_legacy_stereochemistry_with_flags, assign_legacy_stereochemistry_with_query_state,
 };
 
 pub use structure_tags::cleanup_stereo_groups;
@@ -194,13 +199,18 @@ pub use property_string::{
 
 pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_radicals};
 
+#[doc(hidden)]
+pub use rings::{
+    PersistedRingDecomposition, PersistedRingEdgeId, PersistedRingGraph, ring_persistence,
+};
+
 pub use rings::{
     RingFindType, RingFindingError, RingInfo, RingSearchParams, fast_find_rings,
     fast_find_rings_from_parts, find_ring_families, find_ring_families_from_parts, find_sssr,
     find_sssr_from_parts, find_sssr_with_options_from_parts,
     find_sssr_with_source_outputs_from_parts, is_atom_bridgehead_from_topology,
     ring_info_from_selected_rows, symmetrize_sssr_with_options_from_parts, symmetrized_sssr,
-    symmetrized_sssr_with_properties,
+    symmetrized_sssr_with_existing, symmetrized_sssr_with_properties,
 };
 
 pub use sanitize::{
@@ -272,7 +282,10 @@ pub use alignment::{align_points, alignment_sum_squared_residual, alignment_tran
 
 pub use periodic_table::{covalent_radius, van_der_waals_radius};
 
+mod numeric;
 mod property_numeric;
+#[doc(hidden)]
+pub use numeric::parse_rdkit_atof_prefix;
 #[doc(hidden)]
 pub use property_numeric::{PropertyIntReadError, property_value_to_int};
 #[doc(hidden)]

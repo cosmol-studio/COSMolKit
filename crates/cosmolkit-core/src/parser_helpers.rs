@@ -315,7 +315,10 @@ pub fn parser_chirality_assignments<
         .collect())
 }
 
-pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), ParserCarrierError> {
+pub fn cleanup_parser_atom<A: ParserAtom>(
+    atom: &mut A,
+    degree: usize,
+) -> Result<(), ParserCarrierError> {
     // RDKit✔️✔️: void CleanupAfterParsing(RWMol *mol) {
     // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
     // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
@@ -324,13 +327,14 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), Parser
     // RDKit✔️✔️:     std::string label;
     // RDKit✔️✔️:     if (atom->getAtomicNum() == 0 &&
     // RDKit✔️✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
-    // RDKit✔️✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
-    // RDKit✔️✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
-    // RDKit✔️✔️:       // points
-    // RDKit✔️✔️:       if (label == "_AP1") {
-    // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
-    // RDKit✔️✔️:       } else if (label == "_AP2") {
-    // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
+    // RDKit✔️✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but those
+    // RDKit✔️✔️:       // labels aren't MOL-file ATTCHPT positions, so don't copy their numbers
+    // RDKit✔️✔️:       // to _fromAttachPoint
+    // RDKit✔️✔️:       const auto attachmentPointNumber =
+    // RDKit✔️✔️:           MolOps::getAttachmentPointLabelNumber(atom);
+    // RDKit✔️✔️:       if (attachmentPointNumber == 1 || attachmentPointNumber == 2) {
+    // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint,
+    // RDKit✔️✔️:                       attachmentPointNumber);
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
@@ -360,19 +364,21 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), Parser
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    // Linear carrier passes and constant-sized property keys preserve source cost.
-    for atom in atoms.iter_mut() {
-        atom.clear_prop("_RingClosures")?;
-        atom.clear_prop("_SmilesStart")?;
-        if atom.atomic_number() == 0 {
-            let label = atom
-                .prop("atomLabel")
-                .map(crate::property_value_to_string)
-                .transpose()?;
-            match label.as_ref().map(|value| value.as_bytes()) {
-                Some(b"_AP1") => atom.set_attachment_point(1)?,
-                Some(b"_AP2") => atom.set_attachment_point(2)?,
-                _ => {}
+    // Callers pass the existing adjacency degree before borrowing the atom
+    // mutably: one O(atoms) pass, no degree vector or graph clone.
+    atom.clear_prop("_RingClosures")?;
+    atom.clear_prop("_SmilesStart")?;
+    if atom.atomic_number() == 0 {
+        let label = atom
+            .prop("atomLabel")
+            .map(crate::property_value_to_string)
+            .transpose()?;
+        if degree == 1 {
+            let number = label
+                .as_ref()
+                .map_or(0, |label| attachment_label_number(label.as_bytes()));
+            if number == 1 || number == 2 {
+                atom.set_attachment_point(number as i32)?;
             }
         }
     }
@@ -380,6 +386,72 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), Parser
     // their actual bonds and copied SGroups before reaching the shared final
     // non-tetrahedral pass; keeping it here reordered fallible property reads.
     Ok(())
+}
+
+fn attachment_label_number(label: &[u8]) -> u32 {
+    // RDKit✔️🔝:   if (!atom->getPropIfPresent(common_properties::atomLabel, label) ||
+    // RDKit✔️🔝:       label.size() <= attachmentPointLabelPrefix.size() ||
+    // RDKit✔️🔝:       label.compare(0, attachmentPointLabelPrefix.size(),
+    // RDKit✔️🔝:                     attachmentPointLabelPrefix) != 0) {
+    // RDKit✔️🔝:     return 0;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   const auto suffix = label.substr(attachmentPointLabelPrefix.size());
+    // RDKit✔️🔝:   if (suffix.find_first_not_of("0123456789") != std::string::npos) {
+    // RDKit✔️🔝:     return 0;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   unsigned int result = 0;
+    // RDKit✔️🔝:   try {
+    // RDKit✔️🔝:     result = boost::lexical_cast<unsigned int>(suffix);
+    // RDKit✔️🔝:   } catch (const boost::bad_lexical_cast &) {
+    // RDKit✔️🔝:     return 0;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   return result;
+    // MolOps.cpp:1307–1323. The caller checks dummy identity and degree.
+    // Borrowed suffix and checked decimal accumulation preserve the exact
+    // unsigned range without substring allocation or throwing conversion.
+    let Some(suffix) = label.strip_prefix(b"_AP").filter(|s| !s.is_empty()) else {
+        return 0;
+    };
+    suffix
+        .iter()
+        .try_fold(0_u32, |value, byte| {
+            byte.is_ascii_digit()
+                .then(|| u32::from(*byte - b'0'))
+                .and_then(|digit| value.checked_mul(10)?.checked_add(digit))
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod attachment_label_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, Element};
+
+    #[test]
+    fn parser_attachment_labels_require_degree_one_and_bounded_digits() {
+        for (label, degree, expected) in [
+            ("_AP0001", 1, Some(1)),
+            ("_AP02", 1, Some(2)),
+            ("_AP1", 0, None),
+            ("_AP2", 2, None),
+            ("_AP3", 1, None),
+            ("_AP0", 1, None),
+            ("_AP+1", 1, None),
+            ("_AP-1", 1, None),
+            ("_AP1x", 1, None),
+            ("_AP4294967296", 1, None),
+        ] {
+            let mut atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::DUMMY));
+            atom.set_prop("atomLabel", label).unwrap();
+            cleanup_parser_atom(&mut atom, degree).unwrap();
+            assert_eq!(
+                atom.prop("_fromAttchpt")
+                    .map(|value| value.as_int().unwrap()),
+                expected,
+                "{label}, degree={degree}"
+            );
+        }
+    }
 }
 
 /// Final source cleanup pass, reached only after atom, bond and copied-group cleanup.

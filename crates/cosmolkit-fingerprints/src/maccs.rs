@@ -4,9 +4,8 @@ use cosmolkit_core::{PathError, RingFindingError, RingInfo, ValenceAssignment, V
 use cosmolkit_model::{CoordinateBlock, TopologyBlock, TopologyValidationError};
 use cosmolkit_search::{
     CompiledQuery, QueryCompileError, QueryMatchContext, QueryMatchContextError, SearchTarget,
-    SmartsParseError, SubstructMatchError, SubstructMatchParams,
-    build_prepared_query_match_context, parse_smarts,
-    try_get_substruct_atom_matches_with_compiled_query_and_context,
+    SmartsParseError, SubstructMatchError, SubstructMatchParams, build_ring_query_match_context,
+    parse_smarts, try_get_substruct_atom_matches_with_compiled_query_and_context,
 };
 use std::{error::Error, fmt, sync::OnceLock};
 
@@ -1676,7 +1675,7 @@ pub fn maccs_fingerprint_raw(
         Some(ring_info),
         Some(valence),
     );
-    let context = build_prepared_query_match_context(topology, ring_info, valence)?;
+    let context = build_ring_query_match_context(topology, ring_info, Some(valence))?;
     for atom in topology.atoms.iter() {
         match atom.atomic_number() {
             3 | 11 | 19 | 37 | 55 | 87 => {

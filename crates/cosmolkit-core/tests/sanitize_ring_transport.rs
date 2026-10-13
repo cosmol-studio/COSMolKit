@@ -209,16 +209,18 @@ fn sanitize_ring_l08_public_sixty_four_call_matrix() {
                     assert_eq!(rings.find_type(), RingFindType::SymmSssr, "{name}/m{mask}");
                     assert_eq!(rings.atom_rings().len(), 1, "{name}/m{mask}");
                     let (atoms, bonds) = literal_rows(rings);
-                    assert_eq!(atoms, vec![vec![0, 5, 4, 3, 2, 1]], "{name}/m{mask}");
-                    assert_eq!(bonds, vec![vec![5, 4, 3, 2, 1, 0]], "{name}/m{mask}");
+                    // Candidate RDL cycle normalization starts at min atom,
+                    // then chooses the lexically smaller neighbor as second.
+                    assert_eq!(atoms, vec![vec![0, 1, 2, 3, 4, 5]], "{name}/m{mask}");
+                    assert_eq!(bonds, vec![vec![0, 1, 2, 3, 4, 5]], "{name}/m{mask}");
                 }
                 "sssr1" => {
                     let rings = assignment.final_rings.as_ref().unwrap();
                     assert_eq!(rings.find_type(), RingFindType::Sssr, "{name}/m{mask}");
                     assert_eq!(rings.atom_rings().len(), 1, "{name}/m{mask}");
                     let (atoms, bonds) = literal_rows(rings);
-                    assert_eq!(atoms, vec![vec![0, 5, 4, 3, 2, 1]], "{name}/m{mask}");
-                    assert_eq!(bonds, vec![vec![5, 4, 3, 2, 1, 0]], "{name}/m{mask}");
+                    assert_eq!(atoms, vec![vec![0, 1, 2, 3, 4, 5]], "{name}/m{mask}");
+                    assert_eq!(bonds, vec![vec![0, 1, 2, 3, 4, 5]], "{name}/m{mask}");
                 }
                 _ => {
                     // cube Symm: six normalized faces as a SET.

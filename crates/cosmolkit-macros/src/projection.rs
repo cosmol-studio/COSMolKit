@@ -10,7 +10,7 @@ use quote::{format_ident, quote};
 use syn::{FnArg, Ident, ItemFn, Pat, Token, Type, parse::Parse, parse::ParseStream, parse_quote};
 
 use crate::declaration::{
-    BioBlock, BioDerivedState, BioOperation, BioRegistry, BioState, DerivedState,
+    BioBlock, BioDerivedState, BioOperation, BioRegistry, BioState, CipStatePolicy, DerivedState,
     MappingRequirement, MoleculeBlock, MoleculeOperation, MoleculeOutput, MoleculeRegistry,
 };
 
@@ -474,6 +474,20 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                 proof: crate::PreservationProof,
             ) -> Result<(), crate::OperationError> {
                 self.prove_preserved_runtime(states, proof)
+            }
+        });
+    }
+    if operation.fields.cip_state == CipStatePolicy::Recompute {
+        methods.push(quote! {
+            pub(crate) fn apply_cip_assignment_policy(
+                &mut self,
+                #[cfg(feature = "op-contracts")] atoms: &[cosmolkit_model::AtomId],
+                #[cfg(feature = "op-contracts")] bonds: &[cosmolkit_model::BondId],
+                #[cfg(feature = "op-contracts")] completion: cosmolkit_model::CipAssignmentCompletion,
+            ) -> Result<(), crate::OperationError> {
+                #[cfg(feature = "op-contracts")]
+                self.validate_cip_assignment_runtime(atoms, bonds, completion)?;
+                self.apply_cip_policy_runtime()
             }
         });
     }

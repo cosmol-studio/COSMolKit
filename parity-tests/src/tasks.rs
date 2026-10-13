@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 
-pub const RDKIT: &str = "2026.03.6";
+pub const RDKIT: &str = "2026.09.1";
 pub const TASKS: &[(&str, &str)] = &[
     ("smiles_write", "smiles"),
     ("cip", "cip"),
@@ -207,7 +207,25 @@ fn failure(error: impl std::fmt::Display) -> Vec<u8> {
 }
 pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8> {
     let mut cause = Some(error);
+    let mut optimizer_domain = false;
     while let Some(inner) = cause {
+        optimizer_domain |= inner.is::<cosmolkit::ConformerRunError>()
+            || inner.is::<cosmolkit::UffOptimizationError>();
+        // The kernel enum is deliberately private. Require the real public
+        // optimizer domain AND its exact terminal source diagnostic, never a
+        // substring of an arbitrary top-level exception message.
+        if optimizer_domain
+            && inner.source().is_none()
+            && inner.to_string() == "OptimizerBadDirection"
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("BfgsBadDirection".into()),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
         if let Some(cosmolkit::CipLabelerError::TooManyNodes { limit }) =
             inner.downcast_ref::<cosmolkit::CipLabelerError>()
         {
@@ -304,6 +322,21 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
         return false;
     };
     match task {
+        "embedding" | "uff_optimize" | "uff_optimize_conformers" => {
+            // BFGSOpt.h::minimize, after linearSearch:
+            // RDKit✔️✔️:     CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
+            // Only exception representation is paired; no numerical value,
+            // timeout, unrelated invariant or untyped failure is normalized.
+            native
+                .starts_with("RuntimeError: Invariant Violation\n\tbad direction in linearSearch\n")
+                && native
+                    .lines()
+                    .any(|line| line.ends_with("in file Code/Numerics/Optimizer/BFGSOpt.h"))
+                && native
+                    .lines()
+                    .any(|line| line.trim() == "Failed Expression: status >= 0")
+                && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)] if kind == "BfgsBadDirection")
+        }
         "cip" => {
             // CIPLabeler/Digraph.cpp::expand, before neighbor expansion:
             // RDKit✔️✔️:   if (MAX_NODE_COUNT > 0 && d_nodes.size() >= MAX_NODE_COUNT) {
@@ -748,6 +781,63 @@ pub fn unpack_row(mut row: &[u8], profiles: usize) -> Result<Vec<&[u8]>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bfgs_direction_errors_require_the_real_domain_and_exact_native_invariant() {
+        use super::*;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let profiles = crate::geometry::profiles("uff_optimize_conformers").unwrap();
+        let actual = crate::geometry::evaluate(
+            "uff_optimize_conformers",
+            &profiles,
+            &["II".into()],
+            0,
+            1,
+            &pool,
+        )
+        .unwrap()
+        .remove(0)
+        .remove(0);
+        let message = "RuntimeError: Invariant Violation\n\tbad direction in linearSearch\n\tViolation occurred on line 234 in file Code/Numerics/Optimizer/BFGSOpt.h\n\tFailed Expression: status >= 0\n\tRDKIT: 2026.09.1\n";
+        let native = outcome(5, Value::Text(message.into()));
+        assert_eq!(actual[0], 1);
+        assert!(matching_error("uff_optimize_conformers", &native, &actual));
+        assert!(!matching_error("valence", &native, &actual));
+        assert!(!matching_error(
+            "uff_optimize_conformers",
+            &native,
+            &failure("OptimizerBadDirection")
+        ));
+        assert!(!matching_error(
+            "uff_optimize_conformers",
+            &outcome(5, Value::Text(message.replace("status >= 0", "status > 0"))),
+            &actual
+        ));
+        assert!(!matching_error(
+            "uff_optimize_conformers",
+            &outcome(5, Value::Text(message.replace("BFGSOpt.h", "Other.h"))),
+            &actual
+        ));
+        let params = vec![
+            serde_json::json!({"method":"etdg","count":2,"seed":20260306,
+            "add_hs":true,"random_coords":false,"max_iterations":100,"prune_rms":-1.0,"timeout":10}),
+        ];
+        let actual = crate::geometry::evaluate(
+            "embedding",
+            &params,
+            &["Cc1ccc([C@]2(C)O[C@H]2C)oc1=O".into()],
+            0,
+            1,
+            &pool,
+        )
+        .unwrap()
+        .remove(0)
+        .remove(0);
+        assert!(matching_error("embedding", &native, &actual));
+    }
+
     #[test]
     fn cip_node_limit_matches_only_the_same_typed_rejection() {
         use super::*;

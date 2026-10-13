@@ -556,8 +556,8 @@ impl MoleculeBatch {
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
     #[cfg(feature = "cap-depict")]
-    #[wasm_bindgen(js_name = add2dCoordinates)]
-    pub fn add_2d_coordinates(
+    #[wasm_bindgen(js_name = with2dCoordinates)]
+    pub fn with_2d_coordinates(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Coordinate2DParams | Coordinate2DParamsOptions"
@@ -568,7 +568,7 @@ impl MoleculeBatch {
         if options.is_undefined() && params.is_undefined() {
             return {
                 self.inner
-                    .add_2d_coordinates()
+                    .with_2d_coordinates()
                     .map(|inner| Self { inner })
                     .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
             };
@@ -576,17 +576,17 @@ impl MoleculeBatch {
         let configuration_0 =
             crate::transform_parameters::Coordinate2DParams::from_js_configuration(&options)?;
         let configuration_1 = crate::batch_boundary::BatchParams::from_js_configuration(&params)?;
-        self.add_2d_coordinates_with_params(&configuration_0, &configuration_1)
+        self.with_2d_coordinates_with_params(&configuration_0, &configuration_1)
     }
     #[cfg(feature = "cap-depict")]
-    #[wasm_bindgen(js_name = add2dCoordinatesWithParams)]
-    pub fn add_2d_coordinates_with_params(
+    #[wasm_bindgen(js_name = with2dCoordinatesWithParams)]
+    pub fn with_2d_coordinates_with_params(
         &self,
         options: &crate::transform_parameters::Coordinate2DParams,
         params: &BatchParams,
     ) -> Result<Self, JsValue> {
         self.inner
-            .add_2d_coordinates_with_params(&options.inner, &params.inner)
+            .with_2d_coordinates_with_params(&options.inner, &params.inner)
             .map(|inner| Self { inner })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }

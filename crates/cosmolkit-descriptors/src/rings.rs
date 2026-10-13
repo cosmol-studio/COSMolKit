@@ -1474,7 +1474,9 @@ mod original_condition_query_tests {
         const CASES: [(&str, &[usize], &[usize]); 5] = [
             ("C1CC2CCC1CC2", &[], &[2, 5]),
             ("C1CCC2(C1)CC1CCC2CC1", &[3], &[6, 9]),
-            ("C1CCC2(CC1)CCC1(CC2)CCCC1", &[3, 8], &[]),
+            // Candidate RDL visits the five-ring family before the two
+            // six-ring families; the source i<j intersection order is 8,3.
+            ("C1CCC2(CC1)CCC1(CC2)CCCC1", &[8, 3], &[]),
             ("C1C2CC3CC1CC(C2)C3", &[], &[1, 5, 3, 7]),
             ("C1CCC2CCCCC2C1", &[], &[]),
         ];

@@ -1104,7 +1104,9 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
     )
     .map(fixture_writer_text)
     .unwrap();
-    assert_eq!(noncanonical, "C(C)(C)O".to_owned());
+    // SmilesWrite.cpp:551 (2026.09.1): ignoring maps affects canonical
+    // ranking only; noncanonical traversal still serializes mapped atoms.
+    assert_eq!(noncanonical, "C([CH3:99])([CH3:1])O".to_owned());
     assert_eq!(
         record
             .topology

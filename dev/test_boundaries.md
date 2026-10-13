@@ -6,10 +6,10 @@ There are two test categories:
   owning crate's unit modules or `tests/`. Python and JavaScript tests focus
   on their language boundary rather than repeating complete chemistry corpora.
 - Corpus tests and explicitly designated special regressions use the current
-  `parity-tests_fixed/` workflow.
+  `parity-tests/` workflow.
 
-Complete 0.5.0 validation is pending. Results in
-[VALIDATION.md](../VALIDATION.md) are historical 0.3.0 evidence.
+Completed validation and remaining coverage are recorded in
+[VALIDATION.md](../VALIDATION.md).
 
 ## Ordinary regressions
 
@@ -37,28 +37,30 @@ regressions use Cargo's normal test scheduling without nested builds.
 ## Corpus tests
 
 The current runner's executable registry defines tasks and comparisons.
-Corpus inputs belong in `parity-tests_fixed/testdata/`, generated references
+Corpus inputs belong in `parity-tests/testdata/`, generated references
 in `expected/`, and reports in `reports/` under the same package.
 
 From the repository root:
 
 ```bash
-cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --corpus smiles_5000 --threads 112
-cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test corpus
+cargo run -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict -- prepare --corpus smiles_5000 --threads 112
+cargo test -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict --test corpus -- --corpus smiles_5000 --threads 112
 ```
 
-Use `--task NAME` when preparing a subset; use Cargo's test-name filter when
-comparing it. Do not invent a Cargo `--task` flag. Without a task filter,
-preparation selects all registered tasks for the chosen corpus.
+Use the same `--task NAME` or `--suite NAME` selection in both commands.
+Comparison options follow Cargo's `--` separator and belong to the custom
+runner, not to Cargo/libtest. Both commands default to `full`.
 
 Preparation runs pinned reference adapters, supports configurable worker
 counts, and saves ordered inputs, parameters, reference outputs and identities.
 Tests read validated snapshots and never generate or overwrite expectations.
-Validate every reference in the prepared selection before the first CK call;
+Validate the input identities and every selected reference header before the first CK call;
 preflight is read-only and cannot start reference generation.
-Missing, corrupt or stale references fail with the preparation command.
-Cargo schedules independent test functions concurrently. Declare numeric
-comparison rules explicitly; do not relax them or remove cases to hide errors.
+Verify compressed-frame and final-file checksums during the streaming comparison.
+Missing, corrupt or stale references fail explicitly, never by regenerating data
+during comparison. Tasks run serially; cases within each task use the selected
+Rayon pool or equivalent public batch API. Numeric outputs compare by exact
+IEEE bits; do not relax comparisons or remove cases to hide errors.
 Matching source-defined errors is checked under each task's explicit error
 contract, not silently counted as a successful numerical calculation.
 
@@ -68,8 +70,8 @@ Special regressions use fixed, explicitly selected reference matrices rather
 than expansion over a SMILES corpus. They have the same two-stage shape:
 
 ```bash
-cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --special all --threads 112
-cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test special_regression
+cargo run -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict -- prepare --suite special --threads 112
+cargo test -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict --test corpus -- --suite special --threads 112
 ```
 
 The runner documents the supported selectors, including the 77-case
@@ -80,7 +82,7 @@ algorithm dependencies may preserve these designated source boundaries;
 this does not authorize exposing runtime internals or a second chemistry API.
 
 Preparation and comparison instructions live only in the
-[runner README](../parity-tests_fixed/README.md). Domain fixture READMEs record
+[runner README](../parity-tests/README.md). Domain fixture READMEs record
 provenance and purpose, not separate preparation pipelines. A missing reference
 never authorizes refreshing expectations from CK results. Known failures
 remain executable and are not passing evidence. Registration, zero matches,

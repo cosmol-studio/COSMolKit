@@ -33,8 +33,8 @@ fn double_bond_controls_follow_source_connectivity_ranks() {
         ),
         (
             "CC1=C(/C=C2\\C(C)=C3/C(C)=C(/C=C4\\C(C)=C5/C(CCC(=O)O)=C(C(C)=C5N4)C=C6\\C(CCC(=O)O)=C(C)C(=C6N2)C=C1)N3)C=C(\\C=C)C",
-            27,
-            [Some(22), None, Some(29), Some(38)],
+            43,
+            [Some(2), None, Some(45), Some(47)],
         ),
     ] {
         let source = Molecule::from_smiles(smiles).unwrap();
@@ -51,12 +51,32 @@ fn double_bond_controls_follow_source_connectivity_ranks() {
                 .stereo
                 .iter()
                 .find(|i| i.centered_on == PotentialStereoCenter::Bond(BondId::new(center)))
-                .unwrap();
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing bond center {center}; clean={clean}; smiles={smiles}; order={:?}; stereo={:?}",
+                        source.bond(BondId::new(center)).unwrap().order(),
+                        result.stereo
+                    )
+                });
             assert_eq!(
                 info.controlling_atoms,
                 controls.map(|a| a.map(AtomId::new)),
                 "{smiles}; clean={clean}"
             );
+            if center == 43 {
+                // Candidate FindRings.cpp:958-990,1085-1118 exposes the full
+                // RDL cycle combinations to Aromaticity.cpp:844-901,935-945.
+                // This converts former double bond 27 to AROMATIC. The
+                // unchanged FindStereo.cpp:379-384 rejects non-DOUBLE bonds;
+                // the surviving double bond 43 still tests control ordering.
+                assert_eq!(
+                    source.bond(BondId::new(27)).unwrap().order(),
+                    BondOrder::Aromatic
+                );
+                assert!(result.stereo.iter().all(|info| {
+                    info.centered_on != PotentialStereoCenter::Bond(BondId::new(27))
+                }));
+            }
             assert_eq!(source, snapshot);
         }
     }

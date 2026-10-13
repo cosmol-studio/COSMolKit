@@ -227,10 +227,10 @@ fn binding_contract_has_two_types_and_four_canonical_callables() {
         rows[3].javascript_name,
         "withChiralTagsFromStructureWithParams"
     );
-    assert_eq!(rows[4].javascript_name, "assignChiralTagsFromStructure");
+    assert_eq!(rows[4].javascript_name, "assignChiralTagsFromStructure_");
     assert_eq!(
         rows[5].javascript_name,
-        "assignChiralTagsFromStructureWithParams"
+        "assignChiralTagsFromStructureWithParams_"
     );
     assert_eq!(
         rows[2].callable.unwrap().state_model,

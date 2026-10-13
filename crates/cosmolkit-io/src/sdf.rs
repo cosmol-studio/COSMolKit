@@ -946,7 +946,7 @@ pub(super) fn parse_rdkit_atof(text: &str) -> f64 {
     // hex values once, as glibc does. Domain/model validation stays canonical;
     // this reader does not change or bypass the coordinate storage boundary.
     // Local cost: a borrowed byte scan, no wrapper allocation or state clone.
-    crate::numeric::parse_rdkit_atof_prefix(text.as_bytes()).0
+    cosmolkit_core::parse_rdkit_atof_prefix(text.as_bytes()).0
 }
 
 /// Reproduces the fixed RDKit/glibc atom-map conversion boundary.

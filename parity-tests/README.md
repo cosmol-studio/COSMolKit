@@ -2,7 +2,7 @@
 
 Prepare native references once, then compare COSMolKit through Cargo. Run from
 the repository root with the development `.venv` installed. Reference versions
-are RDKit **2026.03.6** and, for BIO, Gemmi **0.7.5**.
+are RDKit **2026.09.1** and, for BIO, Gemmi **0.7.5**.
 
 ```bash
 cargo run -p cosmolkit-parity-tests --profile dev-test --features cosmolkit/op-contracts-strict -- prepare --corpus smiles_small --threads 32
@@ -82,6 +82,10 @@ MMFF optimizers run directly on the current state. Native MMFF property
 construction mutates its molecule, so energy observations prepare a temporary
 copy and cannot precondition the next optimization. The optimizer profiles
 record this as `optimizer_observation: isolated_queries_v1`.
+UFF single optimization obtains status and energy from the same native force
+field, as `FFConvenience.h::OptimizeMolecule` does; rebuilding it after minimize
+is a different observation. Its profile records
+`optimizer_observation: retained_optimizer_v1`.
 
 ## Execution and cache
 
@@ -103,7 +107,7 @@ Warm preflight hashes inputs once per distinct selection and reads only small
 manifests and reference headers. Compressed frame checksums and the final file
 checksum are verified during the one streaming comparison pass, not by loading
 or rehashing the full reference first. Outputs use compact typed binary records
-and fast zlib compression. Frame/record allocation limits are 64 MiB; windows
+and fast zlib compression. Frame/record allocation limits are 128 MiB; windows
 and pending jobs are bounded independently of corpus length. Native workers
 compress to temporary files instead of accumulating expanded results in IPC
 queues. Inputs/profiles are not expanded into millions of JSON objects.

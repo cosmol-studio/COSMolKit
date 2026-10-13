@@ -81,8 +81,11 @@ impl State {
                     Some(input.rings),
                     Some(input.valence),
                 );
-                let context =
-                    build_prepared_query_match_context(input.topology, input.rings, input.valence)?;
+                let context = build_ring_query_match_context(
+                    input.topology,
+                    input.rings,
+                    Some(input.valence),
+                )?;
                 owner.get_atom_invariants(&target, &context)
             }
             Some(AtomProvider::AtomPair(owner)) => owner

@@ -49,7 +49,39 @@ fn cip_cow_allowed(
         properties.to_mut();
         Ok(((), Some((topology, properties))))
     })?;
+    #[cfg(feature = "op-contracts")]
+    parts.apply_cip_assignment_policy(
+        &[],
+        &[],
+        cosmolkit_model::CipAssignmentCompletion::Completed,
+    )?;
+    #[cfg(not(feature = "op-contracts"))]
+    parts.apply_cip_assignment_policy()?;
     Ok(())
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "cip_assignment_wrong_marker")]
+fn cip_assignment_wrong_marker(parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>) {
+    #[cfg(feature = "op-contracts")]
+    let _ = parts.apply_cip_assignment_policy(
+        &[],
+        &[],
+        cosmolkit_model::CipAssignmentCompletion::Completed,
+    );
+    #[cfg(not(feature = "op-contracts"))]
+    let _ = parts.apply_cip_assignment_policy();
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "cip_assignment_runtime_private")]
+fn cip_assignment_runtime_private(parts: &mut OpParts<'_, crate::WithCipLabelsAccess>) {
+    #[cfg(feature = "op-contracts")]
+    let _ = parts.validate_cip_assignment_runtime(
+        &[],
+        &[],
+        cosmolkit_model::CipAssignmentCompletion::Completed,
+    );
+    #[cfg(not(feature = "op-contracts"))]
+    let _ = parts.validate_cip_assignment_runtime();
 }
 
 #[cfg(cosmolkit_runtime_privacy_case = "cip_cow_missing_writes")]

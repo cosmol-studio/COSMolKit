@@ -791,6 +791,61 @@ pub fn assign_legacy_stereochemistry_source(
     ring_update: &mut Option<RingInfo>,
     atom_valence_updates: &mut Vec<(AtomId, SourceAtomValenceFacts)>,
 ) -> Result<(), LegacyStereoError> {
+    assign_legacy_stereochemistry_source_with_conformer(
+        topology,
+        valence,
+        rings,
+        query_state,
+        None,
+        clean_it,
+        flag_possible_stereo_centers,
+        ring_update,
+        atom_valence_updates,
+    )
+}
+
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_with_conformer(
+    mut topology: TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
+    conformer: Option<crate::AtropisomerConformer<'_>>,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+) -> Result<LegacyStereoAssignment, LegacyStereoError> {
+    let mut ring_update = None;
+    let mut atom_valence_updates = Vec::new();
+    assign_legacy_stereochemistry_source_with_conformer(
+        &mut topology,
+        valence,
+        rings,
+        query_state,
+        conformer,
+        clean_it,
+        flag_possible_stereo_centers,
+        &mut ring_update,
+        &mut atom_valence_updates,
+    )?;
+    Ok(LegacyStereoAssignment {
+        topology,
+        ring_update,
+        atom_valence_updates,
+    })
+}
+
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_source_with_conformer(
+    mut topology: &mut TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
+    conformer: Option<crate::AtropisomerConformer<'_>>,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+    ring_update: &mut Option<RingInfo>,
+    atom_valence_updates: &mut Vec<(AtomId, SourceAtomValenceFacts)>,
+) -> Result<(), LegacyStereoError> {
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry
     // RDKit✔️✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
     // RDKit✔️✔️:                            bool flagPossibleStereoCenters) {
@@ -1080,6 +1135,14 @@ pub fn assign_legacy_stereochemistry_source(
     // Complexity review: this is the source constant-time branch around the
     // existing cleanup passes and introduces no extra allocation or scan.
     if !clean_it {
+        // RDKit❗❌: detectAtropisomersPostSanitization(mol, cleanIt);
+        crate::atropisomer::detect_atropisomers_post_sanitization(
+            topology,
+            conformer,
+            rings,
+            false,
+            atom_valence_updates,
+        )?;
         return Ok(());
     }
 
@@ -1168,6 +1231,14 @@ pub fn assign_legacy_stereochemistry_source(
             bond.set_stereo(BondStereo::None)?;
         }
     }
+    // RDKit❗❌: detectAtropisomersPostSanitization(mol, cleanIt);
+    crate::atropisomer::detect_atropisomers_post_sanitization(
+        topology,
+        conformer,
+        rings,
+        true,
+        atom_valence_updates,
+    )?;
     clean_directional_state(&mut topology);
     // RDKit✔️✔️: if (foundAtropisomer || Atropisomers::doesMolHaveAtropisomers(mol)) {
     // RDKit✔️✔️:   Atropisomers::cleanupAtropisomerStereoGroups(mol);

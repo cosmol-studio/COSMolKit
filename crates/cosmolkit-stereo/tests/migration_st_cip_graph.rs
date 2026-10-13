@@ -219,11 +219,16 @@ mod migration_tests {
             Err(CipLabelerError::InvalidInternalState { .. })
         ));
 
-        let mut wrapped = CipLabelerContext::with_remaining_call_count(0);
-        assert!(wrapped.decrement_remaining_call_count_and_check());
+        // Candidate IterationBudget::consume checks before decrementing:
+        // exhausted budgets never wrap, and the Nth comparison is allowed.
+        let mut exhausted = CipLabelerContext::with_remaining_call_count(0);
+        assert!(!exhausted.decrement_remaining_call_count_and_check());
+        assert!(!exhausted.decrement_remaining_call_count_and_check());
         let mut one = CipLabelerContext::with_remaining_call_count(1);
+        assert!(one.decrement_remaining_call_count_and_check());
         assert!(!one.decrement_remaining_call_count_and_check());
         let mut two = CipLabelerContext::with_remaining_call_count(2);
+        assert!(two.decrement_remaining_call_count_and_check());
         assert!(two.decrement_remaining_call_count_and_check());
         assert!(!two.decrement_remaining_call_count_and_check());
     }
@@ -237,8 +242,14 @@ mod migration_tests {
         let mut view = CipMol::new(&chain);
         assert_eq!(view.get_num_atoms(), 3);
         assert_eq!(view.get_num_bonds(), 2);
-        assert_eq!(view.neighbor_indices(1).unwrap(), vec![0, 2]);
-        assert_eq!(view.bond_indices_for_atom(1).unwrap(), vec![0, 1]);
+        assert_eq!(
+            view.neighbor_indices(1).unwrap().collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+        assert_eq!(
+            view.bond_indices_for_atom(1).unwrap().collect::<Vec<_>>(),
+            vec![0, 1]
+        );
         assert!(!view.is_in_ring(0).unwrap());
 
         let cycle = graph(
@@ -273,6 +284,7 @@ mod migration_tests {
                 pyridine_view
                     .get_fractional_atomic_num(atom)
                     .unwrap()
+                    .value()
                     .tuple()
             })
             .collect::<Vec<_>>();
@@ -510,9 +522,9 @@ mod migration_tests {
             })
             .collect::<Vec<_>>();
         let mut context = CipLabelerContext::new(0);
-        refs[0]
+        refs.get(0)
             .recursive_compare_with_sort_rules(
-                &refs,
+                refs,
                 &mut tied_graph,
                 &mut context,
                 carbon_edges[0],
@@ -616,6 +628,15 @@ mod migration_tests {
             -1
         );
         let mut exhausted = CipLabelerContext::with_remaining_call_count(1);
+        assert_eq!(
+            AtomicNumberRule.recursive_compare(
+                &mut digraph,
+                &mut exhausted,
+                carbons[0],
+                carbons[1]
+            ),
+            Ok(-1)
+        );
         assert!(matches!(
             AtomicNumberRule.recursive_compare(
                 &mut digraph,
@@ -915,7 +936,7 @@ mod migration_tests {
         assert_eq!(
             rule4b
                 .compare_with_sort_rules(
-                    Some(&rule4b_refs),
+                    Some(CipRuleView::Refs(&rule4b_refs)),
                     &mut digraph,
                     &mut context,
                     left,
@@ -931,7 +952,7 @@ mod migration_tests {
         assert_eq!(
             rule5
                 .compare_with_sort_rules(
-                    Some(&rule5_refs),
+                    Some(CipRuleView::Refs(&rule5_refs)),
                     &mut digraph,
                     &mut context,
                     left,
@@ -944,7 +965,7 @@ mod migration_tests {
         let unrelated = CipRule1a;
         assert!(matches!(
             rule5.get_ref_sorter(
-                Some(&[&unrelated as &dyn CipSequenceRule]),
+                Some(CipRuleView::Refs(&[&unrelated as &dyn CipSequenceRule])),
                 &CipRule5New::with_ref(Descriptor::R),
             ),
             Err(CipLabelerError::Rule5NewInstanceNotInRuleSet)
@@ -997,7 +1018,7 @@ mod migration_tests {
         let mut types = vec![MancudeType::Other; 6];
         assert!(seed_types(&mut types, &mut view).unwrap());
         assert_eq!(types[3], MancudeType::Nv3D2);
-        relax_types(&mut types, &view).unwrap();
+        relax_types(&mut types, &mut view).unwrap();
         assert!(types.iter().all(|kind| *kind != MancudeType::Other));
         let mut parts = vec![0; 6];
         assert_eq!(visit_parts(&mut parts, &types, &mut view).unwrap(), 1);
@@ -1007,9 +1028,9 @@ mod migration_tests {
             &[Element::C, Element::C, Element::C],
             &[(0, 1, BondOrder::Single), (1, 2, BondOrder::Single)],
         );
-        let view = CipMol::new(&propane);
+        let mut view = CipMol::new(&propane);
         let mut chain_types = vec![MancudeType::Cv4D3, MancudeType::Cv4D3, MancudeType::Other];
-        relax_types(&mut chain_types, &view).unwrap();
+        relax_types(&mut chain_types, &mut view).unwrap();
         assert_eq!(chain_types, vec![MancudeType::Other; 3]);
 
         let charged_ring = topology(
@@ -1034,10 +1055,13 @@ mod migration_tests {
                 charged_view
                     .get_fractional_atomic_num(atom)
                     .unwrap()
+                    .value()
                     .tuple()
             })
             .collect::<Vec<_>>();
-        assert_eq!(fractions, vec![(0, 1), (6, 1), (6, 1), (4, 1), (9, 2)]);
+        // Candidate Mancude distributes the entire resonance-part total:
+        // two double bonds * two ends * carbon atomic number 6 / five atoms.
+        assert_eq!(fractions, vec![(24, 5); 5]);
 
         let aromatic_triangle = aromatic_ring(&[Element::C; 3]);
         let mut fallback = CipMol::new(&aromatic_triangle);
@@ -1235,7 +1259,11 @@ mod recovery_chem04 {
                 let mut list = CipPairList::new();
                 let unrelated = CipRule1a;
                 let refs: [&dyn CipSequenceRule; 1] = [&unrelated];
-                let sort = if missing { None } else { Some(refs.as_slice()) };
+                let sort = if missing {
+                    None
+                } else {
+                    Some(CipRuleView::Refs(&refs))
+                };
                 let r = if five {
                     CipRule5New::new().fill_pairs(sort, &mut g, &mut c, root, &mut list)
                 } else {
@@ -1402,7 +1430,7 @@ mod recovery_chem06 {
             );
             assert_eq!(
                 CipRule6.get_comparison_with_sort_rules(
-                    Some(&refs),
+                    Some(CipRuleView::Refs(&refs)),
                     &mut g,
                     &mut c,
                     left,

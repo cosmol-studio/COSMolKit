@@ -113,13 +113,6 @@ pub fn to_sparse_bit(fp: &Fingerprint) -> SparseBitFingerprint {
 /// `u32` index, and the dense `set_bit` check rejects any member outside
 /// the vector length (retained out-of-length members from the source's
 /// unchecked set operators) instead of truncating silently.
-///
-/// `from_lsb_bytes` note (F28 caller evidence): the legacy byte-order
-/// constructor's only caller in the legacy tree is the Avalon generator
-/// (`legacy-core/properties/avalon_fingerprint.rs:157`), which belongs to
-/// the excluded FP-generator family; it is therefore outside this lane's
-/// frozen closure on caller evidence, not on the earlier unsupported
-/// "depiction ownership" claim (corrected here).
 pub fn to_dense(sparse: &SparseBitFingerprint) -> Result<Fingerprint, FingerprintError> {
     let mut out = Fingerprint::new(sparse.n_bits());
     for &key in sparse.bit_set() {

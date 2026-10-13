@@ -47,12 +47,14 @@ def test_chiral_center_failure_retains_typed_cause_and_input_state():
     assert source.to_binary() == before
 
 
-def test_chiral_center_preserves_existing_cip_property_text():
+def test_chiral_center_clears_stale_label_without_mutating_source():
     source = ck.Molecule.from_smiles_with_params(
         "CC(O)Cl |atomProp:1._CIPCode.foo|",
         ck.SmilesParseParams(sanitize=False, remove_hs=False, skip_cleanup=True),
     )
     before = source.to_binary()
-    assert source.find_chiral_centers(True) == [(1, "foo")]
+    # Candidate clearSelectedCIPProperties runs before configuration discovery.
+    assert source.find_chiral_centers(True) == [(1, "?")]
     assert source.find_chiral_centers() == []
+    assert source.atom_property(1, "_CIPCode") == "foo"
     assert source.to_binary() == before

@@ -10,6 +10,43 @@ use cosmolkit::{
 };
 use std::error::Error;
 
+#[test]
+#[cfg(feature = "cap-hydrogens")]
+fn uff_optimizer_returns_the_energy_of_its_own_force_field() {
+    use cosmolkit::UffOptimizationParams;
+    // UFF.h::UFFOptimizeMolecule / FFConvenience.h::OptimizeMolecule returns
+    // the minimizing field's calcEnergy(), not a rebuilt field's energy.
+    let mut mol = Molecule::from_smiles("CP(Br)(c1ccccc1)(c1ccccc1)c1ccccc1")
+        .unwrap()
+        .with_hydrogens()
+        .unwrap();
+    let mut state = 17_u64;
+    let positions = (0..mol.num_atoms())
+        .map(|_| {
+            (0..3)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
+                    (((state >> 32) % 257) as f64 - 128.) / 16.
+                })
+                .collect()
+        })
+        .collect();
+    mol = mol.with_added_3d_conformer(positions).unwrap();
+    for expected in [0x42e342814525ed28_u64, 0x42b30f2267ad645e] {
+        let result = mol
+            .with_uff_optimized_with_params(&UffOptimizationParams {
+                max_iterations: 2,
+                vdw_threshold: 100.,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(result.energy.to_bits(), expected);
+        mol = result.molecule;
+    }
+}
+
 fn fixture() -> Molecule {
     let template = Molecule::from_smiles("CC.CC").unwrap();
     Molecule::from_parts(

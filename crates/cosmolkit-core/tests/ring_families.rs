@@ -6,7 +6,6 @@ use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock,
     TopologyValidationError,
 };
-use cosmolkit_ringdecomposer::RingDecomposerError;
 use cosmolkit_types::{BondOrder, Element};
 
 fn topology(atom_count: usize, edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
@@ -69,14 +68,10 @@ fn assert_family_info(
 #[test]
 fn defaults_empty_and_nonempty_acyclic_states_are_distinct() {
     assert_eq!(RingSearchParams::default(), params(false, false));
-    assert_eq!(
-        find_ring_families(&topology(0, &[]), &RingSearchParams::default()),
-        Err(RingFindingError::RingDecomposer(
-            RingDecomposerError::EmptyGraph
-        ))
-    );
-
+    // Candidate findRingFamilies uses one isolated RDL node for a zero-atom
+    // molecule; it now returns an initialized empty decomposition.
     for input in [
+        topology(0, &[]),
         topology(1, &[]),
         topology(
             5,

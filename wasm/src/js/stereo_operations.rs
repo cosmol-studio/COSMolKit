@@ -422,7 +422,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=assignChiralTagsFromStructure)]
+    #[wasm_bindgen(js_name=assignChiralTagsFromStructure_)]
     pub fn assign_chiral_tags_from_structure_(
         &self,
         #[wasm_bindgen(
@@ -434,7 +434,7 @@ impl Molecule {
             &StructureTagParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=assignChiralTagsFromStructureWithParams)]
+    #[wasm_bindgen(js_name=assignChiralTagsFromStructureWithParams_)]
     pub fn assign_chiral_tags_from_structure_with_params_(
         &self,
         params: &StructureTagParams,
@@ -461,7 +461,7 @@ impl Molecule {
             inner: inner.into(),
         })
     }
-    #[wasm_bindgen(js_name=assignCipLabels)]
+    #[wasm_bindgen(js_name=assignCipLabels_)]
     pub fn assign_cip_labels_(
         &self,
         #[wasm_bindgen(unchecked_optional_param_type = "CipLabelOptions | CipLabelOptionsOptions")]
@@ -469,7 +469,7 @@ impl Molecule {
     ) -> Result<(), JsValue> {
         self.assign_cip_labels_with_options_(&CipLabelOptions::from_js_configuration(&options)?)
     }
-    #[wasm_bindgen(js_name=assignCipLabelsWithOptions)]
+    #[wasm_bindgen(js_name=assignCipLabelsWithOptions_)]
     pub fn assign_cip_labels_with_options_(
         &self,
         options: &CipLabelOptions,

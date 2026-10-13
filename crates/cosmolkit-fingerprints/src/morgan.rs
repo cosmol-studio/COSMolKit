@@ -29,7 +29,7 @@ use cosmolkit_core::{
     topological_distance_matrix,
 };
 use cosmolkit_model::{BondOrder, ChiralTag, MoleculeProperties, PropertyValue, TopologyBlock};
-use cosmolkit_search::{SearchTarget, build_prepared_query_match_context};
+use cosmolkit_search::{SearchTarget, build_ring_query_match_context};
 
 /// The two output widths explicitly instantiated by the pinned generator.
 pub(super) trait MorganOutput: Copy {
@@ -1541,7 +1541,7 @@ fn selected_atom_invariants(
                 Some(rings),
                 Some(valence),
             );
-            let query_context = build_prepared_query_match_context(topology, rings, valence)?;
+            let query_context = build_ring_query_match_context(topology, rings, Some(valence))?;
             MorganFeatureAtomInvGenerator::new(patterns)
                 .get_atom_invariants(&target, &query_context)
         }

@@ -358,6 +358,7 @@ dependencies = [
 name = "cosmolkit-model"
 version = "0.5.1-rc.1"
 dependencies = [
+ "cosmolkit-ringdecomposer",
  "cosmolkit-types",
  "serde_json",
  "thiserror",

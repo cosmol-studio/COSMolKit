@@ -5,6 +5,16 @@
 use cosmolkit::{AtomId, BondId, Molecule, TautomerEnumerationStatus, TautomerParams};
 use std::collections::BTreeSet;
 #[test]
+fn enumeration_accepts_source_ring_tables_with_a_nonring_suffix() {
+    let mut molecule = Molecule::from_smiles("O=C(O)c1ccccc1-c1ccccc1C(=O)O").unwrap();
+    let result = molecule
+        .enumerate_tautomers_with_params(&TautomerParams::default())
+        .unwrap();
+    assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
+    assert_eq!(result.iter().count(), 1);
+}
+
+#[test]
 fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_rdkit() {
     let mut molecule = Molecule::from_smiles(
         "N[C@H](C(=O)N1CCCC1)[C@H]1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",

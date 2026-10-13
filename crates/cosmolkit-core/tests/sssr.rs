@@ -193,7 +193,7 @@ fn defaults_and_acyclic_inputs_return_initialized_empty_assignments() {
 fn source_triangle_square_and_seven_ring_rows_are_exact() {
     for (size, expected_atoms, expected_bonds) in [
         (3, vec![0, 1, 2], vec![0, 1, 2]),
-        (4, vec![0, 3, 2, 1], vec![3, 2, 1, 0]),
+        (4, vec![0, 1, 2, 3], vec![0, 1, 2, 3]),
         (7, vec![0, 1, 2, 3, 4, 5, 6], vec![0, 1, 2, 3, 4, 5, 6]),
     ] {
         let mut edges = (0..size - 1)
@@ -354,8 +354,8 @@ fn interleaved_dative_hydrogen_and_zero_rows_require_the_exact_active_set() {
         RingFindType::Sssr,
         5,
         6,
-        &[&[0, 3, 2, 1]],
-        &[&[4, 3, 2, 0]],
+        &[&[0, 1, 2, 3]],
+        &[&[0, 2, 3, 4]],
     );
 }
 
@@ -378,8 +378,9 @@ fn fused_source_case_has_exact_rows_memberships_and_fusion_observations() {
         RingFindType::Sssr,
         5,
         6,
-        &[&[0, 3, 2, 1], &[4, 3, 2]],
-        &[&[3, 2, 1, 0], &[4, 2, 5]],
+        // Candidate normalizes min atom/neighbor and sorts SSSR by size first.
+        &[&[2, 3, 4], &[0, 1, 2, 3]],
+        &[&[2, 4, 5], &[0, 1, 2, 3]],
     );
 }
 
@@ -403,16 +404,16 @@ fn issue_217_distinguishes_sssr_from_three_symmetric_four_rings() {
         RingFindType::Sssr,
         6,
         7,
-        &[&[1, 4, 3, 2], &[1, 4, 5, 2]],
-        &[&[4, 3, 2, 1], &[4, 5, 6, 1]],
+        &[&[1, 2, 3, 4], &[1, 2, 5, 4]],
+        &[&[1, 2, 3, 4], &[1, 6, 5, 4]],
     );
     assert_complete_info(
         symmetrized_sssr(&input, &RingSearchParams::default()).unwrap(),
         RingFindType::SymmSssr,
         6,
         7,
-        &[&[1, 4, 3, 2], &[1, 4, 5, 2], &[3, 4, 5, 2]],
-        &[&[4, 3, 2, 1], &[4, 5, 6, 1], &[3, 5, 6, 2]],
+        &[&[1, 2, 3, 4], &[1, 2, 5, 4], &[2, 3, 4, 5]],
+        &[&[1, 2, 3, 4], &[1, 6, 5, 4], &[2, 3, 5, 6]],
     );
 }
 
@@ -446,13 +447,61 @@ fn cubane_has_five_sssr_rows_and_six_symmetric_rows() {
     assert_eq!(symmetric.num_rings(), 6);
     assert!(symmetric.atom_rings().iter().all(|ring| ring.len() == 4));
     assert!(symmetric.bond_rings().iter().all(|ring| ring.len() == 4));
+    // Candidate RDL basis is sorted by size/lexical atom rows; relevant cycles
+    // instead retain RCF iteration order and are not an SSSR-prefix append.
     assert_eq!(
-        &symmetric.atom_rings()[..sssr.num_rings()],
-        sssr.atom_rings()
+        sssr.atom_rings(),
+        [
+            vec![0, 1, 2, 3],
+            vec![0, 1, 5, 4],
+            vec![0, 3, 7, 4],
+            vec![1, 2, 6, 5],
+            vec![2, 3, 7, 6]
+        ]
+        .iter()
+        .map(|r| atom_ids(r))
+        .collect::<Vec<_>>()
     );
     assert_eq!(
-        &symmetric.bond_rings()[..sssr.num_rings()],
-        sssr.bond_rings()
+        sssr.bond_rings(),
+        [
+            vec![0, 1, 2, 3],
+            vec![0, 9, 4, 8],
+            vec![3, 11, 7, 8],
+            vec![1, 10, 5, 9],
+            vec![2, 11, 6, 10]
+        ]
+        .iter()
+        .map(|r| bond_ids(r))
+        .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        symmetric.atom_rings(),
+        [
+            vec![0, 1, 2, 3],
+            vec![0, 1, 5, 4],
+            vec![1, 2, 6, 5],
+            vec![0, 3, 7, 4],
+            vec![2, 3, 7, 6],
+            vec![4, 5, 6, 7]
+        ]
+        .iter()
+        .map(|r| atom_ids(r))
+        .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        symmetric.bond_rings(),
+        [
+            vec![0, 1, 2, 3],
+            vec![0, 9, 4, 8],
+            vec![1, 10, 5, 9],
+            vec![3, 11, 7, 8],
+            vec![2, 11, 6, 10],
+            vec![4, 5, 6, 7]
+        ]
+        .iter()
+        .map(|r| bond_ids(r))
+        .collect::<Vec<_>>()
     );
 }
 
@@ -533,7 +582,8 @@ fn figueras_and_highly_fused_source_graphs_keep_their_source_ring_counts() {
     );
     let counter_sssr = find_sssr(&counterexample, &RingSearchParams::default()).unwrap();
     assert_eq!(counter_sssr.find_type(), RingFindType::Sssr);
-    assert_eq!(counter_sssr.num_rings(), 8 - 1);
+    // RDL_getSSSR is a complete GF(2) basis, rank E - V + 1 = 20 - 13 + 1.
+    assert_eq!(counter_sssr.num_rings(), 8);
     assert!(counter_sssr.atom_rings().iter().all(|ring| ring.len() < 6));
     let counter_symmetric =
         symmetrized_sssr(&counterexample, &RingSearchParams::default()).unwrap();

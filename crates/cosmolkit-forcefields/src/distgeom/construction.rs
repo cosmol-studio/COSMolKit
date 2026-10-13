@@ -306,42 +306,80 @@ fn add_experimental_torsion_terms(
     atom_pairs: &mut [bool],
     num_atoms: usize,
 ) -> Result<(), DistGeomForceFieldError> {
-    // BEGIN RDKIT CPP FUNCTION DistGeom::addExperimentalTorsionTerms (DistGeomUtils.cpp:309-340)
     // RDKit✔️✔️: void addExperimentalTorsionTerms(
     // RDKit✔️✔️:     ForceFields::ForceField *ff,
     // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
-    // RDKit✔️✔️:     boost::dynamic_bitset<> &atomPairs, unsigned int numAtoms) {
+    // RDKit✔️✔️:     boost::dynamic_bitset<> &atomPairs, const std::size_t numAtoms,
+    // RDKit✔️✔️:     const bool excludeTorsions = true) {
     // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
-    // RDKit✔️✔️:   auto torsionContribs =
-    // RDKit✔️✔️:       std::make_unique<ForceFields::CrystalFF::TorsionAngleContribs>(ff);
-    // END RDKIT CPP FUNCTION DistGeom::addExperimentalTorsionTerms
-    let mut torsion_contribs = TorsionAngleContribs::new(ff);
-
+    // RDKit✔️✔️:   namespace cf = ForceFields::CrystalFF;
+    // RDKit✔️✔️:   boost::dynamic_bitset<> doneBonds(numAtoms * numAtoms);
+    // RDKit✔️✔️:   std::unique_ptr<ForceFields::ForceFieldContrib> torsionContribs;
+    // RDKit✔️✔️:   bool nonEmpty = false;
+    // RDKit❌❌:   if (etkdgDetails.torsionParamKind == cf::TorsionParamKind::Gaussian) {
+    // RDKit❌❌:     torsionContribs.reset(new cf::GaussianTorsionAngleContribs(ff));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     torsionContribs.reset(new cf::TorsionAngleContribs(ff));
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:   for (unsigned int t = 0; t < etkdgDetails.expTorsionAtoms.size(); ++t) {
+    // RDKit✔️✔️:     int i = etkdgDetails.expTorsionAtoms[t][0];
+    // RDKit✔️✔️:     int j = etkdgDetails.expTorsionAtoms[t][1];
+    // RDKit✔️✔️:     int k = etkdgDetails.expTorsionAtoms[t][2];
+    // RDKit✔️✔️:     int l = etkdgDetails.expTorsionAtoms[t][3];
+    // RDKit✔️✔️:     const int idx = i < l ? i * numAtoms + l : l * numAtoms + i;
+    // RDKit✔️✔️:     const std::size_t bidx = j < k ? j * numAtoms + k : k * numAtoms + j;
+    // RDKit✔️✔️:     if (doneBonds[bidx]) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     atomPairs[idx] = excludeTorsions;
+    // RDKit❌❌:     if (etkdgDetails.torsionParamKind == cf::TorsionParamKind::Gaussian) {
+    // RDKit❌❌:       const auto scaling = std::get<3>(
+    // RDKit❌❌:           std::get<cf::GaussianExp_T>(etkdgDetails.expTorsionAngles[t]));
+    // RDKit❌❌:       dynamic_cast<cf::GaussianTorsionAngleContribs *>(torsionContribs.get())
+    // RDKit✔️✔️:           ->addContrib(
+    // RDKit❌❌:               i, j, k, l, etkdgDetails.phiToEnergy[etkdgDetails.torsionIdx[t]],
+    // RDKit❌❌:               etkdgDetails.phiToGrad[etkdgDetails.torsionIdx[t]], scaling);
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       const auto &cosine =
+    // RDKit✔️✔️:           std::get<cf::CosineExp_T>(etkdgDetails.expTorsionAngles[t]);
+    // RDKit✔️✔️:       dynamic_cast<cf::TorsionAngleContribs *>(torsionContribs.get())
+    // RDKit✔️✔️:           ->addContrib(i, j, k, l, cosine.second, cosine.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     nonEmpty = true;
+    // RDKit✔️✔️:     doneBonds[bidx] = 1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (nonEmpty) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(torsionContribs));
+    // RDKit✔️✔️:   }
+    // Scope: existing cosine constructor, excludeTorsions=true. Gaussian
+    // interpolation is an independent unsupported capability.
+    let mut torsion_contribs = TorsionAngleContribs::new(ff);
+    // Packed indexed membership preserves O(N²/word) initialization and O(1)
+    // central-bond checks, rather than an extra hash/set allocation per term.
+    let pair_count = num_atoms
+        .checked_mul(num_atoms)
+        .ok_or(DistGeomForceFieldError::IndexOverflow(num_atoms))?;
+    let word_count = pair_count.div_ceil(64);
+    let mut done_bonds = vec![0_u64; word_count];
+
     for t in 0..etkdg_details.exp_torsion_atoms.len() {
-        // RDKit✔️✔️:     int i = etkdgDetails.expTorsionAtoms[t][0];
-        // RDKit✔️✔️:     int j = etkdgDetails.expTorsionAtoms[t][1];
-        // RDKit✔️✔️:     int k = etkdgDetails.expTorsionAtoms[t][2];
-        // RDKit✔️✔️:     int l = etkdgDetails.expTorsionAtoms[t][3];
         let i = etkdg_details.exp_torsion_atoms[t][0] as usize;
         let j = etkdg_details.exp_torsion_atoms[t][1] as usize;
         let k = etkdg_details.exp_torsion_atoms[t][2] as usize;
         let l = etkdg_details.exp_torsion_atoms[t][3] as usize;
+        let central = j.min(k) * num_atoms + j.max(k);
+        let bit = 1_u64 << (central % 64);
+        if done_bonds[central / 64] & bit != 0 {
+            continue;
+        }
 
-        // RDKit✔️✔️:     if (i < l) {
-        // RDKit✔️✔️:       atomPairs[i * numAtoms + l] = 1;
-        // RDKit✔️✔️:     } else {
-        // RDKit✔️✔️:       atomPairs[l * numAtoms + i] = 1;
-        // RDKit✔️✔️:     }
         if i < l {
             atom_pairs[i * num_atoms + l] = true;
         } else {
             atom_pairs[l * num_atoms + i] = true;
         }
 
-        // RDKit✔️✔️:     torsionContribs->addContrib(i, j, k, l,
-        // RDKit✔️✔️:                                 etkdgDetails.expTorsionAngles[t].second,
-        // RDKit✔️✔️:                                 etkdgDetails.expTorsionAngles[t].first);
         torsion_contribs.add_contrib(
             i,
             j,
@@ -350,12 +388,8 @@ fn add_experimental_torsion_terms(
             etkdg_details.exp_torsion_angles[t].1.clone(),
             etkdg_details.exp_torsion_angles[t].0.clone(),
         );
+        done_bonds[central / 64] |= bit;
     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (!torsionContribs->empty()) {
-    // RDKit✔️✔️:     ff->contribs().push_back(std::move(torsionContribs));
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
     if !torsion_contribs.is_empty() {
         ff.add_contribution(Box::new(torsion_contribs));
     }
@@ -1658,7 +1692,7 @@ mod tests {
         let mut ff_rows = distgeom_experimental_torsion_force_field_rows();
         let mut ff = fixture_field(&mut ff_rows, 3);
         let details = CrystalFFDetails {
-            exp_torsion_atoms: vec![vec![0, 1, 2, 3], vec![4, 3, 2, 1]],
+            exp_torsion_atoms: vec![vec![0, 1, 2, 3], vec![4, 3, 2, 1], vec![4, 2, 1, 3]],
             exp_torsion_angles: vec![
                 (
                     vec![1, -1, 1, -1, 1, -1],
@@ -1668,6 +1702,7 @@ mod tests {
                     vec![-1, 1, -1, 1, -1, 1],
                     vec![0.05, 0.15, 0.25, 0.35, 0.45, 0.55],
                 ),
+                (vec![1; 6], vec![20.0; 6]),
             ],
             ..CrystalFFDetails::default()
         };
@@ -1700,6 +1735,8 @@ mod tests {
             vec![0.05, 0.15, 0.25, 0.35, 0.45, 0.55],
             vec![-1, 1, -1, 1, -1, 1],
         );
+        // The original two distinct central bonds remain installed. Candidate
+        // skips only the third row, whose reversed central bond is (1,2).
         let expected_energy = evaluate_energy(
             &expected,
             &flatten_force_field_positions(&expected_ff),
@@ -1708,6 +1745,7 @@ mod tests {
 
         assert!(atom_pairs[3]);
         assert!(atom_pairs[9]);
+        assert!(!atom_pairs[19]);
         assert_eq!(atom_pairs.iter().filter(|&&set| set).count(), 2);
         assert_eq!(contrib_energies.len(), 1);
         assert_close(contrib_energies[0], expected_energy);

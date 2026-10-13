@@ -454,6 +454,20 @@ pub fn enumerate_with_catalog(
     // therefore belongs to the caller; enumeration never substitutes a cloned
     // source RingInfo. Candidate preparation still copies its own record.
     // RDKit✔️❌:   std::string smi = MolToSmiles(mol, true);
+    // RDKit✔️✔️:   boost::dynamic_bitset<> protectedAtoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (atom->hasProp(common_properties::_protected)) {
+    // RDKit✔️✔️:       protectedAtoms.set(atom->getIdx());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // Capture original identities once, before callbacks or transformations.
+    // Packed words retain source O(atoms/64) storage and O(1) membership.
+    let mut protected_atoms = vec![0_u64; source.topology.atoms.len().div_ceil(64)];
+    for (index, atom) in source.topology.atoms.iter().enumerate() {
+        if atom.prop("_protected").is_some() {
+            protected_atoms[index / 64] |= 1_u64 << (index % 64);
+        }
+    }
     let coordinates = source.coordinates;
     let key = canonical_smiles(source.as_record_view())?;
     let (initial, mut state) = initialize_candidates_with_key(source.as_record_view(), key)?;
@@ -466,7 +480,9 @@ pub fn enumerate_with_catalog(
             catalog.transforms(),
             params,
             get_cached_kekulized,
-            |candidate, transform| transform_matches(candidate, coordinates, transform),
+            |candidate, transform| {
+                transform_matches(candidate, coordinates, transform, &protected_atoms)
+            },
             |candidate, transform, matched, atoms, bonds, existing| {
                 apply_tautomer_transform_match(
                     original,
@@ -549,6 +565,7 @@ pub fn select_canonical_index_with<'a>(
     select_canonical_index_by(
         candidates,
         |candidate| scorer(candidate.reborrow()),
+        |candidate| specified_stereo_count(candidate.topology),
         |key, _| Ok(std::borrow::Cow::Borrowed(key)),
     )
     .and_then(|index| index.ok_or(TautomerRunError::NoCanonicalTautomer))
@@ -561,6 +578,7 @@ pub fn select_canonical_index_from_iterable_with<'a>(
     select_canonical_index_by(
         candidates.map(|value| ((), value)),
         |candidate| scorer(candidate.reborrow()),
+        |candidate| specified_stereo_count(candidate.topology),
         |(), view| canonical_smiles(view.as_record_view()).map(std::borrow::Cow::Owned),
     )
     .and_then(|index| index.ok_or(TautomerRunError::NoCanonicalTautomer))
@@ -572,6 +590,7 @@ pub fn select_canonical_index_from_iterable_with<'a>(
 pub fn select_canonical_index_by<'a, M, C, E>(
     candidates: impl ExactSizeIterator<Item = (M, C)>,
     mut scorer: impl FnMut(&mut C) -> Result<i32, E>,
+    mut count_stereo: impl FnMut(&C) -> u32,
     mut key: impl FnMut(M, &C) -> Result<std::borrow::Cow<'a, cosmolkit_model::PropertyText>, E>,
 ) -> Result<Option<usize>, E> {
     // BEGIN RDKIT CPP FUNCTION RDKit::TautomerEnumerator::pickCanonical shared selection
@@ -590,16 +609,26 @@ pub fn select_canonical_index_by<'a, M, C, E>(
     // RDKit❗❌: #ifdef VERBOSE_ENUMERATION
     // RDKit❗❌:       std::cerr << "  " << t.first << " " << score << std::endl;
     // RDKit❗❌: #endif
-    // RDKit❗❌:       if (score > bestScore) {
-    // RDKit❗❌:         bestScore = score;
-    // RDKit❗❌:         bestSmiles = t.first;
-    // RDKit❗❌:         bestMol = t.second.tautomer;
-    // RDKit❗❌:       } else if (score == bestScore) {
-    // RDKit❗❌:         if (t.first < bestSmiles) {
-    // RDKit❗❌:           bestSmiles = t.first;
-    // RDKit❗❌:           bestMol = t.second.tautomer;
-    // RDKit❗❌:         }
-    // RDKit❗❌:       }
+    // RDKit✔️✔️:       if (score < bestScore) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       auto nStereo = detail::countSpecifiedStereo(*t.second.tautomer);
+    // RDKit✔️✔️:       bool better = false;
+    // RDKit✔️✔️:       if (score > bestScore) {
+    // RDKit✔️✔️:         better = true;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         if (nStereo > bestStereo) {
+    // RDKit✔️✔️:           better = true;
+    // RDKit✔️✔️:         } else if (nStereo == bestStereo && t.first < bestSmiles) {
+    // RDKit✔️✔️:           better = true;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (better) {
+    // RDKit✔️✔️:         bestScore = score;
+    // RDKit✔️✔️:         bestStereo = nStereo;
+    // RDKit✔️✔️:         bestSmiles = t.first;
+    // RDKit✔️✔️:         bestMol = t.second.tautomer;
+    // RDKit✔️✔️:       }
     // RDKit❗❌:     }
     // RDKit❗❌:   }
     // RDKit❗❌:   ROMol *res = new ROMol(*bestMol);
@@ -616,21 +645,73 @@ pub fn select_canonical_index_by<'a, M, C, E>(
         return Ok(Some(0));
     }
     let mut best_score = i32::MIN;
+    let mut best_stereo = 0;
     let mut best_smiles: std::borrow::Cow<'a, cosmolkit_model::PropertyText> =
         std::borrow::Cow::Owned(cosmolkit_model::PropertyText::new());
     let mut best = None;
     for (index, (metadata, mut candidate)) in candidates.enumerate() {
         let score = scorer(&mut candidate)?;
-        if score >= best_score {
-            let smiles = key(metadata, &candidate)?;
-            if score > best_score || smiles < best_smiles {
-                best_score = score;
-                best_smiles = smiles;
-                best = Some(index);
-            }
+        // RDKit✔️✔️: if (score < bestScore) {
+        // RDKit✔️✔️:   // cannot win, so do not pay for its SMILES
+        // RDKit✔️✔️:   continue;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: auto nStereo = detail::countSpecifiedStereo(*t);
+        // RDKit✔️✔️: if (score > bestScore) {
+        // RDKit✔️✔️:   better = true;
+        // RDKit✔️✔️: } else if (nStereo > bestStereo) {
+        // RDKit✔️✔️:   better = true;
+        // RDKit✔️✔️: } else if (nStereo == bestStereo) {
+        // RDKit✔️✔️:   smiles = MolToSmiles(*t);
+        // RDKit✔️✔️:   haveSmiles = true;
+        // RDKit✔️✔️:   better = smiles < bestSmiles;
+        // RDKit✔️✔️: }
+        // Both overloads share the source ordering; retained keys are borrowed.
+        // Iterable keys are computed only for a winner or equal-stereo tie.
+        if score < best_score {
+            continue;
+        }
+        let stereo = count_stereo(&candidate);
+        if score == best_score && stereo < best_stereo {
+            continue;
+        }
+        let smiles = key(metadata, &candidate)?;
+        if score > best_score || stereo > best_stereo || smiles < best_smiles {
+            best_score = score;
+            best_stereo = stereo;
+            best_smiles = smiles;
+            best = Some(index);
         }
     }
     Ok(best)
+}
+
+/// Detached source tie-break discriminator shared by all canonical selectors.
+#[doc(hidden)]
+pub fn specified_stereo_count(topology: &cosmolkit_model::TopologyBlock) -> u32 {
+    // RDKit✔️✔️: unsigned int nSpecified = 0;
+    // RDKit✔️✔️: for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:   if (atom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit✔️✔️:     ++nSpecified;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: for (const auto bond : mol.bonds()) {
+    // RDKit✔️✔️:   if (bond->getStereo() > Bond::STEREOANY) {
+    // RDKit✔️✔️:     ++nSpecified;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return nSpecified;
+    // One borrowed O(V + E) pass, no allocations, as in Tautomer.h:148–168.
+    let atoms = topology
+        .atoms
+        .iter()
+        .filter(|atom| atom.chiral_tag() != cosmolkit_model::ChiralTag::Unspecified)
+        .count();
+    let bonds = topology
+        .bonds
+        .iter()
+        .filter(|bond| bond.stereo().rdkit_code() > cosmolkit_model::BondStereo::Any.rdkit_code())
+        .count();
+    (atoms + bonds) as u32
 }
 /// Source pickCanonical final copy and forced legacy assignment, without enumeration.
 pub fn finalize_canonical_candidate(
@@ -931,6 +1012,7 @@ fn pick_canonical_default_with_ring_cache(
             .iter_mut()
             .map(|(key, record)| (&*key, record)),
         |record| scorer.score_record(record, coordinates),
+        |record| specified_stereo_count(&record.topology),
         |key, _| Ok(std::borrow::Cow::Borrowed(key)),
     )?
     .ok_or(TautomerRunError::NoCanonicalTautomer)?;
@@ -940,6 +1022,57 @@ fn pick_canonical_default_with_ring_cache(
 #[cfg(test)]
 mod search06_default_picker_tests {
     use super::*;
+    #[test]
+    fn canonical_score_ties_prefer_specified_stereo_before_lexical_order() {
+        let coordinates = CoordinateBlock::default();
+        let mut candidates = [cold("CC(O)C=O"), cold("C[C@H](O)C=O")];
+        let keys: Vec<_> = candidates
+            .iter()
+            .map(|candidate| canonical_smiles(candidate.view(&coordinates)).unwrap())
+            .collect();
+        assert!(keys[0] < keys[1]);
+        assert_eq!(
+            select_canonical_index_with(
+                keys.iter()
+                    .zip(candidates.iter_mut())
+                    .map(|(key, candidate)| (key, candidate.score_view(&coordinates))),
+                |_| Ok(0)
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            select_canonical_index_from_iterable_with(
+                candidates
+                    .iter_mut()
+                    .map(|candidate| candidate.score_view(&coordinates)),
+                |_| Ok(0)
+            )
+            .unwrap(),
+            1
+        );
+        let mut unknown = cold("CC=CC");
+        unknown.topology.bonds[1]
+            .set_stereo(cosmolkit_model::BondStereo::Any)
+            .unwrap();
+        assert_eq!(specified_stereo_count(&unknown.topology), 0);
+
+        let mut visited_keys = Vec::new();
+        let selected = select_canonical_index_by(
+            [(0, (2, 1)), (1, (1, 9)), (2, (2, 0)), (3, (2, 1))].into_iter(),
+            |candidate| Ok::<_, ()>(candidate.0),
+            |candidate| candidate.1,
+            |index, _| {
+                visited_keys.push(index);
+                Ok(std::borrow::Cow::Owned(
+                    if index == 3 { "a" } else { "z" }.into(),
+                ))
+            },
+        )
+        .unwrap();
+        assert_eq!(visited_keys, [0, 3]);
+        assert_eq!(selected, Some(3));
+    }
     fn cold(text: &str) -> TautomerRecord {
         let mut record = crate::engine::stereo_tests::fixture_from_smiles(text).unwrap();
         record.rings = cosmolkit_core::RingInfo::new(
@@ -989,6 +1122,35 @@ mod search06_default_picker_tests {
 mod recovery_search06_domain_source_loan_tests {
     use super::*;
     use cosmolkit_core::{RingFindType, RingInfo};
+    #[test]
+    fn protected_property_presence_blocks_every_matched_atom_only() {
+        let catalog =
+            TautomerCatalog::from_data(&[("keto/enol", "[CX4!H0]-[C]=[O]", "", "")]).unwrap();
+        for (index, property, expected_count) in [
+            (1, cosmolkit_model::PropertyValue::Bool(false), 1),
+            (1, cosmolkit_model::PropertyValue::Int(0), 1),
+            (3, cosmolkit_model::PropertyValue::Bool(false), 2),
+        ] {
+            let mut source = crate::engine::stereo_tests::fixture_from_smiles("CC=O.C").unwrap();
+            source.topology.atoms[index]
+                .set_prop("_protected", property)
+                .unwrap();
+            let result = enumerate_with_catalog(
+                source.score_view(&CoordinateBlock::default()),
+                &catalog,
+                TautomerParams::default().with_reassign_stereo(false),
+                None,
+            )
+            .unwrap();
+            assert_eq!(result.status, TautomerEnumerationStatus::Completed);
+            assert_eq!(
+                result.entries.len(),
+                expected_count,
+                "protected atom {index}"
+            );
+        }
+    }
+
     struct ScoreAndStop {
         error: bool,
     }

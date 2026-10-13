@@ -17,7 +17,7 @@ def _ck_additional_output_record(additional_output):
 
 def test_morgan_additional_output_python_container_projection():
     # Fixed RDKit 2026.03.6 result: Morgan(radius=2, fpSize=2048), CCO.
-    # Full chemistry comparisons belong to parity-tests_fixed. Keep one
+    # Full chemistry comparisons belong to parity-tests. Keep one
     # representative list/tuple/dict projection without executing an oracle.
     ck_mol = cosmolkit.Molecule.from_smiles("CCO")
     ck_generator = cosmolkit.MorganFingerprintGenerator(

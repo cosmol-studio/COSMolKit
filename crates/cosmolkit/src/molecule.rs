@@ -1,5 +1,56 @@
 //! Runtime-owned live molecule state.
 
+#[cfg(all(test, feature = "cap-serialization", feature = "cap-smiles"))]
+mod archive_ring_family_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_materialized_ring_families_remain_valid_without_rdl_recomputation() {
+        use cosmolkit_core::RingInfo;
+        let mol = Molecule::from_smiles("c1ccccc1")
+            .unwrap()
+            .with_assigned_ring_families()
+            .unwrap();
+        let cache = mol.derived_cache_runtime();
+        let original = cache.ring_family_info().unwrap();
+        let mut snapshot = original.clone().into_source_snapshot();
+        snapshot.decomposition = None;
+        let old = RingInfo::from_source_snapshot(&snapshot).unwrap();
+        let data = cosmolkit_io::encode_molecule_binary(&cosmolkit_io::BinaryInput {
+            topology: mol.topology(),
+            coordinates: mol.coordinate_block_runtime(),
+            properties: mol.properties(),
+            derived: cosmolkit_io::BinaryDerivedView {
+                rings: cache.ring_info(),
+                ring_families: Some(&old),
+                valence: cache.valence_assignment(),
+                aromaticity_valid: cache
+                    .valid_states()
+                    .contains(super::DerivedState::AROMATICITY),
+                stereo_valid: cache.valid_states().contains(super::DerivedState::STEREO),
+                valid_bits: cache.valid_states().bits(),
+            },
+        })
+        .unwrap();
+        let restored = Molecule::from_binary(&data).unwrap();
+        let restored_cache = restored.derived_cache_runtime();
+        let families = restored_cache.ring_family_info().unwrap();
+        assert_eq!(families, &old);
+        assert!(!families.are_ring_families_initialized());
+        assert!(
+            restored_cache
+                .valid_states()
+                .contains(super::DerivedState::RING_FAMILIES)
+        );
+        assert_eq!(families.atom_ring_families(), original.atom_ring_families());
+        assert_eq!(families.bond_ring_families(), original.bond_ring_families());
+        assert_eq!(
+            families.num_relevant_cycles(),
+            original.num_relevant_cycles()
+        );
+    }
+}
+
 use std::fmt;
 use std::sync::Arc;
 
@@ -539,16 +590,20 @@ impl DerivedCacheBlock {
                             expected: rings.atom_rings().len(),
                         });
                     }
-                    if rings.are_ring_families_initialized()
-                        || !rings.atom_ring_families().is_empty()
-                        || !rings.bond_ring_families().is_empty()
-                    {
+                    // Candidate findSSSR/symmetrizeSSSR retain their shared RDL
+                    // decomposition and aligned URF rows in this same RingInfo.
+                    // They remain inside the RINGS validity/COW lifecycle; a
+                    // separate RING_FAMILIES cache is not implicitly installed.
+                    if rings.atom_ring_families().len() != rings.bond_ring_families().len() {
                         return Err(OperationError::InvalidDerivedCache {
                             state: "rings",
-                            field: "ring_families",
-                            actual: 1,
-                            expected: 0,
+                            field: "ring_family_rows",
+                            actual: rings.bond_ring_families().len(),
+                            expected: rings.atom_ring_families().len(),
                         });
+                    }
+                    if rings.are_ring_families_initialized() {
+                        rings.num_relevant_cycles().map_err(OperationError::Rings)?;
                     }
                     for (atoms, bonds) in rings.atom_rings().iter().zip(rings.bond_rings()) {
                         if atoms.len() != bonds.len() {
@@ -560,7 +615,12 @@ impl DerivedCacheBlock {
                             });
                         }
                     }
-                    for atom in rings.atom_rings().iter().flatten() {
+                    for atom in rings
+                        .atom_rings()
+                        .iter()
+                        .chain(rings.atom_ring_families())
+                        .flatten()
+                    {
                         if atom.index() >= topology.atoms.len() {
                             return Err(OperationError::InvalidDerivedCache {
                                 state: "rings",
@@ -570,7 +630,12 @@ impl DerivedCacheBlock {
                             });
                         }
                     }
-                    for bond in rings.bond_rings().iter().flatten() {
+                    for bond in rings
+                        .bond_rings()
+                        .iter()
+                        .chain(rings.bond_ring_families())
+                        .flatten()
+                    {
                         if bond.index() >= topology.bonds.len() {
                             return Err(OperationError::InvalidDerivedCache {
                                 state: "rings",
@@ -611,7 +676,12 @@ impl DerivedCacheBlock {
             match (valid, self.ring_families.as_ref()) {
                 (false, None) => {}
                 (true, Some(families)) => {
-                    if !families.is_initialized() || !families.are_ring_families_initialized() {
+                    // Older archives retain materialized family rows and their
+                    // count, but predate persistent RDL internals. Algorithms
+                    // rebuild RDL only when they actually need that state.
+                    if !families.is_initialized()
+                        || families.persisted_relevant_cycle_count().is_none()
+                    {
                         return Err(OperationError::InvalidDerivedCache {
                             state: "ring_families",
                             field: "initialized",
@@ -1480,6 +1550,13 @@ mod ring_live_lifecycle_tests {
         let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
         let peer = molecule.clone();
         let peer_cache = peer.derived_cache_runtime().clone();
+        let source_ring_snapshot = molecule
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .unwrap()
+            .clone()
+            .into_source_snapshot();
+        let decomposition = source_ring_snapshot.decomposition.as_ref().unwrap();
         assert_eq!(molecule.num_rings().unwrap(), 1, "initial count");
         {
             let rings = molecule.derived_cache_runtime().valid_ring_info().unwrap();
@@ -1488,7 +1565,7 @@ mod ring_live_lifecycle_tests {
         assert_eq!(molecule.num_rings().unwrap(), 1, "repeat query");
 
         // Coordinate value operation preserves rows/type and old IDs.
-        let with_coords = molecule.add_2d_coordinates().unwrap();
+        let with_coords = molecule.with_2d_coordinates().unwrap();
         {
             let rings = with_coords
                 .derived_cache_runtime()
@@ -1501,6 +1578,19 @@ mod ring_live_lifecycle_tests {
 
         // AddHs preserves ring state through LeafAtomAppend.
         let with_hs = with_coords.with_hydrogens().unwrap();
+        let appended_ring_snapshot = with_hs
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .unwrap()
+            .clone()
+            .into_source_snapshot();
+        assert!(
+            Arc::ptr_eq(
+                decomposition,
+                appended_ring_snapshot.decomposition.as_ref().unwrap()
+            ),
+            "leaf append preserves the shared immutable source decomposition"
+        );
         {
             let rings = with_hs.derived_cache_runtime().valid_ring_info().unwrap();
             assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::SymmSssr);

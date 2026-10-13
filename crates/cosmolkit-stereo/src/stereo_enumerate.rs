@@ -859,13 +859,21 @@ impl EnumerationWorkspace {
             ValenceModel::RdkitLike,
             false,
         )?;
-        isomer.topology = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
+        let conformer = isomer
+            .coordinates
+            .first_source_conformer()
+            .map_err(|source| EnumerationError::Coordinates(source))?
+            .map(Into::into);
+        isomer.topology = cosmolkit_core::assign_legacy_stereochemistry_with_conformer(
             isomer.topology,
             &valence,
             &rings,
+            None,
+            conformer,
             true,
             true,
-        )?;
+        )?
+        .topology;
         isomer.properties.set_computed_prop(
             "_StereochemDone",
             cosmolkit_model::PropertyValue::Bool(true),

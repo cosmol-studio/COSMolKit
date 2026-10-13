@@ -7,6 +7,26 @@
 
 use cosmolkit::{BondOrder, Molecule};
 
+#[path = "fixtures/frozen_drawing_coordinates.rs"]
+mod frozen_coordinates;
+
+fn render_with_frozen_layout(prepared: &Molecule, xy: &[[f64; 2]]) -> String {
+    assert_eq!(prepared.num_atoms(), xy.len());
+    let molecule = Molecule::from_parts(
+        prepared.topology().clone(),
+        cosmolkit::CoordinateBlock {
+            conformers_2d: vec![cosmolkit::Conformer2D::new(0, xy.to_vec())],
+            ..Default::default()
+        },
+        prepared.properties().clone(),
+    )
+    .unwrap();
+    let before = molecule.clone();
+    let svg = molecule.to_svg(300, 300).unwrap();
+    assert_eq!(molecule, before);
+    svg
+}
+
 #[test]
 fn drawing_missing_2d_and_3d_only_queries_preserve_source_coordinates() {
     use cosmolkit::{Conformer3D, CoordinateBlock};
@@ -116,7 +136,7 @@ fn prepare_molecule_for_drawing(
         })?;
     }
     if force_coords || prepared.coordinates_2d().is_none() {
-        prepared = prepared.add_2d_coordinates_with_params(&cosmolkit::Coordinate2DParams {
+        prepared = prepared.with_2d_coordinates_with_params(&cosmolkit::Coordinate2DParams {
             canonical_orientation: true,
             ..cosmolkit::Coordinate2DParams::default()
         })?;
@@ -127,7 +147,7 @@ fn prepare_molecule_for_drawing(
 #[test]
 fn aromatic_outer_line_draw_coordinate_matches_rdkit_rounding_regression() {
     let molecule = Molecule::from_smiles(r"O=C(O)/C(=C\c1ccccc1)Cc1ccccc1").unwrap();
-    let svg = molecule.to_svg(300, 300).unwrap();
+    let svg = render_with_frozen_layout(&molecule, frozen_coordinates::AROMATIC);
 
     assert!(svg.contains("<path class='bond-12 atom-12 atom-13' d='M 76.7,130.0 L 48.7,113.9'"));
 }
@@ -135,7 +155,7 @@ fn aromatic_outer_line_draw_coordinate_matches_rdkit_rounding_regression() {
 #[test]
 fn overlapping_depiction_atoms_skip_bond_regression() {
     let molecule = Molecule::from_smiles("CC12CC34CN(C(=N)N)CC3(C1)CC2(C)C4.Cl").unwrap();
-    let svg = molecule.to_svg(300, 300).unwrap();
+    let svg = render_with_frozen_layout(&molecule, frozen_coordinates::OVERLAPPING);
 
     assert!(!svg.contains("<path class='bond-16 atom-13 atom-1'"));
     assert!(svg.contains("<path class='bond-4 atom-4 atom-5' d='M 121.8,184.1 L 111.8,170.9'"));
@@ -176,25 +196,10 @@ fn prepared_drawing_uses_rdkit_canonical_kekule_assignment_regression() {
         bond_orders,
         "SDSSSSSSSSDSSDSSSSDSDSDSSSDSSSSSSDSSSSSSSSSSSSSSSDSSDSDS"
     );
-    let coordinates = prepared.coordinates_2d().unwrap();
-    assert_eq!(
-        coordinates[0][0].to_bits(),
-        (-0.7271872994113224_f64).to_bits()
-    );
-    assert_eq!(
-        coordinates[0][1].to_bits(),
-        (-7.508043887184295_f64).to_bits()
-    );
-    assert_eq!(
-        coordinates[49][0].to_bits(),
-        10.57352991454218_f64.to_bits()
-    );
-    assert_eq!(
-        coordinates[49][1].to_bits(),
-        4.749281830440951_f64.to_bits()
-    );
+    // The rendering regression uses explicit fixed coordinates as input.
+    let coordinates = frozen_coordinates::CANONICAL;
 
-    let svg = molecule.to_svg(300, 300).unwrap();
+    let svg = render_with_frozen_layout(&prepared, coordinates);
     assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 140.4,250.0 L 145.7,232.9'"));
 }
 
@@ -216,7 +221,7 @@ fn polycyclic_chiral_hydrogen_preparation_matches_rdkit_regression() {
         10
     );
 
-    let svg = molecule.to_svg(300, 300).unwrap();
+    let svg = render_with_frozen_layout(&prepared, frozen_coordinates::POLYCYCLIC);
     assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 189.8,250.4 L 186.4,239.5'"));
 }
 

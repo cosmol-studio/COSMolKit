@@ -261,21 +261,28 @@ fn inplace_success_matches_value_semantics_and_keeps_observers_unchanged() {
 }
 
 #[test]
-fn detached_failure_is_structured_and_inplace_failure_is_atomic() {
+fn empty_ring_families_value_and_inplace_keep_empty_source_blocks() {
+    // Candidate FindRings.cpp::findRingFamilies explicitly substitutes one
+    // isolated RDL vertex for an empty molecule; this is not a failure input.
     let source = Molecule::new();
-    let value_error = source.with_assigned_ring_families().unwrap_err();
-    assert!(matches!(value_error, OperationError::Rings(_)));
+    let value = source.with_assigned_ring_families().unwrap();
+    assert_eq!(value.num_atoms(), 0);
+    assert_eq!(value.num_bonds(), 0);
+    assert!(std::ptr::eq(value.topology(), source.topology()));
+    coordinate_views::assert_shared_coordinates(&value, &source);
+    assert!(std::ptr::eq(value.properties(), source.properties()));
+    assert!(format!("{value:?}").contains("derived_cache_is_empty: false"));
     assert!(format!("{source:?}").contains("derived_cache_is_empty: true"));
 
     let mut target = source.clone();
     let observer = target.clone();
-    let inplace_error = target.assign_ring_families_().unwrap_err();
-    assert!(matches!(inplace_error, OperationError::Rings(_)));
-    assert_eq!(target, observer);
+    target.assign_ring_families_().unwrap();
+    assert_eq!(target, value);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
-    assert!(format!("{target:?}").contains("derived_cache_is_empty: true"));
+    assert!(format!("{target:?}").contains("derived_cache_is_empty: false"));
+    assert!(format!("{observer:?}").contains("derived_cache_is_empty: true"));
 }
 
 #[test]

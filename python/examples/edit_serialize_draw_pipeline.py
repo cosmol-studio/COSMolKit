@@ -26,7 +26,7 @@ phenol = builder.build().sanitize()
 
 payload = phenol.to_binary()
 restored = ck.mol_from_binary(payload)
-prepared = restored.add_2d_coordinates()
+prepared = restored.with_2d_coordinates()
 
 print("base smiles:", base.to_smiles())
 print("edited smiles:", phenol.to_smiles())

@@ -23,7 +23,7 @@ use crate::{
     symmetrized_sssr,
 };
 
-use crate::hcount::{AdjustHsError, adjust_hs};
+use crate::hcount::{AdjustHsError, adjust_hs, adjust_hs_with_mask};
 
 const NAMED_SANITIZE_BITS: u32 = 0x0000_0fff;
 const ALL_SANITIZE_BITS: u32 = 0x0fff_ffff;
@@ -576,6 +576,39 @@ pub(crate) mod hybridizations_probe {
     }
 }
 
+fn include_aromatic_atoms(topology: &TopologyBlock, atoms_to_adjust: &mut [u64]) {
+    // RDKit✔️✔️: void includeAromaticAtoms(const RWMol &mol,
+    // RDKit✔️✔️:                           boost::dynamic_bitset<> &atomsToAdjust) {
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (atom->getIsAromatic()) {
+    // RDKit✔️✔️:       atomsToAdjust[atom->getIdx()] = 1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getIsAromatic()) {
+    // RDKit✔️✔️:       atomsToAdjust[bond->getBeginAtomIdx()] = 1;
+    // RDKit✔️✔️:       atomsToAdjust[bond->getEndAtomIdx()] = 1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // One O(V+E) borrowed traversal, no allocation. Bond endpoint flags count
+    // even when those atoms do not themselves carry an aromatic flag.
+    for atom in &topology.atoms {
+        if atom.is_aromatic() {
+            let index = atom.id().index();
+            atoms_to_adjust[index / 64] |= 1 << (index % 64);
+        }
+    }
+    for bond in &topology.bonds {
+        if bond.is_aromatic() {
+            for atom in [bond.begin(), bond.end()] {
+                let index = atom.index();
+                atoms_to_adjust[index / 64] |= 1 << (index % 64);
+            }
+        }
+    }
+}
+
 /// Run RDKit's selected sanitization stages in exact source order over a
 /// detached topology value.
 ///
@@ -628,17 +661,28 @@ pub fn sanitize_topology_with_query_state(
     // RDKit✔️❌:     mol.updatePropertyCache(false);
     // RDKit✔️❌:   }
     // RDKit✔️❌:
-    // RDKit✔️❌:   operationThatFailed = SANITIZE_SYMMRINGS;
-    // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     VECT_INT_VECT arings;
-    // RDKit✔️❌:     MolOps::symmetrizeSSSR(mol, arings);
+    // RDKit✔️❌:   const bool trackAromaticAtomsForAdjustHs =
+    // RDKit✔️❌:       (sanitizeOps & SANITIZE_ADJUSTHS) &&
+    // RDKit✔️❌:       (sanitizeOps & (SANITIZE_KEKULIZE | SANITIZE_SETAROMATICITY));
+    // RDKit✔️❌:   boost::dynamic_bitset<> atomsToAdjustHs(
+    // RDKit✔️❌:       trackAromaticAtomsForAdjustHs ? mol.getNumAtoms() : 0);
+    // RDKit✔️❌:   if (trackAromaticAtomsForAdjustHs) {
+    // RDKit✔️❌:     includeAromaticAtoms(mol, atomsToAdjustHs);
     // RDKit✔️❌:   }
     // RDKit✔️❌:
     // RDKit✔️❌:   // kekulizations
     // RDKit✔️❌:   operationThatFailed = SANITIZE_KEKULIZE;
     // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     Kekulize(mol, true, false);
+    // RDKit✔️❌:     kekulizeForSanitize(mol);
     // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit❗❌:   operationThatFailed = SANITIZE_SYMMRINGS;
+    // RDKit❗❌:   if (sanitizeOps & operationThatFailed) {
+    // RDKit❗❌:     VECT_INT_VECT arings;
+    // RDKit❗❌:     bool recalcSSSR = false;
+    // RDKit❗❌:     MolOps::symmetrizeSSSR(mol, arings, SymmetrizeSSSRAlgorithm::DEFAULT,
+    // RDKit❗❌:                            recalcSSSR);
+    // RDKit❗❌:   }
     // RDKit✔️❌:
     // RDKit✔️❌:   // look for radicals:
     // RDKit✔️❌:   // We do this now because we need to know
@@ -657,6 +701,9 @@ pub fn sanitize_topology_with_query_state(
     // RDKit✔️❌:   operationThatFailed = SANITIZE_SETAROMATICITY;
     // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
     // RDKit✔️❌:     setAromaticity(mol);
+    // RDKit✔️❌:     if (trackAromaticAtomsForAdjustHs) {
+    // RDKit✔️❌:       includeAromaticAtoms(mol, atomsToAdjustHs);
+    // RDKit✔️❌:     }
     // RDKit✔️❌:   }
     // RDKit✔️❌:
     // RDKit✔️❌:   // set conjugation
@@ -685,7 +732,11 @@ pub fn sanitize_topology_with_query_state(
     // RDKit✔️❌:   // adjust Hydrogen counts:
     // RDKit✔️❌:   operationThatFailed = SANITIZE_ADJUSTHS;
     // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     adjustHs(mol);
+    // RDKit✔️❌:     if (trackAromaticAtomsForAdjustHs) {
+    // RDKit✔️❌:       adjustHs(mol, &atomsToAdjustHs);
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       adjustHs(mol);
+    // RDKit✔️❌:     }
     // RDKit✔️❌:   }
     // RDKit✔️❌:
     // RDKit✔️❌:   // now that everything has been cleaned up, go through and check/update the
@@ -748,27 +799,36 @@ pub fn sanitize_topology_with_query_state(
 
     let mut rings: Option<RingInfo> = None;
     let mut aromatic_ring_count = None;
-    if operations.contains(SanitizeOperations::SYMM_RINGS) {
-        #[cfg(test)]
-        final_rings_probe::record_symm_acquisition();
-        rings = Some(
-            symmetrized_sssr(&working, &RingSearchParams::default()).map_err(|source| {
-                SanitizeError::Rings {
-                    stage: SanitizeStage::SymmRings,
-                    source,
-                }
-            })?,
-        );
-        // Actual SYMM-stage completion observation: both nonempty outer
-        // buffer pointers and the complete ordered state, immediately
-        // after the local carrier assignment and BEFORE any K/A/T stage
-        // (the nested selected sanitize for T carries no S bit and never
-        // reaches this site).
-        #[cfg(test)]
-        final_rings_probe::record_early_s(rings.as_ref().expect("SYMM state"));
+    // RDKit✔️✔️:   const bool trackAromaticAtomsForAdjustHs =
+    // RDKit✔️✔️:       (sanitizeOps & SANITIZE_ADJUSTHS) &&
+    // RDKit✔️✔️:       (sanitizeOps & (SANITIZE_KEKULIZE | SANITIZE_SETAROMATICITY));
+    // RDKit✔️✔️:   boost::dynamic_bitset<> atomsToAdjustHs(
+    // RDKit✔️✔️:       trackAromaticAtomsForAdjustHs ? mol.getNumAtoms() : 0);
+    // RDKit✔️✔️:   if (trackAromaticAtomsForAdjustHs) {
+    // RDKit✔️✔️:     includeAromaticAtoms(mol, atomsToAdjustHs);
+    // RDKit✔️✔️:   }
+    // Capture the original aromatic atoms before Kekulize clears flags; the
+    // later aromaticity pass adds to this same O(V/64) source bitset.
+    let track_aromatic_atoms = operations.contains(SanitizeOperations::ADJUST_HS)
+        && (operations.contains(SanitizeOperations::KEKULIZE)
+            || operations.contains(SanitizeOperations::SET_AROMATICITY));
+    let mut atoms_to_adjust = vec![
+        0u64;
+        if track_aromatic_atoms {
+            working.atoms.len().div_ceil(64)
+        } else {
+            0
+        }
+    ];
+    if track_aromatic_atoms {
+        include_aromatic_atoms(&working, &mut atoms_to_adjust);
     }
 
     if operations.contains(SanitizeOperations::KEKULIZE) {
+        // RDKit✔️✔️:   operationThatFailed = SANITIZE_KEKULIZE;
+        // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+        // RDKit✔️✔️:     kekulizeForSanitize(mol);
+        // RDKit✔️✔️:   }
         // Source retry controller shares the one mutable detached attempt;
         // only true MolSanitizeException equivalents trigger canonical retry.
         // Borrow current intermediate valence/rings, without topology/ring clone.
@@ -782,6 +842,38 @@ pub fn sanitize_topology_with_query_state(
             stage: SanitizeStage::Kekulize,
             source,
         })?;
+    }
+
+    if operations.contains(SanitizeOperations::SYMM_RINGS) {
+        // RDKit✔️✔️:   operationThatFailed = SANITIZE_SYMMRINGS;
+        // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+        // RDKit✔️✔️:     VECT_INT_VECT arings;
+        // Stage order follows the candidate: completed Kekulize before SYMM.
+        // RDKit✔️✔️: bool recalcSSSR = false;
+        // RDKit✔️✔️: MolOps::symmetrizeSSSR(mol, arings, SymmetrizeSSSRAlgorithm::DEFAULT,
+        // RDKit✔️✔️:                        recalcSSSR);
+        // Retain the same decomposition produced by the preceding Kekulize.
+        #[cfg(test)]
+        final_rings_probe::record_symm_acquisition();
+        let ring_state = rings.get_or_insert_with(|| {
+            RingInfo::new(
+                crate::RingFindType::OtherOrUnknown,
+                working.atoms.len(),
+                working.bonds.len(),
+            )
+        });
+        crate::symmetrized_sssr_with_existing(
+            &working,
+            ring_state,
+            false,
+            &RingSearchParams::default(),
+        )
+        .map_err(|source| SanitizeError::Rings {
+            stage: SanitizeStage::SymmRings,
+            source,
+        })?;
+        #[cfg(test)]
+        final_rings_probe::record_early_s(rings.as_ref().expect("SYMM state"));
     }
 
     if operations.contains(SanitizeOperations::FIND_RADICALS) {
@@ -845,6 +937,13 @@ pub fn sanitize_topology_with_query_state(
         // Transport the scalar computed by the aromaticity owner, O(1).
         aromatic_ring_count = Some(aromaticity.aromatic_ring_count);
         working = aromaticity.topology;
+        // RDKit✔️✔️:     if (trackAromaticAtomsForAdjustHs) {
+        // RDKit✔️✔️:       includeAromaticAtoms(mol, atomsToAdjustHs);
+        // RDKit✔️✔️:     }
+        // Union, not replacement: atoms aromatic before Kekulize still qualify.
+        if track_aromatic_atoms {
+            include_aromatic_atoms(&working, &mut atoms_to_adjust);
+        }
     }
 
     if operations.contains(SanitizeOperations::SET_CONJUGATION) {
@@ -912,11 +1011,15 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::ADJUST_HS) {
-        let assignment =
-            adjust_hs(&working, &valence).map_err(|source| SanitizeError::AdjustHs {
-                stage: SanitizeStage::AdjustHs,
-                source,
-            })?;
+        let assignment = adjust_hs_with_mask(
+            &working,
+            &valence,
+            track_aromatic_atoms.then_some(atoms_to_adjust.as_slice()),
+        )
+        .map_err(|source| SanitizeError::AdjustHs {
+            stage: SanitizeStage::AdjustHs,
+            source,
+        })?;
         working = assignment.topology;
         valence = assignment.valence;
     }
@@ -1740,8 +1843,8 @@ mod cleanup_composed_tests {
                 .iter()
                 .map(|atom| atom.index())
                 .collect();
-            // Frozen row convention: atoms start at 0 and run backwards.
-            let expected_atoms: Vec<usize> = std::iter::once(0).chain((1..n).rev()).collect();
+            // Candidate RingUtils::normalizeRing chooses the smaller neighbor.
+            let expected_atoms: Vec<usize> = (0..n).collect();
             assert_eq!(atom_row, expected_atoms, "c{n}: row");
             if clears {
                 assert_eq!(
@@ -1852,6 +1955,31 @@ mod final_rings_transport_tests {
     use crate::{RingFindType, SanitizeOperations, SanitizeParams, sanitize_topology};
     use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock};
     use cosmolkit_types::{BondOrder, Element};
+
+    #[test]
+    fn kekulize_failure_precedes_symmetrized_ring_stage() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_aromatic(true),
+            )],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let before = final_rings_probe::symm_acquisitions();
+        let error = sanitize_topology(
+            &topology,
+            &SanitizeParams {
+                operations: SanitizeOperations::KEKULIZE | SanitizeOperations::SYMM_RINGS,
+                ..SanitizeParams::default()
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(error, super::SanitizeError::Kekulize { .. }));
+        assert_eq!(final_rings_probe::symm_acquisitions(), before);
+    }
 
     fn benzene() -> TopologyBlock {
         TopologyBlock::try_from_parts(

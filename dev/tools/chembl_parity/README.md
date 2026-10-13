@@ -1,12 +1,9 @@
 # ChEMBL 37 Parity Audit
 
-COSMolKit 0.5.0 uses [the standard parity runner](../../../parity-tests/README.md)
-with RDKit `2026.03.6`. Completed validation covers 18,000 ChEMBL 37
-source records and 20,505,775 parameterized comparisons with zero mismatches.
-Reference timeouts and upstream crashes are reported separately. Comparisons
-use task-specific exact, bit-exact or numerical-tolerance rules; million-scale
-validation remains pending. See [VALIDATION.md](../../../VALIDATION.md) for
-current coverage and comparison rules.
+Use [the standard parity runner](../../../parity-tests/README.md) for current
+ChEMBL comparisons and its pinned references. See
+[VALIDATION.md](../../../VALIDATION.md) for completed coverage and comparison
+rules. The historical workflow below does not select the current reference.
 
 This directory retains the historical ChEMBL 37 audit tooling and its original
 reference identities. It is not the current 0.5.0 prepare/test entrypoint.
@@ -96,7 +93,7 @@ The complete profile therefore contains 4,352 ordered shard tasks over the
 128-shard corpus.
 
 The legacy ChEMBL tautomer Rust exporter, Python audit, and phase were removed
-at the user's request. Current tautomer migration and acceptance use the
+at the user's request. Current tautomer APIs and validation use the
 canonical public APIs and the maintained regression/5000 parity pipeline;
 they do not depend on this historical audit. Historical run evidence is not
 rewritten. Profiles containing the removed script are rejected, and cannot

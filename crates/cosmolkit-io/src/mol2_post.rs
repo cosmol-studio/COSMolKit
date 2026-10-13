@@ -170,9 +170,22 @@ pub fn finish_mol2_record(
             &cosmolkit_core::RingSearchParams::default(),
         )
         .map_err(|e| Mol2PostError::stage("Rings", e))?;
-        record.topology =
-            cosmolkit_core::assign_legacy_stereochemistry(record.topology, &valence, &rings)
-                .map_err(|e| Mol2PostError::stage("LegacyStereo", e))?;
+        let conformer = record
+            .coordinates
+            .first_source_conformer()
+            .map_err(|e| Mol2PostError::stage("LegacyStereoConformer", e))?
+            .map(Into::into);
+        record.topology = cosmolkit_core::assign_legacy_stereochemistry_with_conformer(
+            record.topology,
+            &valence,
+            &rings,
+            None,
+            conformer,
+            true,
+            true,
+        )
+        .map_err(|e| Mol2PostError::stage("LegacyStereo", e))?
+        .topology;
         // Move the already computed final cache after all H mappings and stereo stages.
         record.post_state = crate::MolPostDerivedState {
             valence: Some(valence),

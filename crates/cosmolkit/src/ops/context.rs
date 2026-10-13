@@ -165,6 +165,8 @@ struct EffectTrace {
     cleared: DerivedState,
     preserved: DerivedState,
     cip_applied: bool,
+    #[cfg(feature = "op-contracts")]
+    cip_assignment_checked: bool,
 }
 
 impl EffectTrace {
@@ -2830,6 +2832,103 @@ impl<'a, Access> OpParts<'a, Access> {
                     })?)
     }
 
+    /// Check selection-dependent evidence, never reproduce CIP chemistry here.
+    /// This whole method and its masks are absent without operation contracts.
+    #[cfg(feature = "op-contracts")]
+    pub(super) fn validate_cip_assignment_runtime(
+        &mut self,
+        atoms: &[cosmolkit_model::AtomId],
+        bonds: &[cosmolkit_model::BondId],
+        completion: cosmolkit_model::CipAssignmentCompletion,
+    ) -> Result<(), OperationError> {
+        Self::validate_effect_contract(self.spec)?;
+        let error = |issue| OperationError::CipStateContract {
+            operation: self.spec.method,
+            policy: self.spec.cip_state,
+            issue,
+        };
+        if self.spec.cip_state != CipStatePolicy::Assign {
+            return Err(error("selection evidence requires the Assign policy"));
+        }
+        let before = self.source.topology();
+        let after = self.current_topology_candidate()?;
+        if before.atoms.len() != after.atoms.len() || before.bonds.len() != after.bonds.len() {
+            return Err(error("CIP assignment changed atom or bond counts"));
+        }
+        let all = atoms.is_empty() && bonds.is_empty();
+        let mut atom_mask = vec![all; before.atoms.len()];
+        let mut bond_mask = vec![all; before.bonds.len()];
+        for atom in atoms {
+            *atom_mask
+                .get_mut(atom.index())
+                .ok_or_else(|| error("CIP atom selection is out of range"))? = true;
+        }
+        for bond in bonds {
+            *bond_mask
+                .get_mut(bond.index())
+                .ok_or_else(|| error("CIP bond selection is out of range"))? = true;
+        }
+        for ((before, after), selected) in before.atoms.iter().zip(&after.atoms).zip(&atom_mask) {
+            if !selected && before != after {
+                return Err(error("CIP assignment changed an unselected atom"));
+            }
+        }
+        for ((before, after), selected) in before.bonds.iter().zip(&after.bonds).zip(&bond_mask) {
+            if !selected && before != after {
+                return Err(error("CIP assignment changed an unselected bond"));
+            }
+        }
+        let full = atom_mask.iter().all(|selected| *selected)
+            && bond_mask.iter().all(|selected| *selected);
+        let properties = self.current_properties_candidate()?;
+        // The detached labeler clears the global marker for every selection,
+        // then installs computed true only after completed full assignment.
+        // Source anchors belong in that algorithm, not this runtime boundary.
+        // Contract-only O(V+E) borrowed comparisons; no label recomputation.
+        if full && completion == cosmolkit_model::CipAssignmentCompletion::Completed {
+            Self::validate_full_cip_assignment(self.spec, properties)?;
+        } else if properties.prop("_CIPComputed").is_some()
+            || properties
+                .is_prop_computed("_CIPComputed")
+                .map_err(|cause| {
+                    OperationError::InvalidProperty(
+                        cosmolkit_model::MoleculePropertyError::ComputedListKind(cause),
+                    )
+                })?
+        {
+            return Err(error(
+                "partial or interrupted assignment retained global _CIPComputed evidence",
+            ));
+        }
+        self.effect_trace.cip_assignment_checked = true;
+        Ok(())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_full_cip_assignment(
+        spec: &MoleculeOpSpec,
+        properties: &MoleculeProperties,
+    ) -> Result<(), OperationError> {
+        if !properties
+            .prop("_CIPComputed")
+            .is_some_and(|value| value.as_bool() == Ok(true))
+            || !properties
+                .is_prop_computed("_CIPComputed")
+                .map_err(|cause| {
+                    OperationError::InvalidProperty(
+                        cosmolkit_model::MoleculePropertyError::ComputedListKind(cause),
+                    )
+                })?
+        {
+            return Err(OperationError::CipStateContract {
+                operation: spec.method,
+                policy: spec.cip_state,
+                issue: "assignment did not install computed _CIPComputed evidence",
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn apply_cip_policy_runtime(&mut self) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         Self::validate_effect_contract(self.spec)?;
@@ -2887,25 +2986,12 @@ impl<'a, Access> OpParts<'a, Access> {
                 self.install_properties_runtime(properties)?;
                 result?;
             }
-            CipStatePolicy::Assign => {
+            CipStatePolicy::Assign =>
+            {
                 #[cfg(feature = "op-contracts")]
-                {
+                if !self.effect_trace.cip_assignment_checked {
                     let properties = self.current_properties_candidate()?;
-                    if properties.prop("_CIPComputed").is_none()
-                        || !properties
-                            .is_prop_computed("_CIPComputed")
-                            .map_err(|error| {
-                                OperationError::InvalidProperty(
-                                    cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
-                                )
-                            })?
-                    {
-                        return Err(OperationError::CipStateContract {
-                            operation: self.spec.method,
-                            policy: self.spec.cip_state,
-                            issue: "assignment did not install computed _CIPComputed evidence",
-                        });
-                    }
+                    Self::validate_full_cip_assignment(self.spec, properties)?;
                 }
             }
             CipStatePolicy::ScaffoldSourceTransition => {
@@ -3628,6 +3714,21 @@ impl Molecule {
 mod original_binary_live_tests {
     use crate::Molecule;
     #[test]
+    fn candidate_explicit_ring_families_public_archive_roundtrip() {
+        let mol = Molecule::from_smiles("c1ccccc1")
+            .expect("parse benzene")
+            .with_assigned_ring_families()
+            .expect("compute explicit ring families");
+        let data = mol.to_binary().expect("encode molecule with families");
+        let restored = Molecule::from_binary(&data).expect("public archive roundtrip");
+        assert_eq!(
+            mol.derived_cache_runtime(),
+            restored.derived_cache_runtime()
+        );
+        assert_eq!(restored.to_binary().unwrap(), data);
+    }
+
+    #[test]
     fn test_chembl_binary_roundtrip_preserves_derived_behavior_exactly() {
         // Retained from the ChEMBL 37 binary-roundtrip phase: the old archive
         // discarded valence state, so the restored graph could neither produce
@@ -3636,7 +3737,7 @@ mod original_binary_live_tests {
             "CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO",
         )
         .expect("parse retained ChEMBL binary-roundtrip molecule")
-        .add_2d_coordinates()
+        .with_2d_coordinates()
         .expect("generate the audited pre-archive 2D state");
         let hash_before = mol.molecular_hash().expect("hash before archive");
         let morgan_before = mol

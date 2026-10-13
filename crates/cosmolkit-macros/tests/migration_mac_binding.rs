@@ -837,25 +837,76 @@ fn invalid_type_owned_kind_and_receiver_shapes_fail_closed() {
 }
 
 #[test]
-fn in_place_javascript_projection_strips_only_the_rust_python_suffix() {
+fn in_place_javascript_projection_keeps_the_suffix_without_a_value_pair() {
     let entry = r#"{
         semantic_id:"Molecule.set_atom_position_",item:callable,owner:molecule,
         rust:crate::Molecule::set_atom_position_,python:"set_atom_position_",
-        javascript:"setAtomPosition",feature:"cap-transforms",kind:instance,
+        javascript:"setAtomPosition_",feature:"cap-transforms",kind:instance,
         parameters:[{name:atom,type:usize,default:required}],output:(),
         error:crate::OperationError,state:in_place,operation:"set_atom_position_",
         signature:fn(&mut crate::Molecule,usize)->Result<(),crate::OperationError>
     }"#;
     expand_binding_contract(registry_with(entry)).expect("canonical in-place projection");
 
-    let suffixed_javascript = entry.replace(
-        "javascript:\"setAtomPosition\"",
+    let unsuffixed_javascript = entry.replace(
         "javascript:\"setAtomPosition_\"",
+        "javascript:\"setAtomPosition\"",
     );
     assert!(
-        error_for(registry_with(&suffixed_javascript))
-            .contains("JavaScript callable name must be `setAtomPosition`")
+        error_for(registry_with(&unsuffixed_javascript))
+            .contains("JavaScript callable name must be `setAtomPosition_`")
     );
+}
+
+#[test]
+fn differently_named_value_pair_does_not_remove_the_javascript_mutation_suffix() {
+    for suffix in ["", "_with_params"] {
+        let value = format!("with_2d_coordinates{suffix}");
+        let inplace = format!("add_2d_coordinates{suffix}_");
+        let value_js = if suffix.is_empty() {
+            "with2dCoordinates"
+        } else {
+            "with2dCoordinatesWithParams"
+        };
+        let inplace_js = if suffix.is_empty() {
+            "add2dCoordinates_"
+        } else {
+            "add2dCoordinatesWithParams_"
+        };
+        let entries = format!(
+            r#"{{
+            semantic_id:"Molecule.{value}",item:callable,owner:molecule,
+            rust:crate::Molecule::{value},python:"{value}",javascript:"{value_js}",
+            feature:"cap-depict",kind:instance,parameters:[],output:crate::Molecule,
+            error:crate::OperationError,state:value_returning,operation:"{value}",
+            signature:fn(&crate::Molecule)->Result<crate::Molecule,crate::OperationError>
+        }},{{
+            semantic_id:"Molecule.{inplace}",item:callable,owner:molecule,
+            rust:crate::Molecule::{inplace},python:"{inplace}",javascript:"{inplace_js}",
+            feature:"cap-depict",kind:instance,parameters:[],output:(),
+            error:crate::OperationError,state:in_place,operation:"{inplace}",
+            signature:fn(&mut crate::Molecule)->Result<(),crate::OperationError>
+        }}"#
+        );
+        expand_binding_contract(registry_with(&entries))
+            .expect("distinct semantic verbs retain the suffix");
+        let invalid = entries.replace(
+            &format!("javascript:\"{inplace_js}\""),
+            &format!("javascript:\"{}\"", inplace_js.trim_end_matches('_')),
+        );
+        assert!(
+            error_for(registry_with(&invalid))
+                .contains(&format!("JavaScript callable name must be `{inplace_js}`"))
+        );
+        let invalid_value = entries.replace(
+            &format!("javascript:\"{value_js}\""),
+            &format!("javascript:\"{value_js}_\""),
+        );
+        assert!(
+            error_for(registry_with(&invalid_value))
+                .contains(&format!("JavaScript callable name must be `{value_js}`"))
+        );
+    }
 }
 
 #[test]
@@ -879,16 +930,22 @@ fn current_cosmolkit_registry_validates_every_cfg_gated_projection() {
 
 #[test]
 fn bio_objects_require_inplace_suffix_and_mutable_receiver() {
-    for target in ["BioStructure", "Protein"] {
+    for target in ["BioStructure", "Protein", "MolecularForceField"] {
         let entry = format!(
             r#"{{
             semantic_id:"{target}.translate_",item:callable,owner:type_,
-            rust:crate::{target}::translate_,python:"translate_",javascript:"translate",
+            rust:crate::{target}::translate_,python:"translate_",javascript:"translate_",
             feature:"cap-bio",kind:instance,parameters:[],output:(),error:none,state:in_place,operation:none,
             signature:fn(&mut crate::{target})->()
         }}"#
         );
         expand_binding_contract(registry_with(&entry)).unwrap();
+        assert!(
+            error_for(registry_with(
+                &entry.replace("javascript:\"translate_\"", "javascript:\"translate\"")
+            ))
+            .contains("JavaScript callable name must be `translate_`")
+        );
         assert!(
             error_for(registry_with(&entry.replace("translate_", "translate")))
                 .contains("only in-place callable names")

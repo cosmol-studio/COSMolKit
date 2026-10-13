@@ -25,6 +25,8 @@ pub use matcher::{
     has_substruct_match, substruct_match_params_to_json, try_get_substruct_matches_with_params,
     try_get_substruct_matches_with_params_and_context, update_substruct_match_params_from_json,
 };
+#[doc(hidden)]
+pub use matcher::{QueryAtomIterator, query_atom_iterator};
 pub use mcs::{
     AtomComparator, BondComparator, McsAtomCompareParameters, McsBondCompareParameters,
     McsCandidateMatchError, McsError, McsParameters, McsParametersJsonError, McsProgressError,

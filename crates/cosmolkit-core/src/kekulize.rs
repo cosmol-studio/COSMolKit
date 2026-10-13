@@ -848,8 +848,15 @@ fn validate_consumed_ring_dimensions(
     topology: &TopologyBlock,
     rings: &RingInfo,
 ) -> Result<(), KekulizeError> {
-    if rings.atom_row_count() != topology.atoms.len()
-        || rings.bond_row_count() != topology.bonds.len()
+    // RingInfo.cpp deliberately permits sparse non-ring suffixes:
+    // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️✔️:     return d_atomMembers[idx];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return emptyVect;
+    // This O(1) detached-boundary guard rejects oversized assignments, not
+    // source-valid sparse membership tables. No padding or ring search.
+    if rings.atom_row_count() > topology.atoms.len()
+        || rings.bond_row_count() > topology.bonds.len()
     {
         return Err(KekulizeError::CanonicalRank(
             CanonicalRankError::PreparedRingLength {
@@ -3388,9 +3395,8 @@ impl<'a> CanonRankReadView<'a> {
             }
         }
         if let Some(rings) = rings
-            && (rings.atom_row_count() != topology.atoms.len()
-                || rings.bond_row_count() != topology.bonds.len())
-            && !crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings)
+            && (rings.atom_row_count() > topology.atoms.len()
+                || rings.bond_row_count() > topology.bonds.len())
         {
             return Err(CanonicalRankError::PreparedRingLength {
                 expected_atoms: topology.atoms.len(),
@@ -3399,9 +3405,8 @@ impl<'a> CanonRankReadView<'a> {
                 actual_bonds: rings.bond_row_count(),
             });
         }
-        // AddHs preserves ring state while appending terminal hydrogen leaves.
-        // Reuse the existing structural proof for that exact prefix shape;
-        // malformed/heavy suffixes still retain PreparedRingLength above.
+        // Source ring finding can omit any non-ring suffix, not just terminal
+        // hydrogens appended by AddHs. Oversized tables still fail above.
         // RingInfo.cpp's getters already return empty membership for suffix IDs:
         // RDKit✔️✔️: const RingInfo::INT_VECT &RingInfo::atomMembers(unsigned int idx) const {
         // RDKit✔️✔️:   PRECONDITION(df_init, "RingInfo not initialized");
@@ -3412,8 +3417,7 @@ impl<'a> CanonRankReadView<'a> {
         // RDKit✔️✔️:   }
         // RDKit✔️✔️:   return emptyVect;
         // RDKit✔️✔️: }
-        // Exact dimensions retain the O(1) guard. Only a mismatched prefix needs
-        // the existing O(V+E+membership) structural proof; no cache clone/reset.
+        // All dimensions retain an O(1) guard; no cache clone or reset.
         let rings = if let Some(rings) = rings.filter(|rings| rings.is_find_fast_or_better()) {
             Cow::Borrowed(rings)
         } else {
@@ -3538,11 +3542,13 @@ pub fn rank_mol_atoms_with_params(
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
     let view = CanonRankReadView::from_topology(topology)?;
+    let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
     let mut atoms = init_canon_atoms(
         &view,
         topology,
         params.include_chirality,
         params.include_stereo_groups,
+        &mut neighbor_ids,
     )?;
     // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol);
     // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
@@ -3705,6 +3711,7 @@ fn rank_fragment_atoms_engine(
     } else {
         CanonRankReadView::from_topology(topology)?
     };
+    let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
     let mut atoms = init_fragment_canon_atoms(
         &view,
         atoms_in_play,
@@ -3712,6 +3719,7 @@ fn rank_fragment_atoms_engine(
         params.include_chirality,
         atom_symbols,
         bond_symbols,
+        &mut neighbor_ids,
     )?;
     // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
     // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
@@ -3736,7 +3744,7 @@ fn rank_fragment_atoms_engine(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CanonRankFlags {
+struct CanonRankFlags<'a> {
     use_isotopes: bool,
     use_chirality: bool,
     use_chirality_rings: bool,
@@ -3744,9 +3752,11 @@ struct CanonRankFlags {
     use_non_stereo_ranks: bool,
     use_chiral_presence: bool,
     use_atom_maps_on_dummies: bool,
+    compare_codes: Option<&'a [AtomCompareCode]>,
+    bond_symbols: Option<&'a [String]>,
 }
 
-impl CanonRankFlags {
+impl CanonRankFlags<'_> {
     const fn from_fragment_options(options: CanonicalRankParams) -> Self {
         Self {
             use_isotopes: options.include_isotopes,
@@ -3760,7 +3770,85 @@ impl CanonRankFlags {
             use_non_stereo_ranks: options.use_non_stereo_ranks,
             use_chiral_presence: options.include_chiral_presence,
             use_atom_maps_on_dummies: true,
+            compare_codes: None,
+            bond_symbols: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct AtomCompareCode {
+    pub(crate) atom_map_number: i32,
+    pub(crate) degree: u32,
+    pub(crate) primary: u64,
+    pub(crate) secondary: u64,
+}
+
+pub(crate) struct PotentialStereoCanonicalState<'a> {
+    view: CanonRankReadView<'a>,
+    atoms: Vec<CanonAtom<'a>>,
+    order: Vec<usize>,
+}
+
+impl<'a> PotentialStereoCanonicalState<'a> {
+    pub(crate) fn new(
+        topology: &'a TopologyBlock,
+        valence: &'a ValenceAssignment,
+        rings: &'a RingInfo,
+        neighbor_ids: &'a mut [usize],
+    ) -> Result<Self, CanonicalRankError> {
+        // RDKit✔️✔️: std::vector<Canon::canon_atom> canonAtoms(mol.getNumAtoms());
+        // RDKit✔️✔️: std::vector<int> canonNeighborIds(2 * mol.getNumBonds());
+        // RDKit✔️✔️: Canon::detail::initFragmentCanonAtoms(mol, canonAtoms, false, nullptr,
+        // RDKit✔️✔️:                                       &bondSymbols, atomsInPlay, bondsInPlay,
+        // RDKit✔️✔️:                                       canonNeighborIds, true);
+        // The topology/valence/rings stay constant across cleanup rounds. The
+        // typed comparator never reads live atom stereo, and holders omit bond
+        // stereo (includeChirality=false). Mutable codes/symbols are borrowed
+        // per ranking call instead of borrowing mutable String allocations.
+        let view = CanonRankReadView::from_prepared_state(topology, valence, Some(rings), None)?;
+        let atoms = init_canon_atom_storage(&view, None, false, None, None, neighbor_ids)?;
+        Ok(Self {
+            view,
+            atoms,
+            order: vec![0; topology.atoms.len()],
+        })
+    }
+
+    pub(crate) fn update_ranks(
+        &mut self,
+        codes: &[AtomCompareCode],
+        symbols: &[String],
+        ranks: &mut [u32],
+    ) -> Result<(), CanonicalRankError> {
+        // RDKit✔️✔️: Canon::detail::rankWithFunctor(ftor, breakTies, atomOrder, true,
+        // RDKit✔️✔️:                                  includeChirality, false, &atomsInPlay,
+        // RDKit✔️✔️:                                  &bondsInPlay);
+        // RDKit✔️✔️: for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+        // RDKit✔️✔️:   aranks[atomOrder[i]] = canonAtoms[atomOrder[i]].index;
+        // RDKit✔️✔️: }
+        // No topology, participation-mask, neighbor-list or symbol copies per
+        // round. The existing partition engine retains its own source work arrays.
+        if self.atoms.is_empty() {
+            return Ok(());
+        }
+        let mut flags = CanonRankFlags::from_fragment_options(CanonicalRankParams::default());
+        flags.use_chirality = false;
+        flags.use_chirality_rings = false;
+        flags.compare_codes = Some(codes);
+        flags.bond_symbols = Some(symbols);
+        rank_with_atom_compare_functor_for_kekulize(
+            &self.view,
+            &mut self.atoms,
+            false,
+            false,
+            flags,
+            &mut self.order,
+        )?;
+        for &index in &self.order {
+            ranks[index] = self.atoms[index].index as u32;
+        }
+        Ok(())
     }
 }
 
@@ -3814,6 +3902,85 @@ struct CanonBondHolder<'a> {
     bond_idx: usize,
 }
 
+/// The source BondholderVector has four inline entries. Holders are Copy;
+/// initialized spare slots are never read through the length-bounded slice.
+#[derive(Debug, Clone)]
+struct CanonBonds<'a> {
+    inline: [CanonBondHolder<'a>; 4],
+    len: usize,
+    overflow: Vec<CanonBondHolder<'a>>,
+}
+
+impl<'a> CanonBonds<'a> {
+    fn new() -> Self {
+        // RDKit✔️✔️: using BondholderVector = boost::container::small_vector<bondholder, 4>;
+        // Four initialized Copy slots give the same inline/overflow boundary,
+        // without a new dependency or unsafe uninitialized storage.
+        let spare = CanonBondHolder {
+            bond_type: BondOrder::Unspecified,
+            bond_stereo: 0,
+            stype: BondStereo::None,
+            controlling_atoms: [None; 4],
+            nbr_sym_class: 0,
+            nbr_idx: 0,
+            p_symbol: None,
+            bond_idx: 0,
+        };
+        Self {
+            inline: [spare; 4],
+            len: 0,
+            overflow: Vec::new(),
+        }
+    }
+
+    fn reserve(&mut self, capacity: usize) {
+        if capacity > 4 && self.overflow.capacity() == 0 {
+            self.overflow = Vec::with_capacity(capacity);
+            self.overflow.extend_from_slice(&self.inline[..self.len]);
+        } else if self.overflow.capacity() != 0 {
+            self.overflow.reserve(capacity.saturating_sub(self.len));
+        }
+    }
+
+    fn push(&mut self, holder: CanonBondHolder<'a>) {
+        if self.len < 4 && self.overflow.capacity() == 0 {
+            self.inline[self.len] = holder;
+        } else {
+            if self.overflow.capacity() == 0 {
+                self.reserve(8);
+            }
+            self.overflow.push(holder);
+        }
+        self.len += 1;
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+        self.overflow.clear();
+    }
+}
+
+impl<'a> std::ops::Deref for CanonBonds<'a> {
+    type Target = [CanonBondHolder<'a>];
+    fn deref(&self) -> &Self::Target {
+        if self.overflow.capacity() == 0 {
+            &self.inline[..self.len]
+        } else {
+            &self.overflow
+        }
+    }
+}
+
+impl<'a> std::ops::DerefMut for CanonBonds<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        if self.overflow.capacity() == 0 {
+            &mut self.inline[..self.len]
+        } else {
+            &mut self.overflow
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CanonAtom<'a> {
     index: i32,
@@ -3833,10 +4000,10 @@ struct CanonAtom<'a> {
     type_of_stereo_group: CanonStereoGroupType,
     neighbor_num: Vec<i32>,
     revisted_neighbors: Vec<i32>,
-    all_nbr_ids: Vec<usize>,
-    nbr_ids: Vec<usize>,
+    nbr_start: usize,
+    nbr_ids: &'a [usize],
     p_symbol: Option<&'a str>,
-    bonds: Vec<CanonBondHolder<'a>>,
+    bonds: CanonBonds<'a>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -3985,10 +4152,10 @@ fn empty_canon_atom_from_source_atom<'a>(atom: &'a Atom) -> CanonAtom<'a> {
         type_of_stereo_group: CanonStereoGroupType::Absolute,
         neighbor_num: Vec::new(),
         revisted_neighbors: Vec::new(),
-        all_nbr_ids: Vec::new(),
-        nbr_ids: Vec::new(),
+        nbr_start: 0,
+        nbr_ids: &[],
         p_symbol: None,
-        bonds: Vec::new(),
+        bonds: CanonBonds::new(),
     }
 }
 
@@ -3997,26 +4164,21 @@ fn init_canon_atoms<'a>(
     topology: &TopologyBlock,
     include_chirality: bool,
     include_stereo_groups: bool,
+    neighbor_ids: &'a mut [usize],
 ) -> Result<Vec<CanonAtom<'a>>, CanonicalRankError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: initCanonAtoms
+    // BEGIN RDKit 2026.09.1 init_canon_atoms
     // RDKit✔️✔️: void initCanonAtoms(const ROMol &mol, std::vector<Canon::canon_atom> &atoms,
-    // RDKit✔️✔️:                     bool includeChirality, bool includeStereoGroups) {
+    // RDKit✔️✔️:                     std::span<int> neighborIds, bool includeChirality,
+    // RDKit✔️✔️:                     bool includeStereoGroups) {
+    // RDKit✔️✔️:   PRECONDITION(neighborIds.size() >= 2 * mol.getNumBonds(),
+    // RDKit✔️✔️:                "neighbor ID storage is too small");
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
-    // RDKit✔️✔️:     basicInitCanonAtom(mol, atoms[i], i);
+    // RDKit✔️✔️:     basicInitCanonAtom(mol, atoms[i], i, neighborIds);
+    // RDKit✔️✔️:     neighborIds = neighborIds.subspan(atoms[i].degree);
     // RDKit✔️✔️:     advancedInitCanonAtom(mol, atoms[i], i);
     // RDKit✔️✔️:     atoms[i].bonds.reserve(atoms[i].degree);
     // RDKit✔️✔️:     getBonds(mol, atoms[i].atom, atoms[i].bonds, includeChirality, atoms);
     // RDKit✔️✔️:   }
-    let atoms_in_play = vec![true; view.num_atoms()];
-    let bonds_in_play = vec![true; view.bonds.len()];
-    let mut atoms = init_fragment_canon_atoms(
-        view,
-        &atoms_in_play,
-        &bonds_in_play,
-        include_chirality,
-        None,
-        None,
-    )?;
     // RDKit✔️✔️:   if (includeChirality && includeStereoGroups) {
     // RDKit✔️✔️:     unsigned int sgidx = 1;
     // RDKit✔️✔️:     for (auto &sg : mol.getStereoGroups()) {
@@ -4027,6 +4189,10 @@ fn init_canon_atoms<'a>(
     // RDKit✔️✔️:       ++sgidx;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKit 2026.09.1 init_canon_atoms
+    let mut atoms =
+        init_canon_atom_storage(view, None, include_chirality, None, None, neighbor_ids)?;
     if include_chirality && include_stereo_groups {
         for (group_index, group) in topology.stereo_groups.iter().enumerate() {
             let kind = match group.kind() {
@@ -4040,8 +4206,6 @@ fn init_canon_atoms<'a>(
             }
         }
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: initCanonAtoms
     Ok(atoms)
 }
 
@@ -4052,8 +4216,27 @@ fn init_fragment_canon_atoms<'a>(
     include_chirality: bool,
     atom_symbols: Option<&'a [String]>,
     bond_symbols: Option<&'a [String]>,
+    neighbor_ids: &'a mut [usize],
 ) -> Result<Vec<CanonAtom<'a>>, CanonicalRankError> {
-    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: detail::initFragmentCanonAtoms
+    init_canon_atom_storage(
+        view,
+        Some((atoms_in_play, bonds_in_play)),
+        include_chirality,
+        atom_symbols,
+        bond_symbols,
+        neighbor_ids,
+    )
+}
+
+fn init_canon_atom_storage<'a>(
+    view: &CanonRankReadView<'a>,
+    selection: Option<(&[bool], &[bool])>,
+    include_chirality: bool,
+    atom_symbols: Option<&'a [String]>,
+    bond_symbols: Option<&'a [String]>,
+    neighbor_ids: &'a mut [usize],
+) -> Result<Vec<CanonAtom<'a>>, CanonicalRankError> {
+    // BEGIN RDKit 2026.09.1 init_canon_atom_storage
     // RDKit✔️✔️: void initFragmentCanonAtoms(const ROMol &mol,
     // RDKit✔️✔️:                             std::vector<Canon::canon_atom> &atoms,
     // RDKit✔️✔️:                             bool includeChirality,
@@ -4061,22 +4244,23 @@ fn init_fragment_canon_atoms<'a>(
     // RDKit✔️✔️:                             const std::vector<std::string> *bondSymbols,
     // RDKit✔️✔️:                             const boost::dynamic_bitset<> &atomsInPlay,
     // RDKit✔️✔️:                             const boost::dynamic_bitset<> &bondsInPlay,
+    // RDKit✔️✔️:                             std::span<int> neighborIds,
     // RDKit✔️✔️:                             bool needsInit) {
     // RDKit✔️✔️:   needsInit = true;
-    // Symbol references borrow caller storage without per-atom or per-bond
-    // string allocation. Each included bond assigns both holder references
-    // in its existing O(B) initialization pass.
-    let mut atoms = view
-        .atoms
-        .iter()
-        .map(empty_canon_atom_from_source_atom)
-        .collect::<Vec<_>>();
+    // RDKit✔️✔️:   PRECONDITION(!atomSymbols || atomSymbols->size() == mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atom symbols");
+    // RDKit✔️✔️:   PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
+    // RDKit✔️✔️:                "bad bond symbols");
+    // RDKit✔️✔️:   PRECONDITION(neighborIds.size() >= 2 * mol.getNumBonds(),
+    // RDKit✔️✔️:                "neighbor ID storage is too small");
     // RDKit✔️✔️:   // start by initializing the atoms
     // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
     // RDKit✔️✔️:     auto i = atom->getIdx();
     // RDKit✔️✔️:     auto &atomsi = atoms[i];
     // RDKit✔️✔️:     atomsi.atom = atom;
     // RDKit✔️✔️:     atomsi.index = i;
+    // RDKit✔️✔️:     // we don't care about overall degree, so we start that at zero, and
+    // RDKit✔️✔️:     // then count the degree in the fragment itself below.
     // RDKit✔️✔️:     atomsi.degree = 0;
     // RDKit✔️✔️:     if (atomsInPlay[i]) {
     // RDKit✔️✔️:       if (atomSymbols) {
@@ -4085,51 +4269,16 @@ fn init_fragment_canon_atoms<'a>(
     // RDKit✔️✔️:         atomsi.p_symbol = nullptr;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (needsInit) {
-    // RDKit✔️✔️:         atomsi.nbrIds = std::make_unique<int[]>(atom->getDegree());
+    // RDKit✔️✔️:         atomsi.nbrIds = neighborIds.first(atom->getDegree());
+    // RDKit✔️✔️:         neighborIds = neighborIds.subspan(atom->getDegree());
     // RDKit✔️✔️:         advancedInitCanonAtom(mol, atomsi, i);
     // RDKit✔️✔️:         atomsi.bonds.reserve(4);
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for atom_idx in 0..view.num_atoms() {
-        atoms[atom_idx].is_in_play = atoms_in_play[atom_idx];
-        atoms[atom_idx].degree = 0;
-        atoms[atom_idx].all_nbr_ids.clear();
-        atoms[atom_idx].nbr_ids.clear();
-        atoms[atom_idx].bonds.clear();
-        if !atoms_in_play[atom_idx] {
-            continue;
-        }
-        atoms[atom_idx].p_symbol = atom_symbols.map(|symbols| symbols[atom_idx].as_str());
-        let atom = &view.atoms[atom_idx];
-        // RDKit✔️✔️: void advancedInitCanonAtom(const ROMol &mol, Canon::canon_atom &atom,
-        // RDKit✔️✔️:                            const int &) {
-        // RDKit✔️✔️:   atom.totalNumHs = atom.atom->getTotalNumHs();
-        // RDKit✔️✔️:   atom.isRingStereoAtom =
-        // RDKit✔️✔️:       (atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
-        // RDKit✔️✔️:        atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) &&
-        // RDKit✔️✔️:       atom.atom->hasProp(common_properties::_ringStereoAtoms);
-        // RDKit✔️✔️:   atom.hasRingNbr = hasRingNbr(mol, atom.atom);
-        // RDKit✔️✔️: }
-        // The same implicit getter applies to selected prepared fragment rows;
-        // NoImplicit and signed storage are source reads, never max(0) defaults.
-        // Explicit uint8 + nonnegative int8 is bounded by 382; O(1), no clone.
-        atoms[atom_idx].total_num_hs = usize::from(atom.explicit_hydrogens())
-            + crate::hcount::implicit_hydrogen_count(atom, &view.valence).map_err(|_| {
-                CanonicalRankError::PreparedValenceInvalid {
-                    atom_index: atom_idx,
-                }
-            })? as usize;
-        atoms[atom_idx].is_ring_atom = view.rings.num_atom_rings(atom.id()) > 0;
-        atoms[atom_idx].is_ring_stereo_atom = matches!(
-            atom.chiral_tag(),
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-        ) && atom.prop("_ringStereoAtoms").is_some();
-        atoms[atom_idx].has_ring_nbr = has_ring_nbr_for_kekulize(view, atom_idx);
-        atoms[atom_idx].bonds.reserve(4);
-    }
-
+    // RDKit✔️✔️:
     // RDKit✔️✔️:   // now deal with the bonds in the fragment.
+    // RDKit✔️✔️:   // these set the atomic degrees and update the neighbor lists
     // RDKit✔️✔️:   if (needsInit) {
     // RDKit✔️✔️:     for (const auto bond : mol.bonds()) {
     // RDKit✔️✔️:       if (!bondsInPlay[bond->getIdx()] ||
@@ -4150,19 +4299,93 @@ fn init_fragment_canon_atoms<'a>(
     // RDKit✔️✔️:         endAt.bonds.back().p_symbol = &(*bondSymbols)[bond->getIdx()];
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     if (bondSymbols) {
+    // RDKit✔️✔️:       for (auto &atom : atoms) {
+    // RDKit✔️✔️:         for (auto &bond : atom.bonds) {
+    // RDKit✔️✔️:           bond.p_symbol = &(*bondSymbols)[bond.bondIdx];
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // and now we can do the last bit for each atom
+    // RDKit✔️✔️:   for (size_t i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:     if (!atomsInPlay[i]) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto &atomsi = atoms[i];
+    // RDKit✔️✔️:     if (needsInit) {
+    // RDKit✔️✔️:       // this is the fix for github #1567: we let the atom's degree
+    // RDKit✔️✔️:       // in the original molecule influence its degree in the fragment
+    // RDKit✔️✔️:       atomsi.totalNumHs += (mol.getAtomWithIdx(i)->getDegree() - atomsi.degree);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // and sort our list of neighboring bonds
+    // RDKit✔️✔️:     std::sort(atomsi.bonds.begin(), atomsi.bonds.end(), bondholder::greater);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKit 2026.09.1 init_canon_atom_storage
+    // Symbol references borrow caller storage without per-atom or per-bond
+    // string allocation. Each included bond assigns both holder references
+    // in its existing O(B) initialization pass.
+    let mut atoms = view
+        .atoms
+        .iter()
+        .map(empty_canon_atom_from_source_atom)
+        .collect::<Vec<_>>();
+    let atom_selected = |index: usize| selection.is_none_or(|(atoms, _)| atoms[index]);
+    let bond_selected = |index: usize| selection.is_none_or(|(_, bonds)| bonds[index]);
+    // One caller-owned 2E buffer; offsets are set before immutable slices
+    // are lent, so no self-reference or per-atom neighbor allocation exists.
+    assert!(
+        neighbor_ids.len() >= 2 * view.bonds.len(),
+        "neighbor ID storage is too small"
+    );
+    let mut next_neighbor = 0;
+    for atom_idx in 0..view.num_atoms() {
+        atoms[atom_idx].is_in_play = atom_selected(atom_idx);
+        atoms[atom_idx].degree = 0;
+        atoms[atom_idx].bonds.clear();
+        if !atom_selected(atom_idx) {
+            continue;
+        }
+        atoms[atom_idx].nbr_start = next_neighbor;
+        next_neighbor += view.adjacency.neighbors_of(atom_idx).len();
+        atoms[atom_idx].p_symbol = atom_symbols.map(|symbols| symbols[atom_idx].as_str());
+        let atom = &view.atoms[atom_idx];
+        // The same implicit getter applies to selected prepared fragment rows;
+        // NoImplicit and signed storage are source reads, never max(0) defaults.
+        // Explicit uint8 + nonnegative int8 is bounded by 382; O(1), no clone.
+        atoms[atom_idx].total_num_hs = usize::from(atom.explicit_hydrogens())
+            + crate::hcount::implicit_hydrogen_count(atom, &view.valence).map_err(|_| {
+                CanonicalRankError::PreparedValenceInvalid {
+                    atom_index: atom_idx,
+                }
+            })? as usize;
+        atoms[atom_idx].is_ring_atom = view.rings.num_atom_rings(atom.id()) > 0;
+        atoms[atom_idx].is_ring_stereo_atom = matches!(
+            atom.chiral_tag(),
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) && atom.prop("_ringStereoAtoms").is_some();
+        atoms[atom_idx].has_ring_nbr = has_ring_nbr_for_kekulize(view, atom_idx);
+        atoms[atom_idx].bonds.reserve(if selection.is_some() {
+            4
+        } else {
+            view.atom_degree(AtomId::new(atom_idx))
+        });
+    }
+
     for (bond_idx, bond) in view.bonds.iter().enumerate() {
         let begin = bond.begin().index();
         let end = bond.end().index();
-        if !bonds_in_play[bond_idx] || !atoms_in_play[begin] || !atoms_in_play[end] {
+        if !bond_selected(bond_idx) || !atom_selected(begin) || !atom_selected(end) {
             continue;
         }
+        neighbor_ids[atoms[begin].nbr_start + atoms[begin].degree] = end;
         atoms[begin].degree += 1;
-        atoms[begin].all_nbr_ids.push(end);
-        atoms[begin].nbr_ids.push(end);
+        neighbor_ids[atoms[end].nbr_start + atoms[end].degree] = begin;
         atoms[end].degree += 1;
-        atoms[end].all_nbr_ids.push(begin);
-        atoms[end].nbr_ids.push(begin);
         let mut begin_holder = make_canon_bond_holder(view, bond_idx, end, include_chirality)?;
         let mut end_holder = make_canon_bond_holder(view, bond_idx, begin, include_chirality)?;
         if let Some(symbols) = bond_symbols {
@@ -4172,28 +4395,21 @@ fn init_fragment_canon_atoms<'a>(
         atoms[begin].bonds.push(begin_holder);
         atoms[end].bonds.push(end_holder);
     }
+    for atom in &mut atoms {
+        atom.nbr_ids = &neighbor_ids[atom.nbr_start..atom.nbr_start + atom.degree];
+    }
 
-    // RDKit✔️✔️:   for (size_t i = 0; i < mol.getNumAtoms(); ++i) {
-    // RDKit✔️✔️:     if (!atomsInPlay[i]) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     auto &atomsi = atoms[i];
-    // RDKit✔️✔️:     if (needsInit) {
-    // RDKit✔️✔️:       atomsi.totalNumHs += (mol.getAtomWithIdx(i)->getDegree() - atomsi.degree);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     std::sort(atomsi.bonds.begin(), atomsi.bonds.end(), bondholder::greater);
-    // RDKit✔️✔️:   }
+    // Source initializes every index before sorting any holder. Borrow one
+    // immutable rank snapshot, not one O(V) copy for every atom.
+    let initial_ranks = canon_atom_rank_snapshot(&atoms);
     for atom_idx in 0..view.num_atoms() {
-        if !atoms_in_play[atom_idx] {
+        if !atom_selected(atom_idx) {
             continue;
         }
         atoms[atom_idx].total_num_hs +=
             view.atom_degree(AtomId::new(atom_idx)) - atoms[atom_idx].degree;
-        let initial_ranks = canon_atom_rank_snapshot(&atoms);
         sort_canon_bonds_descending(&mut atoms[atom_idx].bonds, &initial_ranks);
     }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: detail::initFragmentCanonAtoms
     Ok(atoms)
 }
 
@@ -5393,7 +5609,10 @@ fn compare_canon_atoms_for_kekulize(
 ) -> Result<Ordering, CanonicalRankError> {
     if matches!(mode, CanonCompareMode::SpecialSymmetry) {
         return Ok(compare_special_symmetry_atoms_for_kekulize(
-            atoms, left, right,
+            atoms,
+            left,
+            right,
+            flags.bond_symbols,
         ));
     }
     if matches!(mode, CanonCompareMode::SpecialChirality) {
@@ -5408,22 +5627,43 @@ fn compare_canon_atoms_for_kekulize(
     // RDKit✔️✔️:     if (v) {
     // RDKit✔️✔️:       return v;
     // RDKit✔️✔️:     }
-    let base_cmp = compare_canon_atom_base_for_kekulize(atoms, left, right, flags)?;
+    // RDKit✔️✔️: if (dp_compareCodes) {
+    // RDKit✔️✔️:   if (dp_atoms[i].index != dp_atoms[j].index) {
+    // RDKit✔️✔️:     v = dp_atoms[i].index < dp_atoms[j].index ? -1 : 1;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     const auto ordering = dp_compareCodes[i] <=> dp_compareCodes[j];
+    // RDKit✔️✔️:     if (ordering != 0) {
+    // RDKit✔️✔️:       v = ordering < 0 ? -1 : 1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let base_cmp = if let Some(codes) = flags.compare_codes {
+        atoms[left]
+            .index
+            .cmp(&atoms[right].index)
+            .then_with(|| codes[left].cmp(&codes[right]))
+    } else {
+        compare_canon_atom_base_for_kekulize(atoms, left, right, flags)?
+    };
     if base_cmp != Ordering::Equal {
         return Ok(base_cmp);
     }
     // RDKit✔️✔️:     if (df_useNbrs) {
     // RDKit✔️✔️:       if (!dp_atomsInPlay || (*dp_atomsInPlay)[i]) {
     if atoms[left].is_in_play {
-        update_atom_neighbor_index_for_kekulize(atoms, left);
+        update_atom_neighbor_index_with_symbols(atoms, left, flags.bond_symbols);
     }
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (!dp_atomsInPlay || (*dp_atomsInPlay)[j]) {
     if atoms[right].is_in_play {
-        update_atom_neighbor_index_for_kekulize(atoms, right);
+        update_atom_neighbor_index_with_symbols(atoms, right, flags.bond_symbols);
     }
     // RDKit✔️✔️:       }
-    let ranks = canon_atom_rank_snapshot(atoms);
+    let ranks = if flags.compare_codes.is_some() {
+        Vec::new()
+    } else {
+        canon_atom_rank_snapshot(atoms)
+    };
     // RDKit✔️✔️:       for (unsigned int ii = 0;
     // RDKit✔️✔️:            ii < dp_atoms[i].bonds.size() && ii < dp_atoms[j].bonds.size();
     // RDKit✔️✔️:            ++ii) {
@@ -5434,8 +5674,12 @@ fn compare_canon_atoms_for_kekulize(
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
     for idx in 0..atoms[left].bonds.len().min(atoms[right].bonds.len()) {
-        let cmp =
-            compare_canon_bond_holder(&atoms[left].bonds[idx], &atoms[right].bonds[idx], &ranks);
+        let cmp = compare_canon_bond_holder_with_symbols(
+            &atoms[left].bonds[idx],
+            &atoms[right].bonds[idx],
+            &ranks,
+            flags.bond_symbols,
+        );
         if cmp != Ordering::Equal {
             return Ok(cmp);
         }
@@ -5534,6 +5778,7 @@ fn compare_special_symmetry_atoms_for_kekulize(
     atoms: &mut [CanonAtom<'_>],
     left: usize,
     right: usize,
+    symbols: Option<&[String]>,
 ) -> Ordering {
     // BEGIN RDKIT CPP FUNCTION SpecialSymmetryAtomCompareFunctor::operator()
     // RDKit✔️✔️:   int operator()(int i, int j) const {
@@ -5573,12 +5818,16 @@ fn compare_special_symmetry_atoms_for_kekulize(
     // RDKit✔️✔️:       updateAtomNeighborIndex(dp_atoms, dp_atoms[j].bonds);
     // RDKit✔️✔️:     }
     if atoms[left].is_in_play {
-        update_atom_neighbor_index_for_kekulize(atoms, left);
+        update_atom_neighbor_index_with_symbols(atoms, left, symbols);
     }
     if atoms[right].is_in_play {
-        update_atom_neighbor_index_for_kekulize(atoms, right);
+        update_atom_neighbor_index_with_symbols(atoms, right, symbols);
     }
-    let ranks = canon_atom_rank_snapshot(atoms);
+    let ranks = if symbols.is_some() {
+        Vec::new()
+    } else {
+        canon_atom_rank_snapshot(atoms)
+    };
     // RDKit✔️✔️:     for (unsigned int ii = 0;
     // RDKit✔️✔️:          ii < dp_atoms[i].bonds.size() && ii < dp_atoms[j].bonds.size(); ++ii) {
     // RDKit✔️✔️:       int cmp =
@@ -5588,8 +5837,12 @@ fn compare_special_symmetry_atoms_for_kekulize(
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     for idx in 0..atoms[left].bonds.len().min(atoms[right].bonds.len()) {
-        let cmp =
-            compare_canon_bond_holder(&atoms[left].bonds[idx], &atoms[right].bonds[idx], &ranks);
+        let cmp = compare_canon_bond_holder_with_symbols(
+            &atoms[left].bonds[idx],
+            &atoms[right].bonds[idx],
+            &ranks,
+            symbols,
+        );
         if cmp != Ordering::Equal {
             return cmp;
         }
@@ -6632,7 +6885,7 @@ fn get_chiral_rank_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize) -> u32
     // RDKit✔️✔️:   std::vector<unsigned int> perm;
     // RDKit✔️✔️:   perm.reserve(dp_atoms[i].atom->getDegree());
     let mut res = 0u32;
-    let mut perm = Vec::<i32>::with_capacity(atoms[atom_idx].all_nbr_ids.len());
+    let mut perm = Vec::<i32>::with_capacity(atoms[atom_idx].nbr_ids.len());
     // RDKit✔️✔️:   for (const auto nbr : dp_mol->atomNeighbors(dp_atoms[i].atom)) {
     // RDKit✔️✔️:     auto rnk = dp_atoms[nbr->getIdx()].index;
     // RDKit✔️✔️:     if (std::find(perm.begin(), perm.end(), rnk) != perm.end()) {
@@ -6641,7 +6894,7 @@ fn get_chiral_rank_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize) -> u32
     // RDKit✔️✔️:       perm.push_back(rnk);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for neighbor in atoms[atom_idx].all_nbr_ids.iter().copied() {
+    for neighbor in atoms[atom_idx].nbr_ids.iter().copied() {
         let rank = atoms[neighbor].index;
         if perm.contains(&rank) {
             break;
@@ -6649,7 +6902,7 @@ fn get_chiral_rank_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize) -> u32
         perm.push(rank);
     }
     // RDKit✔️✔️:   if (perm.size() == dp_atoms[i].atom->getDegree()) {
-    if perm.len() == atoms[atom_idx].all_nbr_ids.len() {
+    if perm.len() == atoms[atom_idx].nbr_ids.len() {
         // RDKit✔️✔️:     auto ctag = dp_atoms[i].atom->getChiralTag();
         // RDKit✔️✔️:     if (ctag == Atom::ChiralType::CHI_TETRAHEDRAL_CW ||
         // RDKit✔️✔️:         ctag == Atom::ChiralType::CHI_TETRAHEDRAL_CCW) {
@@ -6965,6 +7218,14 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
 }
 
 fn update_atom_neighbor_index_for_kekulize(atoms: &mut [CanonAtom<'_>], atom_idx: usize) {
+    update_atom_neighbor_index_with_symbols(atoms, atom_idx, None);
+}
+
+fn update_atom_neighbor_index_with_symbols(
+    atoms: &mut [CanonAtom<'_>],
+    atom_idx: usize,
+    symbols: Option<&[String]>,
+) {
     // BEGIN COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex
     // RDKit❗❌: void updateAtomNeighborIndex(canon_atom *atoms, std::vector<bondholder> &nbrs) {
     // RDKit❗❌:   PRECONDITION(atoms, "bad pointer");
@@ -6990,21 +7251,24 @@ fn update_atom_neighbor_index_for_kekulize(atoms: &mut [CanonAtom<'_>], atom_idx
     // RDKit❗❌:   }
     // RDKit❗❌: }
     // END COMPLETE RDKit .6 CHEM32 updateAtomNeighborIndex
-    // Only this actual repeated-update owner changes sort. Existing update Vec
-    // and whole-atom rank snapshot costs remain qualified (❌); the shared
+    // Only this actual repeated-update owner changes sort. The ordinary path's
+    // whole-atom rank snapshot cost remains qualified (❌); the shared
     // initial sort owner for both source initialization paths remains untouched.
 
-    let updates = atoms[atom_idx]
-        .bonds
-        .iter()
-        .map(|bond| usize::try_from(atoms[bond.nbr_idx].index).unwrap_or(usize::MAX))
-        .collect::<Vec<_>>();
-    for (bond, nbr_sym_class) in atoms[atom_idx].bonds.iter_mut().zip(updates) {
-        bond.nbr_sym_class = nbr_sym_class;
+    for index in 0..atoms[atom_idx].bonds.len() {
+        let neighbor = atoms[atom_idx].bonds[index].nbr_idx;
+        atoms[atom_idx].bonds[index].nbr_sym_class =
+            usize::try_from(atoms[neighbor].index).unwrap_or(usize::MAX);
     }
-    let ranks = canon_atom_rank_snapshot(atoms);
+    // Typed potential-stereo holders have no bond stereo to resolve; in that
+    // path the source comparison uses only holder scalars/current symbol values.
+    let ranks = if symbols.is_some() {
+        Vec::new()
+    } else {
+        canon_atom_rank_snapshot(atoms)
+    };
     insertion_sort_canon_bonds_for_update(&mut atoms[atom_idx].bonds, |left, right| {
-        compare_canon_bond_holder(left, right, &ranks) == Ordering::Greater
+        compare_canon_bond_holder_with_symbols(left, right, &ranks, symbols) == Ordering::Greater
     });
 }
 
@@ -7059,7 +7323,7 @@ fn update_atom_neighbor_num_swaps_for_kekulize(
     let is_ring_atom = atoms[atom_idx].is_ring_atom;
     let mut result = Vec::<(usize, u32)>::new();
     // RDKit✔️✔️:   for (auto &nbr : nbrs) {
-    for nbr in &atoms[atom_idx].bonds {
+    for nbr in atoms[atom_idx].bonds.iter() {
         // RDKit✔️✔️:     unsigned nbrIdx = nbr.nbrIdx;
         let nbr_idx = nbr.nbr_idx;
         // RDKit✔️✔️:     std::list<unsigned int> neighborsSeen;
@@ -7099,7 +7363,7 @@ fn update_atom_neighbor_num_swaps_for_kekulize(
             // RDKit✔️✔️:           probe.push_back(bond.nbrIdx);
             // RDKit✔️✔️:         }
             // RDKit✔️✔️:       }
-            for bond in &atoms[nbr_idx].bonds {
+            for bond in atoms[nbr_idx].bonds.iter() {
                 if bond.nbr_idx != atom_idx {
                     probe.push(bond.nbr_idx);
                 }
@@ -7164,6 +7428,15 @@ fn compare_canon_bond_holder(
     right: &CanonBondHolder<'_>,
     atom_ranks: &[i32],
 ) -> Ordering {
+    compare_canon_bond_holder_with_symbols(left, right, atom_ranks, None)
+}
+
+fn compare_canon_bond_holder_with_symbols(
+    left: &CanonBondHolder<'_>,
+    right: &CanonBondHolder<'_>,
+    atom_ranks: &[i32],
+    symbols: Option<&[String]>,
+) -> Ordering {
     // BEGIN RDKIT CPP FUNCTION bondholder::compare
     // RDKit✔️✔️: static int compare(const bondholder &x, const bondholder &y,
     // RDKit✔️✔️:                    unsigned int div = 1) {
@@ -7179,7 +7452,13 @@ fn compare_canon_bond_holder(
     // RDKit✔️✔️:   } else if (x.bondType > y.bondType) {
     // RDKit✔️✔️:     return 1;
     // RDKit✔️✔️:   }
-    if let (Some(left_symbol), Some(right_symbol)) = (left.p_symbol, right.p_symbol) {
+    let left_symbol = symbols
+        .map(|rows| rows[left.bond_idx].as_str())
+        .or(left.p_symbol);
+    let right_symbol = symbols
+        .map(|rows| rows[right.bond_idx].as_str())
+        .or(right.p_symbol);
+    if let (Some(left_symbol), Some(right_symbol)) = (left_symbol, right_symbol) {
         let symbol_cmp = left_symbol.cmp(right_symbol);
         if symbol_cmp != Ordering::Equal {
             return symbol_cmp;
@@ -7440,6 +7719,58 @@ mod tests {
         TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
     }
 
+    #[test]
+    fn canonical_neighbors_share_contiguous_buffer_with_inline_and_overflow_holders() {
+        let mut atoms = vec![atom(0, AtomSpec::new(Element::S))];
+        atoms.extend((1..7).map(|i| atom(i, AtomSpec::new(Element::F))));
+        let graph = topology(atoms, (1..7).map(|i| bond(i - 1, 0, i)).collect());
+        let view = CanonRankReadView::from_topology(&graph).unwrap();
+        let mut neighbor_ids = vec![0; 12];
+        let base = neighbor_ids.as_ptr();
+        let initialized = init_fragment_canon_atoms(
+            &view,
+            &[true; 7],
+            &[true; 6],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
+        assert_eq!(initialized[0].nbr_ids, &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(initialized[0].nbr_ids.as_ptr(), base);
+        assert_eq!(initialized[0].bonds.len(), 6);
+        assert!(initialized[0].bonds.overflow.capacity() >= 6);
+        for (i, leaf) in initialized.iter().enumerate().skip(1) {
+            assert_eq!(leaf.nbr_ids, &[0]);
+            assert_eq!(leaf.nbr_ids.as_ptr(), base.wrapping_add(5 + i));
+            assert_eq!(leaf.bonds.overflow.capacity(), 0);
+        }
+        let mut fragment_neighbors = vec![0; 12];
+        let fragment = init_fragment_canon_atoms(
+            &view,
+            &[true; 7],
+            &[true, true, false, false, false, false],
+            true,
+            None,
+            None,
+            &mut fragment_neighbors,
+        )
+        .unwrap();
+        assert_eq!(fragment[0].nbr_ids, &[1, 2]);
+        assert_eq!(fragment[0].bonds.overflow.capacity(), 0);
+        assert!(fragment[3].nbr_ids.is_empty());
+        let ranks = rank_mol_atoms_with_params(
+            &graph,
+            &CanonicalRankParams {
+                break_ties: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(ranks, vec![6, 0, 0, 0, 0, 0, 0]);
+    }
+
     mod drawing_ring_input_tests {
         use super::*;
 
@@ -7695,12 +8026,12 @@ mod tests {
                 ))
             );
 
-            let supplied = crate::ring_info_from_selected_rows(6, 5, &[], &[]).unwrap();
+            let supplied = crate::ring_info_from_selected_rows(6, 7, &[], &[]).unwrap();
             let ring_snapshot = supplied.clone();
             assert!(supplied.is_initialized());
             assert_eq!(supplied.find_type(), RingFindType::OtherOrUnknown);
             assert_eq!(supplied.atom_row_count(), 6);
-            assert_eq!(supplied.bond_row_count(), 5);
+            assert_eq!(supplied.bond_row_count(), 7);
             let base = drawing_ring_if_possible_probe::calls().len();
             let result = kekulize_if_possible_with_query_state_and_ring_info(
                 &input,
@@ -7719,7 +8050,7 @@ mod tests {
                         expected_atoms: 6,
                         actual_atoms: 6,
                         expected_bonds: 6,
-                        actual_bonds: 5
+                        actual_bonds: 7
                     }
                 ))
             );
@@ -8197,11 +8528,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             atom_rows,
-            vec![vec![0, 9, 8, 3, 2, 1], vec![4, 5, 6, 7, 8, 3]]
+            vec![vec![0, 1, 2, 3, 8, 9], vec![3, 4, 5, 6, 7, 8]]
         );
         assert_eq!(
             bond_rows,
-            vec![vec![9, 8, 10, 2, 1, 0], vec![4, 5, 6, 7, 10, 3]]
+            vec![vec![0, 1, 2, 10, 8, 9], vec![3, 4, 5, 6, 7, 10]]
         );
     }
 
@@ -9514,7 +9845,7 @@ mod tests {
 
             // Call 11: initialized wrong BOND dimensions consumed by the
             // NONCANONICAL candidate read (ranking skipped).
-            let wrong_bonds = rows_with_dimensions(6, 5);
+            let wrong_bonds = rows_with_dimensions(6, 7);
             let wrong_bonds_snapshot = wrong_bonds.clone();
             assert_eq!(
                 kekulize_fragment(
@@ -9534,7 +9865,7 @@ mod tests {
                         expected_atoms: 6,
                         actual_atoms: 6,
                         expected_bonds: 6,
-                        actual_bonds: 5,
+                        actual_bonds: 7,
                     }
                 ))
             );
@@ -9919,8 +10250,8 @@ mod tests {
                                     update.atom_rings()[0].iter().map(|a| a.index()).collect();
                                 let literal_bonds: Vec<usize> =
                                     update.bond_rings()[0].iter().map(|b| b.index()).collect();
-                                assert_eq!(literal_atoms, vec![0, 5, 4, 3, 2, 1], "{label}");
-                                assert_eq!(literal_bonds, vec![5, 4, 3, 2, 1, 0], "{label}");
+                                assert_eq!(literal_atoms, vec![0, 1, 2, 3, 4, 5], "{label}");
+                                assert_eq!(literal_bonds, vec![0, 1, 2, 3, 4, 5], "{label}");
                                 for index in 0..6 {
                                     assert_eq!(
                                         update.atom_members(AtomId::new(index)),
@@ -10721,6 +11052,7 @@ mod tests {
         let first = ["-".to_owned(), "=".to_owned()];
         let reverse = ["=".to_owned(), "-".to_owned()];
         for symbols in [&first[..], &reverse[..]] {
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
             let initialized = init_fragment_canon_atoms(
                 &view,
                 &[true; 3],
@@ -10728,6 +11060,7 @@ mod tests {
                 true,
                 Some(&atoms),
                 Some(symbols),
+                &mut neighbor_ids,
             )
             .unwrap();
             assert_eq!(initialized[0].p_symbol, Some("N"));
@@ -10745,6 +11078,7 @@ mod tests {
                     );
                 }
             }
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
             let masked_bond = init_fragment_canon_atoms(
                 &view,
                 &[true; 3],
@@ -10752,9 +11086,11 @@ mod tests {
                 true,
                 Some(&atoms),
                 Some(symbols),
+                &mut neighbor_ids,
             )
             .unwrap();
             assert!(masked_bond[2].bonds.is_empty());
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
             let masked_atom = init_fragment_canon_atoms(
                 &view,
                 &[true, true, false],
@@ -10762,6 +11098,7 @@ mod tests {
                 true,
                 Some(&atoms),
                 Some(symbols),
+                &mut neighbor_ids,
             )
             .unwrap();
             assert_eq!(masked_atom[2].p_symbol, None);
@@ -11134,14 +11471,20 @@ mod tests {
             CanonRankReadView::from_prepared_state(&graph, &bad, None, None),
             Err(CanonicalRankError::PreparedValenceInvalid { atom_index: 1 })
         ));
-        let wrong_rings = RingInfo::new(RingFindType::Fast, 1, 0);
+        // Source-valid sparse membership returns zero for the suffix atom/bond.
+        let sparse_rings = RingInfo::new(RingFindType::Fast, 1, 0);
+        assert!(
+            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&sparse_rings), None)
+                .is_ok()
+        );
+        let wrong_rings = RingInfo::new(RingFindType::Fast, 3, 1);
         assert!(matches!(
             CanonRankReadView::from_prepared_state(&graph, &valence, Some(&wrong_rings), None),
             Err(CanonicalRankError::PreparedRingLength {
                 expected_atoms: 2,
-                actual_atoms: 1,
+                actual_atoms: 3,
                 expected_bonds: 1,
-                actual_bonds: 0,
+                actual_bonds: 1,
             })
         ));
     }
@@ -11157,9 +11500,17 @@ mod tests {
             vec![bond(0, 0, 1), bond(1, 1, 2)],
         );
         let view = CanonRankReadView::from_topology(&graph).unwrap();
-        let atoms =
-            init_fragment_canon_atoms(&view, &[true, true, false], &[true, true], true, None, None)
-                .unwrap();
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let atoms = init_fragment_canon_atoms(
+            &view,
+            &[true, true, false],
+            &[true, true],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
         assert_eq!(
             atoms.iter().map(|atom| atom.is_in_play).collect::<Vec<_>>(),
             vec![true, true, false]
@@ -11175,9 +11526,17 @@ mod tests {
         assert_eq!(atoms[1].bonds.len(), 1);
         assert!(atoms[2].bonds.is_empty());
 
-        let bond_masked =
-            init_fragment_canon_atoms(&view, &[true, true, true], &[true, false], true, None, None)
-                .unwrap();
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let bond_masked = init_fragment_canon_atoms(
+            &view,
+            &[true, true, true],
+            &[true, false],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
         assert_eq!(
             bond_masked
                 .iter()
@@ -11199,8 +11558,17 @@ mod tests {
             vec![bond(0, 0, 1)],
         );
         let view = CanonRankReadView::from_topology(&ethane).unwrap();
-        let mut atoms =
-            init_fragment_canon_atoms(&view, &[true, true], &[true], true, None, None).unwrap();
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut atoms = init_fragment_canon_atoms(
+            &view,
+            &[true, true],
+            &[true],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
         let mut options = CanonicalRankParams::kekulize_fragment_default();
         options.break_ties = false;
         assert_eq!(
@@ -11235,8 +11603,17 @@ mod tests {
             vec![],
         );
         let view = CanonRankReadView::from_topology(&graph).unwrap();
-        let mut inactive =
-            init_fragment_canon_atoms(&view, &[false, false], &[], true, None, None).unwrap();
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut inactive = init_fragment_canon_atoms(
+            &view,
+            &[false, false],
+            &[],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
         let mut no_tie_break = CanonicalRankParams::kekulize_fragment_default();
         no_tie_break.break_ties = false;
         assert_eq!(
@@ -12069,7 +12446,7 @@ mod q01_b1_scalar_rank_dependency_tests {
         }
         atom
     }
-    fn flags(enabled: bool) -> CanonRankFlags {
+    fn flags(enabled: bool) -> CanonRankFlags<'static> {
         let mut params = CanonicalRankParams::default();
         params.use_non_stereo_ranks = enabled;
         CanonRankFlags::from_fragment_options(params)
@@ -12281,7 +12658,7 @@ mod uint_source_comparator_proposed_tests {
                 .unwrap(),
         )
     }
-    fn flags(on: bool) -> CanonRankFlags {
+    fn flags(on: bool) -> CanonRankFlags<'static> {
         let mut p = CanonicalRankParams::default();
         p.use_non_stereo_ranks = on;
         CanonRankFlags::from_fragment_options(p)
@@ -12603,8 +12980,17 @@ mod source_prepared_fragment_hydrogen_getter {
             let view =
                 CanonRankReadView::from_prepared_state(&topology, &value, None, Some(&[true; 2]))
                     .unwrap();
-            let atoms =
-                init_fragment_canon_atoms(&view, &[true; 2], &[], false, None, None).unwrap();
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+            let atoms = init_fragment_canon_atoms(
+                &view,
+                &[true; 2],
+                &[],
+                false,
+                None,
+                None,
+                &mut neighbor_ids,
+            )
+            .unwrap();
             assert_eq!(
                 atoms
                     .iter()
@@ -12660,7 +13046,7 @@ mod uint_complete_source_condition_cells {
         }
         a
     }
-    fn flags(b: bool) -> CanonRankFlags {
+    fn flags(b: bool) -> CanonRankFlags<'static> {
         let mut p = CanonicalRankParams::default();
         p.use_non_stereo_ranks = b;
         CanonRankFlags::from_fragment_options(p)
@@ -16934,7 +17320,10 @@ mod recovery_chem31 {
     fn chem31_isolated(n: usize) -> TopologyBlock {
         chem31_graph(n, &[])
     }
-    fn chem31_atoms<'a>(view: &CanonRankReadView<'a>) -> Vec<CanonAtom<'a>> {
+    fn chem31_atoms<'a>(
+        view: &CanonRankReadView<'a>,
+        neighbor_ids: &'a mut [usize],
+    ) -> Vec<CanonAtom<'a>> {
         init_fragment_canon_atoms(
             view,
             &vec![true; view.num_atoms()],
@@ -16942,10 +17331,11 @@ mod recovery_chem31 {
             true,
             None,
             None,
+            neighbor_ids,
         )
         .unwrap()
     }
-    fn chem31_flags() -> CanonRankFlags {
+    fn chem31_flags() -> CanonRankFlags<'static> {
         CanonRankFlags::from_fragment_options(CanonicalRankParams::kekulize_fragment_default())
     }
     #[test]
@@ -16954,7 +17344,8 @@ mod recovery_chem31 {
         let m = chem31_graph(2, &[(0, 1)]);
         let view = CanonRankReadView::from_topology(&m).unwrap();
         for scratch_len in [1, 2, 5] {
-            let mut atoms = chem31_atoms(&view);
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+            let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
             atoms[0].index = 0;
             atoms[1].index = 1;
             let mut order = vec![0, 1];
@@ -17023,7 +17414,8 @@ mod recovery_chem31 {
         for n in [0, 2] {
             let m = chem31_isolated(n);
             let view = CanonRankReadView::from_topology(&m).unwrap();
-            let mut atoms = chem31_atoms(&view);
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+            let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
             let mut order = (0..n).collect::<Vec<_>>();
             let mut count = vec![1; n];
             let mut active = -1;
@@ -17075,7 +17467,8 @@ mod recovery_chem31 {
         ] {
             let m = chem31_isolated(n);
             let view = CanonRankReadView::from_topology(&m).unwrap();
-            let mut atoms = chem31_atoms(&view);
+            let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+            let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
             for i in 0..n {
                 atoms[i].index = if i > 0 && i <= len { 1 } else { i as i32 };
                 atoms[i].p_symbol = Some(symbols[i]);
@@ -17128,7 +17521,8 @@ mod recovery_chem31 {
         use super::chem31_scratch_trace::capture;
         let m = chem31_isolated(2);
         let view = CanonRankReadView::from_topology(&m).unwrap();
-        let mut atoms = chem31_atoms(&view);
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
         let mut order = vec![0, 1];
         let mut count = vec![2, 0];
         let mut active = -1;
@@ -17161,7 +17555,8 @@ mod recovery_chem31 {
         );
         let m = chem31_graph(2, &[(0, 1)]);
         let view = CanonRankReadView::from_topology(&m).unwrap();
-        let mut atoms = chem31_atoms(&view);
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
         for a in &mut atoms {
             a.index = 0;
         }
@@ -17205,7 +17600,8 @@ mod recovery_chem31 {
         use super::chem31_scratch_trace::{Event, capture};
         let m = chem31_graph(3, &[(0, 1), (1, 2), (2, 0)]);
         let view = CanonRankReadView::from_topology(&m).unwrap();
-        let mut atoms = chem31_atoms(&view);
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut atoms = chem31_atoms(&view, &mut neighbor_ids);
         for a in &mut atoms {
             a.index = 0;
         }
@@ -17506,8 +17902,17 @@ mod recovery_chem32 {
         let graph =
             TopologyBlock::try_from_parts(source_atoms, source_bonds, vec![], vec![]).unwrap();
         let view = CanonRankReadView::from_topology(&graph).unwrap();
-        let mut atoms =
-            init_fragment_canon_atoms(&view, &[true; 5], &[true; 4], true, None, None).unwrap();
+        let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
+        let mut atoms = init_fragment_canon_atoms(
+            &view,
+            &[true; 5],
+            &[true; 4],
+            true,
+            None,
+            None,
+            &mut neighbor_ids,
+        )
+        .unwrap();
         for (atom, index) in atoms.iter_mut().zip([8, 0, 2, 7, 4]) {
             atom.index = index;
         }
@@ -17524,7 +17929,7 @@ mod recovery_chem32 {
                 .collect::<Vec<_>>(),
             vec![8, 7, 4, 2]
         );
-        for bond in &atoms[1].bonds {
+        for bond in atoms[1].bonds.iter() {
             assert_eq!(bond.nbr_sym_class, atoms[bond.nbr_idx].index as usize);
             let mut expected = *original
                 .iter()

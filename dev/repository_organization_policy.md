@@ -34,14 +34,14 @@ This includes fixed regressions for public API behavior, cross-module
 workflows and operation contracts. Fixed upstream-derived tables are fixtures,
 not corpus parity merely because they contain many rows. Corpus preparation,
 reference execution and corpus comparison belong to the top-level
-current `parity-tests_fixed/` crate, not to owning crates.
+current `parity-tests/` crate, not to owning crates.
 
 Facade crates MUST NOT repeat complete suites already covered by an underlying
 crate. They SHOULD test only facade-specific exports and behavior.
 
 The explicitly designated 77-case structure-tag matrix is the special
 source-regression exception described in `test_boundaries.md`. Its complete
-reference-dependent comparison lives in `parity-tests_fixed/tests/`; ordinary local
+reference-dependent comparison runs through `parity-tests/tests/corpus.rs`; ordinary local
 validation/numeric tests stay in core. Test-only detached dependencies preserve
 the source boundary without exposing a new production/public algorithm API.
 
@@ -59,8 +59,8 @@ change the complete tested result.
 ## 2. Test Data Ownership
 
 For COSMolKit 0.5.0, corpus and designated special-regression inputs MUST be
-stored under `parity-tests_fixed/testdata/`. Their generated references belong
-under `parity-tests_fixed/expected/`, and reports under `parity-tests_fixed/reports/`.
+stored under `parity-tests/testdata/`. Their generated references belong
+under `parity-tests/expected/`, and reports under `parity-tests/reports/`.
 The repository-level `testdata/` directory retains shared ordinary-regression
 fixtures and historical provenance, not a second corpus preparation workflow.
 Existing consumers are not moved by this documentation update.
@@ -95,7 +95,7 @@ required checkout instead of silently treating absent data as a pass.
 
 This permission covers input/expected data, not compiling third-party code,
 parsing source code into expectations or invoking oracles in regression tests.
-Corpus/reference execution remains owned by `parity-tests_fixed`.
+Corpus/reference execution remains owned by `parity-tests`.
 
 A test MAY create temporary files in a temporary directory. Test execution
 MUST treat committed inputs and generated expected data as read-only and MUST
@@ -129,7 +129,7 @@ result checksums. The current ChEMBL 37 implementation of this exception is
 Corpus inputs, generated references and reports MUST remain distinguishable:
 
 ```text
-parity-tests_fixed/
+parity-tests/
   testdata/
   expected/
   reports/
@@ -147,8 +147,8 @@ Preserve historical fixture paths while their consumers still need them.
 Examples:
 
 ```text
-parity-tests_fixed/testdata/
-parity-tests_fixed/expected/corpus/smiles_5000/num_heavy_atoms_smiles/reference.jsonl
+parity-tests/testdata/corpora/smiles_small.smi
+parity-tests/expected/v1/<identity>/reference.bin
 testdata/mol2/fixtures/
 testdata/molblock/fixtures/
 ```
@@ -247,12 +247,12 @@ Preparation and Cargo comparison are separate stages:
 1. Select all registered tasks by default, or the explicitly requested tasks.
 2. Validate the complete selected input/variant set.
 3. Reuse only reference generations whose full identity and checksums match.
-4. Call the selected Python generators sequentially with corpus, task parameters
-   and concurrency; each function parallelizes cases internally. Rust labels,
-   validates and atomically publishes each generation. Preserve invalid evidence.
+4. Generate selected tasks sequentially; native worker processes parallelize
+   cases within each task using the requested concurrency. Validate and
+   atomically publish each generation. Preserve invalid evidence.
 5. Save the prepared function/corpus selection and preflight ALL its references.
-6. Run independent Cargo tests for function/corpus-type pairs; Cargo parallelizes
-   tests, which use checked snapshots and report every selected result.
+6. Run the selected tasks through Cargo's custom `corpus` harness, serially
+   between tasks and in parallel within each task. Report every selected result.
 
 A failure in preparation or global preflight prevents all selected operation
 calls. A comparison mismatch must never regenerate references to fit CK.
@@ -266,17 +266,18 @@ Reference adapters and existing preparation scripts are implementation tools,
 not independent task registries. Keep task/variant selection and result schemas
 in Rust. Generated corpora, caches and reports stay in ignored output paths;
 committed fixture snapshots remain read-only. The current runner's actual
-coverage and limits are documented in [parity-tests_fixed/README.md](../parity-tests_fixed/README.md).
+coverage and limits are documented in [parity-tests/README.md](../parity-tests/README.md).
 
-Validate generated output schemas, input identity, reference version,
-generator identity, exact case counts and checksums before comparison.
-Load validated snapshots so subsequent file changes cannot alter a run's
-expected results. Missing data must never first be discovered halfway through
-chemistry execution. Do not duplicate these mechanisms in domain crates.
+Validate output schemas, selected input identity, reference version, complete
+profiles, exact case counts and all selected reference headers before chemistry
+execution. Verify frame and final-file checksums during one bounded streaming
+pass; modified or corrupt data must fail, never become accepted expectations.
+Missing reference families must be detected before the first operation call.
+Do not duplicate these mechanisms in domain crates.
 
 ## 6. Rust Parity Pipeline Ownership
 
-`parity-tests_fixed/` (`cosmolkit-parity-tests-fixed`, unpublished) is the
+`parity-tests/` (`cosmolkit-parity-tests`, unpublished) is the
 current 0.5.0 home for corpus and special-regression orchestration.
 The current runner's chemistry dependency is public
 `cosmolkit` with `full`, not individual domain crates. Its Rust registry
@@ -285,14 +286,15 @@ Do not create a parallel test-support crate, registry or owner-local corpus
 runner. Fixed regressions remain independent of the parity runner.
 
 Special source regressions explicitly designated in `test_boundaries.md` reuse
-the same prepare CLI and the `special_regression` Cargo test target.
-They are not corpus-task registrations or corpus passes. This exception does
-not move ordinary fixed owner regressions or permit a second test framework.
+the same prepare CLI and `corpus` Cargo test target, selected by `--suite special`
+or their task names. Their fixed recipes are not expanded over the SMILES
+corpus. This does not move ordinary fixed owner regressions or permit a second
+test framework.
 
 Python/JS binding verification uses representative cases for FFI/WASM and
 language-boundary behavior. It does not repeat complete chemistry corpora
-without a specific boundary need. Complete 0.5.0 validation is pending;
-historical results do not establish current coverage.
+without a specific boundary need. Completed results and remaining coverage
+are recorded in `VALIDATION.md`.
 
 ## 7. Cross-Layer Coverage
 

@@ -12,6 +12,8 @@ pub enum BondDirectionStereoError {
     InvalidState(String),
     #[error(transparent)]
     Valence(#[from] ValenceError),
+    #[error(transparent)]
+    Atropisomer(#[from] crate::AtropisomerError),
 }
 
 #[derive(Clone, Copy)]
@@ -758,10 +760,36 @@ pub fn assign_chiral_types_from_bond_dirs(
     conformer: &Conformer3D,
     replace_existing_tags: bool,
 ) -> Result<(), BondDirectionStereoError> {
+    assign_chiral_types_from_bond_dirs_with_optional_conformer(
+        topology,
+        Some(conformer),
+        replace_existing_tags,
+    )
+}
+
+pub fn assign_chiral_types_from_bond_dirs_with_optional_conformer(
+    topology: &mut TopologyBlock,
+    conformer: Option<&Conformer3D>,
+    replace_existing_tags: bool,
+) -> Result<(), BondDirectionStereoError> {
+    // RDKit❗❌: if (!mol.getNumConformers()) {
+    // RDKit❗❌:   Atropisomers::detectAtropisomerChirality(mol, nullptr, replaceExistingTags);
+    // RDKit❗❌:   return;
+    // RDKit❗❌: }
+    let Some(conformer) = conformer else {
+        let assignment = crate::detect_atropisomer_chirality_with_replacement(
+            topology,
+            None,
+            replace_existing_tags,
+        )?;
+        crate::atropisomer::apply_detected_atropisomers(topology, assignment)?;
+        return Ok(());
+    };
     // BEGIN RDKIT CPP FUNCTION MolOps::assignChiralTypesFromBondDirs complete source
     // RDKit✔️❌: void assignChiralTypesFromBondDirs(ROMol &mol, const int confId,
     // RDKit✔️❌:                                    const bool replaceExistingTags) {
     // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(mol, nullptr, replaceExistingTags);
     // RDKit✔️❌:     return;
     // RDKit✔️❌:   }
     // RDKit✔️❌:   auto conf = mol.getConformer(confId);
@@ -806,6 +834,8 @@ pub fn assign_chiral_types_from_bond_dirs(
     // RDKit✔️❌:       }
     // RDKit✔️❌:     }
     // RDKit✔️❌:   }
+    // RDKit❗❌:   Atropisomers::detectAtropisomerChirality(mol, &mol.getConformer(confId),
+    // RDKit❗❌:                                         replaceExistingTags);
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION MolOps::assignChiralTypesFromBondDirs complete source
     // The caller supplies the selected, present native conformer. Borrowing
@@ -855,5 +885,13 @@ pub fn assign_chiral_types_from_bond_dirs(
             }
         }
     }
+    // RDKit❗❌: Atropisomers::detectAtropisomerChirality(mol, &mol.getConformer(confId),
+    // RDKit❗❌:                                        replaceExistingTags);
+    let assignment = crate::detect_atropisomer_chirality_with_replacement(
+        topology,
+        Some(crate::AtropisomerConformer::ThreeD(conformer)),
+        replace_existing_tags,
+    )?;
+    crate::atropisomer::apply_detected_atropisomers(topology, assignment)?;
     Ok(())
 }

@@ -4,7 +4,7 @@ use cosmolkit_core::{RingInfo, ValenceAssignment};
 use cosmolkit_model::{AtomId, Bond, BondId, BondOrder, BondStereo, Hybridization, TopologyBlock};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
-const DIST13_TOL: f64 = 0.04;
+const ANGLE_DELTA: f64 = 0.035;
 const MAX_UPPER: f64 = 1000.0;
 const DIST12_DELTA: f64 = 0.01;
 #[derive(Debug, thiserror::Error)]
@@ -301,7 +301,12 @@ fn set_12_bounds(
         let j = bond.end().index();
         match lengths[idx] {
             Some(bl) => {
-                let extra = if squish[i] || squish[j] { 0.2 } else { 0.0 };
+                // RDKit✔️✔️: if (squishAtoms[begId] && squishAtoms[endId]) {
+                // RDKit✔️✔️:   extraSquish = 0.2;  // empirical
+                // RDKit✔️✔️: }
+                // Both source endpoint bits must be set. Constant-time lookup;
+                // reuse the existing squish mask without additional storage.
+                let extra = if squish[i] && squish[j] { 0.2 } else { 0.0 };
                 accum.bond_lengths[bond.id().index()] = bl;
                 mmat.set_upper(i, j, bl + extra + DIST12_DELTA)?;
                 mmat.set_lower(i, j, bl - extra - DIST12_DELTA)?;
@@ -523,62 +528,79 @@ fn set_13_bounds_helper(
     aid: usize,
     aid3: usize,
     angle: f64,
-    bond_lengths: &[f64],
     mmat: &mut BoundsMatrix,
     mol: &TopologyBlock,
     rinfo: &RingInfo,
 ) -> Result<(), GraphBoundsError> {
-    // BEGIN RECOVERY GEO-08 SOURCE set_13_bounds_helper
-    // RDKit❗❌: void _set13BoundsHelper(const unsigned int aid1, const unsigned int aid,
-    // RDKit❗❌:                         const unsigned int aid3, const double angle,
-    // RDKit❗❌:                         const ComputedData &accumData,
-    // RDKit❗❌:                         DistGeom::BoundsMatPtr mmat, const ROMol &mol) {
-    // RDKit❗❌:   const auto bid1 = mol.getBondBetweenAtoms(aid1, aid)->getIdx();
-    // RDKit❗❌:   const auto bid2 = mol.getBondBetweenAtoms(aid, aid3)->getIdx();
-    // RDKit❗❌:
-    // RDKit❗❌:   // We increase the tolerance if we're outside of the first row of the
-    // RDKit❗❌:   // periodic table.
-    // RDKit❗❌:
-    // RDKit❗❌:   auto distTol = DIST13_TOL;
-    // RDKit❗❌:   if (isLargerSP2Atom(mol.getAtomWithIdx(aid1))) {
-    // RDKit❗❌:     distTol *= 2.0;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (isLargerSP2Atom(mol.getAtomWithIdx(aid))) {
-    // RDKit❗❌:     distTol *= 2.0;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (isLargerSP2Atom(mol.getAtomWithIdx(aid3))) {
-    // RDKit❗❌:     distTol *= 2.0;
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   const auto dl = RDGeom::compute13Dist(accumData.bondLengths[bid1],
-    // RDKit❗❌:                                         accumData.bondLengths[bid2], angle) -
-    // RDKit❗❌:                   distTol;
-    // RDKit❗❌:
-    // RDKit❗❌:   const auto du = dl + 2.0 * distTol;
-    // RDKit❗❌:   _checkAndSetBounds(aid1, aid3, dl, du, mmat);
-    // RDKit❗❌: }
-    // END RECOVERY GEO-08 SOURCE set_13_bounds_helper
-
-    let bid1 = bond_between_idx_simple(mol, aid1, aid)
-        .ok_or(GraphBoundsError::Input("missing first 1-3 path bond"))?;
-    let bid2 = bond_between_idx_simple(mol, aid, aid3)
-        .ok_or(GraphBoundsError::Input("missing second 1-3 path bond"))?;
-
-    let mut dist_tol = DIST13_TOL;
-
-    if is_larger_sp2_atom_idx(mol, rinfo, aid1) {
-        dist_tol *= 2.0;
-    }
-    if is_larger_sp2_atom_idx(mol, rinfo, aid) {
-        dist_tol *= 2.0;
-    }
-    if is_larger_sp2_atom_idx(mol, rinfo, aid3) {
-        dist_tol *= 2.0;
-    }
-
-    let dl = compute_13_dist(bond_lengths[bid1], bond_lengths[bid2], angle) - dist_tol;
-    let du = dl + 2.0 * dist_tol;
+    // RDKit✔️✔️: double tolerance = scaleToleranceForLargeSP2(mol.getAtomWithIdx(aid1),
+    // RDKit✔️✔️:                                                mol.getAtomWithIdx(aid),
+    // RDKit✔️✔️:                                                mol.getAtomWithIdx(aid3));
+    // RDKit✔️✔️: auto [angleL, angleU] = getAngleRange(angle, tolerance);
+    // RDKit✔️✔️: const auto du = RDGeom::compute13Dist(mmat->getUpperBound(aid1, aid),
+    // RDKit✔️✔️:                                         mmat->getUpperBound(aid, aid3), angleU);
+    // RDKit✔️✔️: const auto dl = RDGeom::compute13Dist(mmat->getLowerBound(aid1, aid),
+    // RDKit✔️✔️:                                         mmat->getLowerBound(aid, aid3), angleL);
+    // RDKit✔️✔️: _checkAndSetBounds(aid1, aid3, dl, du, mmat);
+    // Candidate interval propagation uses the actual 1-2 bounds, not nominal
+    // rest lengths plus an independent distance tolerance. Four indexed reads
+    // and two fixed-size cosine evaluations; no bond scans or allocation.
+    let tolerance = scale_angle_tolerance(mol, rinfo, aid1, aid, aid3);
+    let (angle_l, angle_u) = angle_range(angle, tolerance);
+    let du = compute_13_dist(
+        mmat.get_upper(aid1, aid)?,
+        mmat.get_upper(aid, aid3)?,
+        angle_u,
+    );
+    let dl = compute_13_dist(
+        mmat.get_lower(aid1, aid)?,
+        mmat.get_lower(aid, aid3)?,
+        angle_l,
+    );
     check_and_set_bounds(mmat, aid1, aid3, dl, du, false)
+}
+fn scale_angle_tolerance(
+    mol: &TopologyBlock,
+    rings: &RingInfo,
+    a: usize,
+    b: usize,
+    c: usize,
+) -> f64 {
+    // RDKit✔️✔️: if (isLargerSP2Atom(atm1)) {
+    // RDKit✔️✔️:   angleTolerance *= 2.0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (isLargerSP2Atom(atm2)) {
+    // RDKit✔️✔️:   angleTolerance *= 2.0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (isLargerSP2Atom(atm3)) {
+    // RDKit✔️✔️:   angleTolerance *= 2.0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return angleTolerance;
+    // Three ordered scalar checks; preserve each doubling and no allocation.
+    let mut tolerance = ANGLE_DELTA;
+    for atom in [a, b, c] {
+        if is_larger_sp2_atom_idx(mol, rings, atom) {
+            tolerance *= 2.0;
+        }
+    }
+    tolerance
+}
+fn angle_range(angle: f64, tolerance: f64) -> (f64, f64) {
+    // RDKit✔️✔️: if (angle + tolerance >= M_PI) {
+    // RDKit✔️✔️:   return {M_PI - tolerance, M_PI};
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (angle - tolerance <= 0.0) {
+    // RDKit✔️✔️:   return {0.0, tolerance};
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return {angle - tolerance, angle + tolerance};
+    // Preserve source boundary precedence and its one-sided interval width.
+    // Two ordered comparisons, a fixed stack pair, no allocation.
+    if angle + tolerance >= PI {
+        (PI - tolerance, PI)
+    } else if angle - tolerance <= 0.0 {
+        (0.0, tolerance)
+    } else {
+        (angle - tolerance, angle + tolerance)
+    }
 }
 fn set_13_bounds(
     mol: &TopologyBlock,
@@ -869,16 +891,7 @@ fn set_13_bounds(
             if !done_paths[id1] && !done_paths[id2] {
                 let angle = set_ring_angle(mol, aid2, r_size);
                 if !accum_data.visited_bound(pid, DistType::Dist12) {
-                    set_13_bounds_helper(
-                        aid1,
-                        aid2,
-                        aid3,
-                        angle,
-                        &accum_data.bond_lengths,
-                        mmat,
-                        mol,
-                        rinfo,
-                    )?;
+                    set_13_bounds_helper(aid1, aid2, aid3, angle, mmat, mol, rinfo)?;
                     accum_data.visited13_bounds[pid] = true;
                 }
                 accum_data.set_bond_angle(nb, b1, b2, angle);
@@ -941,16 +954,7 @@ fn set_13_bounds(
 
                     let pid = unified_pair_id(aid1, aid3, npt) as u32 as usize;
                     if !accum_data.visited_bound(pid, DistType::Dist12) {
-                        set_13_bounds_helper(
-                            aid1,
-                            aid2,
-                            aid3,
-                            angle,
-                            &accum_data.bond_lengths,
-                            mmat,
-                            mol,
-                            rinfo,
-                        )?;
+                        set_13_bounds_helper(aid1, aid2, aid3, angle, mmat, mol, rinfo)?;
                         accum_data.visited13_bounds[pid] = true;
                     }
 
@@ -999,16 +1003,7 @@ fn set_13_bounds(
                             .is_some()
                                 && atom.chiral_permutation().is_some())
                         {
-                            set_13_bounds_helper(
-                                aid1,
-                                aid2,
-                                aid3,
-                                angle,
-                                &accum_data.bond_lengths,
-                                mmat,
-                                mol,
-                                rinfo,
-                            )?;
+                            set_13_bounds_helper(aid1, aid2, aid3, angle, mmat, mol, rinfo)?;
                         } else {
                             let dmax =
                                 accum_data.bond_lengths[bid1] + accum_data.bond_lengths[bid2];
@@ -1037,15 +1032,21 @@ enum Path14Kind {
     Cis,
     Trans,
     Other,
+    CisTrans,
     Custom,
     None,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Path14Configuration {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Path14Configuration {
     bid1: usize,
     bid2: usize,
     bid3: usize,
     kind: Path14Kind,
+    atoms: [usize; 4],
+    is_forced: bool,
+    custom_value: Option<f64>,
+    type14: Type14,
+    ring_size: usize,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Type14 {
@@ -1060,6 +1061,7 @@ enum Type14 {
 #[derive(Debug, Clone, Copy, Default)]
 struct Optional14Info {
     force_trans_amides: bool,
+    use_macrocycle_14config: bool,
     ring_size: usize,
     prefer_trans: bool,
 }
@@ -1068,6 +1070,7 @@ struct TorsionValue {
     kind: Path14Kind,
     value: Option<f64>,
     extra_dist: Option<f64>,
+    is_forced: bool,
 }
 impl TorsionValue {
     fn new(kind: Path14Kind) -> Self {
@@ -1075,6 +1078,7 @@ impl TorsionValue {
             kind,
             value: None,
             extra_dist: None,
+            is_forced: false,
         }
     }
 }
@@ -1295,29 +1299,36 @@ fn get_in_ring_14_type(
     atoms: [usize; 4],
     ring_size: usize,
 ) -> TorsionValue {
-    // BEGIN RECOVERY GEO-09-12 SOURCE get_in_ring_14_type
-    // RDKit❗❌: TorsionValue _getInRing14Type(const Bond *bnd2, const Atom *atm1,
-    // RDKit❗❌:                               const Atom *atm2, const Atom *atm3,
-    // RDKit❗❌:                               const Atom *atm4, int ringSize) {
-    // RDKit❗❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
-    // RDKit❗❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
-    // RDKit❗❌:
-    // RDKit❗❌:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
-    // RDKit❗❌:
-    // RDKit❗❌:   // we add a check for the ring size here because there's no reason to
-    // RDKit❗❌:   // assume cis bonds in bigger rings. This was part of github #1240:
-    // RDKit❗❌:   // failure to embed larger aromatic rings
-    // RDKit❗❌:   if ((ringSize <= 8 && (ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2) &&
-    // RDKit❗❌:        (stype != Bond::STEREOE && stype != Bond::STEREOTRANS)) ||
-    // RDKit❗❌:       stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
-    // RDKit❗❌:     return {TorsionType::CIS};
-    // RDKit❗❌:   } else if (stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
-    // RDKit❗❌:     return {TorsionType::TRANS};
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   return {TorsionType::FLEXIBLE};
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE get_in_ring_14_type
+    // BEGIN CANDIDATE SOURCE get_in_ring_14_type
+    // RDKit✔️✔️: TorsionValue _getInRing14Type(const Bond *bnd2, const Atom *atm1,
+    // RDKit✔️✔️:                               const Atom *atm2, const Atom *atm3,
+    // RDKit✔️✔️:                               const Atom *atm4, int ringSize) {
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // we add a check for the ring size here because there's no reason to
+    // RDKit✔️✔️:   // assume cis bonds in bigger rings. This was part of github #1240:
+    // RDKit✔️✔️:   // failure to embed larger aromatic rings
+    // RDKit✔️✔️:   if ((ringSize <= 8 && (ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2) &&
+    // RDKit✔️✔️:        (stype != Bond::STEREOE && stype != Bond::STEREOTRANS)) ||
+    // RDKit✔️✔️:       stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+    // RDKit✔️✔️:     return {TorsionType::CIS};
+    // RDKit✔️✔️:   } else if (stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
+    // RDKit✔️✔️:     return {TorsionType::TRANS};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {
+    // RDKit✔️✔️:     return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE get_in_ring_14_type
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let [a1, a2, a3, a4] = atoms;
     let st = get_atom_stereo(&mol.bonds[bid2], a1, a4);
@@ -1330,6 +1341,10 @@ fn get_in_ring_14_type(
         Path14Kind::Cis
     } else if matches!(st, BondStereo::E | BondStereo::Trans) {
         Path14Kind::Trans
+    } else if mol.atoms[a2].hybridization() == Hybridization::Sp2
+        && mol.atoms[a3].hybridization() == Hybridization::Sp2
+    {
+        Path14Kind::CisTrans
     } else {
         Path14Kind::Other
     };
@@ -1342,44 +1357,35 @@ fn get_two_in_same_ring_14_type(
     atoms: [usize; 4],
     prefer_trans: bool,
 ) -> TorsionValue {
-    // BEGIN RECOVERY GEO-09-12 SOURCE get_two_in_same_ring_14_type
-    // RDKit❗❌: TorsionValue _getTwoInSameRing14Type(const ROMol &mol, const Bond *bnd2,
-    // RDKit❗❌:                                      const Atom *atm1, const Atom *atm2,
-    // RDKit❗❌:                                      const Atom *atm3, const Atom *atm4,
-    // RDKit❗❌:                                      bool preferTrans) {
-    // RDKit❗❌:   // when we have fused rings, it can happen that this isn't actually a 1-4
-    // RDKit❗❌:   // contact,
-    // RDKit❗❌:   // (this was the cause of sf.net bug 2835784) check that now:
-    // RDKit❗❌:   if (mol.getBondBetweenAtoms(atm1->getIdx(), atm3->getIdx()) ||
-    // RDKit❗❌:       mol.getBondBetweenAtoms(atm4->getIdx(), atm2->getIdx())) {
-    // RDKit❗❌:     return {TorsionType::NONE};
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
-    // RDKit❗❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
-    // RDKit❗❌:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
-    // RDKit❗❌:
-    // RDKit❗❌:   if ((preferTrans && (ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2) &&
-    // RDKit❗❌:        (stype != Bond::STEREOZ && stype != Bond::STEREOCIS)) ||
-    // RDKit❗❌:       stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
-    // RDKit❗❌:     // here we will assume 180 degrees: basically flat ring with an external
-    // RDKit❗❌:     // substituent
-    // RDKit❗❌:     return {TorsionType::TRANS};
-    // RDKit❗❌:   } else if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
-    // RDKit❗❌:     return {TorsionType::CIS};
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     // here we will assume anything is possible
-    // RDKit❗❌:     return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE get_two_in_same_ring_14_type
+    // BEGIN CANDIDATE SOURCE get_two_in_same_ring_14_type
+    // RDKit✔️✔️: TorsionValue _getTwoInSameRing14Type(const Bond *bnd2, const Atom *atm1,
+    // RDKit✔️✔️:                                      const Atom *atm2, const Atom *atm3,
+    // RDKit✔️✔️:                                      const Atom *atm4, bool preferTrans) {
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
+    // RDKit✔️✔️:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if ((preferTrans && (ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2) &&
+    // RDKit✔️✔️:        (stype != Bond::STEREOZ && stype != Bond::STEREOCIS)) ||
+    // RDKit✔️✔️:       stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
+    // RDKit✔️✔️:     // here we will assume 180 degrees: basically flat ring with an external
+    // RDKit✔️✔️:     // substituent
+    // RDKit✔️✔️:     return {TorsionType::TRANS};
+    // RDKit✔️✔️:   } else if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+    // RDKit✔️✔️:     return {TorsionType::CIS};
+    // RDKit✔️✔️:   } else if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {
+    // RDKit✔️✔️:     return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // here we will assume anything is possible
+    // RDKit✔️✔️:     return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE get_two_in_same_ring_14_type
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let [a1, a2, a3, a4] = atoms;
-    if bond_between_idx_simple(mol, a1, a3).is_some()
-        || bond_between_idx_simple(mol, a4, a2).is_some()
-    {
-        return TorsionValue::new(Path14Kind::None);
-    }
     let st = get_atom_stereo(&mol.bonds[bid2], a1, a4);
     let kind = if (prefer_trans
         && mol.atoms[a2].hybridization() == Hybridization::Sp2
@@ -1390,6 +1396,10 @@ fn get_two_in_same_ring_14_type(
         Path14Kind::Trans
     } else if matches!(st, BondStereo::Z | BondStereo::Cis) {
         Path14Kind::Cis
+    } else if mol.atoms[a2].hybridization() == Hybridization::Sp2
+        && mol.atoms[a3].hybridization() == Hybridization::Sp2
+    {
+        Path14Kind::CisTrans
     } else {
         Path14Kind::Other
     };
@@ -1461,119 +1471,124 @@ fn get_chain_14_type(
     atoms: [usize; 4],
     force_trans_amides: bool,
 ) -> Result<TorsionValue, GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE get_chain_14_type
-    // RDKit❗❌: TorsionValue _getChain14Type(const ROMol &mol, const Bond *bnd1,
-    // RDKit❗❌:                              const Bond *bnd2, const Bond *bnd3,
-    // RDKit❗❌:                              const Atom *atm1, const Atom *atm2,
-    // RDKit❗❌:                              const Atom *atm3, const Atom *atm4,
-    // RDKit❗❌:                              bool forceTransAmides) {
-    // RDKit❗❌:   switch (bnd2->getBondType()) {
-    // RDKit❗❌:     case Bond::DOUBLE:
-    // RDKit❗❌:       // if any of the other bonds are double - the torsion angle is zero
-    // RDKit❗❌:       // this is CC=C=C situation
-    // RDKit❗❌:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
-    // RDKit❗❌:           (bnd3->getBondType() == Bond::DOUBLE)) {
-    // RDKit❗❌:         return {TorsionType::CIS};
-    // RDKit❗❌:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
-    // RDKit❗❌:         Bond::BondStereo stype =
-    // RDKit❗❌:             _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
-    // RDKit❗❌:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
-    // RDKit❗❌:           return {TorsionType::CIS};
-    // RDKit❗❌:         } else {
-    // RDKit❗❌:           return {TorsionType::TRANS};
-    // RDKit❗❌:         }
-    // RDKit❗❌:       } else {
-    // RDKit❗❌:         return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:       }
-    // RDKit❗❌:       break;
-    // RDKit❗❌:     case Bond::SINGLE:
-    // RDKit❗❌:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
-    // RDKit❗❌:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
-    // RDKit❗❌:         // this is *S-S* situation
-    // RDKit❗❌:         return {TorsionType::CUSTOM, M_PI / 2.0};
-    // RDKit❗❌:       } else if ((_checkAmideEster14(bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
-    // RDKit❗❌:                  (_checkAmideEster14(bnd3, bnd1, atm4, atm3, atm2, atm1))) {
-    // RDKit❗❌:         // It's an amide or ester:
-    // RDKit❗❌:         //
-    // RDKit❗❌:         //        4    <- 4 is the O
-    // RDKit❗❌:         //        |    <- That's the double bond
-    // RDKit❗❌:         //    1   3
-    // RDKit❗❌:         //     \ / \                                         T.S.I.Left Blank
-    // RDKit❗❌:         //      2   5  <- 2 is an oxygen/nitrogen
-    // RDKit❗❌:         //
-    // RDKit❗❌:         // Here we set the distance between atoms 1 and 4,
-    // RDKit❗❌:         //  we'll handle atoms 1 and 5 below.
-    // RDKit❗❌:
-    // RDKit❗❌:         // fix for issue 251 - we were marking this as a cis configuration
-    // RDKit❗❌:         // earlier
-    // RDKit❗❌:         // -------------------------------------------------------
-    // RDKit❗❌:         // Issue284:
-    // RDKit❗❌:         //   As this code originally stood, we forced amide bonds to be trans.
-    // RDKit❗❌:         //   This is convenient a lot of the time for generating nice-looking
-    // RDKit❗❌:         //   structures, but is unfortunately totally bogus.  So here we'll
-    // RDKit❗❌:         //   allow the distance to roam from cis to trans and hope that the
-    // RDKit❗❌:         //   force field planarizes things later.
-    // RDKit❗❌:         //
-    // RDKit❗❌:         //   What we'd really like to be able to do is specify multiple
-    // RDKit❗❌:         //   possible ranges for the distances, but a single bounds matrix
-    // RDKit❗❌:         //   doesn't support this kind of fanciness.
-    // RDKit❗❌:         //
-    // RDKit❗❌:         if (forceTransAmides) {
-    // RDKit❗❌:           if ((atm1->getAtomicNum() == 1 && atm2->getAtomicNum() == 7 &&
-    // RDKit❗❌:                atm2->getDegree() == 3 && atm2->getTotalNumHs(true) == 1) ||
-    // RDKit❗❌:               (atm4->getAtomicNum() == 1 && atm3->getAtomicNum() == 7 &&
-    // RDKit❗❌:                atm3->getDegree() == 3 && atm3->getTotalNumHs(true) == 1)) {
-    // RDKit❗❌:             // secondary amide, this is the H, it should be trans to the O
-    // RDKit❗❌:             return {TorsionType::TRANS};
-    // RDKit❗❌:           } else {
-    // RDKit❗❌:             return {TorsionType::CIS};
-    // RDKit❗❌:           }
-    // RDKit❗❌:         } else {
-    // RDKit❗❌:           return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:         }
-    // RDKit❗❌:       } else if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3,
-    // RDKit❗❌:                                      atm4)) ||
-    // RDKit❗❌:                  (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2,
-    // RDKit❗❌:                                      atm1))) {
-    // RDKit❗❌:         // it's an amide or ester.
-    // RDKit❗❌:         //
-    // RDKit❗❌:         //        4    <- 4 is the O
-    // RDKit❗❌:         //        |    <- That's the double bond
-    // RDKit❗❌:         //    1   3
-    // RDKit❗❌:         //     \ / \                                          T.S.I.Left Blank
-    // RDKit❗❌:         //      2   5  <- 2 is oxygen or nitrogen
-    // RDKit❗❌:         //
-    // RDKit❗❌:         // we already set the 1-4 contact above, here we are doing 1-5
-    // RDKit❗❌:
-    // RDKit❗❌:         // If we're going to have a hope of getting good geometries
-    // RDKit❗❌:         // out of here we need to set some reasonably smart bounds between 1
-    // RDKit❗❌:         // and 5 (ref Issue355):
-    // RDKit❗❌:
-    // RDKit❗❌:         if (forceTransAmides) {
-    // RDKit❗❌:           if ((atm1->getAtomicNum() == 1 && atm2->getAtomicNum() == 7 &&
-    // RDKit❗❌:                atm2->getDegree() == 3 && atm2->getTotalNumHs(true) == 1) ||
-    // RDKit❗❌:               (atm4->getAtomicNum() == 1 && atm3->getAtomicNum() == 7 &&
-    // RDKit❗❌:                atm3->getDegree() == 3 && atm3->getTotalNumHs(true) == 1)) {
-    // RDKit❗❌:             // secondary amide, this is the H, it's cis to atom 5
-    // RDKit❗❌:             return {TorsionType::CIS};
-    // RDKit❗❌:           } else {
-    // RDKit❗❌:             return {TorsionType::TRANS};
-    // RDKit❗❌:           }
-    // RDKit❗❌:         } else {
-    // RDKit❗❌:           return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:         }
-    // RDKit❗❌:       } else {
-    // RDKit❗❌:         return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:       }
-    // RDKit❗❌:       break;
-    // RDKit❗❌:     default:
-    // RDKit❗❌:       return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE get_chain_14_type
+    // BEGIN CANDIDATE SOURCE get_chain_14_type
+    // RDKit✔️✔️: TorsionValue _getChain14Type(const ROMol &mol, const Bond *bnd1,
+    // RDKit✔️✔️:                              const Bond *bnd2, const Bond *bnd3,
+    // RDKit✔️✔️:                              const Atom *atm1, const Atom *atm2,
+    // RDKit✔️✔️:                              const Atom *atm3, const Atom *atm4,
+    // RDKit✔️✔️:                              const bool forceTransAmides) {
+    // RDKit✔️✔️:   switch (bnd2->getBondType()) {
+    // RDKit✔️✔️:     case Bond::DOUBLE:
+    // RDKit✔️✔️:       // if any of the other bonds are double - the torsion angle is zero
+    // RDKit✔️✔️:       // this is CC=C=C situation
+    // RDKit✔️✔️:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
+    // RDKit✔️✔️:           (bnd3->getBondType() == Bond::DOUBLE)) {
+    // RDKit✔️✔️:         return {TorsionType::CIS};
+    // RDKit✔️✔️:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
+    // RDKit✔️✔️:         Bond::BondStereo stype =
+    // RDKit✔️✔️:             _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
+    // RDKit✔️✔️:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+    // RDKit✔️✔️:           return {TorsionType::CIS};
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {TorsionType::TRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       } else if ((atm2->getHybridization() == Atom::SP2) &&
+    // RDKit✔️✔️:                  (atm3->getHybridization() == Atom::SP2)) {
+    // RDKit✔️✔️:         return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Bond::SINGLE:
+    // RDKit✔️✔️:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
+    // RDKit✔️✔️:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
+    // RDKit✔️✔️:         // this is *S-S* situation
+    // RDKit✔️✔️:         return {TorsionType::CUSTOM, M_PI / 2.0};
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if ((_checkAmideEster14(bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+    // RDKit✔️✔️:           (_checkAmideEster14(bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+    // RDKit✔️✔️:         if (forceTransAmides) {
+    // RDKit✔️✔️:           // It's an amide or ester:
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           //        4    <- 4 is the O
+    // RDKit✔️✔️:           //        |    <- That's the double bond
+    // RDKit✔️✔️:           //    1   3
+    // RDKit✔️✔️:           //     \ / \                                         T.S.I.Left Blank
+    // RDKit✔️✔️:           //      2   5  <- 2 is an oxygen/nitrogen
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           // Here we set the distance between atoms 1 and 4,
+    // RDKit✔️✔️:           //  we'll handle atoms 1 and 5 below.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:           // fix for issue 251 - we were marking this as a cis configuration
+    // RDKit✔️✔️:           // earlier
+    // RDKit✔️✔️:           // -------------------------------------------------------
+    // RDKit✔️✔️:           // Issue284:
+    // RDKit✔️✔️:           //   As this code originally stood, we forced amide bonds to be trans.
+    // RDKit✔️✔️:           //   This is convenient a lot of the time for generating nice-looking
+    // RDKit✔️✔️:           //   structures, but is unfortunately totally bogus.  So here we'll
+    // RDKit✔️✔️:           //   allow the distance to roam from cis to trans and hope that the
+    // RDKit✔️✔️:           //   force field planarizes things later.
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           //   What we'd really like to be able to do is specify multiple
+    // RDKit✔️✔️:           //   possible ranges for the distances, but a single bounds matrix
+    // RDKit✔️✔️:           //   doesn't support this kind of fanciness.
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           if ((atm1->getAtomicNum() == 1 && atm2->getAtomicNum() == 7 &&
+    // RDKit✔️✔️:                atm2->getDegree() == 3 && atm2->getTotalNumHs(true) == 1) ||
+    // RDKit✔️✔️:               (atm4->getAtomicNum() == 1 && atm3->getAtomicNum() == 7 &&
+    // RDKit✔️✔️:                atm3->getDegree() == 3 && atm3->getTotalNumHs(true) == 1)) {
+    // RDKit✔️✔️:             // secondary amide, this is the H, it should be trans to the O
+    // RDKit✔️✔️:             return {.type = TorsionType::TRANS, .isForced = true};
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             return {.type = TorsionType::CIS, .isForced = true};
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {.type = TorsionType::CISTRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+    // RDKit✔️✔️:           (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+    // RDKit✔️✔️:         if (forceTransAmides) {
+    // RDKit✔️✔️:           // it's an amide or ester.
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           //        4    <- 4 is the O
+    // RDKit✔️✔️:           //        |    <- That's the double bond
+    // RDKit✔️✔️:           //    1   3
+    // RDKit✔️✔️:           //     \ / \                                          T.S.I.Left Blank
+    // RDKit✔️✔️:           //      2   5  <- 2 is oxygen or nitrogen
+    // RDKit✔️✔️:           //
+    // RDKit✔️✔️:           // we already set the 1-4 contact above, here we are doing 1-5
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:           // If we're going to have a hope of getting good geometries
+    // RDKit✔️✔️:           // out of here we need to set some reasonably smart bounds between 1
+    // RDKit✔️✔️:           // and 5 (ref Issue355):
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:           if ((atm1->getAtomicNum() == 1 && atm2->getAtomicNum() == 7 &&
+    // RDKit✔️✔️:                atm2->getDegree() == 3 && atm2->getTotalNumHs(true) == 1) ||
+    // RDKit✔️✔️:               (atm4->getAtomicNum() == 1 && atm3->getAtomicNum() == 7 &&
+    // RDKit✔️✔️:                atm3->getDegree() == 3 && atm3->getTotalNumHs(true) == 1)) {
+    // RDKit✔️✔️:             // secondary amide, this is the H, it's cis to atom 5
+    // RDKit✔️✔️:             return {.type = TorsionType::CIS, .isForced = true};
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             return {.type = TorsionType::TRANS, .isForced = true};
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {.type = TorsionType::CISTRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       [[fallthrough]];
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE get_chain_14_type
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let [b1, b2, b3] = bids;
     let [a1, a2, a3, a4] = atoms;
+    let mut is_forced = false;
     let kind = match mol.bonds[b2].order() {
         BondOrder::Double => {
             if mol.bonds[b1].order() == BondOrder::Double
@@ -1589,6 +1604,10 @@ fn get_chain_14_type(
                 } else {
                     Path14Kind::Trans
                 }
+            } else if mol.atoms[a2].hybridization() == Hybridization::Sp2
+                && mol.atoms[a3].hybridization() == Hybridization::Sp2
+            {
+                Path14Kind::CisTrans
             } else {
                 Path14Kind::Other
             }
@@ -1603,30 +1622,37 @@ fn get_chain_14_type(
                     kind: Path14Kind::Custom,
                     value: Some(std::f64::consts::FRAC_PI_2),
                     extra_dist: None,
+                    is_forced: false,
                 });
             } else if check_amide_ester_14(mol, valence, b1, b3, a2, a3, a4)?
                 || check_amide_ester_14(mol, valence, b3, b1, a3, a2, a1)?
             {
                 if !force_trans_amides {
-                    Path14Kind::Other
-                } else if secondary_amide_h(mol, valence, a1, a2)?
-                    || secondary_amide_h(mol, valence, a4, a3)?
-                {
-                    Path14Kind::Trans
+                    Path14Kind::CisTrans
                 } else {
-                    Path14Kind::Cis
+                    is_forced = true;
+                    if secondary_amide_h(mol, valence, a1, a2)?
+                        || secondary_amide_h(mol, valence, a4, a3)?
+                    {
+                        Path14Kind::Trans
+                    } else {
+                        Path14Kind::Cis
+                    }
                 }
             } else if check_amide_ester_15(mol, valence, b1, b3, a2, a3)?
                 || check_amide_ester_15(mol, valence, b3, b1, a3, a2)?
             {
                 if !force_trans_amides {
-                    Path14Kind::Other
-                } else if secondary_amide_h(mol, valence, a1, a2)?
-                    || secondary_amide_h(mol, valence, a4, a3)?
-                {
-                    Path14Kind::Cis
+                    Path14Kind::CisTrans
                 } else {
-                    Path14Kind::Trans
+                    is_forced = true;
+                    if secondary_amide_h(mol, valence, a1, a2)?
+                        || secondary_amide_h(mol, valence, a4, a3)?
+                    {
+                        Path14Kind::Cis
+                    } else {
+                        Path14Kind::Trans
+                    }
                 }
             } else {
                 Path14Kind::Other
@@ -1634,7 +1660,10 @@ fn get_chain_14_type(
         }
         _ => Path14Kind::Other,
     };
-    Ok(TorsionValue::new(kind))
+    Ok(TorsionValue {
+        is_forced,
+        ..TorsionValue::new(kind)
+    })
 }
 
 fn get_macrocycle_two_in_same_ring_14_type(
@@ -1642,53 +1671,64 @@ fn get_macrocycle_two_in_same_ring_14_type(
     valence: &ValenceAssignment,
     bids: [usize; 3],
     atoms: [usize; 4],
+    use_macrocycle_14config: bool,
 ) -> Result<TorsionValue, GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE get_macrocycle_two_in_same_ring_14_type
-    // RDKit❗❌: TorsionValue _getMacrocycleTwoInSameRing14Type(
-    // RDKit❗❌:     const ROMol &mol, const Bond *bnd1, const Bond *bnd2, const Bond *bnd3,
-    // RDKit❗❌:     const Atom *atm1, const Atom *atm2, const Atom *atm3, const Atom *atm4) {
-    // RDKit❗❌:   // when we have fused rings, it can happen that this isn't actually a 1-4
-    // RDKit❗❌:   // contact,
-    // RDKit❗❌:   // (this was the cause of sf.net bug 2835784) check that now:
-    // RDKit❗❌:   if (mol.getBondBetweenAtoms(atm1->getIdx(), atm3->getIdx()) ||
-    // RDKit❗❌:       mol.getBondBetweenAtoms(atm4->getIdx(), atm2->getIdx())) {
-    // RDKit❗❌:     return {TorsionType::NONE};
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
-    // RDKit❗❌:
-    // RDKit❗❌:   if ((_checkMacrocycleTwoInSameRingAmideEster14(bnd1, bnd3, atm1, atm2, atm3,
-    // RDKit❗❌:                                                  atm4)) ||
-    // RDKit❗❌:       (_checkMacrocycleTwoInSameRingAmideEster14(bnd3, bnd1, atm4, atm3, atm2,
-    // RDKit❗❌:                                                  atm1))) {
-    // RDKit❗❌:     return {TorsionType::CIS};
-    // RDKit❗❌:   } else if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
-    // RDKit❗❌:     return {TorsionType::CIS};
-    // RDKit❗❌:   } else if (stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
-    // RDKit❗❌:     return {TorsionType::TRANS};
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     // here we will assume anything is possible
-    // RDKit❗❌:     return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE get_macrocycle_two_in_same_ring_14_type
+    // BEGIN CANDIDATE SOURCE get_macrocycle_two_in_same_ring_14_type
+    // RDKit✔️✔️: TorsionValue _getMacrocycleTwoInSameRing14Type(
+    // RDKit✔️✔️:     const Bond *bnd1, const Bond *bnd2, const Bond *bnd3, const Atom *atm1,
+    // RDKit✔️✔️:     const Atom *atm2, const Atom *atm3, const Atom *atm4,
+    // RDKit✔️✔️:     const bool useMacrocycle14Config) {
+    // RDKit✔️✔️:   Bond::BondStereo stype = _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
+    // RDKit✔️✔️:   if ((_checkMacrocycleTwoInSameRingAmideEster14(bnd1, bnd3, atm1, atm2, atm3,
+    // RDKit✔️✔️:                                                  atm4)) ||
+    // RDKit✔️✔️:       (_checkMacrocycleTwoInSameRingAmideEster14(bnd3, bnd1, atm4, atm3, atm2,
+    // RDKit✔️✔️:                                                  atm1))) {
+    // RDKit✔️✔️:     if (useMacrocycle14Config) {
+    // RDKit✔️✔️:       return {.type = TorsionType::CIS, .isForced = true};
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       return {.type = TorsionType::CISTRANS};
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+    // RDKit✔️✔️:     return {TorsionType::CIS};
+    // RDKit✔️✔️:   } else if (stype == Bond::STEREOE || stype == Bond::STEREOTRANS) {
+    // RDKit✔️✔️:     return {TorsionType::TRANS};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atm2->getHybridization() == Atom::SP2 &&
+    // RDKit✔️✔️:       atm3->getHybridization() == Atom::SP2) {
+    // RDKit✔️✔️:     return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // here we will assume anything is possible
+    // RDKit✔️✔️:     return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE get_macrocycle_two_in_same_ring_14_type
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let [b1, b2, b3] = bids;
     let [a1, a2, a3, a4] = atoms;
-    if bond_between_idx_simple(mol, a1, a3).is_some()
-        || bond_between_idx_simple(mol, a4, a2).is_some()
-    {
-        return Ok(TorsionValue::new(Path14Kind::None));
-    }
     let st = get_atom_stereo(&mol.bonds[b2], a1, a4);
     let kind = if check_macrocycle_two_in_same_ring_amide_ester_14(mol, b1, b3, a1, a2, a3, a4)
         || check_macrocycle_two_in_same_ring_amide_ester_14(mol, b3, b1, a4, a3, a2, a1)
     {
-        Path14Kind::Cis
+        return Ok(TorsionValue {
+            is_forced: use_macrocycle_14config,
+            ..TorsionValue::new(if use_macrocycle_14config {
+                Path14Kind::Cis
+            } else {
+                Path14Kind::CisTrans
+            })
+        });
     } else if matches!(st, BondStereo::Z | BondStereo::Cis) {
         Path14Kind::Cis
     } else if matches!(st, BondStereo::E | BondStereo::Trans) {
         Path14Kind::Trans
+    } else if mol.atoms[a2].hybridization() == Hybridization::Sp2
+        && mol.atoms[a3].hybridization() == Hybridization::Sp2
+    {
+        Path14Kind::CisTrans
     } else {
         Path14Kind::Other
     };
@@ -1700,71 +1740,77 @@ fn get_macrocycle_all_in_same_ring_14_type(
     valence: &ValenceAssignment,
     bids: [usize; 3],
     atoms: [usize; 4],
+    use_macrocycle_14config: bool,
 ) -> Result<TorsionValue, GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE get_macrocycle_all_in_same_ring_14_type
-    // RDKit❗❌: TorsionValue _getMacrocycleAllInSameRing14Type(
-    // RDKit❗❌:     const ROMol &mol, const Bond *bnd1, const Bond *bnd2, const Bond *bnd3,
-    // RDKit❗❌:     const Atom *atm1, const Atom *atm2, const Atom *atm3, const Atom *atm4) {
-    // RDKit❗❌:   switch (bnd2->getBondType()) {
-    // RDKit❗❌:     case Bond::DOUBLE:
-    // RDKit❗❌:       // if any of the other bonds are double - the torsion angle is zero
-    // RDKit❗❌:       // this is CC=C=C situation
-    // RDKit❗❌:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
-    // RDKit❗❌:           (bnd3->getBondType() == Bond::DOUBLE)) {
-    // RDKit❗❌:         return {TorsionType::CIS};
-    // RDKit❗❌:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
-    // RDKit❗❌:         Bond::BondStereo stype =
-    // RDKit❗❌:             _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
-    // RDKit❗❌:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
-    // RDKit❗❌:           return {TorsionType::CIS};
-    // RDKit❗❌:         } else {
-    // RDKit❗❌:           return {TorsionType::TRANS};
-    // RDKit❗❌:         }
-    // RDKit❗❌:       } else {
-    // RDKit❗❌:         return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:       }
-    // RDKit❗❌:       break;
-    // RDKit❗❌:     case Bond::SINGLE:
-    // RDKit❗❌:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
-    // RDKit❗❌:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
-    // RDKit❗❌:         // this is *S-S* situation
-    // RDKit❗❌:         return {TorsionType::CUSTOM, M_PI / 2.0};
-    // RDKit❗❌:
-    // RDKit❗❌:       } else if ((_checkMacrocycleAllInSameRingAmideEster14(
-    // RDKit❗❌:                      mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
-    // RDKit❗❌:                  (_checkMacrocycleAllInSameRingAmideEster14(
-    // RDKit❗❌:                      mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
-    // RDKit❗❌:         return {.type = TorsionType::TRANS, .extraDist = 0.1};
-    // RDKit❗❌:         // we saw that the currently defined max distance for trans
-    // RDKit❗❌:         // is still a bit too short, thus we add an additional 0.1,
-    // RDKit❗❌:         // which is the max that works without triangular smoothing
-    // RDKit❗❌:         // error
-    // RDKit❗❌:       } else if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3,
-    // RDKit❗❌:                                      atm4)) ||
-    // RDKit❗❌:                  (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2,
-    // RDKit❗❌:                                      atm1))) {
-    // RDKit❗❌: #ifdef FORCE_TRANS_AMIDES
-    // RDKit❗❌:         // amide is trans, we're cis:
-    // RDKit❗❌:         return {Path14Configuration::CIS};
-    // RDKit❗❌: #else
-    // RDKit❗❌:         // amide is cis, we're trans:
-    // RDKit❗❌:         if (atm2->getAtomicNum() == 7 && atm2->getDegree() == 3 &&
-    // RDKit❗❌:             atm1->getAtomicNum() == 1 && atm2->getTotalNumHs(true) == 1) {
-    // RDKit❗❌:           // secondary amide, this is the H
-    // RDKit❗❌:           return {TorsionType::NONE};
-    // RDKit❗❌:         } else {
-    // RDKit❗❌:           return {TorsionType::TRANS};
-    // RDKit❗❌:         }
-    // RDKit❗❌: #endif
-    // RDKit❗❌:       } else {
-    // RDKit❗❌:         return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:       }
-    // RDKit❗❌:       break;
-    // RDKit❗❌:     default:
-    // RDKit❗❌:       return {TorsionType::FLEXIBLE};
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE get_macrocycle_all_in_same_ring_14_type
+    // BEGIN CANDIDATE SOURCE get_macrocycle_all_in_same_ring_14_type
+    // RDKit✔️✔️: TorsionValue _getMacrocycleAllInSameRing14Type(
+    // RDKit✔️✔️:     const ROMol &mol, const Bond *bnd1, const Bond *bnd2, const Bond *bnd3,
+    // RDKit✔️✔️:     const Atom *atm1, const Atom *atm2, const Atom *atm3, const Atom *atm4,
+    // RDKit✔️✔️:     const bool useMacrocycle14config) {
+    // RDKit✔️✔️:   switch (bnd2->getBondType()) {
+    // RDKit✔️✔️:     case Bond::DOUBLE:
+    // RDKit✔️✔️:       // if any of the other bonds are double - the torsion angle is zero
+    // RDKit✔️✔️:       // this is CC=C=C situation
+    // RDKit✔️✔️:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
+    // RDKit✔️✔️:           (bnd3->getBondType() == Bond::DOUBLE)) {
+    // RDKit✔️✔️:         return {TorsionType::CIS};
+    // RDKit✔️✔️:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
+    // RDKit✔️✔️:         Bond::BondStereo stype =
+    // RDKit✔️✔️:             _getAtomStereo(bnd2, atm1->getIdx(), atm4->getIdx());
+    // RDKit✔️✔️:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+    // RDKit✔️✔️:           return {TorsionType::CIS};
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {TorsionType::TRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         if (atm2->getHybridization() == Atom::SP2 &&
+    // RDKit✔️✔️:             atm3->getHybridization() == Atom::SP2) {
+    // RDKit✔️✔️:           return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Bond::SINGLE:
+    // RDKit✔️✔️:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
+    // RDKit✔️✔️:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
+    // RDKit✔️✔️:         // this is *S-S* situation
+    // RDKit✔️✔️:         return {TorsionType::CUSTOM, M_PI / 2.0};
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if ((_checkMacrocycleAllInSameRingAmideEster14(mol, bnd1, bnd3, atm1,
+    // RDKit✔️✔️:                                                      atm2, atm3, atm4)) ||
+    // RDKit✔️✔️:           (_checkMacrocycleAllInSameRingAmideEster14(mol, bnd3, bnd1, atm4,
+    // RDKit✔️✔️:                                                      atm3, atm2, atm1))) {
+    // RDKit✔️✔️:         if (useMacrocycle14config) {
+    // RDKit✔️✔️:           return {
+    // RDKit✔️✔️:               .type = TorsionType::TRANS, .extraDist = 0.1, .isForced = true};
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+    // RDKit✔️✔️:           (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+    // RDKit✔️✔️:         if (useMacrocycle14config) {
+    // RDKit✔️✔️:           if (atm2->getAtomicNum() == 7 && atm2->getDegree() == 3 &&
+    // RDKit✔️✔️:               atm1->getAtomicNum() == 1 && atm2->getTotalNumHs(true) == 1) {
+    // RDKit✔️✔️:             // secondary amide, this is the H
+    // RDKit✔️✔️:             return {.type = TorsionType::CIS, .isForced = true};
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             return {.type = TorsionType::TRANS, .isForced = true};
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           return {TorsionType::CISTRANS};
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       [[fallthrough]];
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       return {TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE get_macrocycle_all_in_same_ring_14_type
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let [b1, b2, b3] = bids;
     let [a1, a2, a3, a4] = atoms;
@@ -1780,23 +1826,36 @@ fn get_macrocycle_all_in_same_ring_14_type(
                     kind: Path14Kind::Custom,
                     value: Some(std::f64::consts::FRAC_PI_2),
                     extra_dist: None,
+                    is_forced: false,
                 }
             } else if check_macrocycle_all_in_same_ring_amide_ester_14(mol, a1, a2, a3, a4)
                 || check_macrocycle_all_in_same_ring_amide_ester_14(mol, a4, a3, a2, a1)
             {
-                TorsionValue {
-                    kind: Path14Kind::Trans,
-                    value: None,
-                    extra_dist: Some(0.1),
+                if use_macrocycle_14config {
+                    TorsionValue {
+                        kind: Path14Kind::Trans,
+                        value: None,
+                        extra_dist: Some(0.1),
+                        is_forced: true,
+                    }
+                } else {
+                    TorsionValue::new(Path14Kind::CisTrans)
                 }
             } else if check_amide_ester_15(mol, valence, b1, b3, a2, a3)?
                 || check_amide_ester_15(mol, valence, b3, b1, a3, a2)?
             {
-                TorsionValue::new(if secondary_amide_h(mol, valence, a1, a2)? {
-                    Path14Kind::None
+                if use_macrocycle_14config {
+                    TorsionValue {
+                        is_forced: true,
+                        ..TorsionValue::new(if secondary_amide_h(mol, valence, a1, a2)? {
+                            Path14Kind::Cis
+                        } else {
+                            Path14Kind::Trans
+                        })
+                    }
                 } else {
-                    Path14Kind::Trans
-                })
+                    TorsionValue::new(Path14Kind::CisTrans)
+                }
             } else {
                 TorsionValue::new(Path14Kind::Other)
             }
@@ -1814,16 +1873,21 @@ fn collect_14_bounds(
     dmat: &[f64],
     info: Optional14Info,
     collected: &mut HashMap<usize, Vec<Bounds14>>,
+    mmat: &BoundsMatrix,
+    rings: &RingInfo,
 ) -> Result<(), GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE collect_14_bounds
+    // BEGIN CANDIDATE SOURCE collect_14_bounds
     // RDKit❗❌: void _collect14Bounds(
     // RDKit❗❌:     const ROMol &mol, const Bond *bnd1, const Bond *bnd2, const Bond *bnd3,
-    // RDKit❗❌:     const Type14 type, ComputedData &accumData, double *dmat,
-    // RDKit❗❌:     const Optional14Info info,
-    // RDKit❗❌:     std::unordered_map<std::size_t, std::vector<Bounds>> &collected14Bounds) {
+    // RDKit❗❌:     const Type14 type, ComputedData &accumData,
+    // RDKit❗❌:     const DistGeom::BoundsMatPtr mmat, double *dmat, const Optional14Info info,
+    // RDKit❗❌:     std::unordered_map<std::size_t, std::vector<Bounds>> &collected14Bounds,
+    // RDKit❗❌:     const bool collectAll) {
     // RDKit❗❌:   PRECONDITION(bnd1, "");
     // RDKit❗❌:   PRECONDITION(bnd2, "");
     // RDKit❗❌:   PRECONDITION(bnd3, "");
+    // RDKit❗❌:
+    // RDKit❗❌:   bool setIt = true;
     // RDKit❗❌:
     // RDKit❗❌:   unsigned int bid1 = bnd1->getIdx();
     // RDKit❗❌:   unsigned int bid2 = bnd2->getIdx();
@@ -1843,12 +1907,20 @@ fn collect_14_bounds(
     // RDKit❗❌:
     // RDKit❗❌:       dmat[std::max(aid1, aid4) * mol.getNumAtoms() + std::min(aid1, aid4)] <
     // RDKit❗❌:           2.9) {
-    // RDKit❗❌:     return;
+    // RDKit❗❌:     if (collectAll) {
+    // RDKit❗❌:       setIt = false;
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       return;
+    // RDKit❗❌:     }
     // RDKit❗❌:   }
     // RDKit❗❌:
-    // RDKit❗❌:   double bl1 = accumData.bondLengths[bid1];
-    // RDKit❗❌:   double bl2 = accumData.bondLengths[bid2];
-    // RDKit❗❌:   double bl3 = accumData.bondLengths[bid3];
+    // RDKit❗❌:   double blU1 = mmat->getUpperBound(aid1, atm2->getIdx());
+    // RDKit❗❌:   double blU2 = mmat->getUpperBound(atm2->getIdx(), atm3->getIdx());
+    // RDKit❗❌:   double blU3 = mmat->getUpperBound(atm3->getIdx(), aid4);
+    // RDKit❗❌:
+    // RDKit❗❌:   double blL1 = mmat->getLowerBound(aid1, atm2->getIdx());
+    // RDKit❗❌:   double blL2 = mmat->getLowerBound(atm2->getIdx(), atm3->getIdx());
+    // RDKit❗❌:   double blL3 = mmat->getLowerBound(atm3->getIdx(), aid4);
     // RDKit❗❌:
     // RDKit❗❌:   double ba12 = accumData.bondAngles->getVal(bid1, bid2);
     // RDKit❗❌:   double ba23 = accumData.bondAngles->getVal(bid2, bid3);
@@ -1858,6 +1930,19 @@ fn collect_14_bounds(
     // RDKit❗❌:
     // RDKit❗❌:   const Atom *atm1 = mol.getAtomWithIdx(aid1);
     // RDKit❗❌:   const Atom *atm4 = mol.getAtomWithIdx(aid4);
+    // RDKit❗❌:
+    // RDKit❗❌:   // when we have fused rings, it can happen that this isn't actually a 1-4
+    // RDKit❗❌:   // contact,
+    // RDKit❗❌:   // (this was the cause of sf.net bug 2835784) check that now:
+    // RDKit❗❌:   if (type > Type14::IN_CHAIN &&
+    // RDKit❗❌:       (mol.getBondBetweenAtoms(atm1->getIdx(), atm3->getIdx()) ||
+    // RDKit❗❌:        mol.getBondBetweenAtoms(atm4->getIdx(), atm2->getIdx()))) {
+    // RDKit❗❌:     if (collectAll) {
+    // RDKit❗❌:       setIt = false;
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       return;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
     // RDKit❗❌:
     // RDKit❗❌:   TorsionValue torsionValue;
     // RDKit❗❌:
@@ -1871,12 +1956,13 @@ fn collect_14_bounds(
     // RDKit❗❌:           _getInRing14Type(bnd2, atm1, atm2, atm3, atm4, info.ringSize);
     // RDKit❗❌:       break;
     // RDKit❗❌:     case Type14::MACROCYCLE_ALL_IN_SAME_RING:
-    // RDKit❗❌:       torsionValue = _getMacrocycleAllInSameRing14Type(mol, bnd1, bnd2, bnd3,
-    // RDKit❗❌:                                                        atm1, atm2, atm3, atm4);
+    // RDKit❗❌:       torsionValue = _getMacrocycleAllInSameRing14Type(
+    // RDKit❗❌:           mol, bnd1, bnd2, bnd3, atm1, atm2, atm3, atm4,
+    // RDKit❗❌:           info.useMacrocycle14Config);
     // RDKit❗❌:       break;
     // RDKit❗❌:     case Type14::MACROCYCLE_TWO_IN_SAME_RING:
-    // RDKit❗❌:       torsionValue = _getMacrocycleTwoInSameRing14Type(mol, bnd1, bnd2, bnd3,
-    // RDKit❗❌:                                                        atm1, atm2, atm3, atm4);
+    // RDKit❗❌:       torsionValue = _getMacrocycleTwoInSameRing14Type(
+    // RDKit❗❌:           bnd1, bnd2, bnd3, atm1, atm2, atm3, atm4, info.useMacrocycle14Config);
     // RDKit❗❌:       break;
     // RDKit❗❌:     case Type14::SHARE_RING_BOND:
     // RDKit❗❌:       torsionValue = _getShareRingBond14Type(bnd2, atm1, atm2, atm3, atm4);
@@ -1885,7 +1971,7 @@ fn collect_14_bounds(
     // RDKit❗❌:       torsionValue = _getTwoInDiffRing14Type(bnd2, atm1, atm2, atm3, atm4);
     // RDKit❗❌:       break;
     // RDKit❗❌:     case Type14::TWO_IN_SAME_RING:
-    // RDKit❗❌:       torsionValue = _getTwoInSameRing14Type(mol, bnd2, atm1, atm2, atm3, atm4,
+    // RDKit❗❌:       torsionValue = _getTwoInSameRing14Type(bnd2, atm1, atm2, atm3, atm4,
     // RDKit❗❌:                                              info.preferTrans);
     // RDKit❗❌:       break;
     // RDKit❗❌:   }
@@ -1894,22 +1980,32 @@ fn collect_14_bounds(
     // RDKit❗❌:
     // RDKit❗❌:   unsigned int nb = mol.getNumBonds();
     // RDKit❗❌:
+    // RDKit❗❌:   double tol12 = scaleToleranceForLargeSP2(atm1, atm2, atm3);
+    // RDKit❗❌:   double tol23 = scaleToleranceForLargeSP2(atm2, atm3, atm4);
+    // RDKit❗❌:
+    // RDKit❗❌:   auto [baL12, baU12] = getAngleRange(ba12, tol12);
+    // RDKit❗❌:   auto [baL23, baU23] = getAngleRange(ba23, tol23);
+    // RDKit❗❌:
     // RDKit❗❌:   switch (torsionValue.type) {
     // RDKit❗❌:     case TorsionType::CIS:
-    // RDKit❗❌:       dl = RDGeom::compute14DistCis(bl1, bl2, bl3, ba12, ba23) +
-    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0) - GEN_DIST_TOL;
-    // RDKit❗❌:       du = dl + 2 * GEN_DIST_TOL;
+    // RDKit❗❌:       dl = RDGeom::compute14DistCis(blL1, blL2, blL3, baL12, baL23) +
+    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0);
+    // RDKit❗❌:       du = RDGeom::compute14DistCis(blU1, blU2, blU3, baU12, baU23) +
+    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0);
     // RDKit❗❌:       accumData.cisPaths.insert(getUnifiedId(bid1, bid2, bid3, nb));
     // RDKit❗❌:       break;
     // RDKit❗❌:     case TorsionType::TRANS:
-    // RDKit❗❌:       dl = RDGeom::compute14DistTrans(bl1, bl2, bl3, ba12, ba23) +
-    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0) - GEN_DIST_TOL;
-    // RDKit❗❌:       du = dl + 2 * GEN_DIST_TOL;
+    // RDKit❗❌:       dl = RDGeom::compute14DistTrans(blL1, blL2, blL3, baL12, baL23) +
+    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0);
+    // RDKit❗❌:       du = RDGeom::compute14DistTrans(blU1, blU2, blU3, baU12, baU23) +
+    // RDKit❗❌:            torsionValue.extraDist.value_or(0.0);
     // RDKit❗❌:       accumData.transPaths.insert(getUnifiedId(bid1, bid2, bid3, nb));
     // RDKit❗❌:       break;
+    // RDKit❗❌:     case TorsionType::CISTRANS:
+    // RDKit❗❌:       [[fallthrough]];
     // RDKit❗❌:     case TorsionType::FLEXIBLE:
-    // RDKit❗❌:       dl = RDGeom::compute14DistCis(bl1, bl2, bl3, ba12, ba23);
-    // RDKit❗❌:       du = RDGeom::compute14DistTrans(bl1, bl2, bl3, ba12, ba23);
+    // RDKit❗❌:       dl = RDGeom::compute14DistCis(blL1, blL2, blL3, baL12, baL23);
+    // RDKit❗❌:       du = RDGeom::compute14DistTrans(blU1, blU2, blU3, baU12, baU23);
     // RDKit❗❌:       // in highly-strained situations these can get mixed up:
     // RDKit❗❌:       if (du < dl) {
     // RDKit❗❌:         std::swap(du, dl);
@@ -1922,26 +2018,35 @@ fn collect_14_bounds(
     // RDKit❗❌:     case TorsionType::CUSTOM:
     // RDKit❗❌:       CHECK_INVARIANT(torsionValue.value,
     // RDKit❗❌:                       "Missing value for custom torsion type");
-    // RDKit❗❌:       dl = RDGeom::compute14Dist3D(bl1, bl2, bl3, ba12, ba23,
-    // RDKit❗❌:                                    *torsionValue.value) -
-    // RDKit❗❌:            GEN_DIST_TOL;
-    // RDKit❗❌:       du = dl + 2 * GEN_DIST_TOL;
+    // RDKit❗❌:       dl = RDGeom::compute14Dist3D(blL1, blL2, blL3, baL12, baL23,
+    // RDKit❗❌:                                    *torsionValue.value);
+    // RDKit❗❌:       du = RDGeom::compute14Dist3D(blU1, blU2, blU3, baU12, baU23,
+    // RDKit❗❌:                                    *torsionValue.value);
     // RDKit❗❌:       break;
     // RDKit❗❌:     default:  // NONE  => do not set the bounds => nothing more to do
     // RDKit❗❌:       return;
     // RDKit❗❌:   }
     // RDKit❗❌:
-    // RDKit❗❌:   Path14Configuration path14 = {bid1, bid2, bid3, torsionValue.type};
+    // RDKit❗❌:   if (fabs(du - dl) < DIST12_DELTA) {
+    // RDKit❗❌:     // just to maker sure that lower and upper bound are not too close to each
+    // RDKit❗❌:     // other
+    // RDKit❗❌:     dl -= GEN_DIST_TOL;
+    // RDKit❗❌:     du += GEN_DIST_TOL;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   Path14Configuration path14 = {
+    // RDKit❗❌:       bid1,           bid2, bid3,         aid1, atm2->getIdx(),
+    // RDKit❗❌:       atm3->getIdx(), aid4, torsionValue, type, info.ringSize};
     // RDKit❗❌:
     // RDKit❗❌:   // we only overwrite bounds if they are not 1-2 nor 1-3 distances
     // RDKit❗❌:   accumData.paths14.push_back(path14);
     // RDKit❗❌:   accumData.visited14Bounds.set(pid);
     // RDKit❗❌:
-    // RDKit❗❌:   // collected14Bounds.try_emplace(pid, std::vector<Bounds>{});
-    // RDKit❗❌:
-    // RDKit❗❌:   collected14Bounds[pid].emplace_back(dl, du, aid1, aid4);
+    // RDKit❗❌:   if (setIt) {
+    // RDKit❗❌:     collected14Bounds[pid].emplace_back(dl, du, aid1, aid4);
+    // RDKit❗❌:   }
     // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE collect_14_bounds
+    // END CANDIDATE SOURCE collect_14_bounds
 
     let [b1, b2, b3] = bids;
     let a2 = bond_pair_shared_atom(mol, accum_data, b1, b2)?;
@@ -1961,13 +2066,26 @@ fn collect_14_bounds(
     {
         return Ok(());
     }
-    let bl1 = accum_data.bond_lengths[b1];
-    let bl2 = accum_data.bond_lengths[b2];
-    let bl3 = accum_data.bond_lengths[b3];
+    let bl_l1 = mmat.get_lower(a1, a2)?;
+    let bl_l2 = mmat.get_lower(a2, a3)?;
+    let bl_l3 = mmat.get_lower(a3, a4)?;
+    let bl_u1 = mmat.get_upper(a1, a2)?;
+    let bl_u2 = mmat.get_upper(a2, a3)?;
+    let bl_u3 = mmat.get_upper(a3, a4)?;
     let ba12 = accum_data.get_bond_angle(mol.bonds.len(), b1, b2);
     let ba23 = accum_data.get_bond_angle(mol.bonds.len(), b2, b3);
     validate_bond_angle(ba12, b1, b2, "collect_14_bounds")?;
     validate_bond_angle(ba23, b2, b3, "collect_14_bounds")?;
+    // The candidate shares this check across every non-chain classifier,
+    // after validating angles, rather than returning NONE in two classifiers.
+    if type14 != Type14::InChain
+        && (bond_between_idx_simple(mol, a1, a3).is_some()
+            || bond_between_idx_simple(mol, a4, a2).is_some())
+    {
+        return Ok(());
+    }
+    let (ba_l12, ba_u12) = angle_range(ba12, scale_angle_tolerance(mol, rings, a1, a2, a3));
+    let (ba_l23, ba_u23) = angle_range(ba23, scale_angle_tolerance(mol, rings, a2, a3, a4));
     let atoms = [a1, a2, a3, a4];
     let tv = match type14 {
         Type14::InChain => get_chain_14_type(mol, valence, bids, atoms, info.force_trans_amides)?,
@@ -1975,32 +2093,41 @@ fn collect_14_bounds(
         Type14::TwoInSameRing => get_two_in_same_ring_14_type(mol, b2, atoms, info.prefer_trans),
         Type14::TwoInDiffRing => get_two_in_diff_ring_14_type(mol, b2, atoms),
         Type14::ShareRingBond => get_share_ring_bond_14_type(mol, b2, atoms),
-        Type14::MacrocycleTwoInSameRing => {
-            get_macrocycle_two_in_same_ring_14_type(mol, valence, bids, atoms)?
-        }
-        Type14::MacrocycleAllInSameRing => {
-            get_macrocycle_all_in_same_ring_14_type(mol, valence, bids, atoms)?
-        }
+        Type14::MacrocycleTwoInSameRing => get_macrocycle_two_in_same_ring_14_type(
+            mol,
+            valence,
+            bids,
+            atoms,
+            info.use_macrocycle_14config,
+        )?,
+        Type14::MacrocycleAllInSameRing => get_macrocycle_all_in_same_ring_14_type(
+            mol,
+            valence,
+            bids,
+            atoms,
+            info.use_macrocycle_14config,
+        )?,
     };
-    let (dl, du) = match tv.kind {
+    let (mut dl, mut du) = match tv.kind {
         Path14Kind::Cis | Path14Kind::Trans => {
-            let base = if tv.kind == Path14Kind::Cis {
-                compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23)
+            let compute = if tv.kind == Path14Kind::Cis {
+                compute_14_dist_cis
             } else {
-                compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23)
+                compute_14_dist_trans
             };
-            let dl = base + tv.extra_dist.unwrap_or(0.0) - GEN_DIST_TOL;
+            let dl = compute(bl_l1, bl_l2, bl_l3, ba_l12, ba_l23) + tv.extra_dist.unwrap_or(0.0);
+            let du = compute(bl_u1, bl_u2, bl_u3, ba_u12, ba_u23) + tv.extra_dist.unwrap_or(0.0);
             let id = path14_id(mol.bonds.len(), b1, b2, b3);
             if tv.kind == Path14Kind::Cis {
                 accum_data.cis_paths.insert(id);
             } else {
                 accum_data.trans_paths.insert(id);
             }
-            (dl, dl + 2.0 * GEN_DIST_TOL)
+            (dl, du)
         }
-        Path14Kind::Other => {
-            let mut dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
-            let mut du = compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23);
+        Path14Kind::Other | Path14Kind::CisTrans => {
+            let mut dl = compute_14_dist_cis(bl_l1, bl_l2, bl_l3, ba_l12, ba_l23);
+            let mut du = compute_14_dist_trans(bl_u1, bl_u2, bl_u3, ba_u12, ba_u23);
             if du < dl {
                 std::mem::swap(&mut dl, &mut du);
             }
@@ -2014,16 +2141,27 @@ fn collect_14_bounds(
             let value = tv
                 .value
                 .ok_or_else(|| GraphBoundsError::Input("Missing value for custom torsion type"))?;
-            let dl = compute_14_dist_3d(bl1, bl2, bl3, ba12, ba23, value) - GEN_DIST_TOL;
-            (dl, dl + 2.0 * GEN_DIST_TOL)
+            (
+                compute_14_dist_3d(bl_l1, bl_l2, bl_l3, ba_l12, ba_l23, value),
+                compute_14_dist_3d(bl_u1, bl_u2, bl_u3, ba_u12, ba_u23, value),
+            )
         }
         Path14Kind::None => return Ok(()),
     };
+    if (du - dl).abs() < DIST12_DELTA {
+        dl -= GEN_DIST_TOL;
+        du += GEN_DIST_TOL;
+    }
     accum_data.paths14.push(Path14Configuration {
         bid1: b1,
         bid2: b2,
         bid3: b3,
         kind: tv.kind,
+        atoms,
+        is_forced: tv.is_forced,
+        custom_value: tv.value,
+        type14,
+        ring_size: info.ring_size,
     });
     accum_data.visited14_bounds[pid] = true;
     collected.entry(pid).or_default().push(Bounds14 {
@@ -2191,28 +2329,39 @@ fn record_14_path(
     bid2: usize,
     bid3: usize,
     accum_data: &mut ComputedData,
+    ring_size: usize,
 ) -> Result<(), GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE record_14_path
-    // RDKit❗❌: void _record14Path(const ROMol &mol, unsigned int bid1, unsigned int bid2,
-    // RDKit❗❌:                    unsigned int bid3, ComputedData &accumData) {
-    // RDKit❗❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
-    // RDKit❗❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
-    // RDKit❗❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
-    // RDKit❗❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
-    // RDKit❗❌:   unsigned int nb = mol.getNumBonds();
-    // RDKit❗❌:   Path14Configuration path14;
-    // RDKit❗❌:   path14.bid1 = bid1;
-    // RDKit❗❌:   path14.bid2 = bid2;
-    // RDKit❗❌:   path14.bid3 = bid3;
-    // RDKit❗❌:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {  // FIX: check for trans
-    // RDKit❗❌:     path14.type = TorsionType::CIS;
-    // RDKit❗❌:     accumData.cisPaths.insert(getUnifiedId(bid1, bid2, bid3, nb));
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     path14.type = TorsionType::FLEXIBLE;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   accumData.paths14.push_back(path14);
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE record_14_path
+    // BEGIN CANDIDATE SOURCE record_14_path
+    // RDKit✔️✔️: void _record14Path(const ROMol &mol, unsigned int bid1, unsigned int bid2,
+    // RDKit✔️✔️:                    unsigned int bid3, ComputedData &accumData,
+    // RDKit✔️✔️:                    std::size_t rSize) {
+    // RDKit✔️✔️:   const unsigned int aid2 = accumData.bondAdj->getVal(bid1, bid2);
+    // RDKit✔️✔️:   const unsigned int aid3 = accumData.bondAdj->getVal(bid2, bid3);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const Atom *atm2 = mol.getAtomWithIdx(aid2);
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
+    // RDKit✔️✔️:   const Atom *atm3 = mol.getAtomWithIdx(aid3);
+    // RDKit✔️✔️:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const unsigned int aid1 = mol.getBondWithIdx(bid1)->getOtherAtomIdx(aid2);
+    // RDKit✔️✔️:   const unsigned int aid4 = mol.getBondWithIdx(bid2)->getOtherAtomIdx(aid3);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned int nb = mol.getNumBonds();
+    // RDKit✔️✔️:   Path14Configuration path14 = {
+    // RDKit✔️✔️:       bid1, bid2, bid3, aid1, aid2, aid3, aid4, {}, Type14::IN_RING, rSize};
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {  // FIX: check for trans
+    // RDKit✔️✔️:     path14.value = {.type = TorsionType::CIS};
+    // RDKit✔️✔️:     accumData.cisPaths.insert(getUnifiedId(bid1, bid2, bid3, nb));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     path14.value = {.type = TorsionType::FLEXIBLE};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   accumData.paths14.push_back(path14);
+    // RDKit✔️✔️: }
+    // END CANDIDATE SOURCE record_14_path
+    // Behavior: candidate classification/forced metadata and caller defaults are
+    // retained literally. Cost: bounded scalar checks and existing source-shaped
+    // adjacency scans; no new allocation or copied topology.
 
     let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
     let ahyb2 = mol.atoms[atm2].hybridization();
@@ -2233,8 +2382,40 @@ fn record_14_path(
         bid2,
         bid3,
         kind,
+        // Literal candidate bid2 getter: aid4 equals aid2, not the fourth
+        // path atom. Existing ring records are nonforced, so torsion prefix
+        // extraction does not consume this surprising field.
+        atoms: [
+            if mol.bonds[bid1].begin().index() == atm2 {
+                mol.bonds[bid1].end().index()
+            } else {
+                mol.bonds[bid1].begin().index()
+            },
+            atm2,
+            atm3,
+            if mol.bonds[bid2].begin().index() == atm3 {
+                mol.bonds[bid2].end().index()
+            } else {
+                mol.bonds[bid2].begin().index()
+            },
+        ],
+        is_forced: false,
+        custom_value: None,
+        type14: Type14::InRing,
+        ring_size,
     });
     Ok(())
+}
+#[cfg(test)]
+fn test_source_rings(mol: &TopologyBlock) -> RingInfo {
+    cosmolkit_core::symmetrize_sssr_with_options_from_parts(
+        mol.atoms.len(),
+        &mol.bonds,
+        &mol.adjacency,
+        false,
+        false,
+    )
+    .unwrap()
 }
 #[cfg(test)]
 fn set_in_ring_14_bounds(
@@ -2263,6 +2444,8 @@ fn set_in_ring_14_bounds(
             ..Default::default()
         },
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2295,6 +2478,8 @@ fn set_two_in_same_ring_14_bounds(
             ..Default::default()
         },
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2325,6 +2510,8 @@ fn set_two_in_diff_ring_14_bounds(
         dmat,
         Optional14Info::default(),
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2355,6 +2542,8 @@ fn set_share_ring_bond_14_bounds(
         dmat,
         Optional14Info::default(),
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2418,6 +2607,8 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
         dmat,
         Optional14Info::default(),
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2448,8 +2639,13 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
         Type14::MacrocycleAllInSameRing,
         accum_data,
         dmat,
-        Optional14Info::default(),
+        Optional14Info {
+            use_macrocycle_14config: true,
+            ..Default::default()
+        },
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2486,6 +2682,8 @@ fn set_chain_14_bounds(
             ..Default::default()
         },
         &mut collected,
+        mmat,
+        &test_source_rings(mol),
     )?;
     for bounds in collected.into_values() {
         let b = merge_14_bounds(bounds)?;
@@ -2963,8 +3161,13 @@ fn set_14_bounds(
                         Type14::MacrocycleAllInSameRing,
                         accum_data,
                         dmat,
-                        Optional14Info::default(),
+                        Optional14Info {
+                            use_macrocycle_14config,
+                            ..Default::default()
+                        },
                         &mut collected,
+                        mmat,
+                        rinfo,
                     )?;
                     macro_bonds.insert(b2);
                 } else {
@@ -2980,11 +3183,13 @@ fn set_14_bounds(
                             ..Default::default()
                         },
                         &mut collected,
+                        mmat,
+                        rinfo,
                     )?;
                     cis_pairs.set(pid, size <= 8);
                 }
             } else {
-                record_14_path(mol, b1, b2, b3, accum_data)?;
+                record_14_path(mol, b1, b2, b3, accum_data, size)?;
                 cis_pairs.set(pid, true);
             }
             b1 = b2;
@@ -3047,6 +3252,8 @@ fn set_14_bounds(
                     dmat,
                     info,
                     &mut collected,
+                    mmat,
+                    rinfo,
                 )?;
             }
         }
@@ -3493,7 +3700,7 @@ fn set_15_bounds_helper(
                     )
                 }
             }
-            Path14Kind::Other | Path14Kind::Custom | Path14Kind::None => {
+            Path14Kind::Other | Path14Kind::CisTrans | Path14Kind::Custom | Path14Kind::None => {
                 if has_path_flag(&accum_data.cis_paths, path_id) {
                     (
                         compute_15_dist_cis_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL,
@@ -3770,7 +3977,7 @@ fn set_topol_bounds_stages(
     force_trans_amides: bool,
     set14bounds: bool,
     set13bounds: bool,
-) -> Result<(), GraphBoundsError> {
+) -> Result<Vec<Path14Configuration>, GraphBoundsError> {
     // BEGIN RECOVERY GEO-09-12 SOURCE set_topol_bounds_stages
     // RDKit❗❌: void setTopolBounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
     // RDKit❗❌:                     const EmbedParameters &params, bool scaleVDW,
@@ -3844,7 +4051,12 @@ fn set_topol_bounds_stages(
             }
         }
     }
-    set_lower_bound_vdw(mol, mmat, scale_vdw, dmat)
+    set_lower_bound_vdw(mol, mmat, scale_vdw, dmat)?;
+    // RDKit✔️✔️:   if (paths14) {
+    // RDKit✔️✔️:     *paths14 = accumData.paths14;
+    // RDKit✔️✔️:   }
+    // Move the already-collected rows out; no second discovery or topology copy.
+    Ok(accum.paths14)
 }
 pub(super) fn set_topol_bounds(
     mol: &TopologyBlock,
@@ -3859,7 +4071,7 @@ pub(super) fn set_topol_bounds(
     force_trans_amides: bool,
     set14bounds: bool,
     set13bounds: bool,
-) -> Result<(), GraphBoundsError> {
+) -> Result<Vec<Path14Configuration>, GraphBoundsError> {
     // BEGIN RECOVERY GEO-09-12 SOURCE set_topol_bounds
     // RDKit❗❌: void setTopolBounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
     // RDKit❗❌:                     const EmbedParameters &params, bool scaleVDW,
@@ -3939,22 +4151,25 @@ pub(super) fn set_topol_bounds_with_outputs(
     force_trans_amides: bool,
     set14bounds: bool,
     set13bounds: bool,
+    paths14: Option<&mut Vec<cosmolkit_forcefields::BoundsTorsionPath>>,
 ) -> Result<(), GraphBoundsError> {
-    // BEGIN RECOVERY GEO-09-12 SOURCE set_topol_bounds_with_outputs
-    // RDKit❗❌: void setTopolBounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
-    // RDKit❗❌:                     std::vector<std::pair<int, int>> &bonds,
-    // RDKit❗❌:                     std::vector<std::vector<int>> &angles,
-    // RDKit❗❌:                     const EmbedParameters &params, bool scaleVDW,
-    // RDKit❗❌:                     bool set15bounds, bool set14bounds, bool set13bounds) {
-    // RDKit❗❌:   setTopolBounds(mol, mmat, params, scaleVDW, set15bounds, set14bounds,
-    // RDKit❗❌:                  set13bounds);
-    // RDKit❗❌:   bonds.clear();
-    // RDKit❗❌:   angles.clear();
-    // RDKit❗❌:   collectBondsAndAngles(mol, bonds, angles);
-    // RDKit❗❌: }
-    // END RECOVERY GEO-09-12 SOURCE set_topol_bounds_with_outputs
+    // BEGIN RDKIT 2026.09.1 setTopolBounds output overload
+    // RDKit✔️✔️: void setTopolBounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
+    // RDKit✔️✔️:                     std::vector<std::pair<int, int>> &bonds,
+    // RDKit✔️✔️:                     std::vector<std::vector<int>> &angles,
+    // RDKit✔️✔️:                     const EmbedParameters &params, bool scaleVDW,
+    // RDKit✔️✔️:                     bool set15bounds, bool set14bounds, bool set13bounds,
+    // RDKit❌❌:                     PATH14_VECT *paths14, const EmbedFF embedForceField,
+    // RDKit❌❌:                     InternalCoordinates *internalCoords) {
+    // RDKit✔️✔️:   setTopolBounds(mol, mmat, params, scaleVDW, set15bounds, set14bounds,
+    // RDKit❌❌:                  set13bounds, paths14, embedForceField, internalCoords);
+    // RDKit✔️✔️:   bonds.clear();
+    // RDKit✔️✔️:   angles.clear();
+    // RDKit✔️✔️:   collectBondsAndAngles(mol, bonds, angles);
+    // RDKit✔️✔️: }
+    // END RDKIT 2026.09.1 setTopolBounds output overload
 
-    set_topol_bounds(
+    let paths = set_topol_bounds(
         mol,
         rings,
         valence,
@@ -3968,6 +4183,32 @@ pub(super) fn set_topol_bounds_with_outputs(
         set14bounds,
         set13bounds,
     )?;
+    if let Some(output) = paths14 {
+        // RDKit✔️✔️:   if (paths14) {
+        // RDKit✔️✔️:     *paths14 = accumData.paths14;
+        // RDKit✔️✔️:   }
+        // Existing cosine consumers need only atoms and forced cis/trans.
+        // Preserve every path in order with one O(P) projection, like source.
+        output.clear();
+        output.extend(
+            paths
+                .into_iter()
+                .map(|path| cosmolkit_forcefields::BoundsTorsionPath {
+                    atoms: path.atoms,
+                    forced: if path.is_forced {
+                        match path.kind {
+                            Path14Kind::Cis => Some(cosmolkit_forcefields::ForcedTorsionKind::Cis),
+                            Path14Kind::Trans => {
+                                Some(cosmolkit_forcefields::ForcedTorsionKind::Trans)
+                            }
+                            _ => unreachable!("source forced configurations are cis or trans"),
+                        }
+                    } else {
+                        None
+                    },
+                }),
+        );
+    }
     bonds.clear();
     angles.clear();
     collect_bonds_and_angles(mol, bonds, angles);
@@ -4261,7 +4502,7 @@ mod tests {
                 } else if size <= 8 || matches!(stereo, BondStereo::Z | BondStereo::Cis) {
                     Path14Kind::Cis
                 } else {
-                    Path14Kind::Other
+                    Path14Kind::CisTrans
                 };
                 assert_eq!(
                     get_in_ring_14_type(&m, 1, [0, 1, 2, 3], size).kind,
@@ -4274,7 +4515,7 @@ mod tests {
                 } else if prefer || matches!(stereo, BondStereo::E | BondStereo::Trans) {
                     Path14Kind::Trans
                 } else {
-                    Path14Kind::Other
+                    Path14Kind::CisTrans
                 };
                 assert_eq!(
                     get_two_in_same_ring_14_type(&m, 1, [0, 1, 2, 3], prefer).kind,
@@ -4285,22 +4526,23 @@ mod tests {
     }
 
     #[test]
-    fn recovery_geo09_12_classifier_shortcut_none() {
+    fn recovery_geo09_12_short_contact_is_rejected_by_collector_not_classifier() {
         let m = recovery_geo09_12_model_chain(BondStereo::Trans, true, true);
         assert_eq!(
             get_two_in_same_ring_14_type(&m, 1, [0, 1, 2, 3], true).kind,
-            Path14Kind::None
+            Path14Kind::Trans
         );
         assert_eq!(
             get_macrocycle_two_in_same_ring_14_type(
                 &m,
                 &fixed_valence(&m),
                 [0, 1, 2],
-                [0, 1, 2, 3]
+                [0, 1, 2, 3],
+                false,
             )
             .unwrap()
             .kind,
-            Path14Kind::None
+            Path14Kind::Trans
         );
     }
 
@@ -4319,7 +4561,9 @@ mod tests {
                 &mut a,
                 &d,
                 Optional14Info::default(),
-                &mut c
+                &mut c,
+                &run_set12_bounds(&m).0,
+                &fixed_rings(&m)
             )
             .is_err()
         );
@@ -4337,6 +4581,8 @@ mod tests {
             &d,
             Optional14Info::default(),
             &mut c,
+            &run_set12_bounds(&m).0,
+            &fixed_rings(&m),
         )
         .unwrap();
         assert!(a.paths14.is_empty());
@@ -4366,6 +4612,8 @@ mod tests {
                 &d,
                 Optional14Info::default(),
                 &mut c,
+                &run_set12_bounds(&m).0,
+                &fixed_rings(&m),
             )
             .unwrap();
             assert!(a.paths14.is_empty());
@@ -4394,6 +4642,8 @@ mod tests {
                 ..Default::default()
             },
             &mut c,
+            &run_set12_bounds(&m).0,
+            &fixed_rings(&m),
         )
         .unwrap();
         collect_14_bounds(
@@ -4408,19 +4658,67 @@ mod tests {
                 ..Default::default()
             },
             &mut c,
+            &run_set12_bounds(&m).0,
+            &fixed_rings(&m),
         )
         .unwrap();
         assert_eq!(a.paths14.len(), 2);
         assert_eq!(c[&3].len(), 2);
         assert_eq!(a.cis_paths.len(), 1);
         assert_eq!(a.trans_paths.len(), 1);
-        let cis = compute_14_dist_cis(1.5, 1.5, 1.5, 2., 2.);
-        let trans = compute_14_dist_trans(1.5, 1.5, 1.5, 2., 2.);
-        assert_eq!(c[&3][0].lower, cis - GEN_DIST_TOL);
-        assert_eq!(c[&3][1].lower, trans - GEN_DIST_TOL);
+        let inputs = run_set12_bounds(&m).0;
+        let first = inputs.get_lower(0, 1).unwrap();
+        let second = inputs.get_lower(1, 2).unwrap();
+        let third = inputs.get_lower(2, 3).unwrap();
+        let cis = compute_14_dist_cis(first, second, third, 2. - ANGLE_DELTA, 2. - ANGLE_DELTA);
+        let trans = compute_14_dist_trans(first, second, third, 2. - ANGLE_DELTA, 2. - ANGLE_DELTA);
+        assert_eq!(c[&3][0].lower.to_bits(), cis.to_bits());
+        assert_eq!(c[&3][1].lower.to_bits(), trans.to_bits());
         assert!(a.visited14_bounds[3]);
         let b = merge_14_bounds(c.remove(&3).unwrap()).unwrap();
         assert!(b.upper - b.lower > 0.12);
+    }
+
+    #[test]
+    fn candidate_macrocycle_paths_preserve_force_flags_and_default_exocyclic_policy() {
+        let mol = fixed_topology("O=C1N(C)CCCCCCCC1", true);
+        let (_, ordinary, _) = run_set14_bounds(&mol, false, true);
+        assert!(ordinary.paths14.iter().all(|path| !path.is_forced));
+        let (_, macrocycle, _) = run_set14_bounds(&mol, true, true);
+        let forced = macrocycle
+            .paths14
+            .iter()
+            .find(|path| path.is_forced)
+            .expect("ring amide force");
+        assert_eq!(forced.type14, Type14::MacrocycleAllInSameRing);
+        assert_eq!(forced.kind, Path14Kind::Trans);
+        // Candidate RDL ring starts at atom 1 and proceeds toward atom 2,
+        // making the retained source path's central amide order C then N.
+        assert_eq!(
+            forced.atoms[1..3]
+                .iter()
+                .map(|&i| mol.atoms[i].atomic_number())
+                .collect::<Vec<_>>(),
+            [6, 7]
+        );
+        let outer = macrocycle
+            .paths14
+            .iter()
+            .find(|path| {
+                path.type14 == Type14::MacrocycleTwoInSameRing && path.kind == Path14Kind::CisTrans
+            })
+            .expect("exocyclic amide preserves default false flag");
+        assert!(!outer.is_forced);
+        let small = fixed_topology("C1CCC1", true);
+        let (_, small_paths, _) = run_set14_bounds(&small, false, true);
+        assert!(
+            small_paths
+                .paths14
+                .iter()
+                .all(|path| path.atoms[3] == path.atoms[1]
+                    && path.ring_size == 4
+                    && !path.is_forced)
+        );
     }
 
     #[test]
@@ -4472,7 +4770,8 @@ mod tests {
                     false,
                     true,
                     true,
-                    true
+                    true,
+                    None,
                 )
                 .is_err()
             );
@@ -4492,9 +4791,28 @@ mod tests {
         let small = fixed_topology("C1C(C)=C(C)CCCC1", true);
         let l = run_set_topol_bounds(&large, true, false, false, true, true, true);
         let s = run_set_topol_bounds(&small, true, false, false, true, true, true);
+        let (_, small_accum, _) = run_set14_bounds(&small, false, true);
         for end in [4, 5] {
             assert!(l.get_upper(0, end).unwrap() - l.get_lower(0, end).unwrap() > 0.12001);
-            assert!(s.get_upper(0, end).unwrap() - s.get_lower(0, end).unwrap() <= 0.12001);
+            let bids = [
+                bond_between_idx_simple(&small, 0, 1).unwrap(),
+                bond_between_idx_simple(&small, 1, 3).unwrap(),
+                bond_between_idx_simple(&small, 3, end).unwrap(),
+            ];
+            let expected = candidate_path_interval(
+                &small,
+                &small_accum,
+                &s,
+                bids,
+                if end == 4 {
+                    Path14Kind::Trans
+                } else {
+                    Path14Kind::Cis
+                },
+                0.0,
+            );
+            assert_eq!(s.get_lower(0, end).unwrap().to_bits(), expected.0.to_bits());
+            assert_eq!(s.get_upper(0, end).unwrap().to_bits(), expected.1.to_bits());
         }
         assert!(s.get_lower(0, 4).unwrap() > s.get_upper(0, 5).unwrap());
     }
@@ -4745,8 +5063,27 @@ mod tests {
             let before = mol.clone();
             let b = run_set_topol_bounds(&mol, true, false, false, true, true, true);
             assert!(b.get_lower(0, 5).unwrap() > b.get_upper(0, 4).unwrap());
+            let (_, accum, _) = run_set14_bounds(&mol, false, true);
             for end in [4, 5] {
-                assert!(b.get_upper(0, end).unwrap() - b.get_lower(0, end).unwrap() <= 0.12001);
+                let bids = [
+                    bond_between_idx_simple(&mol, 0, 1).unwrap(),
+                    bid,
+                    bond_between_idx_simple(&mol, 3, end).unwrap(),
+                ];
+                let expected = candidate_path_interval(
+                    &mol,
+                    &accum,
+                    &b,
+                    bids,
+                    if end == 4 {
+                        Path14Kind::Cis
+                    } else {
+                        Path14Kind::Trans
+                    },
+                    0.0,
+                );
+                assert_eq!(b.get_lower(0, end).unwrap().to_bits(), expected.0.to_bits());
+                assert_eq!(b.get_upper(0, end).unwrap().to_bits(), expected.1.to_bits());
             }
             assert_eq!(mol.bonds[bid].stereo(), before.bonds[bid].stereo());
             assert_eq!(
@@ -4805,28 +5142,43 @@ mod tests {
                 .filter(|p| path14_id(mol.bonds.len(), p.bid1, p.bid2, p.bid3) == id)
                 .collect();
             assert!(!matching.is_empty());
-            let expected = if use_macro {
-                Path14Kind::Cis
-            } else {
-                Path14Kind::Other
-            };
+            let expected = Path14Kind::CisTrans;
             assert!(matching.iter().all(|p| p.kind == expected));
-            if use_macro {
-                let d = compute_14_dist_cis(
-                    accum.bond_lengths[bids[0]],
-                    accum.bond_lengths[bids[1]],
-                    accum.bond_lengths[bids[2]],
-                    accum.get_bond_angle(mol.bonds.len(), bids[0], bids[1]),
-                    accum.get_bond_angle(mol.bonds.len(), bids[1], bids[2]),
-                );
-                assert!((matrix.get_lower(4, 0).unwrap() - (d - GEN_DIST_TOL)).abs() < 1e-10);
-                assert!((matrix.get_upper(4, 0).unwrap() - (d + GEN_DIST_TOL)).abs() < 1e-10);
-                assert!(accum.cis_paths.contains(&id));
-            } else {
-                assert!(
-                    matrix.get_upper(4, 0).unwrap() - matrix.get_lower(4, 0).unwrap() > 0.12001
-                );
-            }
+            assert!(matching.iter().all(|p| !p.is_forced));
+            // Both directed traversals are collected. Their reversed floating
+            // evaluation can differ by an ULP; source merges the actual rows.
+            let range = merge_14_bounds(
+                matching
+                    .iter()
+                    .map(|p| {
+                        let (lower, upper) = candidate_path_interval(
+                            &mol,
+                            &accum,
+                            &matrix,
+                            [p.bid1, p.bid2, p.bid3],
+                            expected,
+                            0.0,
+                        );
+                        Bounds14 {
+                            lower,
+                            upper,
+                            aid1: p.atoms[0],
+                            aid4: p.atoms[3],
+                        }
+                    })
+                    .collect(),
+            )
+            .unwrap();
+            assert_eq!(
+                matrix.get_lower(4, 0).unwrap().to_bits(),
+                range.lower.to_bits()
+            );
+            assert_eq!(
+                matrix.get_upper(4, 0).unwrap().to_bits(),
+                range.upper.to_bits()
+            );
+            assert!(!accum.cis_paths.contains(&id));
+            assert!(!accum.trans_paths.contains(&id));
         }
     }
 
@@ -4868,36 +5220,54 @@ mod tests {
         (mol, rings)
     }
     #[test]
-    fn recovery_geo08_lower_then_double_tolerance_exact_one_ulp() {
+    fn recovery_geo08_interval_propagation_keeps_exact_operation_order() {
         let (mol, rings) = recovery_geo08_triangle(
             std::array::from_fn(|_| {
                 AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3)
             }),
             false,
         );
-        let mut bounds = initialized_bounds(3);
-        set_13_bounds_helper(0, 1, 2, 0., &[1., 1.3], &mut bounds, &mol, &rings).unwrap();
+        let mut bounds = fixed_13_input_bounds(1.0, 1.3);
+        set_13_bounds_helper(0, 1, 2, 0., &mut bounds, &mol, &rings).unwrap();
         assert_eq!(
             bounds.get_lower(0, 2).unwrap().to_bits(),
-            0x3fd0a3d70a3d70ad
+            compute_13_dist(1.0, 1.3, 0.0).to_bits()
         );
         assert_eq!(
             bounds.get_upper(0, 2).unwrap().to_bits(),
-            0x3fd5c28f5c28f5cc
+            compute_13_dist(1.0, 1.3, ANGLE_DELTA).to_bits()
         );
         assert_ne!(
             bounds.get_upper(0, 2).unwrap().to_bits(),
             0x3fd5c28f5c28f5cb
         );
+        let mut ranged = fixed_13_input_bounds(1.0, 1.3);
+        ranged.set_lower(0, 1, 0.9).unwrap();
+        ranged.set_upper(0, 1, 1.1).unwrap();
+        ranged.set_lower(1, 2, 1.2).unwrap();
+        ranged.set_upper(1, 2, 1.4).unwrap();
+        set_13_bounds_helper(0, 1, 2, 1.0, &mut ranged, &mol, &rings).unwrap();
+        assert_eq!(
+            ranged.get_lower(0, 2).unwrap().to_bits(),
+            compute_13_dist(0.9, 1.2, 1.0 - ANGLE_DELTA).to_bits()
+        );
+        assert_eq!(
+            ranged.get_upper(0, 2).unwrap().to_bits(),
+            compute_13_dist(1.1, 1.4, 1.0 + ANGLE_DELTA).to_bits()
+        );
+        assert_eq!(angle_range(0.0, ANGLE_DELTA), (0.0, ANGLE_DELTA));
+        assert_eq!(angle_range(PI, ANGLE_DELTA), (PI - ANGLE_DELTA, PI));
     }
     #[test]
     fn recovery_geo08_all_three_ring_qualifier_bits_and_gate_controls() {
-        let expected: [(f64, f64); 4] = [
-            (2.2600000000000002, 2.3400000000000003),
-            (2.22, 2.3800000000000003),
-            (2.14, 2.46),
-            (1.9800000000000002, 2.62),
-        ];
+        // Candidate uses each qualifying bit to double angle tolerance, then
+        // propagates actual 1-2 bounds; no additive distance tolerance remains.
+        let expected: [(f64, f64); 4] = std::array::from_fn(|count| {
+            (
+                compute_13_dist(1.0, 1.3, PI - ANGLE_DELTA * (1_u32 << count) as f64),
+                compute_13_dist(1.0, 1.3, PI),
+            )
+        });
         for mask in 0_u8..8 {
             let (mol, rings) = recovery_geo08_triangle(
                 std::array::from_fn(|i| {
@@ -4911,18 +5281,8 @@ mod tests {
                 true,
             );
             let before = mol.clone();
-            let mut bounds = initialized_bounds(3);
-            set_13_bounds_helper(
-                0,
-                1,
-                2,
-                std::f64::consts::PI,
-                &[1., 1.3, 1.],
-                &mut bounds,
-                &mol,
-                &rings,
-            )
-            .unwrap();
+            let mut bounds = fixed_13_input_bounds(1.0, 1.3);
+            set_13_bounds_helper(0, 1, 2, std::f64::consts::PI, &mut bounds, &mol, &rings).unwrap();
             let (lo, hi) = expected[mask.count_ones() as usize];
             assert_eq!(bounds.get_lower(0, 2).unwrap().to_bits(), lo.to_bits());
             assert_eq!(bounds.get_upper(0, 2).unwrap().to_bits(), hi.to_bits());
@@ -4938,18 +5298,8 @@ mod tests {
                 std::array::from_fn(|_| AtomSpec::new(e).with_hybridization(hyb)),
                 ring,
             );
-            let mut bounds = initialized_bounds(3);
-            set_13_bounds_helper(
-                0,
-                1,
-                2,
-                std::f64::consts::PI,
-                &[1., 1.3, 1.],
-                &mut bounds,
-                &mol,
-                &rings,
-            )
-            .unwrap();
+            let mut bounds = fixed_13_input_bounds(1.0, 1.3);
+            set_13_bounds_helper(0, 1, 2, std::f64::consts::PI, &mut bounds, &mol, &rings).unwrap();
             let (lo, hi) = expected[count];
             assert_eq!(bounds.get_lower(0, 2).unwrap(), lo);
             assert_eq!(bounds.get_upper(0, 2).unwrap(), hi);
@@ -4963,31 +5313,32 @@ mod tests {
             }),
             false,
         );
-        let lo = f64::from_bits(0x3fd0a3d70a3d70ad);
-        let hi = f64::from_bits(0x3fd5c28f5c28f5cc);
+        let lo = compute_13_dist(1.0, 1.3, 0.0);
+        let hi = compute_13_dist(1.0, 1.3, ANGLE_DELTA);
         for (prior_lo, prior_hi, want_lo, want_hi) in [
-            (0.28, 0.32, lo, hi),
+            (0.301, 0.302, lo, hi),
             (0.2, 0.4, 0.2, 0.4),
             (DIST12_DELTA, MAX_UPPER, lo, hi),
             (lo, hi, lo, hi),
         ] {
-            let mut bounds = initialized_bounds(3);
+            let mut bounds = fixed_13_input_bounds(1.0, 1.3);
             bounds.set_lower(0, 2, prior_lo).unwrap();
             bounds.set_upper(0, 2, prior_hi).unwrap();
-            set_13_bounds_helper(0, 1, 2, 0., &[1., 1.3], &mut bounds, &mol, &rings).unwrap();
+            set_13_bounds_helper(0, 1, 2, 0., &mut bounds, &mol, &rings).unwrap();
             assert_eq!(bounds.get_lower(0, 2).unwrap(), want_lo);
             assert_eq!(bounds.get_upper(0, 2).unwrap(), want_hi);
         }
-        let mut bounds = initialized_bounds(3);
+        let mut bounds = fixed_13_input_bounds(1.0, 1.0);
         bounds.set_lower(0, 2, 0.02).unwrap();
         bounds.set_upper(0, 2, 1.).unwrap();
-        set_13_bounds_helper(0, 1, 2, 0., &[1., 1.], &mut bounds, &mol, &rings).unwrap();
+        set_13_bounds_helper(0, 1, 2, 0., &mut bounds, &mol, &rings).unwrap();
         assert_eq!(bounds.get_lower(0, 2).unwrap(), 0.02);
         assert_eq!(bounds.get_upper(0, 2).unwrap(), 1.);
-        let mut unset = BoundsMatrix::new(3).unwrap();
+        let mut unset = fixed_13_input_bounds(1.0, 1.0);
+        unset.set_lower(0, 2, 0.0).unwrap();
+        unset.set_upper(0, 2, 0.0).unwrap();
         let before = matrix_rows(&unset);
-        let err =
-            set_13_bounds_helper(0, 1, 2, 0., &[1., 1.], &mut unset, &mol, &rings).unwrap_err();
+        let err = set_13_bounds_helper(0, 1, 2, 0., &mut unset, &mol, &rings).unwrap_err();
         assert!(err.to_string().contains("bad lower bound"));
         assert_eq!(matrix_rows(&unset), before);
     }
@@ -5343,12 +5694,104 @@ mod tests {
 
         assert!((squished_width - (2.0 * (0.2 + DIST12_DELTA))).abs() < 1e-9);
         assert!((unsquished_width - (2.0 * DIST12_DELTA)).abs() < 1e-9);
+        // A carbon bond with exactly one sulfur-adjacent endpoint must not
+        // inherit squish. The previous OR branch widened this exact path.
+        let boundary = mol
+            .bonds
+            .iter()
+            .find(|bond| {
+                sulfur_adjacent[bond.begin().index()] != sulfur_adjacent[bond.end().index()]
+            })
+            .expect("one squish endpoint");
+        let width = mmat
+            .get_upper(boundary.begin().index(), boundary.end().index())
+            .unwrap()
+            - mmat
+                .get_lower(boundary.begin().index(), boundary.end().index())
+                .unwrap();
+        assert!((width - 2.0 * DIST12_DELTA).abs() < 1e-9);
     }
 
     fn initialized_bounds(n: usize) -> BoundsMatrix {
         let mut m = BoundsMatrix::new(n).unwrap();
         init_bounds_mat(&mut m, 0.001, 1000.0).unwrap();
         m
+    }
+    fn fixed_13_input_bounds(first: f64, second: f64) -> BoundsMatrix {
+        let mut bounds = initialized_bounds(3);
+        bounds.set_lower(0, 1, first).unwrap();
+        bounds.set_upper(0, 1, first).unwrap();
+        bounds.set_lower(1, 2, second).unwrap();
+        bounds.set_upper(1, 2, second).unwrap();
+        bounds
+    }
+    fn candidate_path_interval(
+        mol: &TopologyBlock,
+        accum: &ComputedData,
+        matrix: &BoundsMatrix,
+        bids: [usize; 3],
+        kind: Path14Kind,
+        extra: f64,
+    ) -> (f64, f64) {
+        let [b1, b2, b3] = bids;
+        let a2 = bond_pair_shared_atom(mol, accum, b1, b2).unwrap();
+        let a3 = bond_pair_shared_atom(mol, accum, b2, b3).unwrap();
+        let other = |b: &Bond, a| {
+            if b.begin().index() == a {
+                b.end().index()
+            } else {
+                b.begin().index()
+            }
+        };
+        let a1 = other(&mol.bonds[b1], a2);
+        let a4 = other(&mol.bonds[b3], a3);
+        let rings = fixed_rings(mol);
+        let (al12, au12) = angle_range(
+            accum.get_bond_angle(mol.bonds.len(), b1, b2),
+            scale_angle_tolerance(mol, &rings, a1, a2, a3),
+        );
+        let (al23, au23) = angle_range(
+            accum.get_bond_angle(mol.bonds.len(), b2, b3),
+            scale_angle_tolerance(mol, &rings, a2, a3, a4),
+        );
+        let lower = [
+            matrix.get_lower(a1, a2).unwrap(),
+            matrix.get_lower(a2, a3).unwrap(),
+            matrix.get_lower(a3, a4).unwrap(),
+        ];
+        let upper = [
+            matrix.get_upper(a1, a2).unwrap(),
+            matrix.get_upper(a2, a3).unwrap(),
+            matrix.get_upper(a3, a4).unwrap(),
+        ];
+        let mut lo = match kind {
+            Path14Kind::Trans => compute_14_dist_trans(lower[0], lower[1], lower[2], al12, al23),
+            Path14Kind::Custom => {
+                compute_14_dist_3d(lower[0], lower[1], lower[2], al12, al23, PI / 2.0)
+            }
+            _ => compute_14_dist_cis(lower[0], lower[1], lower[2], al12, al23),
+        } + extra;
+        let mut hi = match kind {
+            Path14Kind::Cis => compute_14_dist_cis(upper[0], upper[1], upper[2], au12, au23),
+            Path14Kind::Custom => {
+                compute_14_dist_3d(upper[0], upper[1], upper[2], au12, au23, PI / 2.0)
+            }
+            _ => compute_14_dist_trans(upper[0], upper[1], upper[2], au12, au23),
+        } + extra;
+        if matches!(kind, Path14Kind::Other | Path14Kind::CisTrans) {
+            if hi < lo {
+                std::mem::swap(&mut lo, &mut hi);
+            }
+            if (hi - lo).abs() < DIST12_DELTA {
+                lo -= GEN_DIST_TOL;
+                hi += GEN_DIST_TOL;
+            }
+        }
+        if (hi - lo).abs() < DIST12_DELTA {
+            lo -= GEN_DIST_TOL;
+            hi += GEN_DIST_TOL;
+        }
+        (lo, hi)
     }
     fn fixed_rings(mol: &TopologyBlock) -> RingInfo {
         symmetrize_sssr_with_options_from_parts(
@@ -5415,8 +5858,8 @@ mod tests {
         let thiophene = Ok::<_, ()>(fixed_topology("s1cccc1", true)).expect("thiophene");
         let benzene = Ok::<_, ()>(fixed_topology("c1ccccc1", true)).expect("benzene");
 
-        let (_thiophene_mmat_12, thiophene_accum) = run_set12_bounds(&thiophene);
-        let (_benzene_mmat_12, benzene_accum) = run_set12_bounds(&benzene);
+        let (mut thiophene_mmat, _) = run_set12_bounds(&thiophene);
+        let (mut benzene_mmat, _) = run_set12_bounds(&benzene);
         let thiophene_rings = &fixed_rings(&thiophene);
         let benzene_rings = &fixed_rings(&benzene);
 
@@ -5438,28 +5881,56 @@ mod tests {
                 }
             })
             .collect();
-        let mut thiophene_mmat = initialized_bounds(thiophene.atoms.len());
         let thiophene_angle = set_ring_angle(&thiophene, sulfur, 5);
+        let expected_thiophene = (
+            compute_13_dist(
+                thiophene_mmat
+                    .get_lower(sulfur_neighbors[0], sulfur)
+                    .unwrap(),
+                thiophene_mmat
+                    .get_lower(sulfur, sulfur_neighbors[1])
+                    .unwrap(),
+                thiophene_angle - 2.0 * ANGLE_DELTA,
+            ),
+            compute_13_dist(
+                thiophene_mmat
+                    .get_upper(sulfur_neighbors[0], sulfur)
+                    .unwrap(),
+                thiophene_mmat
+                    .get_upper(sulfur, sulfur_neighbors[1])
+                    .unwrap(),
+                thiophene_angle + 2.0 * ANGLE_DELTA,
+            ),
+        );
         set_13_bounds_helper(
             sulfur_neighbors[0],
             sulfur,
             sulfur_neighbors[1],
             thiophene_angle,
-            &thiophene_accum.bond_lengths,
             &mut thiophene_mmat,
             &thiophene,
             thiophene_rings,
         )
         .expect("thiophene 1-3 bounds");
 
-        let mut benzene_mmat = initialized_bounds(benzene.atoms.len());
         let benzene_angle = set_ring_angle(&benzene, 1, 6);
+        let expected_benzene = (
+            compute_13_dist(
+                benzene_mmat.get_lower(0, 1).unwrap(),
+                benzene_mmat.get_lower(1, 2).unwrap(),
+                benzene_angle - ANGLE_DELTA,
+            ),
+            compute_13_dist(
+                benzene_mmat.get_upper(0, 1).unwrap(),
+                benzene_mmat.get_upper(1, 2).unwrap(),
+                benzene_angle + ANGLE_DELTA,
+            ),
+        );
         set_13_bounds_helper(
             0,
             1,
             2,
             benzene_angle,
-            &benzene_accum.bond_lengths,
             &mut benzene_mmat,
             &benzene,
             benzene_rings,
@@ -5475,8 +5946,14 @@ mod tests {
         let benzene_width =
             benzene_mmat.get_upper(0, 2).unwrap() - benzene_mmat.get_lower(0, 2).unwrap();
 
-        assert!((thiophene_width - (4.0 * DIST13_TOL)).abs() < 1e-9);
-        assert!((benzene_width - (2.0 * DIST13_TOL)).abs() < 1e-9);
+        assert_eq!(
+            thiophene_width.to_bits(),
+            (expected_thiophene.1 - expected_thiophene.0).to_bits()
+        );
+        assert_eq!(
+            benzene_width.to_bits(),
+            (expected_benzene.1 - expected_benzene.0).to_bits()
+        );
         assert!(is_larger_sp2_atom_idx(&thiophene, thiophene_rings, sulfur));
         assert!(!is_larger_sp2_atom_idx(&benzene, benzene_rings, 1));
     }
@@ -5501,14 +5978,24 @@ mod tests {
 
         let bid01 = bond_between_idx_simple(&mol, 0, 1).expect("0-1 bond");
         let bid12 = bond_between_idx_simple(&mol, 1, 2).expect("1-2 bond");
-        let expected = compute_13_dist(
-            accum_data.bond_lengths[bid01],
-            accum_data.bond_lengths[bid12],
-            109.5_f64.to_radians(),
+        let expected_lower = compute_13_dist(
+            mmat.get_lower(0, 1).unwrap(),
+            mmat.get_lower(1, 2).unwrap(),
+            109.5 * PI / 180.0 - ANGLE_DELTA,
         );
-
-        assert!((mmat.get_lower(0, 2).unwrap() - (expected - DIST13_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(0, 2).unwrap() - (expected + DIST13_TOL)).abs() < 1e-9);
+        let expected_upper = compute_13_dist(
+            mmat.get_upper(0, 1).unwrap(),
+            mmat.get_upper(1, 2).unwrap(),
+            109.5 * PI / 180.0 + ANGLE_DELTA,
+        );
+        assert_eq!(
+            mmat.get_lower(0, 2).unwrap().to_bits(),
+            expected_lower.to_bits()
+        );
+        assert_eq!(
+            mmat.get_upper(0, 2).unwrap().to_bits(),
+            expected_upper.to_bits()
+        );
         assert!(
             (accum_data.get_bond_angle(mol.bonds.len(), bid01, bid12) - 109.5_f64.to_radians())
                 .abs()
@@ -5655,7 +6142,8 @@ mod tests {
                         .expect("in-ring 1-4 bounds");
                     }
                 } else {
-                    record_14_path(mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
+                    record_14_path(mol, bid1, bid2, bid3, &mut accum_data, r_size)
+                        .expect("record14Path");
                 }
                 bid1 = bid2;
             }
@@ -6013,7 +6501,7 @@ mod tests {
         ));
     }
     #[test]
-    fn set_macrocycle_two_in_same_ring_14_bounds_uses_cis_for_macrocycle_amide_path() {
+    fn set_macrocycle_two_in_same_ring_14_bounds_uses_cistrans_for_default_macrocycle_amide_path() {
         let mol = Ok::<_, ()>(fixed_topology("O=C1N(C)CCCCCCCC1", true))
             .expect("macrocyclic tertiary lactam");
         let (mut mmat, mut accum_data) = run_set13_bounds(&mol);
@@ -6060,16 +6548,17 @@ mod tests {
         .expect("macrocycle two-in-same-ring bounds");
 
         let path = accum_data.paths14.last().expect("path");
-        assert_eq!(path.kind, Path14Kind::Cis);
-        let expected = compute_14_dist_cis(
-            accum_data.bond_lengths[bid1],
-            accum_data.bond_lengths[bid2],
-            accum_data.bond_lengths[bid3],
-            accum_data.get_bond_angle(mol.bonds.len(), bid1, bid2),
-            accum_data.get_bond_angle(mol.bonds.len(), bid2, bid3),
+        assert_eq!(path.kind, Path14Kind::CisTrans);
+        let expected = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid1, bid2, bid3],
+            Path14Kind::CisTrans,
+            0.0,
         );
-        assert!((mmat.get_lower(atom1, oxygen).unwrap() - (expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(atom1, oxygen).unwrap() - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+        assert!((mmat.get_lower(atom1, oxygen).unwrap() - expected.0).abs() < 1e-9);
+        assert!((mmat.get_upper(atom1, oxygen).unwrap() - expected.1).abs() < 1e-9);
     }
     #[test]
     fn set_macrocycle_all_in_same_ring_14_bounds_uses_trans_plus_point_one_for_macrocycle_amide() {
@@ -6119,15 +6608,16 @@ mod tests {
 
         let path = accum_data.paths14.last().expect("path");
         assert_eq!(path.kind, Path14Kind::Trans);
-        let expected = compute_14_dist_trans(
-            accum_data.bond_lengths[bid1],
-            accum_data.bond_lengths[bid2],
-            accum_data.bond_lengths[bid3],
-            accum_data.get_bond_angle(mol.bonds.len(), bid1, bid2),
-            accum_data.get_bond_angle(mol.bonds.len(), bid2, bid3),
-        ) + 0.1;
-        assert!((mmat.get_lower(atom1, atm4).unwrap() - (expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(atom1, atm4).unwrap() - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+        let expected = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid1, bid2, bid3],
+            Path14Kind::Trans,
+            0.1,
+        );
+        assert!((mmat.get_lower(atom1, atm4).unwrap() - expected.0).abs() < 1e-9);
+        assert!((mmat.get_upper(atom1, atm4).unwrap() - expected.1).abs() < 1e-9);
     }
     #[test]
     fn set_macrocycle_all_in_same_ring_14_bounds_uses_other_for_plain_macrocycle_chain() {
@@ -6171,19 +6661,16 @@ mod tests {
         .expect("chain trans bounds");
         let trans_path = trans_accum.paths14.last().expect("trans path");
         assert_eq!(trans_path.kind, Path14Kind::Trans);
-        let trans_expected = compute_14_dist_trans(
-            trans_accum.bond_lengths[t_bid1],
-            trans_accum.bond_lengths[t_bid2],
-            trans_accum.bond_lengths[t_bid3],
-            trans_accum.get_bond_angle(trans.bonds.len(), t_bid1, t_bid2),
-            trans_accum.get_bond_angle(trans.bonds.len(), t_bid2, t_bid3),
+        let trans_expected = candidate_path_interval(
+            &trans,
+            &trans_accum,
+            &trans_mmat,
+            [t_bid1, t_bid2, t_bid3],
+            Path14Kind::Trans,
+            0.0,
         );
-        assert!(
-            (trans_mmat.get_lower(0, 3).unwrap() - (trans_expected - GEN_DIST_TOL)).abs() < 1e-9
-        );
-        assert!(
-            (trans_mmat.get_upper(0, 3).unwrap() - (trans_expected + GEN_DIST_TOL)).abs() < 1e-9
-        );
+        assert!((trans_mmat.get_lower(0, 3).unwrap() - trans_expected.0).abs() < 1e-9);
+        assert!((trans_mmat.get_upper(0, 3).unwrap() - trans_expected.1).abs() < 1e-9);
 
         let cis = Ok::<_, ()>(fixed_topology("C/C=C\\C", true)).expect("cis alkene");
         let (mut cis_mmat, mut cis_accum) = run_set13_bounds(&cis);
@@ -6203,15 +6690,16 @@ mod tests {
         .expect("chain cis bounds");
         let cis_path = cis_accum.paths14.last().expect("cis path");
         assert_eq!(cis_path.kind, Path14Kind::Cis);
-        let cis_expected = compute_14_dist_cis(
-            cis_accum.bond_lengths[c_bid1],
-            cis_accum.bond_lengths[c_bid2],
-            cis_accum.bond_lengths[c_bid3],
-            cis_accum.get_bond_angle(cis.bonds.len(), c_bid1, c_bid2),
-            cis_accum.get_bond_angle(cis.bonds.len(), c_bid2, c_bid3),
+        let cis_expected = candidate_path_interval(
+            &cis,
+            &cis_accum,
+            &cis_mmat,
+            [c_bid1, c_bid2, c_bid3],
+            Path14Kind::Cis,
+            0.0,
         );
-        assert!((cis_mmat.get_lower(0, 3).unwrap() - (cis_expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((cis_mmat.get_upper(0, 3).unwrap() - (cis_expected + GEN_DIST_TOL)).abs() < 1e-9);
+        assert!((cis_mmat.get_lower(0, 3).unwrap() - cis_expected.0).abs() < 1e-9);
+        assert!((cis_mmat.get_upper(0, 3).unwrap() - cis_expected.1).abs() < 1e-9);
     }
     #[test]
     fn set_chain_14_bounds_uses_ss_special_case() {
@@ -6234,16 +6722,16 @@ mod tests {
 
         let path = accum_data.paths14.last().expect("path");
         assert_eq!(path.kind, Path14Kind::Custom);
-        let expected = compute_14_dist_3d(
-            accum_data.bond_lengths[bid1],
-            accum_data.bond_lengths[bid2],
-            accum_data.bond_lengths[bid3],
-            accum_data.get_bond_angle(mol.bonds.len(), bid1, bid2),
-            accum_data.get_bond_angle(mol.bonds.len(), bid2, bid3),
-            std::f64::consts::PI / 2.0,
+        let expected = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid1, bid2, bid3],
+            Path14Kind::Custom,
+            0.0,
         );
-        assert!((mmat.get_lower(0, 3).unwrap() - (expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(0, 3).unwrap() - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+        assert!((mmat.get_lower(0, 3).unwrap() - expected.0).abs() < 1e-9);
+        assert!((mmat.get_upper(0, 3).unwrap() - expected.1).abs() < 1e-9);
     }
     #[test]
     fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
@@ -6325,19 +6813,16 @@ mod tests {
         .expect("chain amide14 bounds");
         let amide14_path = accum_data.paths14.last().expect("amide14 path");
         assert_eq!(amide14_path.kind, Path14Kind::Trans);
-        let expected_14 = compute_14_dist_trans(
-            accum_data.bond_lengths[bid_hn],
-            accum_data.bond_lengths[bid_nc],
-            accum_data.bond_lengths[bid_co],
-            accum_data.get_bond_angle(mol.bonds.len(), bid_hn, bid_nc),
-            accum_data.get_bond_angle(mol.bonds.len(), bid_nc, bid_co),
+        let expected_14 = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid_hn, bid_nc, bid_co],
+            Path14Kind::Trans,
+            0.0,
         );
-        assert!(
-            (mmat.get_lower(hydrogen, oxygen).unwrap() - (expected_14 - GEN_DIST_TOL)).abs() < 1e-9
-        );
-        assert!(
-            (mmat.get_upper(hydrogen, oxygen).unwrap() - (expected_14 + GEN_DIST_TOL)).abs() < 1e-9
-        );
+        assert!((mmat.get_lower(hydrogen, oxygen).unwrap() - expected_14.0).abs() < 1e-9);
+        assert!((mmat.get_upper(hydrogen, oxygen).unwrap() - expected_14.1).abs() < 1e-9);
 
         set_chain_14_bounds(
             &mol,
@@ -6352,23 +6837,16 @@ mod tests {
         .expect("chain amide15 bounds");
         let amide15_path = accum_data.paths14.last().expect("amide15 path");
         assert_eq!(amide15_path.kind, Path14Kind::Cis);
-        let expected_15 = compute_14_dist_cis(
-            accum_data.bond_lengths[bid_hn],
-            accum_data.bond_lengths[bid_nc],
-            accum_data.bond_lengths[bid_cm],
-            accum_data.get_bond_angle(mol.bonds.len(), bid_hn, bid_nc),
-            accum_data.get_bond_angle(mol.bonds.len(), bid_nc, bid_cm),
+        let expected_15 = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid_hn, bid_nc, bid_cm],
+            Path14Kind::Cis,
+            0.0,
         );
-        assert!(
-            (mmat.get_lower(hydrogen, carbonyl_methyl).unwrap() - (expected_15 - GEN_DIST_TOL))
-                .abs()
-                < 1e-9
-        );
-        assert!(
-            (mmat.get_upper(hydrogen, carbonyl_methyl).unwrap() - (expected_15 + GEN_DIST_TOL))
-                .abs()
-                < 1e-9
-        );
+        assert!((mmat.get_lower(hydrogen, carbonyl_methyl).unwrap() - expected_15.0).abs() < 1e-9);
+        assert!((mmat.get_upper(hydrogen, carbonyl_methyl).unwrap() - expected_15.1).abs() < 1e-9);
     }
     #[test]
     fn record_14_path_marks_sp2_sp2_ring_paths_as_cis() {
@@ -6377,7 +6855,7 @@ mod tests {
         let bid1 = bond_between_idx_simple(&mol, 5, 0).expect("5-0");
         let bid2 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
         let bid3 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
-        record_14_path(&mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
+        record_14_path(&mol, bid1, bid2, bid3, &mut accum_data, 0).expect("record14Path");
 
         let path = accum_data.paths14.last().expect("path");
         assert_eq!(path.bid1, bid1);
@@ -6401,7 +6879,7 @@ mod tests {
         let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
         let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
 
-        record_14_path(&mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
+        record_14_path(&mol, bid1, bid2, bid3, &mut accum_data, 0).expect("record14Path");
 
         let path = accum_data.paths14.last().expect("path");
         assert_eq!(path.kind, Path14Kind::Other);
@@ -6446,16 +6924,17 @@ mod tests {
         let aid1 = 5usize;
         let aid4 = 2usize;
         let pid = aid1.min(aid4) * mol.atoms.len() + aid1.max(aid4);
-        let expected = compute_14_dist_cis(
-            accum_data.bond_lengths[bid1],
-            accum_data.bond_lengths[bid2],
-            accum_data.bond_lengths[bid3],
-            accum_data.get_bond_angle(mol.bonds.len(), bid1, bid2),
-            accum_data.get_bond_angle(mol.bonds.len(), bid2, bid3),
+        let expected = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid1, bid2, bid3],
+            Path14Kind::Cis,
+            0.0,
         );
         assert!(accum_data.visited14_bounds[pid]);
-        assert!((mmat.get_lower(aid1, aid4).unwrap() - (expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(aid1, aid4).unwrap() - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+        assert!((mmat.get_lower(aid1, aid4).unwrap() - expected.0).abs() < 1e-9);
+        assert!((mmat.get_upper(aid1, aid4).unwrap() - expected.1).abs() < 1e-9);
     }
     #[test]
     fn set_two_in_same_ring_14_bounds_uses_trans_for_sp2_external_substituent_path() {
@@ -6486,15 +6965,16 @@ mod tests {
 
         let aid1 = 0usize;
         let aid4 = 3usize;
-        let expected = compute_14_dist_trans(
-            accum_data.bond_lengths[bid_exo],
-            accum_data.bond_lengths[bid_ring_12],
-            accum_data.bond_lengths[bid_ring_23],
-            accum_data.get_bond_angle(mol.bonds.len(), bid_exo, bid_ring_12),
-            accum_data.get_bond_angle(mol.bonds.len(), bid_ring_12, bid_ring_23),
+        let expected = candidate_path_interval(
+            &mol,
+            &accum_data,
+            &mmat,
+            [bid_exo, bid_ring_12, bid_ring_23],
+            Path14Kind::Trans,
+            0.0,
         );
-        assert!((mmat.get_lower(aid1, aid4).unwrap() - (expected - GEN_DIST_TOL)).abs() < 1e-9);
-        assert!((mmat.get_upper(aid1, aid4).unwrap() - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+        assert!((mmat.get_lower(aid1, aid4).unwrap() - expected.0).abs() < 1e-9);
+        assert!((mmat.get_upper(aid1, aid4).unwrap() - expected.1).abs() < 1e-9);
     }
     #[test]
     fn diff_ring14_and_share_ring14_delegate_to_in_ring_helper() {
@@ -6971,6 +7451,7 @@ mod tests {
             force_trans_amides,
             set14bounds,
             set13bounds,
+            None,
         )
         .expect("setTopolBounds with outputs");
         (mmat, bonds, angles)
@@ -7300,6 +7781,11 @@ mod tests {
             bid2,
             bid3,
             kind: Path14Kind::Other,
+            atoms: [0, 1, 2, 3],
+            is_forced: false,
+            custom_value: None,
+            type14: Type14::InChain,
+            ring_size: 0,
         });
         record_path_flag(&mut entry_accum.cis_paths, path_id);
         set_15_bounds(&mol, &mut entry_mmat, &mut entry_accum, &dmat).expect("set15Bounds");
@@ -7310,6 +7796,11 @@ mod tests {
             bid2,
             bid3,
             kind: Path14Kind::Other,
+            atoms: [0, 1, 2, 3],
+            is_forced: false,
+            custom_value: None,
+            type14: Type14::InChain,
+            ring_size: 0,
         });
         record_path_flag(&mut helper_accum.cis_paths, path_id);
         set_15_bounds_helper(
@@ -7526,7 +8017,7 @@ mod tests {
         ));
     }
     #[test]
-    fn dg_bounds_matrix_3rj7_re_complex_matches_2026_03_6_success_after_interval_merge() {
+    fn re_complex_candidate_lower_bound_error_and_frozen_bounds_consumer() {
         let mol2 = include_str!("../../../testdata/mol2/fixtures/3rj7_ligand.mol2");
         let record = cosmolkit_io::read_mol2_detached(mol2)
             .expect("3rj7 mol2 should parse")
@@ -7551,11 +8042,32 @@ mod tests {
         let prepared = sanitize_topology(&record.topology, &SanitizeParams { operations })
             .expect("original MOL2 topological preparation")
             .topology;
-        let raw_actual = dg_bounds_matrix(&prepared).expect(".6 raw39 interval merge succeeds");
+        // Candidate BoundsMatrixBuilder.cpp:446-496 clamps angle-.07 to zero
+        // on 9-Re25-1. The resulting lower bound is zero, and the unchanged
+        // _checkAndSetBounds precondition rejects it before smoothing.
+        let error = dg_bounds_matrix(&prepared).unwrap_err();
+        assert!(
+            matches!(error, GraphBoundsError::InvalidBounds(ref detail)
+            if detail.contains("bad lower bound for atom pair (9, 1)")
+                && detail.contains("requested lower=0.000000, upper=0.174754")),
+            "{error:?}"
+        );
         let raw_reference: serde_json::Value = serde_json::from_str(include_str!(
             "../../../testdata/conformer/fixtures/rdkit_2026_03_6_3rj7_raw39_bounds.json"
         ))
         .unwrap();
+        let raw_rows: Vec<Vec<f64>> =
+            serde_json::from_value(raw_reference["matrix"].clone()).unwrap();
+        let mut raw_bounds =
+            BoundsMatrix::from_data(39, raw_rows.into_iter().flatten().collect()).unwrap();
+        // The old wrapper discards the smoothing bool. Its retained raw39
+        // matrix already contains an inverted interval; that original partial
+        // result is an explicit consumer input, not a successful smoothing.
+        assert!(!crate::smoothing::triangle_smooth_bounds_shared(
+            &mut raw_bounds,
+            0.0
+        ));
+        let raw_actual = matrix_rows(&raw_bounds);
         assert_eq!(raw_actual.len(), 39);
         for (i, row) in raw_actual.iter().enumerate() {
             assert_eq!(row.len(), 39);
@@ -7590,8 +8102,7 @@ mod tests {
         let prepared = sanitize_topology(&removed.topology, &SanitizeParams { operations })
             .unwrap()
             .topology;
-        let actual = dg_bounds_matrix(&prepared).expect(".6 collected interval merge succeeds");
-        assert_eq!(actual.len(), 26);
+        assert_eq!(prepared.atoms.len(), 26);
         let reference: serde_json::Value = serde_json::from_str(include_str!(
             "../../../testdata/conformer/fixtures/rdkit_2026_03_6_3rj7_bounds.json"
         ))
@@ -7601,6 +8112,17 @@ mod tests {
         let expected = reference["bounds"][1]["matrix"]
             .as_array()
             .expect("matrix rows");
+        // The complete old matrices remain explicit numerical-consumer inputs,
+        // not claimed results of the candidate chemical bounds builder.
+        let old_rows: Vec<Vec<f64>> =
+            serde_json::from_value(reference["bounds"][1]["matrix"].clone()).unwrap();
+        let mut bounds =
+            BoundsMatrix::from_data(26, old_rows.into_iter().flatten().collect()).unwrap();
+        assert!(!crate::smoothing::triangle_smooth_bounds_shared(
+            &mut bounds,
+            0.0
+        ));
+        let actual = matrix_rows(&bounds);
         assert_eq!(expected.len(), actual.len());
         for (i, row) in actual.iter().enumerate() {
             let expected_row = expected[i].as_array().expect("matrix row");
@@ -7754,7 +8276,7 @@ mod tests {
     }
 
     #[test]
-    fn etv2_fixture_bounds_first_boundary_diagnostic() {
+    fn etv2_frozen_bounds_smoothing_preserves_all_source_entries() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../testdata/conformer/fixtures/rdkit/test_data/torsion.etkdg.v2.mol");
         let (topology, _, _) =
@@ -7763,14 +8285,23 @@ mod tests {
         let topology = cosmolkit_core::sanitize_topology(&topology, &Default::default())
             .unwrap()
             .topology;
-        let actual = dg_bounds_matrix(&topology).unwrap();
-        println!("etv2_bounds {:?}", actual);
         let reference: serde_json::Value = serde_json::from_str(include_str!(
             "../../../testdata/conformer/fixtures/rdkit_2026_03_6_etv2_bounds.json"
         ))
         .unwrap();
         assert_eq!(reference["rdkit"], "2026.03.6");
         let expected: Vec<Vec<f64>> = serde_json::from_value(reference["matrix"].clone()).unwrap();
+        assert_eq!(topology.atoms.len(), expected.len());
+        // Fixed consumer input: candidate 1-3 formula is independently covered
+        // by the small interval regression, not an obsolete whole-matrix oracle.
+        let mut bounds =
+            BoundsMatrix::from_data(expected.len(), expected.iter().flatten().copied().collect())
+                .unwrap();
+        assert!(crate::smoothing::triangle_smooth_bounds_shared(
+            &mut bounds,
+            0.0
+        ));
+        let actual = matrix_rows(&bounds);
         let mismatches: Vec<_> = actual
             .iter()
             .enumerate()

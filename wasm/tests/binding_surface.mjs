@@ -53,7 +53,7 @@ test("WASM binding preserves runtime values and errors", async () => {
 
     assert.equal(molecule.numConformers3d(), 0);
     assert.equal(molecule.coordinates2d().length, 0);
-    const drawn = molecule.add2dCoordinates();
+    const drawn = molecule.with2dCoordinates();
     assert.equal(drawn.coordinates2d().length, 6);
     assert.equal(drawn.numAtoms(), 3);
 

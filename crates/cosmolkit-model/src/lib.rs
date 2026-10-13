@@ -21,6 +21,9 @@ mod stereo;
 mod topology;
 mod valence;
 
+#[doc(hidden)]
+pub use cosmolkit_types::CipAssignmentCompletion;
+
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{
     Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, TemplateAttachment,

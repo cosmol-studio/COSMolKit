@@ -883,7 +883,7 @@ def audit_coordinates_2d(
         return
     ck_source_before = ck_mol.mol_to_binary()
     try:
-        ck_with_2d = ck_mol.add_2d_coordinates()
+        ck_with_2d = ck_mol.with_2d_coordinates()
     except Exception as error:
         audit.mismatch("coordinates_2d.cosmolkit_error", record, "success", repr(error))
         return
@@ -948,7 +948,7 @@ def audit_binary_roundtrip(
 ) -> None:
     del rd_mol
     try:
-        source = ck_mol.add_2d_coordinates()
+        source = ck_mol.with_2d_coordinates()
         before = binary_observations(source)
         payload = source.mol_to_binary()
         restored_method = cosmolkit.Molecule.mol_from_binary(payload)

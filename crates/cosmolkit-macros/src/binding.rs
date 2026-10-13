@@ -946,21 +946,6 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
     }
     for entry in entries {
         if let Some(payload) = &entry.callable {
-            let rust_name = rust_last_name(&entry.rust)?;
-            // Value and in-place forms can share their domain verb (sanitize /
-            // sanitize_). Preserve the mutation suffix only for such a pair;
-            // stripping it would give two different behaviors one JS name.
-            let retain_in_place_suffix = payload.state == StateModel::InPlace
-                && rust_name.ends_with('_')
-                && entries.iter().any(|other| {
-                    projection_owner_key(other) == projection_owner_key(entry)
-                        && other
-                            .callable
-                            .as_ref()
-                            .is_some_and(|callable| callable.state == StateModel::ValueReturning)
-                        && rust_last_name(&other.rust)
-                            .is_ok_and(|name| name == rust_name.trim_end_matches('_'))
-                });
             validate_callable(
                 &entry.semantic_id,
                 entry.owner,
@@ -968,7 +953,6 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                 &entry.python,
                 &entry.javascript,
                 payload,
-                retain_in_place_suffix,
                 entry.python_property,
             )?;
         } else {
@@ -1014,7 +998,6 @@ fn validate_callable(
     python: &LitStr,
     javascript: &LitStr,
     payload: &CallablePayload,
-    retain_in_place_suffix: bool,
     python_property: Option<PythonProperty>,
 ) -> syn::Result<()> {
     if (payload.kind == CallableKind::Instance) != payload.receiver.is_some() {
@@ -1151,7 +1134,7 @@ fn validate_callable(
         ));
     }
     let mut canonical_js = snake_to_camel(rust_name.trim_end_matches('_'));
-    if retain_in_place_suffix {
+    if requires_trailing_underscore {
         canonical_js.push('_');
     }
     if javascript.value() != canonical_js {

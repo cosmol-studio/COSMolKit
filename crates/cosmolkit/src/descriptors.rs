@@ -3435,7 +3435,7 @@ mod descriptor_query_lifecycle_tests {
             assert!(Arc::ptr_eq(&properties, &mol.properties_arc_runtime()));
             assert!(Arc::ptr_eq(&derived, &mol.derived_cache_arc_runtime()));
         }
-        let depicted = original.add_2d_coordinates().unwrap();
+        let depicted = original.with_2d_coordinates().unwrap();
         assert_eq!(
             depicted
                 .crippen_descriptors_with_params(true, false)

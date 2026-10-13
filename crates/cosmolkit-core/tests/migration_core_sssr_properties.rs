@@ -1,9 +1,7 @@
-use cosmolkit_core::{
-    RingFindingError, RingSearchParams, symmetrized_sssr, symmetrized_sssr_with_properties,
-};
+use cosmolkit_core::{RingSearchParams, symmetrized_sssr, symmetrized_sssr_with_properties};
 use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, MoleculeProperties, MoleculePropertyError,
-    PropertyValue, TopologyBlock,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, MoleculeProperties, PropertyValue,
+    TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -25,15 +23,16 @@ fn graph(n: usize, edges: &[(usize, usize)]) -> TopologyBlock {
 }
 
 #[test]
-fn initial_clear_retains_order_and_removes_only_source_extra_ring_membership() {
-    // FindRings.cpp clears extraRings before component processing, even for
-    // an empty graph; RDProps.h removes just its first computed-list entry.
+fn rdl_path_retains_extra_ring_property_and_computed_order() {
+    // Candidate FindRings.cpp RDL path does not enter the legacy
+    // findSSSR/removeExtraRings property side effects, including empty graphs.
     for topology in [graph(0, &[]), graph(3, &[(0, 1), (1, 2), (2, 0)])] {
         let mut props = MoleculeProperties::default();
         props.set_prop("head", 1_i32).unwrap();
         props.set_computed_prop("extraRings", "discarded").unwrap();
         props.set_computed_prop("kept", 2_i32).unwrap();
         props.set_prop("tail", 3_i32).unwrap();
+        let before = props.clone();
         let (result, props) =
             symmetrized_sssr_with_properties(&topology, props, &RingSearchParams::default())
                 .unwrap();
@@ -41,10 +40,13 @@ fn initial_clear_retains_order_and_removes_only_source_extra_ring_membership() {
             result,
             symmetrized_sssr(&topology, &RingSearchParams::default()).unwrap()
         );
-        assert!(props.prop("extraRings").is_none());
+        assert_eq!(props, before);
         assert_eq!(
             props.prop("__computedProps"),
-            Some(&PropertyValue::StringVector(vec!["kept".into()]))
+            Some(&PropertyValue::StringVector(vec![
+                "extraRings".into(),
+                "kept".into()
+            ]))
         );
         assert_eq!(
             props
@@ -54,6 +56,7 @@ fn initial_clear_retains_order_and_removes_only_source_extra_ring_membership() {
             vec![
                 "head".into(),
                 "__computedProps".into(),
+                "extraRings".into(),
                 "kept".into(),
                 "tail".into()
             ]
@@ -62,8 +65,8 @@ fn initial_clear_retains_order_and_removes_only_source_extra_ring_membership() {
 }
 
 #[test]
-fn malformed_computed_list_fails_even_when_extra_rings_is_absent() {
-    // RDProps::clearProp reads the computed list before clearing the key.
+fn rdl_path_does_not_read_unrelated_legacy_computed_list() {
+    // Candidate RDL branch does not clear a dictionary key or read its list.
     for existing_extra in [false, true] {
         let mut props = MoleculeProperties::default();
         props.set_prop("__computedProps", 3_i32).unwrap();
@@ -76,22 +79,18 @@ fn malformed_computed_list_fails_even_when_extra_rings_is_absent() {
             props.clone(),
             &RingSearchParams::default(),
         );
-        assert!(matches!(
-            result,
-            Err(RingFindingError::MoleculeProperty(
-                MoleculePropertyError::ComputedListKind(_)
-            ))
-        ));
+        let (rings, retained) = result.unwrap();
+        assert!(rings.is_symm_sssr());
+        assert_eq!(retained, before);
         assert_eq!(props, before);
     }
 }
 
 #[test]
-fn symmetrization_consumes_transient_cache_across_disconnected_cubes() {
+fn rdl_symmetrization_preserves_properties_across_disconnected_cubes() {
     // Each cube has five SSSR rows and six equally sized face rings; native
-    // removeExtraRings appends extras across fragments, then SymmSSSR erases
-    // its computed extraRings property after consuming both fragments. The
-    // first computed-list creation survives as an empty vector.
+    // candidate streams all relevant cycles without an extraRings dictionary
+    // or computed-list creation, even across both disconnected fragments.
     let mut edges = vec![];
     for offset in [0, 8] {
         for i in 0..8 {
@@ -106,10 +105,7 @@ fn symmetrization_consumes_transient_cache_across_disconnected_cubes() {
     let topology = graph(16, &edges);
     let mut props = MoleculeProperties::default();
     props.set_prop("retained", "value").unwrap();
-    let mut expected = props.clone();
-    expected
-        .set_prop("__computedProps", PropertyValue::StringVector(vec![]))
-        .unwrap();
+    let expected = props.clone();
     for _ in 0..2 {
         let (info, prepared_properties) =
             symmetrized_sssr_with_properties(&topology, props, &RingSearchParams::default())

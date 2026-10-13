@@ -79,8 +79,21 @@ pub enum CrystalffTorsionPreferencesError {
     },
 }
 
+/// Detached bounds-path projection consumed by existing cosine torsion setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundsTorsionPath {
+    pub atoms: [usize; 4],
+    pub forced: Option<ForcedTorsionKind>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForcedTorsionKind {
+    Cis,
+    Trans,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CrystalFFDetails {
+    pub path14_configs: Vec<BoundsTorsionPath>,
     pub exp_torsion_atoms: Vec<Vec<i32>>,
     pub exp_torsion_angles: Vec<(Vec<i32>, Vec<f64>)>,
     pub improper_atoms: Vec<Vec<i32>>,
@@ -94,6 +107,7 @@ pub struct CrystalFFDetails {
 impl Default for CrystalFFDetails {
     fn default() -> Self {
         Self {
+            path14_configs: Vec::new(),
             exp_torsion_atoms: Vec::new(),
             exp_torsion_angles: Vec::new(),
             improper_atoms: Vec::new(),
@@ -374,6 +388,106 @@ pub(crate) fn get_experimental_torsions(
         .map_err(CrystalffTorsionPreferencesError::PreparedTarget)?;
     let excluded_bonds = compute_excluded_bridged_bonds(nb, &ring_info);
     let mut done_bonds = vec![false; nb];
+
+    if use_basic_knowledge {
+        // RDKit✔️✔️:   // apply basic knowledge such as flat aromatic rings, other sp2-centers,
+        // RDKit✔️✔️:   // straight triple bonds, etc.
+        // RDKit✔️✔️:   if (useBasicKnowledge) {
+        // RDKit✔️✔️:     // torsions for forced trans amides / esters
+        // RDKit✔️✔️:     auto is_forced_cis_or_trans = [](const auto &config) {
+        // RDKit✔️✔️:       if (!config.value.isForced) {
+        // RDKit✔️✔️:         return false;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       return config.value.type == DGeomHelpers::TorsionType::TRANS ||
+        // RDKit✔️✔️:              config.value.type == DGeomHelpers::TorsionType::CIS;
+        // RDKit✔️✔️:     };
+        // RDKit✔️✔️:     for (const auto &config :
+        // RDKit✔️✔️:          details.path14Configs | std::views::filter(is_forced_cis_or_trans)) {
+        // RDKit✔️✔️:       const auto i = config.aid1;
+        // RDKit✔️✔️:       const auto j = config.aid2;
+        // RDKit✔️✔️:       const auto k = config.aid3;
+        // RDKit✔️✔️:       const auto l = config.aid4;
+        // RDKit✔️✔️:       const auto bndIdx = mol.getBondBetweenAtoms(j, k)->getIdx();
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       if (excludedBonds[bndIdx] ||
+        // RDKit✔️✔️:           mol.getRingInfo()->numBondRings(bndIdx) > 3) {
+        // RDKit✔️✔️:         doneBonds[bndIdx] = 1;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (doneBonds[bndIdx]) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       if (!details.constrainedAtoms.empty() && details.constrainedAtoms[i] &&
+        // RDKit✔️✔️:           details.constrainedAtoms[j] && details.constrainedAtoms[k] &&
+        // RDKit✔️✔️:           details.constrainedAtoms[l]) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       const bool isCis = config.value.type == DGeomHelpers::TorsionType::CIS;
+        // RDKit✔️✔️:       details.expTorsionAtoms.push_back(
+        // RDKit✔️✔️:           {static_cast<int>(i), static_cast<int>(j), static_cast<int>(k),
+        // RDKit✔️✔️:            static_cast<int>(l)});
+        // RDKit❌❌:       const bool isAIO =
+        // RDKit❌❌:           std::fabs(details.forceConsts.etTermScaling - 1.0) > 1e-3;
+        // RDKit❌❌:       details.torsionIdx.push_back(isCis ? AMIDE_CIS_IDX : AMIDE_TRANS_IDX);
+        // RDKit❌❌:       if constexpr (!isGaussian) {
+        // RDKit✔️✔️:         std::vector<double> V(6, 0.0);
+        // RDKit✔️✔️:         std::vector<int> signs(6, 1);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:         V[0] = 75.0;
+        // RDKit❌❌:         if (isAIO) {
+        // RDKit❌❌:           V[0] = 4.0;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         if (isCis) {
+        // RDKit✔️✔️:           signs[0] = -1;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         details.expTorsionAngles.push_back(CosineExp_T{signs, V});
+        // RDKit✔️✔️:       } else {
+        // RDKit❌❌:         details.expTorsionAngles.push_back(GaussianExp_T{
+        // RDKit❌❌:             AROMATIC_HEIGHTS, isCis ? CIS_POSITION : TRANS_POSITION,
+        // RDKit❌❌:             AROMATIC_WIDTHS, isAIO ? 0.05 : 1.0});
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // Existing modeled legacy cosine backend has unit ET scaling. AIO and
+        // Gaussian remain independent unsupported capabilities, not defaults.
+        // Preserve path order and source's deliberately unmarked doneBonds
+        // after insertion: physical construction later selects the first
+        // central-bond term. One borrowed O(P) pass, fixed six-element rows.
+        for path in &details.path14_configs {
+            let Some(kind) = path.forced else {
+                continue;
+            };
+            let [i, j, k, l] = path.atoms;
+            let bond = bond_between_atoms(mol, j, k).ok_or_else(|| {
+                CrystalffTorsionPreferencesError::MissingCentralBond {
+                    smarts: "forced amide/ester".to_owned(),
+                    aid2: j,
+                    aid3: k,
+                }
+            })?;
+            let bid = bond.id().index();
+            if excluded_bonds[bid] || ring_info.num_bond_rings(BondId::new(bid)) > 3 {
+                done_bonds[bid] = true;
+            }
+            if done_bonds[bid] {
+                continue;
+            }
+            if !details.constrained_atoms.is_empty()
+                && [i, j, k, l].iter().all(|&a| details.constrained_atoms[a])
+            {
+                continue;
+            }
+            details
+                .exp_torsion_atoms
+                .push(vec![i as i32, j as i32, k as i32, l as i32]);
+            let mut signs = vec![1; 6];
+            let mut values = vec![0.0; 6];
+            values[0] = 75.0;
+            if kind == ForcedTorsionKind::Cis {
+                signs[0] = -1;
+            }
+            details.exp_torsion_angles.push((signs, values));
+        }
+    }
 
     if use_exp_torsions {
         let params = ExpTorsionAngleCollection::get_params(

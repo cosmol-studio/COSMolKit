@@ -5603,13 +5603,16 @@ pub(crate) fn atom_predicate_matches_with_target_context(
             query_atom_explicit_degree(atom, adj) >= usize::from(*n)
         }
 
-        // RDKit✔️✔️: recursive SMARTS — not yet fully supported.
         AtomQueryPredicate::Range(range) => match_atom_range_query(range, atom, mol, ctx)?,
-        AtomQueryPredicate::RecursiveSmarts(_query) => {
-            // RDKit✔️❌: Recursive SMARTS evaluation requires the full SMARTS matcher /
-            // substructure matching engine which is not yet ported. This is preserved
-            // as a stored value but not evaluated.
-            false
+        AtomQueryPredicate::RecursiveSmarts(query) => {
+            // RDKit✔️✔️: bool Match(const DataFuncArgType what) const override {
+            // RDKit✔️✔️:   MatchFuncArgType mfArg =
+            // RDKit✔️✔️:       this->TypeConvert(what, Int2Type<needsConversion>());
+            // RDKit✔️✔️:   return (this->d_set.find(mfArg) != this->d_set.end()) ^ this->getNegation();
+            // RDKit✔️✔️: }
+            // Same O(log matches) set lookup; direct Match does not initialize
+            // recursion. Negation belongs to the enclosing QueryNode::Not.
+            query.contains_atom_index(atom.id().index() as u32 as i32)
         }
 
         AtomQueryPredicate::HasProperty(name) => atom.prop(name).is_some(),

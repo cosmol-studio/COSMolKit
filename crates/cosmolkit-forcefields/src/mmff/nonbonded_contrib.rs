@@ -1,6 +1,6 @@
 //! RDKit MMFF Nonbonded.cpp/Nonbonded.h, BSD license; pinned
 //! 351f8f378f8ad6bbd517980c38896e66bf907af8.
-//! Migrated packed terms use the sole existing kernel evaluation context.
+//! Packed terms use the shared kernel's short-lived evaluation context.
 use super::{
     mol_properties::MmffVdwRijstarEps,
     nonbonded::{calc_ele_energy, calc_vdw_energy},

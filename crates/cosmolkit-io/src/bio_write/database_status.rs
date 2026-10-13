@@ -1,9 +1,7 @@
-//! Private selected mmCIF `_pdbx_database_status` category emitter
-//! (BIO-DATABASE-STATUS1-32).
+//! Private mmCIF `_pdbx_database_status` category emitter.
 //!
-//! Selected-category helper only: the coordinate composer is NOT
-//! dispatched here and caller group dispatch remains ROOT-owned. Reuses
-//! the one existing category setter; no second implementation.
+//! Writes only this category; the caller selects categories and composes
+//! coordinates. Uses the shared category setter.
 
 use std::collections::BTreeMap;
 

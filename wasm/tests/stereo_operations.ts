@@ -11,8 +11,8 @@ const controlling:Array<number|null>=rows[0].controllingAtoms;
 const tetrahedral:ck.TetrahedralStereo[]=mol.tetrahedralStereo();
 const ligand:ck.LigandRef=tetrahedral[0].ligands[0];
 mol.withCipLabels({atoms:[1],maxRecursiveIterations:200});
-mol.assignChiralTagsFromStructure({conformerId:0});
-mol.assignCipLabelsWithOptions(options);
+mol.assignChiralTagsFromStructure_({conformerId:0});
+mol.assignCipLabelsWithOptions_(options);
 // @ts-expect-error atom IDs must be numbers
 options.atoms=['1'];
 // @ts-expect-error result snapshots are read-only

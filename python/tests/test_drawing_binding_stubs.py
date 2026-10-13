@@ -42,7 +42,7 @@ def test_selected_stub_classes_and_methods():
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[numpy.ndarray[typing.Any, numpy.dtype[numpy.float64]]]",
                 "has_2d_coordinates": "builtins.bool", "add_2d_coordinates_": "None",
-                "add_2d_coordinates_with_params_": "None", "add_2d_coordinates": "Molecule", "add_2d_coordinates_with_params": "Molecule",
+                "add_2d_coordinates_with_params_": "None", "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
                 "to_svg": "builtins.str", "to_png": "builtins.bytes", "write_svg": "None", "write_png": "None"}
     expected.update({"new": "Molecule", "from_smiles_with_params": "Molecule", "to_smiles_with_params": "builtins.str",
         "fingerprint_morgan": "Fingerprint", "fingerprint_morgan_sparse": "SparseBitFingerprint",
@@ -70,18 +70,19 @@ def test_selected_stub_classes_and_methods():
     inplace = methods["add_2d_coordinates_with_params_"]
     assert [a.arg for a in inplace.args.args] == ["self", "params"]
     assert ast.unparse(required_expression(inplace.args.args[1].annotation)) == "Coordinate2DParams"
-    configured = methods["add_2d_coordinates_with_params"]
+    configured = methods["with_2d_coordinates_with_params"]
     assert [a.arg for a in configured.args.args] == ["self", "params"]
     assert ast.unparse(required_expression(configured.args.args[1].annotation)) == "Coordinate2DParams"
 
 
-def test_nine_parameter_properties_types_and_defaults():
+def test_parameter_properties_types_and_defaults():
     cls = declarations()["Coordinate2DParams"]
     methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)
                and not any(isinstance(d, ast.Attribute) and d.attr == "setter" for d in n.decorator_list)}
     defaults = {"coordinate_map": None, "canonical_orientation": False, "clear_existing_2d": True,
                 "flips_per_sample": 0, "samples": 0, "sample_seed": 0,
-                "permute_degree_four": False, "force_rdkit": False, "use_ring_templates": False}
+                "permute_degree_four": False, "force_rdkit": False, "use_ring_templates": False,
+                "use_path_angle_expansion": True}
     assert set(methods) == {"__new__", *defaults}
     runtime = inspect.signature(cosmolkit.Coordinate2DParams)
     assert {name: cast(object, parameter.default) for name, parameter in runtime.parameters.items()} == defaults

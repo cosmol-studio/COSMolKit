@@ -101,10 +101,40 @@ fn molecule() -> TopologyBlock {
 fn bridge_collision_shortening_matches_source_bits() {
     let topology = molecule();
     let original = topology.clone();
-    let mut properties = MoleculeProperties::default();
-    properties
-        .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))
-        .unwrap();
+    // Freeze the source regression's ordered ring seeds at the embedding
+    // boundary. Candidate RDL enumeration is tested independently; changing
+    // its order must not discard this collision-shortening numerical coverage.
+    let mut rings = cosmolkit_core::RingInfo::new(
+        cosmolkit_core::RingFindType::SymmSssr,
+        24,
+        topology.bonds.len(),
+    );
+    for atoms in [
+        vec![4, 5, 19, 20, 21, 3],
+        vec![4, 5, 19, 22, 23, 3],
+        vec![6, 7, 8, 17, 19, 5],
+        vec![9, 14, 15, 16, 17, 8],
+        vec![20, 21, 3, 23, 22, 19],
+    ] {
+        let bonds = atoms
+            .iter()
+            .zip(atoms.iter().cycle().skip(1))
+            .take(atoms.len())
+            .map(|(&a, &b)| {
+                topology
+                    .bonds
+                    .iter()
+                    .find(|bond| {
+                        let ends = [bond.begin().index(), bond.end().index()];
+                        ends == [a, b] || ends == [b, a]
+                    })
+                    .unwrap()
+                    .id()
+                    .index()
+            })
+            .collect::<Vec<_>>();
+        rings.add_ring(&atoms, &bonds).unwrap();
+    }
     // Pinned RDKit 2026.03.6 Compute2DCoords, before and after canonical orientation.
     // The previous hypot norm first diverged inside bridge-ring shortening,
     // affecting atoms 22 and 23 before orientation propagated the error.
@@ -163,19 +193,23 @@ fn bridge_collision_shortening_matches_source_bits() {
         ],
     ];
     for (canonical_orientation, expected) in [false, true].into_iter().zip(expected) {
-        let result = compute_2d_coordinates(
-            &topology,
-            &properties,
-            &Compute2DCoordinatesParams {
-                canonical_orientation,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let actual = result
-            .coordinates()
-            .iter()
-            .map(|row| row.map(f64::to_bits))
+        let mut fragments = compute_initial_coordinates(&topology, &rings, None, false).unwrap();
+        for fragment in &mut fragments {
+            fragment.remove_collisions_bond_and_spiro_flip().unwrap();
+            fragment.remove_collisions_open_angles().unwrap();
+            fragment.remove_collisions_shorten_bonds().unwrap();
+            fragment.remove_collisions_path_angle_expansion().unwrap();
+        }
+        orient_and_shift_fragments(&mut fragments, canonical_orientation, Some(0));
+        let actual = (0..24)
+            .map(|atom| {
+                let loc = fragments
+                    .iter()
+                    .find_map(|fragment| fragment.atoms.get(&atom))
+                    .unwrap()
+                    .loc;
+                loc.map(f64::to_bits)
+            })
             .collect::<Vec<_>>();
         assert_eq!(
             actual, expected,

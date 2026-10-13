@@ -349,6 +349,7 @@ impl Coordinate2DParams {
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] permute_degree_four: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] force_rdkit: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] use_ring_templates: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] use_path_angle_expansion: JsValue,
     ) -> Result<Self, JsValue> {
         let defaults = ck::Coordinate2DParams::default();
         Ok(Self {
@@ -382,6 +383,11 @@ impl Coordinate2DParams {
                     "useRingTemplates",
                 )?,
                 coordinate_map: coordinates(&coordinate_map)?,
+                use_path_angle_expansion: default_bool(
+                    &use_path_angle_expansion,
+                    defaults.use_path_angle_expansion,
+                    "usePathAngleExpansion",
+                )?,
             },
         })
     }
@@ -416,6 +422,10 @@ impl Coordinate2DParams {
     #[wasm_bindgen(getter, js_name = useRingTemplates)]
     pub fn use_ring_templates(&self) -> bool {
         self.inner.use_ring_templates
+    }
+    #[wasm_bindgen(getter, js_name = usePathAngleExpansion)]
+    pub fn use_path_angle_expansion(&self) -> bool {
+        self.inner.use_path_angle_expansion
     }
     #[wasm_bindgen(getter, js_name = coordinateMap, unchecked_return_type = "Map<number, [number, number]>")]
     pub fn coordinate_map(&self) -> Map {

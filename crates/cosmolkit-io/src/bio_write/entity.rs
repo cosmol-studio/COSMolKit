@@ -1,8 +1,7 @@
-//! Private active mmCIF `_entity` category emitter (BIO-ENTITY-WRITE1-32).
+//! Private mmCIF `_entity` category emitter.
 //!
-//! Active-helper only: the coordinate composer is NOT dispatched here and
-//! caller group dispatch remains ROOT-owned. Reuses the one existing loop
-//! initialization/row-append chain and the accepted qchain quoting owner.
+//! Writes only this category; the caller selects categories and composes
+//! coordinates. Loop initialization, row append and quoting use shared owners.
 
 use super::super::cif::CifBlock;
 use cosmolkit_bio::{BioEntityRow, EntityKind};

@@ -64,9 +64,14 @@ fn coordinates_lower_into_dimension_specific_typed_conformers() {
     assert_eq!(truncated.coordinates.conformers_3d.len(), 1);
     assert!(!truncated.coordinates.conformers_3d[0].is_3d());
 
-    let error = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
-    assert!(
-        matches!(error, SmilesParseError::Cx(message) if message.contains("invalid CX coordinate"))
+    // Candidate std::atof retains overflow as infinity in source Point3D storage.
+    let overflow = parse("C |(1e309,0)|");
+    assert_eq!(overflow.coordinates.conformers_3d.len(), 1);
+    assert!(overflow.coordinates.conformers_2d.is_empty());
+    assert!(!overflow.coordinates.conformers_3d[0].is_3d());
+    assert_eq!(
+        overflow.coordinates.conformers_3d[0].coordinates(),
+        &[[f64::INFINITY, 0.0, 0.0]]
     );
 }
 

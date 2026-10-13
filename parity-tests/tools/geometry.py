@@ -130,6 +130,8 @@ def forcefield(mol, task, p):
         return [True, outcomes, original, original]
     if mmff and p["optimizer_observation"] != "isolated_queries_v1":
         raise ValueError("invalid MMFF optimizer observation policy")
+    if task == "uff_optimize" and p["optimizer_observation"] != "retained_optimizer_v1":
+        raise ValueError("invalid UFF optimizer observation policy")
     for _ in range(2):
         options = dict(maxIters=p["iterations"], ignoreInterfragInteractions=p["ignore_interfragment"])
         if mmff:
@@ -140,6 +142,18 @@ def forcefield(mol, task, p):
             result = (FF.MMFFOptimizeMoleculeConfs(mol, numThreads=1, **options) if mmff
                       else FF.UFFOptimizeMoleculeConfs(mol, numThreads=1, **options))
             result = [list(row) for row in result]
+        elif task == "uff_optimize":
+            # UFF.h::UFFOptimizeMolecule -> FFConvenience.h::OptimizeMolecule:
+            # RDKit✔️✔️:   ff.initialize();
+            # RDKit✔️✔️:   int res = ff.minimize(maxIters);
+            # RDKit✔️✔️:   double e = ff.calcEnergy();
+            # RDKit✔️✔️:   return std::make_pair(res, e);
+            # The Python convenience wrapper drops e. Execute its exact native
+            # helper sequence so energy comes from that optimizer, not a new
+            # force field constructed for the resulting coordinates.
+            f = field(mol)
+            status = f.Minimize(maxIts=p["iterations"])
+            result = [status, f.CalcEnergy()]
         else:
             status = FF.MMFFOptimizeMolecule(mol, **options) if mmff else FF.UFFOptimizeMolecule(mol, **options)
             # CK's energy query prepares detached state, not the molecule to

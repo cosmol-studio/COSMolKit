@@ -22,8 +22,8 @@ for (const flavor of ['mmff', 'uff']) {
         const positions = field.positions();
         positions[1][0] += 0.2;
         for (const handle of [field, other]) {
-            handle.setPositions(positions);
-            handle.setFixedAtoms([0]);
+            handle.setPositions_(positions);
+            handle.setFixedAtoms_([0]);
             assert.deepEqual(handle.fixedAtoms(), [0]);
             assert.deepEqual(handle.gradient()[0], [0, 0, 0]);
             assert.ok(handle.gradientUnconstrained().flat().every(Number.isFinite));
@@ -41,8 +41,8 @@ for (const flavor of ['mmff', 'uff']) {
         assert.deepEqual([options.maxIterations, options.forceTolerance, options.energyTolerance], [2, 1e-4, 1e-6]);
         assert.throws(() => { options.maxIterations = -1; }, RangeError);
         assert.equal(options.maxIterations, 2);
-        const outcome = field.minimize(options);
-        const explicit = other.minimizeWithParams(options);
+        const outcome = field.minimize_(options);
+        const explicit = other.minimizeWithParams_(options);
         assert.ok(outcome instanceof ck.ForceFieldMinimizeOutcome);
         assert.ok(outcome.iterations() <= 2);
         assert.ok(outcome.energy() <= before);
@@ -50,7 +50,7 @@ for (const flavor of ['mmff', 'uff']) {
         assert.deepEqual(field.positions(), other.positions());
         assert.deepEqual(field.position(0), pinned);
         const stable = field.positions();
-        assert.throws(() => field.setPositions([]), error => {
+        assert.throws(() => field.setPositions_([]), error => {
             assert.equal(error.kind, ck.MolecularForceFieldErrorKind.CoordinateCount);
             assert.ok(error.detail instanceof ck.ForceFieldError);
             assert.equal(error.detail.kind(), ck.MolecularForceFieldErrorKind.CoordinateCount);
@@ -58,8 +58,8 @@ for (const flavor of ['mmff', 'uff']) {
             assert.equal(error.detail.expected(), stable.length);
             return true;
         });
-        assert.throws(() => field.setPosition(0, [NaN, 0, 0]), error => error.kind === ck.MolecularForceFieldErrorKind.NonFiniteCoordinate && error.atomIndex === 0 && error.component === 0);
-        assert.throws(() => field.setFixedAtoms([999]), error => error.kind === ck.MolecularForceFieldErrorKind.InvalidFixedAtom);
+        assert.throws(() => field.setPosition_(0, [NaN, 0, 0]), error => error.kind === ck.MolecularForceFieldErrorKind.NonFiniteCoordinate && error.atomIndex === 0 && error.component === 0);
+        assert.throws(() => field.setFixedAtoms_([999]), error => error.kind === ck.MolecularForceFieldErrorKind.InvalidFixedAtom);
         assert.deepEqual(field.positions(), stable);
         assert.deepEqual(field.fixedAtoms(), [0]);
         for (const value of [field, other, outcome, explicit, options]) value.free();

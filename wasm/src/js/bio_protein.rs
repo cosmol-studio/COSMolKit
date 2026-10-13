@@ -206,7 +206,7 @@ impl Protein {
             })
             .map_err(|e| crate::bio_selection::operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=retainSelection)]
+    #[wasm_bindgen(js_name=retainSelection_)]
     pub fn retain_selection_(&mut self, selection: &BioSelection) -> Result<(), JsValue> {
         // COSMolKit❗✔️: Arc::make_mut(&mut self.inner)
         // Source's generated operation owns all validation, COW and atomic commit.
@@ -226,7 +226,7 @@ impl Protein {
             })
             .map_err(|e| crate::bio_selection::operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=translate)]
+    #[wasm_bindgen(js_name=translate_)]
     pub fn translate_(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "number[] | Float64Array")] offset: JsValue,

@@ -17,6 +17,8 @@ pub struct SourceRingInfo {
     pub atom_ring_families: Vec<Vec<AtomId>>,
     pub bond_ring_families: Vec<Vec<BondId>>,
     pub relevant_cycle_count: Option<usize>,
+    /// Immutable source RDL data; lifecycle/validity belongs to the runtime.
+    pub decomposition: Option<std::sync::Arc<cosmolkit_ringdecomposer::RingDecomposition>>,
     pub fused_rings: Vec<Vec<bool>>,
     pub num_fused_bonds: Vec<usize>,
 }
@@ -39,8 +41,8 @@ impl Default for SourceRingInfo {
         // RDKit❗✔️: } FIND_RING_TYPE;
         // A newly constructed source ROMol owns this uninitialized cache;
         // this constructor supplies no cache for a copied/extracted molecule.
-        // The existing CORE URF object remains independently unmodeled here;
-        // its represented optional relevant-cycle scalar is transported only.
+        // The source boost::shared_ptr<RDL_data> is immutable shared detached
+        // data here; this value neither computes it nor grants cache authority.
         // O(1), allocation-free empty vectors, like Native default members.
         Self {
             initialized: false,
@@ -52,6 +54,7 @@ impl Default for SourceRingInfo {
             atom_ring_families: Vec::new(),
             bond_ring_families: Vec::new(),
             relevant_cycle_count: None,
+            decomposition: None,
             fused_rings: Vec::new(),
             num_fused_bonds: Vec::new(),
         }

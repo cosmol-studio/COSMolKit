@@ -1,10 +1,13 @@
 //! Detached source-backed modern RDKit CIP label assignment.
 
-use cosmolkit_core::{atropisomer_carriers, find_double_bond_stereo_atoms};
+use cosmolkit_core::atropisomer_carriers;
 use cosmolkit_model::{AtomId, BondId, MoleculeProperties, TopologyBlock};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag};
 use std::borrow::Cow;
+use std::collections::HashMap;
 
+#[cfg(test)]
+use crate::cip_graph::CipRuleView;
 use crate::cip_graph::{
     CipDigraph, CipEdgeId, CipLabelerContext, CipLabelerError, CipNode, CipNodeId, CipRules,
     CipSequenceRule, Descriptor, cip_all_rules, cip_constitutional_rules, descriptor_to_string,
@@ -90,67 +93,79 @@ fn cip_find_configs<'a>(
     atom_mask: &[bool],
     bond_mask: &[bool],
 ) -> Result<Vec<CipConfig<'a>>, CipLabelerError> {
-    // BEGIN RDKIT CPP FUNCTION findConfigs (CIPLabeler.cpp)
-    // RDKit✔️✔️: std::vector<std::unique_ptr<Configuration>> findConfigs(
-    // RDKit✔️✔️:     CIPMol &mol, const boost::dynamic_bitset<> &atoms,
-    // RDKit✔️✔️:     const boost::dynamic_bitset<> &bonds) {
-    // RDKit✔️✔️:   std::vector<std::unique_ptr<Configuration>> configs;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (auto index = atoms.find_first(); index != boost::dynamic_bitset<>::npos;
-    // RDKit✔️✔️:        index = atoms.find_next(index)) {
-    // RDKit✔️✔️:     auto atom = mol.getAtom(index);
-    // RDKit✔️✔️:     auto chiraltag = atom->getChiralTag();
-    // RDKit✔️✔️:     if (chiraltag == Atom::CHI_TETRAHEDRAL_CW ||
-    // RDKit✔️✔️:         chiraltag == Atom::CHI_TETRAHEDRAL_CCW) {
-    // RDKit✔️✔️:       std::unique_ptr<Tetrahedral> cfg{new Tetrahedral(mol, atom)};
-    // RDKit✔️✔️:       configs.push_back(std::move(cfg));
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (auto index = bonds.find_first(); index != boost::dynamic_bitset<>::npos;
-    // RDKit✔️✔️:        index = bonds.find_next(index)) {
-    // RDKit✔️✔️:     auto bond = mol.getBond(index);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     auto bond_cfg = bond->getStereo();
-    // RDKit✔️✔️:     switch (bond_cfg) {
-    // RDKit✔️✔️:       case Bond::STEREOE:
-    // RDKit✔️✔️:         bond_cfg = Bond::STEREOTRANS;
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:       case Bond::STEREOZ:
-    // RDKit✔️✔️:         bond_cfg = Bond::STEREOCIS;
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:       default:
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     switch (bond_cfg) {
-    // RDKit✔️✔️:       case Bond::STEREOTRANS:
-    // RDKit✔️✔️:       case Bond::STEREOCIS: {
-    // RDKit✔️✔️:         std::unique_ptr<Sp2Bond> cfg(new Sp2Bond(
-    // RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
-    // RDKit✔️✔️:         configs.push_back(std::move(cfg));
-    // RDKit✔️✔️:       } break;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       case Bond::STEREOATROPCCW:
-    // RDKit✔️✔️:       case Bond::STEREOATROPCW: {
-    // RDKit✔️✔️:         std::unique_ptr<AtropisomerBond> cfgAtrop(new AtropisomerBond(
-    // RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
-    // RDKit✔️✔️:         configs.push_back(std::move(cfgAtrop));
-    // RDKit✔️✔️:       } break;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       default:
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   return configs;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION findConfigs
+    // BEGIN RDKit 2026.09.1 cip_find_configs
+    // RDKit✔️❌: ConfigList findConfigs(CIPMol &mol, const boost::dynamic_bitset<> &atoms,
+    // RDKit✔️❌:                        const boost::dynamic_bitset<> &bonds) {
+    // RDKit✔️❌:   ConfigList configs;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // All configurations are required here, including unselected ones: they may
+    // RDKit✔️❌:   // provide auxiliary descriptors needed to label a selected configuration.
+    // RDKit✔️❌:   for (unsigned int index = 0; index < mol.getNumAtoms(); ++index) {
+    // RDKit✔️❌:     auto atom = mol.getAtom(index);
+    // RDKit✔️❌:     auto chiraltag = atom->getChiralTag();
+    // RDKit✔️❌:     if (chiraltag == Atom::CHI_TETRAHEDRAL_CW ||
+    // RDKit✔️❌:         chiraltag == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit✔️❌:       auto cfg = std::make_unique<Tetrahedral>(mol, atom);
+    // RDKit✔️❌:       if (cfg->getCarriers().size() == 4) {
+    // RDKit✔️❌:         configs.push_back({std::move(cfg), isSelected(atoms, index)});
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (unsigned int index = 0; index < mol.getNumBonds(); ++index) {
+    // RDKit✔️❌:     auto bond = mol.getBond(index);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     auto bond_cfg = bond->getStereo();
+    // RDKit✔️❌:     switch (bond_cfg) {
+    // RDKit✔️❌:       case Bond::STEREOE:
+    // RDKit✔️❌:         bond_cfg = Bond::STEREOTRANS;
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:       case Bond::STEREOZ:
+    // RDKit✔️❌:         bond_cfg = Bond::STEREOCIS;
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:       default:
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     switch (bond_cfg) {
+    // RDKit✔️❌:       case Bond::STEREOTRANS:
+    // RDKit✔️❌:       case Bond::STEREOCIS: {
+    // RDKit✔️❌:         if (bond->getBondType() != Bond::DOUBLE) {
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         auto cfg = std::make_unique<Sp2Bond>(mol, bond, bond->getBeginAtom(),
+    // RDKit✔️❌:                                              bond->getEndAtom(), bond_cfg);
+    // RDKit✔️❌:         if (cfg->getCarriers().size() == 2) {
+    // RDKit✔️❌:           configs.push_back({std::move(cfg), isSelected(bonds, index)});
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       } break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       case Bond::STEREOATROPCCW:
+    // RDKit✔️❌:       case Bond::STEREOATROPCW: {
+    // RDKit✔️❌:         if (bond->getBondType() != Bond::SINGLE) {
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         auto cfg = std::make_unique<AtropisomerBond>(
+    // RDKit✔️❌:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg);
+    // RDKit✔️❌:         if (cfg->getCarriers().size() == 2) {
+    // RDKit✔️❌:           configs.push_back({std::move(cfg), isSelected(bonds, index)});
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       } break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       default:
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   return configs;
+    // RDKit✔️❌: }
+    // END RDKit 2026.09.1 cip_find_configs
     let mut configs = Vec::new();
 
+    // RDKit✔️✔️:   // All configurations are required here, including unselected ones: they may
+    // RDKit✔️✔️:   // provide auxiliary descriptors needed to label a selected configuration.
+    // RDKit✔️✔️:   for (unsigned int index = 0; index < mol.getNumAtoms(); ++index) {
+    // One source-ordered scan; selection is carried separately from presence.
     for (index, selected) in atom_mask.iter().copied().enumerate() {
-        if !selected {
-            continue;
-        }
         let atom = molecule
             .atoms
             .get(index)
@@ -160,18 +175,17 @@ fn cip_find_configs<'a>(
             })?;
         match atom.chiral_tag() {
             ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
-                configs.push(CipConfig::Tetrahedral(CipTetrahedral::new(
-                    molecule, index,
-                )?));
+                let mut config = CipTetrahedral::new(molecule, index)?;
+                config.configuration.selected = selected;
+                if config.get_carriers().len() == 4 {
+                    configs.push(CipConfig::Tetrahedral(config));
+                }
             }
             _ => {}
         }
     }
 
     for (index, selected) in bond_mask.iter().copied().enumerate() {
-        if !selected {
-            continue;
-        }
         let bond = molecule
             .bonds
             .get(index)
@@ -186,22 +200,36 @@ fn cip_find_configs<'a>(
         };
         match bond_cfg {
             BondStereo::Trans | BondStereo::Cis => {
-                configs.push(CipConfig::Sp2Bond(CipSp2Bond::new(
+                if bond.order() != BondOrder::Double {
+                    continue;
+                }
+                let mut config = CipSp2Bond::new(
                     molecule,
                     index,
                     bond.begin().index(),
                     bond.end().index(),
                     bond_cfg,
-                )?));
+                )?;
+                config.configuration.selected = selected;
+                if config.get_carriers().len() == 2 {
+                    configs.push(CipConfig::Sp2Bond(config));
+                }
             }
             BondStereo::AtropCcw | BondStereo::AtropCw => {
-                configs.push(CipConfig::AtropisomerBond(CipAtropisomerBond::new(
+                if bond.order() != BondOrder::Single {
+                    continue;
+                }
+                let mut config = CipAtropisomerBond::new(
                     molecule,
                     index,
                     bond.begin().index(),
                     bond.end().index(),
                     bond_cfg,
-                )?));
+                )?;
+                config.configuration.selected = selected;
+                if config.get_carriers().len() == 2 {
+                    configs.push(CipConfig::AtropisomerBond(config));
+                }
             }
             _ => {}
         }
@@ -314,24 +342,23 @@ fn cip_label_aux(
     center_idx: usize,
     context: &mut CipLabelerContext,
 ) -> Result<bool, CipLabelerError> {
-    // BEGIN RDKit 2026.03.6 COMPLETE labelAux
-    // RDKit❗❌: bool labelAux(std::vector<std::unique_ptr<Configuration>> &configs,
-    // RDKit❗❌:               const Rules &rules,
-    // RDKit❗❌:               const std::unique_ptr<Configuration> &center) {
+    // BEGIN RDKit 2026.09.1 cip_label_aux
+    // RDKit❗❌: bool labelAux(ConfigList &configs, const Rules &rules, ConfigEntry &center) {
     // RDKit❗❌:   using Node_Cfg_Pair = std::pair<Node *, Configuration *>;
     // RDKit❗❌:   std::vector<Node_Cfg_Pair> aux;
     // RDKit❗❌:
-    // RDKit❗❌:   auto &digraph = center->getDigraph();
-    // RDKit❗❌:   for (const auto &config : configs) {
-    // RDKit❗❌:     if (config == center) {
+    // RDKit❗❌:   auto &digraph = center.config->getDigraph();
+    // RDKit❗❌:   for (const auto &entry : configs) {
+    // RDKit❗❌:     if (entry.config.get() == center.config.get()) {
     // RDKit❗❌:       continue;
     // RDKit❗❌:     }
+    // RDKit❗❌:     const auto &config = entry.config;
     // RDKit❗❌:     // FIXME: specific to each descriptor
     // RDKit❗❌:     const auto &foci = config->getFoci();
     // RDKit❗❌:
     // RDKit❗❌:     // Skip if none of the foci atoms were reached during expansion
     // RDKit❗❌:     if (std::ranges::none_of(foci,
-    // RDKit❗❌:                      [&](auto f) { return digraph.seenAtom(f); })) {
+    // RDKit❗❌:                              [&](auto f) { return digraph.seenAtom(f); })) {
     // RDKit❗❌:       continue;
     // RDKit❗❌:     }
     // RDKit❗❌:     for (const auto &node : digraph.getNodes(foci[0])) {
@@ -356,7 +383,10 @@ fn cip_label_aux(
     // RDKit❗❌:   auto farthest = [](const Node_Cfg_Pair &a, const Node_Cfg_Pair &b) {
     // RDKit❗❌:     return a.first->getDistance() > b.first->getDistance();
     // RDKit❗❌:   };
-    // RDKit❗❌:   std::sort(aux.begin(), aux.end(), farthest);
+    // RDKit❗❌:
+    // RDKit❗❌:   // this sorting is stable in the original code, so use
+    // RDKit❗❌:   // stable sorting here too, despite it doesn't seem to be relevant
+    // RDKit❗❌:   std::stable_sort(aux.begin(), aux.end(), farthest);
     // RDKit❗❌:
     // RDKit❗❌:   // Using a boost::unordered_map because it is more performant
     // RDKit❗❌:   // than the STL version.
@@ -374,7 +404,9 @@ fn cip_label_aux(
     // RDKit❗❌:     }
     // RDKit❗❌:     const auto &config = e.second;
     // RDKit❗❌:     auto label = config->label(node, digraph, rules);
-    // RDKit❗❌:     queue.emplace(node, label);
+    // RDKit❗❌:     // Also match the original code: a later configuration at this distance
+    // RDKit❗❌:     // "wins" if multiple configurations map to the same digraph node.
+    // RDKit❗❌:     queue[node] = label;
     // RDKit❗❌:   }
     // RDKit❗❌:
     // RDKit❗❌:   for (const auto &e : queue) {
@@ -383,7 +415,7 @@ fn cip_label_aux(
     // RDKit❗❌:
     // RDKit❗❌:   return true;
     // RDKit❗❌: }
-    // END RDKit 2026.03.6 COMPLETE labelAux
+    // END RDKit 2026.09.1 cip_label_aux
     let config_foci = configs
         .iter()
         .enumerate()
@@ -422,20 +454,24 @@ fn cip_label_aux(
 
     aux.sort_by(|left, right| right.2.cmp(&left.2));
 
-    let mut queue = Vec::<(CipNodeId, Descriptor)>::new();
+    // RDKit✔️✔️:   std::stable_sort(aux.begin(), aux.end(), farthest);
+    // RDKit✔️✔️:   boost::unordered_map<Node *, Descriptor> queue;
+    // RDKit✔️✔️:     queue[node] = label;
+    // Stable equal-distance order and O(1)-average replacement match source.
+    // Drain order is unobservable: all independent labels install before the
+    // next distance, and no ranking occurs during the drain.
+    let mut queue = HashMap::<CipNodeId, Descriptor>::new();
     let mut prev = i32::MAX;
     for (node, config_idx, distance) in aux {
         if distance < prev {
-            for (queued_node, desc) in queue.drain(..) {
+            for (queued_node, desc) in queue.drain() {
                 cip_set_center_node_aux(configs, center_idx, queued_node, desc);
             }
             prev = distance;
         }
         let label =
             cip_label_with_center_digraph(configs, center_idx, config_idx, node, rules, context)?;
-        if !queue.iter().any(|(queued_node, _)| *queued_node == node) {
-            queue.push((node, label));
-        }
+        queue.insert(node, label);
     }
 
     for (queued_node, desc) in queue {
@@ -445,77 +481,87 @@ fn cip_label_aux(
     Ok(true)
 }
 
-// BEGIN RDKIT CPP FUNCTION label (CIPLabeler.cpp)
-// RDKit✔️✔️: void label(std::vector<std::unique_ptr<Configuration>> &configs,
-// RDKit✔️✔️:            unsigned int maxRecursiveIterations) {
-// RDKit✔️✔️:   // First, if the specified number of iterations allows it, run all centers
-// RDKit✔️✔️:   // through a fast pass with the constitutional rules allow easy stuff to be
-// RDKit✔️✔️:   // resolved.
-// RDKit✔️✔️:   for (auto &conf : configs) {
-// RDKit✔️✔️:     // Make sure this stereo center has no label
-// RDKit✔️✔️:     conf->resetPrimaryLabel();
-// RDKit✔️✔️:
-// RDKit✔️✔️:     remainingCallCount = constitutionalRuleTimeout;
-// RDKit✔️✔️:     try {
-// RDKit✔️✔️:       auto desc = conf->label(constitutional_rules);
-// RDKit✔️✔️:       if (desc != Descriptor::UNKNOWN) {
-// RDKit✔️✔️:         conf->setPrimaryLabel(desc);
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:     } catch (const MaxIterationsExceeded &) {
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:
-// RDKit✔️✔️:   // Now, retry everything that hasn't been solved with a more generous
-// RDKit✔️✔️:   // threshold
-// RDKit✔️✔️:   if (maxRecursiveIterations != 0) {
-// RDKit✔️✔️:     remainingCallCount = maxRecursiveIterations;
-// RDKit✔️✔️:   } else {
-// RDKit✔️✔️:     remainingCallCount = UINT_MAX;  // really big - will never be hit
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:
-// RDKit✔️✔️:   // try again on everything that hasn't been resolved yet
-// RDKit✔️✔️:   for (const auto &conf : configs) {
-// RDKit✔️✔️:     if (conf->hasPrimaryLabel()) {
-// RDKit✔️✔️:       // already resolved!
-// RDKit✔️✔️:       continue;
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:
-// RDKit✔️✔️:     auto desc = conf->label(constitutional_rules);
-// RDKit✔️✔️:     if (desc != Descriptor::UNKNOWN) {
-// RDKit✔️✔️:       conf->setPrimaryLabel(desc);
-// RDKit✔️✔️:     } else {
-// RDKit✔️✔️:       if (labelAux(configs, all_rules, conf)) {
-// RDKit✔️✔️:         desc = conf->label(all_rules);
-// RDKit✔️✔️:
-// RDKit✔️✔️:         if (desc != Descriptor::UNKNOWN) {
-// RDKit✔️✔️:           conf->setPrimaryLabel(desc);
-// RDKit✔️✔️:         }
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION label
 fn cip_label(
     configs: &mut [CipConfig<'_>],
     max_recursive_iterations: u32,
 ) -> Result<(), CipLabelerError> {
+    // BEGIN RDKit 2026.09.1 label
+    // RDKit✔️❌: void label(ConfigList &configs, unsigned int maxRecursiveIterations) {
+    // RDKit✔️❌:   const ScopedIterationBudget callBudget(maxRecursiveIterations);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // First, if the specified number of iterations allows it, run all centers
+    // RDKit✔️❌:   // through a fast pass with the constitutional rules allow easy stuff to be
+    // RDKit✔️❌:   // resolved.
+    // RDKit✔️❌:   for (auto &entry : configs) {
+    // RDKit✔️❌:     if (!entry.selected) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     auto &conf = entry.config;
+    // RDKit✔️❌:
+    // RDKit✔️❌:     try {
+    // RDKit✔️❌:       const ScopedPreliminaryBudget preliminaryBudget;
+    // RDKit✔️❌:       auto desc = conf->label(constitutional_rules);
+    // RDKit✔️❌:       if (desc != Descriptor::UNKNOWN) {
+    // RDKit✔️❌:         conf->setPrimaryLabel(desc);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } catch (const MaxIterationsExceeded &) {
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // try again on everything that hasn't been resolved yet
+    // RDKit✔️❌:   for (auto &entry : configs) {
+    // RDKit✔️❌:     if (!entry.selected) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     auto &conf = entry.config;
+    // RDKit✔️❌:     if (conf->hasPrimaryLabel()) {
+    // RDKit✔️❌:       // already resolved!
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     auto desc = conf->label(constitutional_rules);
+    // RDKit✔️❌:     if (desc != Descriptor::UNKNOWN) {
+    // RDKit✔️❌:       conf->setPrimaryLabel(desc);
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       if (labelAux(configs, all_rules, entry)) {
+    // RDKit✔️❌:         desc = conf->label(all_rules);
+    // RDKit✔️❌:
+    // RDKit✔️❌:         if (desc != Descriptor::UNKNOWN) {
+    // RDKit✔️❌:           conf->setPrimaryLabel(desc);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKit 2026.09.1 label
     let constitutional_rules = cip_constitutional_rules()?;
+    let mut context = CipLabelerContext::new(max_recursive_iterations);
     for conf in configs.iter_mut() {
-        conf.reset_primary_label();
-        let mut context = CipLabelerContext::with_remaining_call_count(
-            CipLabelerContext::CONSTITUTIONAL_RULE_TIMEOUT,
-        );
-        match conf.label(&constitutional_rules, &mut context) {
+        // RDKit✔️✔️:     if (!entry.selected) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        if !conf.is_selected() {
+            continue;
+        }
+        // RDKit✔️✔️:   const ScopedIterationBudget callBudget(maxRecursiveIterations);
+        // RDKit✔️✔️:       const ScopedPreliminaryBudget preliminaryBudget;
+        // Keep the same user counter in both passes. End the per-center
+        // allowance before matching any Result, including exhausted/errors.
+        context.begin_preliminary_pass();
+        let result = conf.label(&constitutional_rules, &mut context);
+        context.end_preliminary_pass();
+        match result {
             Ok(desc) if desc != Descriptor::Unknown => conf.set_primary_label(desc)?,
             Ok(_) | Err(CipLabelerError::MaxIterationsExceeded) => {}
             Err(err) => return Err(err),
         }
     }
 
-    let constitutional_rules = cip_constitutional_rules()?;
     let all_rules = cip_all_rules()?;
-    let mut context = CipLabelerContext::new(max_recursive_iterations);
     for idx in 0..configs.len() {
+        if !configs[idx].is_selected() {
+            continue;
+        }
         if configs[idx].has_primary_label() {
             continue;
         }
@@ -547,22 +593,22 @@ fn cip_clear_selected_labels(
     atom_mask: &[bool],
     bond_mask: &[bool],
 ) -> Result<(), CipLabelerError> {
-    // RDKit✔️❌: getFocus()->clearProp(common_properties::_CIPCode);
-    // RDKit✔️❌: dp_bond->clearProp(common_properties::_CIPCode);
-    // Only actual configuration reset writes detach topology. A first write
-    // clones the detached block, unlike upstream's local property mutation;
-    // no-configuration inputs retain the exact borrowed source allocation.
+    // RDKit✔️❌: template <typename T>
+    // RDKit✔️❌: void clearCIPProperties(T *object) {
+    // RDKit✔️❌:   object->clearProp(common_properties::_CIPCode);
+    // RDKit✔️❌:   object->clearProp(common_properties::_CIPNeighborOrder);
+    // RDKit✔️❌: }
+    // Selection, not currently recognized configuration, controls clearing.
+    // First actual property removal detaches the block; absent properties do
+    // not manufacture writes. Scan each selected row once and keep COW.
     for (idx, selected) in atom_mask.iter().copied().enumerate() {
         if !selected {
             continue;
         }
-        if let Some(atom) = molecule.atoms.get(idx) {
-            if matches!(
-                atom.chiral_tag(),
-                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-            ) {
+        for property in ["_CIPCode", "_CIPNeighborOrder"] {
+            if molecule.atoms[idx].prop(property).is_some() {
                 molecule.to_mut().atoms[idx]
-                    .clear_prop("_CIPCode")
+                    .clear_prop(property)
                     .map_err(|source| CipLabelerError::AtomProperty { atom: idx, source })?;
             }
         }
@@ -571,18 +617,10 @@ fn cip_clear_selected_labels(
         if !selected {
             continue;
         }
-        if let Some(bond) = molecule.bonds.get(idx) {
-            if matches!(
-                bond.stereo(),
-                BondStereo::E
-                    | BondStereo::Z
-                    | BondStereo::Cis
-                    | BondStereo::Trans
-                    | BondStereo::AtropCcw
-                    | BondStereo::AtropCw
-            ) {
+        for property in ["_CIPCode", "_CIPNeighborOrder"] {
+            if molecule.bonds[idx].prop(property).is_some() {
                 molecule.to_mut().bonds[idx]
-                    .clear_prop("_CIPCode")
+                    .clear_prop(property)
                     .map_err(|source| CipLabelerError::BondValue { bond: idx, source })?;
             }
         }
@@ -677,70 +715,97 @@ fn cip_apply_primary_labels(
     Ok(())
 }
 
-// BEGIN RDKIT CPP FUNCTION assignCIPLabels selected overload (CIPLabeler.cpp)
-// RDKit✔️✔️: void assignCIPLabels(ROMol &mol, const boost::dynamic_bitset<> &atoms,
-// RDKit✔️✔️:                      const boost::dynamic_bitset<> &bonds,
-// RDKit✔️✔️:                      unsigned int maxRecursiveIterations) {
-// RDKit✔️✔️:   ControlCHandler::reset();
-// RDKit✔️✔️:
-// RDKit✔️✔️:   // reset the mark, for the case that this fails
-// RDKit✔️✔️:   mol.clearProp(common_properties::_CIPComputed);
-// RDKit✔️✔️:   CIPMol cipmol{mol};
-// RDKit✔️✔️:   auto configs = findConfigs(cipmol, atoms, bonds);
-// RDKit✔️✔️:
-// RDKit✔️✔️:   try {
-// RDKit✔️✔️:     label(configs, maxRecursiveIterations);
-// RDKit❌❌:   } catch (const ControlCCaught &) {
-// RDKit❌❌:   }
-// RDKit❌❌:   if (ControlCHandler::getGotSignal()) {
-// RDKit❌❌:     BOOST_LOG(rdWarningLog)
-// RDKit❌❌:         << "Interrupted, cancelling CIP label calculation" << std::endl;
-// RDKit❌❌:     return;
-// RDKit❌❌:   }
-// RDKit✔️✔️:
-// RDKit✔️✔️:   const bool computed = true;
-// RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION assignCIPLabels selected overload
 fn assign_cip_labels_for_masks<'a>(
     mut topology: Cow<'a, TopologyBlock>,
     mut properties: Cow<'a, MoleculeProperties>,
     atom_mask: &[bool],
     bond_mask: &[bool],
     max_recursive_iterations: u32,
-) -> Result<(Cow<'a, TopologyBlock>, Cow<'a, MoleculeProperties>), CipLabelerError> {
-    // BEGIN RDKIT CPP FUNCTION assignCIPLabels selected overload (CIPLabeler.cpp)
-    // RDKit✔️✔️: void assignCIPLabels(ROMol &mol, const boost::dynamic_bitset<> &atoms,
-    // RDKit✔️✔️:                      const boost::dynamic_bitset<> &bonds,
-    // RDKit✔️✔️:                      unsigned int maxRecursiveIterations) {
-    // RDKit✔️✔️:   ControlCHandler::reset();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // reset the mark, for the case that this fails
-    // RDKit✔️✔️:   mol.clearProp(common_properties::_CIPComputed);
-    // RDKit✔️✔️:   CIPMol cipmol{mol};
-    // RDKit✔️✔️:   auto configs = findConfigs(cipmol, atoms, bonds);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   try {
-    // RDKit✔️✔️:     label(configs, maxRecursiveIterations);
-    // RDKit❌❌:   } catch (const ControlCCaught &) {
-    // RDKit❌❌:   }
-    // RDKit❌❌:   if (ControlCHandler::getGotSignal()) {
-    // RDKit❌❌:     BOOST_LOG(rdWarningLog)
-    // RDKit❌❌:         << "Interrupted, cancelling CIP label calculation" << std::endl;
-    // RDKit❌❌:     return;
-    // RDKit❌❌:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   const bool computed = true;
-    // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION assignCIPLabels selected overload
+) -> Result<
+    (
+        Cow<'a, TopologyBlock>,
+        Cow<'a, MoleculeProperties>,
+        cosmolkit_types::CipAssignmentCompletion,
+    ),
+    CipLabelerError,
+> {
+    // RDKit✔️✔️:   PRECONDITION(atoms.size() == mol.getNumAtoms(),
+    // RDKit✔️✔️:                "Atoms bitset size does not match number of atoms")
+    // RDKit✔️✔️:   PRECONDITION(bonds.size() == mol.getNumBonds(),
+    // RDKit✔️✔️:                "Bonds bitset size does not match number of bonds")
+    // Private mask callers use exact row sizes; reject a broken caller before
+    // any property clearing. These O(1) checks do not traverse the graph.
+    if atom_mask.len() != topology.atoms.len() {
+        return Err(CipLabelerError::InvalidInternalState {
+            detail: "Atoms bitset size does not match number of atoms",
+        });
+    }
+    if bond_mask.len() != topology.bonds.len() {
+        return Err(CipLabelerError::InvalidInternalState {
+            detail: "Bonds bitset size does not match number of bonds",
+        });
+    }
+    // BEGIN RDKit 2026.09.1 assignCIPLabels selected overload
+    // RDKit✔️❌: void assignCIPLabels(ROMol &mol, const boost::dynamic_bitset<> &atoms,
+    // RDKit✔️❌:                      const boost::dynamic_bitset<> &bonds,
+    // RDKit✔️❌:                      unsigned int maxRecursiveIterations) {
+    // RDKit✔️❌:   PRECONDITION(atoms.size() == mol.getNumAtoms(),
+    // RDKit✔️❌:                "Atoms bitset size does not match number of atoms")
+    // RDKit✔️❌:   PRECONDITION(bonds.size() == mol.getNumBonds(),
+    // RDKit✔️❌:                "Bonds bitset size does not match number of bonds")
+    // RDKit✔️❌:
+    // RDKit✔️❌:   ControlCHandler hdlr;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const bool fullSelection = atoms.all() && bonds.all();
+    // RDKit✔️❌:
+    // RDKit✔️❌:   clearSelectedCIPProperties(mol, atoms, bonds, fullSelection);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   CIPMol cipmol{mol};
+    // RDKit✔️❌:   auto configs = findConfigs(cipmol, atoms, bonds);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   try {
+    // RDKit✔️❌:     label(configs, maxRecursiveIterations);
+    // RDKit✔️❌:   } catch (const ControlCCaught &) {
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (hdlr.getGotSignal()) {
+    // RDKit✔️❌:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:         << "Interrupted, cancelling CIP label calculation" << std::endl;
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (fullSelection) {
+    // RDKit✔️❌:     constexpr bool computed = true;
+    // RDKit✔️❌:     mol.setProp(common_properties::_CIPComputed, true, computed);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKit 2026.09.1 assignCIPLabels selected overload
+    // RDKit✔️✔️:   ControlCHandler hdlr;
+    // Scoped lifetime uses the existing CORE source signal owner. Native
+    // handler installation failure stays structural; Web installs no handler.
+    let _handler = cosmolkit_core::source_control_c::ControlCHandler::new().ok_or(
+        CipLabelerError::InvalidInternalState {
+            detail: "cannot install CIP SIGINT handler",
+        },
+    )?;
     properties.to_mut().clear_prop("_CIPComputed")?;
     cip_clear_selected_labels(&mut topology, atom_mask, bond_mask)?;
 
     let mut configs = cip_find_configs(&topology, atom_mask, bond_mask)?;
-    cip_label(&mut configs, max_recursive_iterations)?;
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     label(configs, maxRecursiveIterations);
+    // RDKit✔️✔️:   } catch (const ControlCCaught &) {
+    // RDKit✔️✔️:   }
+    match cip_label(&mut configs, max_recursive_iterations) {
+        Ok(()) | Err(CipLabelerError::ControlCCaught) => {}
+        Err(error) => return Err(error),
+    }
+    let interrupted = cosmolkit_core::source_control_c::got_signal();
+    if interrupted {
+        eprintln!("Interrupted, cancelling CIP label calculation");
+    }
     let labels = configs
         .iter()
+        .filter(|config| config.is_selected())
         .filter_map(CipConfig::primary_label)
         .collect::<Vec<_>>();
     drop(configs);
@@ -748,10 +813,29 @@ fn assign_cip_labels_for_masks<'a>(
     if !labels.is_empty() {
         cip_apply_primary_labels(topology.to_mut(), labels)?;
     }
-    properties
-        .to_mut()
-        .set_computed_prop("_CIPComputed", cosmolkit_model::PropertyValue::Bool(true))?;
-    Ok((topology, properties))
+    // RDKit✔️✔️:   const bool fullSelection = atoms.all() && bonds.all();
+    // RDKit✔️✔️:   if (fullSelection) {
+    // RDKit✔️✔️:     constexpr bool computed = true;
+    // RDKit✔️✔️:     mol.setProp(common_properties::_CIPComputed, true, computed);
+    // RDKit✔️✔️:   }
+    // O(V+E) mask inspection, no extra state; empty full masks count as all.
+    if !interrupted
+        && atom_mask.iter().all(|selected| *selected)
+        && bond_mask.iter().all(|selected| *selected)
+    {
+        properties
+            .to_mut()
+            .set_computed_prop("_CIPComputed", cosmolkit_model::PropertyValue::Bool(true))?;
+    }
+    Ok((
+        topology,
+        properties,
+        if interrupted {
+            cosmolkit_types::CipAssignmentCompletion::Interrupted
+        } else {
+            cosmolkit_types::CipAssignmentCompletion::Completed
+        },
+    ))
 }
 
 // BEGIN RDKIT CPP FUNCTION assignCIPLabels all-molecule overload (CIPLabeler.cpp)
@@ -768,7 +852,7 @@ pub fn assign_cip_labels(
     properties: MoleculeProperties,
     options: &CipLabelOptions,
 ) -> Result<CipLabelAssignment, CipLabelerError> {
-    let (topology, properties) =
+    let (topology, properties, _completion) =
         assign_cip_labels_cow(Cow::Owned(topology), Cow::Owned(properties), options)?;
     Ok(CipLabelAssignment {
         topology: topology.into_owned(),
@@ -783,7 +867,14 @@ pub fn assign_cip_labels_cow<'a>(
     topology: Cow<'a, TopologyBlock>,
     properties: Cow<'a, MoleculeProperties>,
     options: &CipLabelOptions,
-) -> Result<(Cow<'a, TopologyBlock>, Cow<'a, MoleculeProperties>), CipLabelerError> {
+) -> Result<
+    (
+        Cow<'a, TopologyBlock>,
+        Cow<'a, MoleculeProperties>,
+        cosmolkit_types::CipAssignmentCompletion,
+    ),
+    CipLabelerError,
+> {
     // RDKit❗❌: void assignCIPLabels(ROMol &mol, unsigned int maxRecursiveIterations) {
     // RDKit❗❌:   boost::dynamic_bitset<> atoms(mol.getNumAtoms());
     // RDKit❗❌:   boost::dynamic_bitset<> bonds(mol.getNumBonds());
@@ -847,6 +938,7 @@ pub fn assign_cip_labels_cow<'a>(
 }
 
 pub(crate) struct CipConfiguration<'a> {
+    selected: bool,
     foci: Vec<usize>,
     carriers: Vec<Option<usize>>,
     digraph: CipDigraph<'a>,
@@ -889,6 +981,13 @@ pub(crate) enum CipConfig<'a> {
 }
 
 impl<'a> CipConfig<'a> {
+    fn is_selected(&self) -> bool {
+        match self {
+            Self::Tetrahedral(config) => config.configuration.selected,
+            Self::Sp2Bond(config) => config.configuration.selected,
+            Self::AtropisomerBond(config) => config.configuration.selected,
+        }
+    }
     fn get_foci(&self) -> &[usize] {
         match self {
             Self::Tetrahedral(config) => config.get_foci(),
@@ -1241,6 +1340,7 @@ impl<'a> CipConfiguration<'a> {
     // END RDKIT CPP FUNCTION Configuration constructors/getters/setCarriers/label
     pub(crate) fn new(molecule: &'a TopologyBlock, focus: usize) -> Result<Self, CipLabelerError> {
         Ok(Self {
+            selected: true,
             foci: vec![focus],
             carriers: Vec::new(),
             digraph: CipDigraph::new(molecule, focus, false)?,
@@ -1256,6 +1356,7 @@ impl<'a> CipConfiguration<'a> {
             .first()
             .ok_or(CipLabelerError::EmptyConfigurationFoci)?;
         Ok(Self {
+            selected: true,
             foci,
             carriers: Vec::new(),
             digraph: CipDigraph::new(molecule, focus, atropisomer_mode)?,
@@ -1398,35 +1499,38 @@ pub(crate) struct CipTetrahedral<'a> {
 }
 
 impl<'a> CipTetrahedral<'a> {
-    // BEGIN RDKIT CPP FUNCTION Tetrahedral::Tetrahedral (configs/Tetrahedral.cpp)
-    // RDKit✔️✔️: Tetrahedral::Tetrahedral(const CIPMol &mol, Atom *focus)
-    // RDKit✔️✔️:     : Configuration(mol, focus) {
-    // RDKit✔️✔️:   CHECK_INVARIANT(focus, "bad atom")
-    // RDKit✔️✔️:   CHECK_INVARIANT(focus->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW ||
-    // RDKit✔️✔️:                       focus->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW,
-    // RDKit✔️✔️:                   "bad config")
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<Atom *> carriers;
-    // RDKit✔️✔️:   carriers.reserve(4);
-    // RDKit✔️✔️:   for (auto &nbr : mol.getNeighbors(focus)) {
-    // RDKit✔️✔️:     carriers.push_back(nbr);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (carriers.size() < 4) {
-    // RDKit✔️✔️:     // Implicit H -- use the central atom instead of a dummy H
-    // RDKit✔️✔️:     carriers.push_back(focus);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (carriers.size() < 4) {
-    // RDKit✔️✔️:     // Trigonal pyramid centers with an implicit H need a phantom
-    // RDKit✔️✔️:     // atom as fourth carrier. This one must be represented differently
-    // RDKit✔️✔️:     // than the implicit H.
-    // RDKit✔️✔️:     carriers.push_back(nullptr);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   POSTCONDITION(carriers.size() == 4, "configuration must have 4 carriers");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   setCarriers(std::move(carriers));
-    // RDKit✔️✔️: };
-    // END RDKIT CPP FUNCTION Tetrahedral::Tetrahedral
     pub(crate) fn new(molecule: &'a TopologyBlock, focus: usize) -> Result<Self, CipLabelerError> {
+        // BEGIN RDKit 2026.09.1 Tetrahedral::Tetrahedral
+        // RDKit✔️❌: Tetrahedral::Tetrahedral(const CIPMol &mol, Atom *focus)
+        // RDKit✔️❌:     : Configuration(mol, focus) {
+        // RDKit✔️❌:   CHECK_INVARIANT(focus, "bad atom")
+        // RDKit✔️❌:   CHECK_INVARIANT(focus->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW ||
+        // RDKit✔️❌:                       focus->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW,
+        // RDKit✔️❌:                   "bad config")
+        // RDKit✔️❌:
+        // RDKit✔️❌:   std::vector<Atom *> carriers;
+        // RDKit✔️❌:   carriers.reserve(4);
+        // RDKit✔️❌:   for (auto &nbr : mol.getNeighbors(focus)) {
+        // RDKit✔️❌:     carriers.push_back(nbr);
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   if (carriers.size() < 2 || carriers.size() > 4) {
+        // RDKit✔️❌:     return;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   if (carriers.size() < 4) {
+        // RDKit✔️❌:     // Implicit H -- use the central atom instead of a dummy H
+        // RDKit✔️❌:     carriers.push_back(focus);
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   if (carriers.size() < 4) {
+        // RDKit✔️❌:     // Trigonal pyramid centers with an implicit H need a phantom
+        // RDKit✔️❌:     // atom as fourth carrier. This one must be represented differently
+        // RDKit✔️❌:     // than the implicit H.
+        // RDKit✔️❌:     carriers.push_back(nullptr);
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   POSTCONDITION(carriers.size() == 4, "configuration must have 4 carriers");
+        // RDKit✔️❌:
+        // RDKit✔️❌:   setCarriers(std::move(carriers));
+        // RDKit✔️❌: };
+        // END RDKit 2026.09.1 Tetrahedral::Tetrahedral
         let mut configuration = CipConfiguration::new(molecule, focus)?;
         let atom = configuration.digraph.mol().atom(focus)?;
         match atom.chiral_tag() {
@@ -1443,6 +1547,18 @@ impl<'a> CipTetrahedral<'a> {
         let mut carriers = Vec::with_capacity(4);
         for nbr in configuration.digraph.mol().neighbor_indices(focus)? {
             carriers.push(Some(nbr));
+        }
+        // RDKit✔️✔️:   if (carriers.size() < 2 || carriers.size() > 4) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // An empty carrier set represents ineligible configuration, not a
+        // failure of an otherwise valid molecule. Source degree scan is kept.
+        if !(2..=4).contains(&carriers.len()) {
+            return Ok(Self {
+                configuration,
+                ranked_anchors: Vec::new(),
+                primary_label: None,
+            });
         }
         if carriers.len() < 4 {
             carriers.push(Some(focus));
@@ -1624,114 +1740,6 @@ impl<'a> CipTetrahedral<'a> {
         )
     }
 
-    // BEGIN RDKIT CPP FUNCTION Tetrahedral::label(Node *, const Rules &) (configs/Tetrahedral.cpp)
-    // RDKit✔️✔️: Descriptor Tetrahedral::label(Node *node, const Rules &comp) {
-    // RDKit✔️✔️:   auto focus = getFocus();
-    // RDKit✔️✔️:   auto edges = node->getEdges();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   d_ranked_anchors.clear();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // something not right!?! bad creation
-    // RDKit✔️✔️:   if (edges.size() < 3) {
-    // RDKit✔️✔️:     return Descriptor::ns;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto priority = comp.sort(node, edges);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   bool isUnique = priority.isUnique();
-    // RDKit✔️✔️:   if (!isUnique && edges.size() == 4) {
-    // RDKit✔️✔️:     if (comp.getNumSubRules() == 3) {
-    // RDKit✔️✔️:       return Descriptor::UNKNOWN;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     auto partition = comp.getSorter()->getGroups(edges);
-    // RDKit✔️✔️:     if (partition.size() == 2) {
-    // RDKit✔️✔️:       node->getDigraph()->setRule6Ref(edges[1]->getEnd()->getAtom());
-    // RDKit✔️✔️:       priority = comp.sort(node, edges);
-    // RDKit✔️✔️:       node->getDigraph()->setRule6Ref(nullptr);
-    // RDKit✔️✔️:     } else if (partition.size() == 1) {
-    // RDKit✔️✔️:       // S4 symmetric case
-    // RDKit✔️✔️:       node->getDigraph()->setRule6Ref(edges[0]->getEnd()->getAtom());
-    // RDKit✔️✔️:       comp.sort(node, edges);
-    // RDKit✔️✔️:       auto nbrs1 = std::vector<Edge *>(edges.begin(), edges.end());
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       node->getDigraph()->setRule6Ref(edges[1]->getEnd()->getAtom());
-    // RDKit✔️✔️:       priority = comp.sort(node, edges);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       node->getDigraph()->setRule6Ref(nullptr);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       if (parity4(nbrs1, edges) == 1) {
-    // RDKit✔️✔️:         return Descriptor::UNKNOWN;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (!priority.isUnique()) {
-    // RDKit✔️✔️:       return Descriptor::UNKNOWN;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (!isUnique) {
-    // RDKit✔️✔️:     return Descriptor::UNKNOWN;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto ordered = std::vector<Atom *>(4, nullptr);
-    // RDKit✔️✔️:   int idx = 0;
-    // RDKit✔️✔️:   d_ranked_anchors.reserve(4);
-    // RDKit✔️✔️:   for (const auto &edge : edges) {
-    // RDKit✔️✔️:     if (edge->getEnd()->isSet(Node::BOND_DUPLICATE) ||
-    // RDKit✔️✔️:         edge->getEnd()->isSet(Node::IMPL_HYDROGEN)) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     auto atom = edge->getEnd()->getAtom();
-    // RDKit✔️✔️:     ordered[idx] = atom;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     // In this case we don't worry about implicit H (see Sp2Bond
-    // RDKit✔️✔️:     // and Atropisomer): chirality is positional, and we don't
-    // RDKit✔️✔️:     // know where the implicit H may be ("before" or "after" a
-    // RDKit✔️✔️:     // potential 1H with lower priority?), so we just ignore it
-    // RDKit✔️✔️:     // in the ranked neighbors list
-    // RDKit✔️✔️:     d_ranked_anchors.push_back(atom->getIdx());
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     ++idx;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // if we are resolving a trigonal pyramid with an implicit H,
-    // RDKit✔️✔️:   // the 4th carrier will be a nullptr: we need to add a phantom
-    // RDKit✔️✔️:   // atom, which will always have the lowest priority, so that
-    // RDKit✔️✔️:   // it must be different than the representation of the implicit H.
-    // RDKit✔️✔️:   if (idx < 4) {
-    // RDKit✔️✔️:     ordered[idx] = focus;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   int parity = parity4(ordered, getCarriers());
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (parity == 0) {
-    // RDKit✔️✔️:     throw std::runtime_error("Could not calculate parity! Carrier mismatch");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto config = focus->getChiralTag();
-    // RDKit✔️✔️:   if (parity == 1) {
-    // RDKit✔️✔️:     if (config == Atom::CHI_TETRAHEDRAL_CCW) {
-    // RDKit✔️✔️:       config = Atom::CHI_TETRAHEDRAL_CW;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       config = Atom::CHI_TETRAHEDRAL_CCW;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (config == Atom::CHI_TETRAHEDRAL_CCW) {
-    // RDKit✔️✔️:     if (priority.isPseudoAsymetric()) {
-    // RDKit✔️✔️:       return Descriptor::s;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       return Descriptor::S;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (config == Atom::CHI_TETRAHEDRAL_CW) {
-    // RDKit✔️✔️:     if (priority.isPseudoAsymetric()) {
-    // RDKit✔️✔️:       return Descriptor::r;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       return Descriptor::R;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   return Descriptor::UNKNOWN;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Tetrahedral::label(Node *, const Rules &)
     fn label_node_in_digraph(
         &mut self,
         node: CipNodeId,
@@ -1761,10 +1769,124 @@ impl<'a> CipTetrahedral<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
+        // BEGIN RDKit 2026.09.1 Tetrahedral::label(Node *, const Rules &)
+        // RDKit✔️❌: Descriptor Tetrahedral::label(Node *node, const Rules &comp) {
+        // RDKit✔️❌:   auto focus = getFocus();
+        // RDKit✔️❌:   auto edges = node->getEdges();
+        // RDKit✔️❌:
+        // RDKit✔️❌:   d_ranked_anchors.clear();
+        // RDKit✔️❌:
+        // RDKit✔️❌:   // something not right!?! bad creation
+        // RDKit✔️❌:   if (getCarriers().size() != 4 || edges.size() < 3) {
+        // RDKit✔️❌:     return Descriptor::ns;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto priority = comp.sort(node, edges);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   bool isUnique = priority.isUnique();
+        // RDKit✔️❌:   if (!isUnique && edges.size() == 4) {
+        // RDKit✔️❌:     if (comp.getNumSubRules() == 3) {
+        // RDKit✔️❌:       return Descriptor::UNKNOWN;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     auto partition = comp.getSorter()->getGroups(edges);
+        // RDKit✔️❌:     if (partition.size() == 2) {
+        // RDKit✔️❌:       node->getDigraph()->setRule6Ref(edges[1]->getEnd()->getAtom());
+        // RDKit✔️❌:       priority = comp.sort(node, edges);
+        // RDKit✔️❌:       node->getDigraph()->setRule6Ref(nullptr);
+        // RDKit✔️❌:     } else if (partition.size() == 1) {
+        // RDKit✔️❌:       // S4 symmetric case
+        // RDKit✔️❌:       node->getDigraph()->setRule6Ref(edges[0]->getEnd()->getAtom());
+        // RDKit✔️❌:       comp.sort(node, edges);
+        // RDKit✔️❌:       auto nbrs1 = std::vector<Edge *>(edges.begin(), edges.end());
+        // RDKit✔️❌:
+        // RDKit✔️❌:       node->getDigraph()->setRule6Ref(edges[1]->getEnd()->getAtom());
+        // RDKit✔️❌:       priority = comp.sort(node, edges);
+        // RDKit✔️❌:
+        // RDKit✔️❌:       node->getDigraph()->setRule6Ref(nullptr);
+        // RDKit✔️❌:
+        // RDKit✔️❌:       if (parity4(nbrs1, edges) == 1) {
+        // RDKit✔️❌:         return Descriptor::UNKNOWN;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     if (!priority.isUnique()) {
+        // RDKit✔️❌:       return Descriptor::UNKNOWN;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   } else if (!isUnique) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto ordered = std::vector<Atom *>(4, nullptr);
+        // RDKit✔️❌:   int idx = 0;
+        // RDKit✔️❌:   d_ranked_anchors.reserve(4);
+        // RDKit✔️❌:   for (const auto &edge : edges) {
+        // RDKit✔️❌:     if (edge->getEnd()->isSet(Node::BOND_DUPLICATE) ||
+        // RDKit✔️❌:         edge->getEnd()->isSet(Node::IMPL_HYDROGEN)) {
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:
+        // RDKit✔️❌:     if (idx < 0 || static_cast<size_t>(idx) >= ordered.size()) {
+        // RDKit✔️❌:       throw std::runtime_error("Could not calculate parity! invalid atom index");
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     auto atom = edge->getEnd()->getAtom();
+        // RDKit✔️❌:     ordered[idx] = atom;
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // In this case we don't worry about implicit H (see Sp2Bond
+        // RDKit✔️❌:     // and Atropisomer): chirality is positional, and we don't
+        // RDKit✔️❌:     // know where the implicit H may be ("before" or "after" a
+        // RDKit✔️❌:     // potential 1H with lower priority?), so we just ignore it
+        // RDKit✔️❌:     // in the ranked neighbors list
+        // RDKit✔️❌:     d_ranked_anchors.push_back(atom->getIdx());
+        // RDKit✔️❌:
+        // RDKit✔️❌:     ++idx;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   // if we are resolving a trigonal pyramid with an implicit H,
+        // RDKit✔️❌:   // the 4th carrier will be a nullptr: we need to add a phantom
+        // RDKit✔️❌:   // atom, which will always have the lowest priority, so that
+        // RDKit✔️❌:   // it must be different than the representation of the implicit H.
+        // RDKit✔️❌:   if (idx < 4) {
+        // RDKit✔️❌:     ordered[idx] = focus;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   int parity = parity4(ordered, getCarriers());
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (parity == 0) {
+        // RDKit✔️❌:     throw std::runtime_error("Could not calculate parity! Carrier mismatch");
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto config = focus->getChiralTag();
+        // RDKit✔️❌:   if (parity == 1) {
+        // RDKit✔️❌:     if (config == Atom::CHI_TETRAHEDRAL_CCW) {
+        // RDKit✔️❌:       config = Atom::CHI_TETRAHEDRAL_CW;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       config = Atom::CHI_TETRAHEDRAL_CCW;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (config == Atom::CHI_TETRAHEDRAL_CCW) {
+        // RDKit✔️❌:     if (priority.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::s;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::S;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   } else if (config == Atom::CHI_TETRAHEDRAL_CW) {
+        // RDKit✔️❌:     if (priority.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::r;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::R;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   return Descriptor::UNKNOWN;
+        // RDKit✔️❌: }
+        // END RDKit 2026.09.1 Tetrahedral::label(Node *, const Rules &)
         let mut edges = digraph.node_edges(node)?;
         ranked_anchors.clear();
 
-        if edges.len() < 3 {
+        // RDKit✔️✔️:   if (getCarriers().size() != 4 || edges.size() < 3) {
+        // RDKit✔️✔️:     return Descriptor::ns;
+        // RDKit✔️✔️:   }
+        if carriers.len() != 4 || edges.len() < 3 {
             return Ok(Descriptor::ns);
         }
 
@@ -1815,9 +1937,15 @@ impl<'a> CipTetrahedral<'a> {
             }
 
             let atom = digraph.node(end).atom_idx();
-            if idx < 4 {
-                ordered[idx] = atom;
+            // RDKit✔️✔️:     if (idx < 0 || static_cast<size_t>(idx) >= ordered.size()) {
+            // RDKit✔️✔️:       throw std::runtime_error("Could not calculate parity! invalid atom index");
+            // RDKit✔️✔️:     }
+            if idx >= ordered.len() {
+                return Err(CipLabelerError::InvalidInternalState {
+                    detail: "Could not calculate parity! invalid atom index",
+                });
             }
+            ordered[idx] = atom;
             if let Some(atom_idx) = atom {
                 ranked_anchors.push(u32::try_from(atom_idx).map_err(|_| {
                     CipLabelerError::SourceIndexWidthExceeded {
@@ -1874,23 +2002,6 @@ pub(crate) struct CipSp2Bond<'a> {
 }
 
 impl<'a> CipSp2Bond<'a> {
-    // BEGIN RDKIT CPP FUNCTION Sp2Bond::Sp2Bond (configs/Sp2Bond.cpp)
-    // RDKit✔️✔️: Sp2Bond::Sp2Bond(const CIPMol &mol, Bond *bond, Atom *startAtom, Atom *endAtom,
-    // RDKit✔️✔️:                  Bond::BondStereo cfg)
-    // RDKit✔️✔️:     : Configuration(mol, {startAtom, endAtom}), dp_bond{bond}, d_cfg{cfg} {
-    // RDKit✔️✔️:   CHECK_INVARIANT(startAtom && endAtom, "bad foci")
-    // RDKit✔️✔️:   CHECK_INVARIANT(d_cfg == Bond::STEREOTRANS || d_cfg == Bond::STEREOCIS,
-    // RDKit✔️✔️:                   "bad config")
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto stereo_atoms = Chirality::findStereoAtoms(bond);
-    // RDKit✔️✔️:   CHECK_INVARIANT(stereo_atoms.size() == 2, "incorrect number of stereo atoms")
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<Atom *> anchors{
-    // RDKit✔️✔️:       {mol.getAtom(stereo_atoms[0]), mol.getAtom(stereo_atoms[1])}};
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   setCarriers(std::move(anchors));
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Sp2Bond::Sp2Bond
     // BEGIN RDKIT CPP FUNCTION Chirality::findStereoAtoms (GraphMol/Chirality.cpp)
     // RDKit✔️✔️: INT_VECT findStereoAtoms(const Bond *bond) {
     // RDKit✔️✔️:   PRECONDITION(bond, "bad bond");
@@ -1931,14 +2042,52 @@ impl<'a> CipSp2Bond<'a> {
         end_atom: usize,
         cfg: BondStereo,
     ) -> Result<Self, CipLabelerError> {
+        // BEGIN RDKit 2026.09.1 Sp2Bond::Sp2Bond
+        // RDKit✔️❌: Sp2Bond::Sp2Bond(const CIPMol &mol, Bond *bond, Atom *startAtom, Atom *endAtom,
+        // RDKit✔️❌:                  Bond::BondStereo cfg)
+        // RDKit✔️❌:     : Configuration(mol, {startAtom, endAtom}), dp_bond{bond}, d_cfg{cfg} {
+        // RDKit✔️❌:   CHECK_INVARIANT(startAtom && endAtom, "bad foci")
+        // RDKit✔️❌:   CHECK_INVARIANT(d_cfg == Bond::STEREOTRANS || d_cfg == Bond::STEREOCIS,
+        // RDKit✔️❌:                   "bad config")
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (bond->getBondType() != Bond::DOUBLE) {
+        // RDKit✔️❌:     return;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   auto stereo_atoms = Chirality::findStereoAtoms(bond);
+        // RDKit✔️❌:   CHECK_INVARIANT(stereo_atoms.size() == 2, "incorrect number of stereo atoms")
+        // RDKit✔️❌:
+        // RDKit✔️❌:   const auto isValidCarrier = [&mol](Atom *focus, Atom *otherFocus,
+        // RDKit✔️❌:                                      int carrierIdx) {
+        // RDKit✔️❌:     if (carrierIdx < 0 ||
+        // RDKit✔️❌:         static_cast<unsigned int>(carrierIdx) >= mol.getNumAtoms() ||
+        // RDKit✔️❌:         carrierIdx == static_cast<int>(focus->getIdx()) ||
+        // RDKit✔️❌:         carrierIdx == static_cast<int>(otherFocus->getIdx())) {
+        // RDKit✔️❌:       return false;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     for (const auto neighbor : mol.getNeighbors(focus)) {
+        // RDKit✔️❌:       if (neighbor->getIdx() == static_cast<unsigned int>(carrierIdx)) {
+        // RDKit✔️❌:         return true;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     return false;
+        // RDKit✔️❌:   };
+        // RDKit✔️❌:   if (stereo_atoms[0] == stereo_atoms[1] ||
+        // RDKit✔️❌:       !isValidCarrier(startAtom, endAtom, stereo_atoms[0]) ||
+        // RDKit✔️❌:       !isValidCarrier(endAtom, startAtom, stereo_atoms[1])) {
+        // RDKit✔️❌:     return;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   std::vector<Atom *> anchors{
+        // RDKit✔️❌:       {mol.getAtom(stereo_atoms[0]), mol.getAtom(stereo_atoms[1])}};
+        // RDKit✔️❌:
+        // RDKit✔️❌:   setCarriers(std::move(anchors));
+        // RDKit✔️❌: }
+        // END RDKit 2026.09.1 Sp2Bond::Sp2Bond
         let mut configuration =
             CipConfiguration::with_foci(molecule, vec![start_atom, end_atom], false)?;
         configuration.digraph.mol().atom(start_atom)?;
         configuration.digraph.mol().atom(end_atom)?;
         let bond = configuration.digraph.mol().bond(bond_idx)?;
-        if bond.order() != BondOrder::Double {
-            return Err(CipLabelerError::BadSp2BondFoci);
-        }
         if !((bond.begin().index() == start_atom && bond.end().index() == end_atom)
             || (bond.begin().index() == end_atom && bond.end().index() == start_atom))
         {
@@ -1947,102 +2096,73 @@ impl<'a> CipSp2Bond<'a> {
         if !matches!(cfg, BondStereo::Trans | BondStereo::Cis) {
             return Err(CipLabelerError::BadSp2BondConfig);
         }
-
-        let mut ranks = vec![0_u32; molecule.atoms.len()];
-        if bond.stereo_atoms().is_none() {
-            // RDKit❗✔️: const Atom *startStereoAtom =
-            // RDKit❗✔️:     findHighestCIPNeighbor(bond->getBeginAtom(), bond->getEndAtom());
-            // RDKit❗✔️: const Atom *endStereoAtom =
-            // RDKit❗✔️:     findHighestCIPNeighbor(bond->getEndAtom(), bond->getBeginAtom());
-            // Both source calls finish before combined null checking; missing
-            // rank stops only its focus, while a throwing vector cast aborts.
-            // This is two source-order adjacency scans, without eager preflight.
-            let mut read_focus = |focus: usize, skip: usize| -> Result<bool, CipLabelerError> {
-                // RDKit❗✔️: const Atom *findHighestCIPNeighbor(const Atom *atom, const Atom *skipAtom) {
-                // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
-                // RDKit❗✔️:
-                // RDKit❗✔️:   unsigned bestCipRank = 0;
-                // RDKit❗✔️:   const Atom *bestCipRankedAtom = nullptr;
-                // RDKit❗✔️:   const auto &mol = atom->getOwningMol();
-                // RDKit❗✔️:
-                // RDKit❗✔️:   for (const auto neighbor : mol.atomNeighbors(atom)) {
-                // RDKit❗✔️:     if (neighbor == skipAtom) {
-                // RDKit❗✔️:       continue;
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:     unsigned cip = 0;
-                // RDKit❗✔️:     if (!neighbor->getPropIfPresent(common_properties::_CIPRank, cip)) {
-                // RDKit❗✔️:       // If at least one of the atoms doesn't have a CIP rank, the highest rank
-                // RDKit❗✔️:       // does not make sense, so return a nullptr.
-                // RDKit❗✔️:       return nullptr;
-                // RDKit❗✔️:     } else if (cip > bestCipRank || bestCipRankedAtom == nullptr) {
-                // RDKit❗✔️:       bestCipRank = cip;
-                // RDKit❗✔️:       bestCipRankedAtom = neighbor;
-                // RDKit❗✔️:     } else if (cip == bestCipRank) {
-                // RDKit❗✔️:       // This also doesn't make sense if there is a tie (if that's possible).
-                // RDKit❗✔️:       // We still keep the best CIP rank in case something better comes around
-                // RDKit❗✔️:       // (also not sure if that's possible).
-                // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
-                // RDKit❗✔️:           << "Warning: duplicate CIP ranks found in findHighestCIPNeighbor()"
-                // RDKit❗✔️:           << std::endl;
-                // RDKit❗✔️:       bestCipRankedAtom = nullptr;
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   return bestCipRankedAtom;
-                // RDKit❗✔️: }
-                // Presence short-circuits this focus only; converter failures propagate.
-                // Two adjacency scans, O(sum degree + counted rank bytes), no preflight clone.
-                // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
-                // RDKit❗✔️: template <>
-                // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
-                // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
-                // RDKit❗✔️:     return v.value.u;
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
-                // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   throw std::bad_any_cast();
-                // RDKit❗✔️: }
-                // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
-                for neighbor in molecule.adjacency.neighbors_of(focus) {
-                    if neighbor.atom_index == skip {
-                        continue;
-                    }
-                    let Some(value) = molecule.atoms[neighbor.atom_index].prop("_CIPRank") else {
-                        return Ok(false);
-                    };
-                    let rank =
-                        cosmolkit_core::property_value_to_uint(value).map_err(
-                            |source| match source {
-                                cosmolkit_core::PropertyUIntReadError::InvalidKind { kind } => {
-                                    CipLabelerError::InvalidPropertyKind {
-                                        atom: neighbor.atom_index,
-                                        property: "_CIPRank",
-                                        kind,
-                                    }
-                                }
-                                source => CipLabelerError::UnsignedPropertyRead {
-                                    atom: neighbor.atom_index,
-                                    property: "_CIPRank",
-                                    source,
-                                },
-                            },
-                        )?;
-                    ranks[neighbor.atom_index] = rank;
-                }
-                Ok(true)
-            };
-            let begin_present = read_focus(start_atom, end_atom)?;
-            let end_present = read_focus(end_atom, start_atom)?;
-            if !begin_present || !end_present {
-                return Err(CipLabelerError::IncorrectNumberOfStereoAtoms);
-            }
+        if bond.order() != BondOrder::Double {
+            return Ok(Self {
+                configuration,
+                bond_idx,
+                cfg,
+                ranked_anchors: Vec::new(),
+                primary_label: None,
+            });
         }
-        let stereo_atoms = find_double_bond_stereo_atoms(molecule, BondId::new(bond_idx), &ranks)?
-            .ok_or(CipLabelerError::IncorrectNumberOfStereoAtoms)?
-            .map(AtomId::index);
-        configuration.digraph.mol().atom(stereo_atoms[0])?;
-        configuration.digraph.mol().atom(stereo_atoms[1])?;
-        configuration.set_carriers(vec![Some(stereo_atoms[0]), Some(stereo_atoms[1])]);
+
+        let stereo_atoms = cosmolkit_core::find_double_bond_stereo_atoms_with_rank_reader(
+            molecule,
+            BondId::new(bond_idx),
+            |candidate| {
+                let atom = candidate.index();
+                let Some(value) = molecule.atoms[atom].prop("_CIPRank") else {
+                    return Ok(None);
+                };
+                // RDKit✔️✔️:     if (!neighbor->getPropIfPresent(common_properties::_CIPRank, cip)) {
+                // RDKit✔️✔️:       return nullptr;
+                // RDKit✔️✔️:     }
+                // Source lazy endpoint reads retain conversion errors without
+                // allocating a whole-molecule rank table for each double bond.
+                cosmolkit_core::property_value_to_uint(value)
+                    .map(Some)
+                    .map_err(|source| match source {
+                        cosmolkit_core::PropertyUIntReadError::InvalidKind { kind } => {
+                            CipLabelerError::InvalidPropertyKind {
+                                atom,
+                                property: "_CIPRank",
+                                kind,
+                            }
+                        }
+                        source => CipLabelerError::UnsignedPropertyRead {
+                            atom,
+                            property: "_CIPRank",
+                            source,
+                        },
+                    })
+            },
+            |warning| eprintln!("{warning}"),
+        )?
+        .atoms
+        .ok_or(CipLabelerError::IncorrectNumberOfStereoAtoms)?
+        .map(AtomId::index);
+        // RDKit✔️✔️:   if (stereo_atoms[0] == stereo_atoms[1] ||
+        // RDKit✔️✔️:       !isValidCarrier(startAtom, endAtom, stereo_atoms[0]) ||
+        // RDKit✔️✔️:       !isValidCarrier(endAtom, startAtom, stereo_atoms[1])) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // Borrow adjacency; bounded endpoint degree work, no whole-graph scan.
+        let valid = |focus: usize, other: usize, carrier: usize| {
+            carrier < molecule.atoms.len()
+                && carrier != focus
+                && carrier != other
+                && molecule
+                    .adjacency
+                    .neighbors_of(focus)
+                    .iter()
+                    .any(|n| n.atom_index == carrier)
+        };
+        if stereo_atoms[0] != stereo_atoms[1]
+            && valid(start_atom, end_atom, stereo_atoms[0])
+            && valid(end_atom, start_atom, stereo_atoms[1])
+        {
+            configuration.set_carriers(vec![Some(stereo_atoms[0]), Some(stereo_atoms[1])]);
+        }
 
         Ok(Self {
             configuration,
@@ -2320,98 +2440,102 @@ impl<'a> CipSp2Bond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        // BEGIN RDKit 2026.03.6 COMPLETE Sp2Bond::label
-        // RDKit❗❌: Descriptor Sp2Bond::label(Node *root1, Digraph &digraph, const Rules &comp) {
-        // RDKit❗❌:   const auto &focus1 = getFoci()[0];
-        // RDKit❗❌:   const auto &focus2 = getFoci()[1];
-        // RDKit❗❌:
-        // RDKit❗❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
-        // RDKit❗❌:
-        // RDKit❗❌:   d_ranked_anchors.clear();
-        // RDKit❗❌:
-        // RDKit❗❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
-        // RDKit❗❌:   if (internal == nullptr) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   const auto &root2 = internal->getOther(root1);
-        // RDKit❗❌:
-        // RDKit❗❌:   auto edges1 = root1->getEdges();
-        // RDKit❗❌:   auto edges2 = root2->getEdges();
-        // RDKit❗❌:   removeInternalEdges(edges1, focus1, focus2);
-        // RDKit❗❌:   removeInternalEdges(edges2, focus1, focus2);
-        // RDKit❗❌:
-        // RDKit❗❌:   auto carriers = std::vector<Atom *>(getCarriers());
-        // RDKit❗❌:   auto config = d_cfg;
-        // RDKit❗❌:
-        // RDKit❗❌:   if (root1->getAtom() == focus2) {
-        // RDKit❗❌:     std::swap(carriers[0], carriers[1]);
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   digraph.changeRoot(root1);
-        // RDKit❗❌:   const auto &priority1 = comp.sort(root1, edges1);
-        // RDKit❗❌:   if (!priority1.isUnique() && !is_constitutional) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   // swap
-        // RDKit❗❌:   if (edges1.size() > 1 && carriers[0] != edges1[0]->getEnd()->getAtom()) {
-        // RDKit❗❌:     if (config == Bond::STEREOCIS) {
-        // RDKit❗❌:       config = Bond::STEREOTRANS;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       config = Bond::STEREOCIS;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:   digraph.changeRoot(root2);
-        // RDKit❗❌:   const auto &priority2 = comp.sort(root2, edges2);
-        // RDKit❗❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   // swap
-        // RDKit❗❌:   if (edges2.size() > 1 && carriers[1] != edges2[0]->getEnd()->getAtom()) {
-        // RDKit❗❌:     if (config == Bond::STEREOCIS) {
-        // RDKit❗❌:       config = Bond::STEREOTRANS;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       config = Bond::STEREOCIS;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   {
-        // RDKit❗❌:     // At this point, edges1 and edges2 are sorted by priority starting from
-        // RDKit❗❌:     // this node. Record that now! - they may be resorted after processing
-        // RDKit❗❌:     // other nodes.
-        // RDKit❗❌:
-        // RDKit❗❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
-        // RDKit❗❌:     // in the paper on which this code is based states that,
-        // RDKit❗❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
-        // RDKit❗❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
-        // RDKit❗❌:     // if that is the case.
-        // RDKit❗❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
-        // RDKit❗❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
-        // RDKit❗❌:
-        // RDKit❗❌:     // Make sure the stereo atoms are in the right order
-        // RDKit❗❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
-        // RDKit❗❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
-        // RDKit❗❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
-        // RDKit❗❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   if (config == Bond::STEREOCIS) {
-        // RDKit❗❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
-        // RDKit❗❌:       return Descriptor::seqCis;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       return Descriptor::Z;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   } else if (config == Bond::STEREOTRANS) {
-        // RDKit❗❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
-        // RDKit❗❌:       return Descriptor::seqTrans;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       return Descriptor::E;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   return Descriptor::UNKNOWN;
-        // RDKit❗❌: }
-        // END RDKit 2026.03.6 COMPLETE Sp2Bond::label
+        // BEGIN RDKit 2026.09.1 Sp2Bond::label
+        // RDKit✔️❌: Descriptor Sp2Bond::label(Node *root1, Digraph &digraph, const Rules &comp) {
+        // RDKit✔️❌:   const auto &focus1 = getFoci()[0];
+        // RDKit✔️❌:   const auto &focus2 = getFoci()[1];
+        // RDKit✔️❌:
+        // RDKit✔️❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
+        // RDKit✔️❌:
+        // RDKit✔️❌:   d_ranked_anchors.clear();
+        // RDKit✔️❌:
+        // RDKit✔️❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
+        // RDKit✔️❌:   if (internal == nullptr) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   const auto &root2 = internal->getOther(root1);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto edges1 = root1->getEdges();
+        // RDKit✔️❌:   auto edges2 = root2->getEdges();
+        // RDKit✔️❌:   removeInternalEdges(edges1, focus1, focus2);
+        // RDKit✔️❌:   removeInternalEdges(edges2, focus1, focus2);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (getCarriers().size() != 2 || edges1.empty() || edges2.empty()) {
+        // RDKit✔️❌:     return Descriptor::ns;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto carriers = std::vector<Atom *>(getCarriers());
+        // RDKit✔️❌:   auto config = d_cfg;
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (root1->getAtom() == focus2) {
+        // RDKit✔️❌:     std::swap(carriers[0], carriers[1]);
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   digraph.changeRoot(root1);
+        // RDKit✔️❌:   const auto &priority1 = comp.sort(root1, edges1);
+        // RDKit✔️❌:   if (!priority1.isUnique() && !is_constitutional) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   // swap
+        // RDKit✔️❌:   if (edges1.size() > 1 && carriers[0] != edges1[0]->getEnd()->getAtom()) {
+        // RDKit✔️❌:     if (config == Bond::STEREOCIS) {
+        // RDKit✔️❌:       config = Bond::STEREOTRANS;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       config = Bond::STEREOCIS;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   digraph.changeRoot(root2);
+        // RDKit✔️❌:   const auto &priority2 = comp.sort(root2, edges2);
+        // RDKit✔️❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   // swap
+        // RDKit✔️❌:   if (edges2.size() > 1 && carriers[1] != edges2[0]->getEnd()->getAtom()) {
+        // RDKit✔️❌:     if (config == Bond::STEREOCIS) {
+        // RDKit✔️❌:       config = Bond::STEREOTRANS;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       config = Bond::STEREOCIS;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   {
+        // RDKit✔️❌:     // At this point, edges1 and edges2 are sorted by priority starting from
+        // RDKit✔️❌:     // this node. Record that now! - they may be resorted after processing
+        // RDKit✔️❌:     // other nodes.
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+        // RDKit✔️❌:     // in the paper on which this code is based states that,
+        // RDKit✔️❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+        // RDKit✔️❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+        // RDKit✔️❌:     // if that is the case.
+        // RDKit✔️❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
+        // RDKit✔️❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // Make sure the stereo atoms are in the right order
+        // RDKit✔️❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
+        // RDKit✔️❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
+        // RDKit✔️❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
+        // RDKit✔️❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (config == Bond::STEREOCIS) {
+        // RDKit✔️❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::seqCis;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::Z;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   } else if (config == Bond::STEREOTRANS) {
+        // RDKit✔️❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::seqTrans;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::E;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   return Descriptor::UNKNOWN;
+        // RDKit✔️❌: }
+        // END RDKit 2026.09.1 Sp2Bond::label
         let is_constitutional = comp.get_num_sub_rules() == 3;
         let focus1 = foci[0];
         let focus2 = foci[1];
@@ -2430,8 +2554,11 @@ impl<'a> CipSp2Bond<'a> {
         CipConfiguration::remove_internal_edges(digraph, &mut edges1, focus1, focus2);
         CipConfiguration::remove_internal_edges(digraph, &mut edges2, focus1, focus2);
 
-        if edges1.is_empty() || edges2.is_empty() {
-            return Ok(Descriptor::Unknown);
+        // RDKit✔️✔️:   if (getCarriers().size() != 2 || edges1.empty() || edges2.empty()) {
+        // RDKit✔️✔️:     return Descriptor::ns;
+        // RDKit✔️✔️:   }
+        if carriers.len() != 2 || edges1.is_empty() || edges2.is_empty() {
+            return Ok(Descriptor::ns);
         }
 
         let mut carriers = carriers.to_vec();
@@ -2509,31 +2636,6 @@ pub(crate) struct CipAtropisomerBond<'a> {
 }
 
 impl<'a> CipAtropisomerBond<'a> {
-    // BEGIN RDKIT CPP FUNCTION AtropisomerBond::AtropisomerBond (configs/AtropisomerBond.cpp)
-    // RDKit✔️✔️: AtropisomerBond::AtropisomerBond(const CIPMol &mol, Bond *bond, Atom *startAtom,
-    // RDKit✔️✔️:                                  Atom *endAtom, Bond::BondStereo cfg)
-    // RDKit✔️✔️:     : Configuration(mol, {startAtom, endAtom}, true),
-    // RDKit✔️✔️:       dp_bond{bond},
-    // RDKit✔️✔️:       d_cfg{cfg} {
-    // RDKit✔️✔️:   CHECK_INVARIANT(startAtom && endAtom, "bad foci")
-    // RDKit✔️✔️:   CHECK_INVARIANT(d_cfg == Bond::STEREOATROPCW || d_cfg == Bond::STEREOATROPCCW,
-    // RDKit✔️✔️:                   "bad config")
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   Atropisomers::AtropAtomAndBondVec atomAndBondVecs[2];
-    // RDKit✔️✔️:   if (!Atropisomers::getAtropisomerAtomsAndBonds(bond, atomAndBondVecs,
-    // RDKit✔️✔️:                                                  bond->getOwningMol())) {
-    // RDKit✔️✔️:     return;  // not an atropisomer
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   auto atom1 = mol.getAtom(atomAndBondVecs[0].second[0]->getOtherAtomIdx(
-    // RDKit✔️✔️:       atomAndBondVecs[0].first->getIdx()));
-    // RDKit✔️✔️:   auto atom2 = mol.getAtom(atomAndBondVecs[1].second[0]->getOtherAtomIdx(
-    // RDKit✔️✔️:       atomAndBondVecs[1].first->getIdx()));
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::vector<Atom *> anchors{atom1, atom2};
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   setCarriers(std::move(anchors));
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION AtropisomerBond::AtropisomerBond
     pub(crate) fn new(
         molecule: &'a TopologyBlock,
         bond_idx: usize,
@@ -2541,6 +2643,32 @@ impl<'a> CipAtropisomerBond<'a> {
         end_atom: usize,
         cfg: BondStereo,
     ) -> Result<Self, CipLabelerError> {
+        // BEGIN RDKit 2026.09.1 AtropisomerBond::AtropisomerBond
+        // RDKit✔️❌: AtropisomerBond::AtropisomerBond(const CIPMol &mol, Bond *bond, Atom *startAtom,
+        // RDKit✔️❌:                                  Atom *endAtom, Bond::BondStereo cfg)
+        // RDKit✔️❌:     : Configuration(mol, {startAtom, endAtom}, true),
+        // RDKit✔️❌:       dp_bond{bond},
+        // RDKit✔️❌:       d_cfg{cfg} {
+        // RDKit✔️❌:   CHECK_INVARIANT(startAtom && endAtom, "bad foci")
+        // RDKit✔️❌:   CHECK_INVARIANT(d_cfg == Bond::STEREOATROPCW || d_cfg == Bond::STEREOATROPCCW,
+        // RDKit✔️❌:                   "bad config")
+        // RDKit✔️❌:
+        // RDKit✔️❌:   Atropisomers::AtropAtomAndBondVec atomAndBondVecs[2];
+        // RDKit✔️❌:   if (!Atropisomers::getAtropisomerAtomsAndBonds(bond, atomAndBondVecs,
+        // RDKit✔️❌:                                                  bond->getOwningMol()) ||
+        // RDKit✔️❌:       atomAndBondVecs[0].second.empty() || atomAndBondVecs[1].second.empty()) {
+        // RDKit✔️❌:     return;  // not an atropisomer
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   auto atom1 = mol.getAtom(atomAndBondVecs[0].second[0]->getOtherAtomIdx(
+        // RDKit✔️❌:       atomAndBondVecs[0].first->getIdx()));
+        // RDKit✔️❌:   auto atom2 = mol.getAtom(atomAndBondVecs[1].second[0]->getOtherAtomIdx(
+        // RDKit✔️❌:       atomAndBondVecs[1].first->getIdx()));
+        // RDKit✔️❌:
+        // RDKit✔️❌:   std::vector<Atom *> anchors{atom1, atom2};
+        // RDKit✔️❌:
+        // RDKit✔️❌:   setCarriers(std::move(anchors));
+        // RDKit✔️❌: }
+        // END RDKit 2026.09.1 AtropisomerBond::AtropisomerBond
         let mut configuration =
             CipConfiguration::with_foci(molecule, vec![start_atom, end_atom], true)?;
         configuration.digraph.mol().atom(start_atom)?;
@@ -2556,6 +2684,18 @@ impl<'a> CipAtropisomerBond<'a> {
         }
 
         if let Some(ends) = atropisomer_carriers(molecule, BondId::new(bond_idx))? {
+            // RDKit✔️✔️:       atomAndBondVecs[0].second.empty() || atomAndBondVecs[1].second.empty()) {
+            // RDKit✔️✔️:     return;  // not an atropisomer
+            // An empty source side leaves this configuration ineligible.
+            if ends.iter().any(|end| end.carrier_bonds().is_empty()) {
+                return Ok(Self {
+                    configuration,
+                    bond_idx,
+                    cfg,
+                    ranked_anchors: Vec::new(),
+                    primary_label: None,
+                });
+            }
             let mut carriers = Vec::with_capacity(2);
             for end in ends {
                 let carrier_bond = *end
@@ -2828,110 +2968,111 @@ impl<'a> CipAtropisomerBond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        // BEGIN RDKit 2026.03.6 COMPLETE AtropisomerBond::label
-        // RDKit❗❌: Descriptor AtropisomerBond::label(Node *root1, Digraph &digraph,
-        // RDKit❗❌:                                   const Rules &comp) {
-        // RDKit❗❌:   const auto &focus1 = getFoci()[0];
-        // RDKit❗❌:   const auto &focus2 = getFoci()[1];
-        // RDKit❗❌:
-        // RDKit❗❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
-        // RDKit❗❌:
-        // RDKit❗❌:   d_ranked_anchors.clear();
-        // RDKit❗❌:
-        // RDKit❗❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
-        // RDKit❗❌:   if (internal == nullptr) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   const auto &root2 = internal->getOther(root1);
-        // RDKit❗❌:
-        // RDKit❗❌:   auto edges1 = root1->getEdges();
-        // RDKit❗❌:   auto edges2 = root2->getEdges();
-        // RDKit❗❌:   removeInternalEdges(edges1, focus1, focus2);
-        // RDKit❗❌:   removeInternalEdges(edges2, focus1, focus2);
-        // RDKit❗❌:
-        // RDKit❗❌:   removeDuplicatesAndHs(edges1);
-        // RDKit❗❌:   removeDuplicatesAndHs(edges2);
-        // RDKit❗❌:
-        // RDKit❗❌:   auto carriers = std::vector<Atom *>(getCarriers());
-        // RDKit❗❌:   auto config = d_cfg;
-        // RDKit❗❌:
-        // RDKit❗❌:   if (root1->getAtom() == focus2) {
-        // RDKit❗❌:     std::swap(carriers[0], carriers[1]);
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   digraph.changeRoot(root1);
-        // RDKit❗❌:   const auto &priority1 = comp.sort(root1, edges1);
-        // RDKit❗❌:   if (!priority1.isUnique() && !is_constitutional) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   // swap
-        // RDKit❗❌:   if (edges1.size() > 1 && carriers[0] == edges1[1]->getEnd()->getAtom()) {
-        // RDKit❗❌:     if (config == Bond::STEREOATROPCCW) {
-        // RDKit❗❌:       config = Bond::STEREOATROPCW;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       config = Bond::STEREOATROPCCW;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:   digraph.changeRoot(root2);
-        // RDKit❗❌:   const auto &priority2 = comp.sort(root2, edges2);
-        // RDKit❗❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
-        // RDKit❗❌:     return Descriptor::UNKNOWN;
-        // RDKit❗❌:   }
-        // RDKit❗❌:   // swap
-        // RDKit❗❌:   if (edges2.size() > 1 && carriers[1] == edges2[1]->getEnd()->getAtom()) {
-        // RDKit❗❌:     if (config == Bond::STEREOATROPCCW) {
-        // RDKit❗❌:       config = Bond::STEREOATROPCW;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       config = Bond::STEREOATROPCCW;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:
-        // RDKit❗❌:   {
-        // RDKit❗❌:     // This is mostly the same as in Sp2Bonds, but I doubt the anchors will be
-        // RDKit❗❌:     // implicit Hs in this case.
-        // RDKit❗❌:
-        // RDKit❗❌:     // At this point, edges1 and edges2 are sorted by priority starting from
-        // RDKit❗❌:     // this node. Record that now! - they may be resorted after processing
-        // RDKit❗❌:     // other nodes.
-        // RDKit❗❌:
-        // RDKit❗❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
-        // RDKit❗❌:     // in the paper on which this code is based states that,
-        // RDKit❗❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
-        // RDKit❗❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
-        // RDKit❗❌:     // if that is the case.
-        // RDKit❗❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
-        // RDKit❗❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
-        // RDKit❗❌:
-        // RDKit❗❌:     // Make sure the stereo atoms are in the right order
-        // RDKit❗❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
-        // RDKit❗❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
-        // RDKit❗❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
-        // RDKit❗❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:   if (config == Bond::STEREOATROPCCW) {
-        // RDKit❗❌:     if (priority1.isPseudoAsymetric() || priority2.isPseudoAsymetric()) {
-        // RDKit❗❌:       return Descriptor::m;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       return Descriptor::M;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   } else if (config == Bond::STEREOATROPCW) {
-        // RDKit❗❌:     if (priority1.isPseudoAsymetric() || priority2.isPseudoAsymetric()) {
-        // RDKit❗❌:       return Descriptor::p;
-        // RDKit❗❌:     } else {
-        // RDKit❗❌:       return Descriptor::P;
-        // RDKit❗❌:     }
-        // RDKit❗❌:   }
-        // RDKit❗❌:   return Descriptor::UNKNOWN;
-        // RDKit❗❌: }
-        // END RDKit 2026.03.6 COMPLETE AtropisomerBond::label
+        // BEGIN RDKit 2026.09.1 AtropisomerBond::label
+        // RDKit✔️❌: Descriptor AtropisomerBond::label(Node *root1, Digraph &digraph,
+        // RDKit✔️❌:                                   const Rules &comp) {
+        // RDKit✔️❌:   const auto &focus1 = getFoci()[0];
+        // RDKit✔️❌:   const auto &focus2 = getFoci()[1];
+        // RDKit✔️❌:
+        // RDKit✔️❌:   const bool is_constitutional = comp.getNumSubRules() == 3;
+        // RDKit✔️❌:
+        // RDKit✔️❌:   d_ranked_anchors.clear();
+        // RDKit✔️❌:
+        // RDKit✔️❌:   const auto &internal = findInternalEdge(root1->getEdges(), focus1, focus2);
+        // RDKit✔️❌:   if (internal == nullptr) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   const auto &root2 = internal->getOther(root1);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto edges1 = root1->getEdges();
+        // RDKit✔️❌:   auto edges2 = root2->getEdges();
+        // RDKit✔️❌:   removeInternalEdges(edges1, focus1, focus2);
+        // RDKit✔️❌:   removeInternalEdges(edges2, focus1, focus2);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   removeDuplicatesAndHs(edges1);
+        // RDKit✔️❌:   removeDuplicatesAndHs(edges2);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (getCarriers().size() != 2 || edges1.empty() || edges2.empty()) {
+        // RDKit✔️❌:     return Descriptor::ns;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   auto carriers = std::vector<Atom *>(getCarriers());
+        // RDKit✔️❌:   auto config = d_cfg;
+        // RDKit✔️❌:
+        // RDKit✔️❌:   if (root1->getAtom() == focus2) {
+        // RDKit✔️❌:     std::swap(carriers[0], carriers[1]);
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   digraph.changeRoot(root1);
+        // RDKit✔️❌:   const auto &priority1 = comp.sort(root1, edges1);
+        // RDKit✔️❌:   if (!priority1.isUnique() && !is_constitutional) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   // swap
+        // RDKit✔️❌:   if (edges1.size() > 1 && carriers[0] == edges1[1]->getEnd()->getAtom()) {
+        // RDKit✔️❌:     if (config == Bond::STEREOATROPCCW) {
+        // RDKit✔️❌:       config = Bond::STEREOATROPCW;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       config = Bond::STEREOATROPCCW;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   digraph.changeRoot(root2);
+        // RDKit✔️❌:   const auto &priority2 = comp.sort(root2, edges2);
+        // RDKit✔️❌:   if (!priority2.isUnique() || !priority1.isUnique()) {
+        // RDKit✔️❌:     return Descriptor::UNKNOWN;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   // swap
+        // RDKit✔️❌:   if (edges2.size() > 1 && carriers[1] == edges2[1]->getEnd()->getAtom()) {
+        // RDKit✔️❌:     if (config == Bond::STEREOATROPCCW) {
+        // RDKit✔️❌:       config = Bond::STEREOATROPCW;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       config = Bond::STEREOATROPCCW;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   {
+        // RDKit✔️❌:     // This is mostly the same as in Sp2Bonds, but I doubt the anchors will be
+        // RDKit✔️❌:     // implicit Hs in this case.
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // At this point, edges1 and edges2 are sorted by priority starting from
+        // RDKit✔️❌:     // this node. Record that now! - they may be resorted after processing
+        // RDKit✔️❌:     // other nodes.
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+        // RDKit✔️❌:     // in the paper on which this code is based states that,
+        // RDKit✔️❌:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+        // RDKit✔️❌:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+        // RDKit✔️❌:     // if that is the case.
+        // RDKit✔️❌:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
+        // RDKit✔️❌:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // Make sure the stereo atoms are in the right order
+        // RDKit✔️❌:     if (edges1[0]->getBeg()->getAtom() == focus1) {
+        // RDKit✔️❌:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
+        // RDKit✔️❌:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
+        // RDKit✔️❌:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   if (config == Bond::STEREOATROPCCW) {
+        // RDKit✔️❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::m;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::M;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   } else if (config == Bond::STEREOATROPCW) {
+        // RDKit✔️❌:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+        // RDKit✔️❌:       return Descriptor::p;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       return Descriptor::P;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   return Descriptor::UNKNOWN;
+        // RDKit✔️❌: }
+        // END RDKit 2026.09.1 AtropisomerBond::label
         let is_constitutional = comp.get_num_sub_rules() == 3;
         let focus1 = foci[0];
         let focus2 = foci[1];
         ranked_anchors.clear();
-        if carriers.len() < 2 {
-            return Ok(Descriptor::Unknown);
-        }
 
         let root1_edges = digraph.node_edges(root1)?;
         let Some(internal) =
@@ -2947,8 +3088,11 @@ impl<'a> CipAtropisomerBond<'a> {
         CipConfiguration::remove_internal_edges(digraph, &mut edges2, focus1, focus2);
         CipConfiguration::remove_duplicates_and_hs(digraph, &mut edges1);
         CipConfiguration::remove_duplicates_and_hs(digraph, &mut edges2);
-        if edges1.is_empty() || edges2.is_empty() {
-            return Ok(Descriptor::Unknown);
+        // RDKit✔️✔️:   if (getCarriers().size() != 2 || edges1.empty() || edges2.empty()) {
+        // RDKit✔️✔️:     return Descriptor::ns;
+        // RDKit✔️✔️:   }
+        if carriers.len() != 2 || edges1.is_empty() || edges2.is_empty() {
+            return Ok(Descriptor::ns);
         }
 
         let mut carriers = carriers.to_vec();
@@ -3000,13 +3144,15 @@ impl<'a> CipAtropisomerBond<'a> {
         }
 
         if config == BondStereo::AtropCcw {
-            if priority1.is_pseudo_asymetric() || priority2.is_pseudo_asymetric() {
+            // RDKit✔️✔️:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+            if priority1.is_pseudo_asymetric() != priority2.is_pseudo_asymetric() {
                 Ok(Descriptor::m)
             } else {
                 Ok(Descriptor::M)
             }
         } else if config == BondStereo::AtropCw {
-            if priority1.is_pseudo_asymetric() || priority2.is_pseudo_asymetric() {
+            // RDKit✔️✔️:     if (priority1.isPseudoAsymetric() != priority2.isPseudoAsymetric()) {
+            if priority1.is_pseudo_asymetric() != priority2.is_pseudo_asymetric() {
                 Ok(Descriptor::p)
             } else {
                 Ok(Descriptor::P)
@@ -3161,6 +3307,206 @@ mod recovery_chem02 {
     use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
     use cosmolkit_types::Element;
     use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn candidate_cip_configuration_eligibility_excludes_malformed_carriers() {
+        let mut atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+        atom.set_chiral_tag(ChiralTag::TetrahedralCw);
+        let lone = TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
+        assert!(
+            CipTetrahedral::new(&lone, 0)
+                .unwrap()
+                .get_carriers()
+                .is_empty()
+        );
+        assert!(cip_find_configs(&lone, &[true], &[]).unwrap().is_empty());
+
+        let mut t = axis(false);
+        // Carrier 3 is bounded but belongs to the opposite double-bond end.
+        t.bonds[0].set_stereo_atoms(Some([AtomId::new(3), AtomId::new(5)]));
+        assert!(
+            CipSp2Bond::new(&t, 0, 1, 2, BondStereo::Cis)
+                .unwrap()
+                .get_carriers()
+                .is_empty()
+        );
+        assert!(
+            cip_find_configs(&t, &[true; 6], &[true; 5])
+                .unwrap()
+                .is_empty()
+        );
+        t.bonds[0].set_order(BondOrder::Single);
+        assert!(
+            cip_find_configs(&t, &[true; 6], &[true; 5])
+                .unwrap()
+                .is_empty()
+        );
+        t.bonds[0].set_order(BondOrder::Double);
+        t.bonds[0].set_stereo(BondStereo::AtropCcw).unwrap();
+        assert!(
+            cip_find_configs(&t, &[true; 6], &[true; 5])
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn candidate_cip_tetrahedral_ordering_rejects_fifth_explicit_anchor() {
+        let mut atoms: Vec<_> = [
+            Element::P,
+            Element::H,
+            Element::F,
+            Element::CL,
+            Element::BR,
+            Element::I,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, element)| Atom::from_spec(AtomId::new(i), AtomSpec::new(element)))
+        .collect();
+        atoms[0].set_chiral_tag(ChiralTag::TetrahedralCw);
+        atoms[0].set_no_implicit(true);
+        let bonds = (1..6)
+            .map(|i| {
+                Bond::from_spec(
+                    BondId::new(i - 1),
+                    BondSpec::new(AtomId::new(0), AtomId::new(i), BondOrder::Single),
+                )
+            })
+            .collect();
+        let t = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let mut graph = CipDigraph::new(&t, 0, false).unwrap();
+        let root = graph.get_original_root();
+        let result = CipTetrahedral::label_node_impl(
+            0,
+            &[Some(1), Some(2), Some(3), Some(4)],
+            &mut Vec::new(),
+            root,
+            &mut graph,
+            &cip_constitutional_rules().unwrap(),
+            &mut CipLabelerContext::new(0),
+        );
+        assert_eq!(
+            result,
+            Err(CipLabelerError::InvalidInternalState {
+                detail: "Could not calculate parity! invalid atom index"
+            })
+        );
+    }
+
+    #[test]
+    fn candidate_cip_two_pseudo_axial_ends_cancel_pseudo_descriptor() {
+        let t = axis(true);
+        let rules = CipRules::new(vec![Box::new(RecordingRule {
+            trace: Rc::new(RefCell::new(vec![])),
+            ties: [false; 2],
+            fail_second: false,
+            pseudo: [true; 2],
+        })])
+        .unwrap();
+        let mut graph = CipDigraph::new(&t, 1, true).unwrap();
+        let root = graph.get_original_root();
+        let mut anchors = Vec::new();
+        let result = CipAtropisomerBond::label_node_impl(
+            &[1, 2],
+            &[Some(4), Some(5)],
+            BondStereo::AtropCcw,
+            &mut anchors,
+            root,
+            &mut graph,
+            &rules,
+            &mut CipLabelerContext::new(0),
+        )
+        .unwrap();
+        assert_eq!(result, Descriptor::M);
+        assert_eq!(anchors.len(), 2);
+    }
+
+    #[test]
+    fn partial_selection_keeps_auxiliary_configs_and_clears_only_selected_properties() {
+        let mut atoms = Vec::new();
+        let mut bonds = Vec::new();
+        for offset in [0, 5] {
+            for (i, element) in [Element::C, Element::F, Element::CL, Element::BR, Element::I]
+                .into_iter()
+                .enumerate()
+            {
+                let mut atom = Atom::from_spec(AtomId::new(offset + i), AtomSpec::new(element));
+                if i == 0 {
+                    atom.set_chiral_tag(ChiralTag::TetrahedralCw);
+                }
+                atoms.push(atom);
+            }
+            for i in 1..5 {
+                bonds.push(Bond::from_spec(
+                    BondId::new(bonds.len()),
+                    BondSpec::new(
+                        AtomId::new(offset),
+                        AtomId::new(offset + i),
+                        BondOrder::Single,
+                    ),
+                ));
+            }
+        }
+        let mut topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        for index in [1, 5] {
+            topology.atoms[index]
+                .set_prop("_CIPCode", "retained")
+                .unwrap();
+            topology.atoms[index]
+                .set_prop("_CIPNeighborOrder", "old-order")
+                .unwrap();
+        }
+        let mut atom_mask = vec![false; 10];
+        atom_mask[0] = true;
+        atom_mask[1] = true;
+        let bond_mask = vec![false; 8];
+        let configs = cip_find_configs(&topology, &atom_mask, &bond_mask).unwrap();
+        assert_eq!(configs.len(), 2);
+        assert!(configs[0].is_selected());
+        assert!(!configs[1].is_selected());
+        drop(configs);
+        let mut properties = MoleculeProperties::default();
+        properties.set_computed_prop("_CIPComputed", true).unwrap();
+        let (result, properties, completion) = assign_cip_labels_for_masks(
+            Cow::Borrowed(&topology),
+            Cow::Owned(properties),
+            &atom_mask,
+            &bond_mask,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            completion,
+            cosmolkit_types::CipAssignmentCompletion::Completed
+        );
+        assert!(result.atoms[0].prop("_CIPCode").is_some());
+        assert!(result.atoms[1].prop("_CIPCode").is_none());
+        assert!(result.atoms[1].prop("_CIPNeighborOrder").is_none());
+        assert_eq!(
+            result.atoms[5].prop("_CIPCode"),
+            topology.atoms[5].prop("_CIPCode")
+        );
+        assert_eq!(
+            result.atoms[5].prop("_CIPNeighborOrder"),
+            topology.atoms[5].prop("_CIPNeighborOrder")
+        );
+        assert!(properties.prop("_CIPComputed").is_none());
+        let (_, full, completion) = assign_cip_labels_cow(
+            Cow::Borrowed(&topology),
+            Cow::Owned(MoleculeProperties::default()),
+            &CipLabelOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            completion,
+            cosmolkit_types::CipAssignmentCompletion::Completed
+        );
+        assert_eq!(
+            full.prop("_CIPComputed"),
+            Some(&cosmolkit_model::PropertyValue::Bool(true))
+        );
+    }
     fn axis(atrop: bool) -> TopologyBlock {
         let elements = [
             Element::F,
@@ -3207,6 +3553,7 @@ mod recovery_chem02 {
         trace: Rc<RefCell<Vec<usize>>>,
         ties: [bool; 2],
         fail_second: bool,
+        pseudo: [bool; 2],
     }
     impl CipSequenceRule for RecordingRule {
         fn compare(
@@ -3223,13 +3570,15 @@ mod recovery_chem02 {
             }
             Ok(if self.ties[usize::from(atom == 2)] {
                 0
+            } else if self.pseudo[usize::from(atom == 2)] {
+                2
             } else {
                 1
             })
         }
         fn get_comparison_with_sort_rules(
             &self,
-            _s: Option<&[&dyn CipSequenceRule]>,
+            _s: Option<CipRuleView<'_>>,
             g: &mut CipDigraph<'_>,
             c: &mut CipLabelerContext,
             a: CipEdgeId,
@@ -3240,7 +3589,7 @@ mod recovery_chem02 {
         }
         fn recursive_compare_with_sort_rules(
             &self,
-            _s: &[&dyn CipSequenceRule],
+            _s: CipRuleView<'_>,
             g: &mut CipDigraph<'_>,
             c: &mut CipLabelerContext,
             a: CipEdgeId,
@@ -3264,6 +3613,7 @@ mod recovery_chem02 {
                         trace: trace.clone(),
                         ties,
                         fail_second: fail,
+                        pseudo: [false; 2],
                     }) as Box<dyn CipSequenceRule>
                 })
                 .collect(),
@@ -3348,6 +3698,36 @@ mod recovery_chem02 {
     }
     fn configs(t: &TopologyBlock) -> Vec<CipConfig<'_>> {
         cip_find_configs(t, &vec![true; t.atoms.len()], &vec![true; t.bonds.len()]).unwrap()
+    }
+    #[cfg(feature = "enumeration")]
+    #[test]
+    fn later_equal_distance_auxiliary_configuration_replaces_the_first() {
+        let t = parsed("F[C@](Cl)(Br)[C@](F)(Cl)Br");
+        let mut cfg = configs(&t);
+        assert_eq!(cfg.len(), 2);
+        let mut later = CipTetrahedral::new(&t, 4).unwrap();
+        later.configuration.carriers.swap(0, 1);
+        let expected = later
+            .label(&cip_all_rules().unwrap(), &mut CipLabelerContext::new(0))
+            .unwrap();
+        let first = cfg[1]
+            .label(&cip_all_rules().unwrap(), &mut CipLabelerContext::new(0))
+            .unwrap();
+        assert!(matches!(expected, Descriptor::R | Descriptor::S));
+        assert_ne!(expected, first);
+        cfg.push(CipConfig::Tetrahedral(later));
+        let root = cfg[0].get_digraph_mut().get_original_root();
+        cfg[0].get_digraph_mut().node_edges(root).unwrap();
+        cip_label_aux(
+            &mut cfg,
+            &cip_all_rules().unwrap(),
+            0,
+            &mut CipLabelerContext::new(0),
+        )
+        .unwrap();
+        let graph = cfg[0].get_digraph_mut();
+        let node = created_normal(graph, 4);
+        assert_eq!(graph.node(node).get_aux(), expected);
     }
     // Existing get_edges only reads an already-expanded node; it returns Err for
     // unexpanded nodes. This observation never calls the lazy expansion owner.

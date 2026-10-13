@@ -213,6 +213,7 @@ Value-style transformations use `with_*` and return a new molecule or result:
 with_hydrogens
 without_hydrogens
 with_kekulized_bonds
+with_2d_coordinates
 with_3d_conformer
 ```
 
@@ -221,6 +222,7 @@ Rust in-place operations use the existing mandatory trailing underscore:
 ```text
 add_hydrogens_
 remove_hydrogens_
+add_2d_coordinates_
 ```
 
 The trailing underscore must never be used for a non-mutating or unrelated
@@ -234,15 +236,6 @@ as `with_hydrogens` -> `add_hydrogens_` and `without_hydrogens` ->
 `remove_hydrogens_`. These names grant no mutable-storage access.
 In-place COW and failure guarantees are defined in
 [the operation standard](./operation_system_standard.md#in-place-execution-and-failure-semantics).
-
-The approved 2D coordinate-generation family uses `add_2d_coordinates` for
-the value form and `add_2d_coordinates_` for the in-place form, including
-their `_with_params` variants. JavaScript projects these as `add2dCoordinates`
-and `add2dCoordinates_`; batch value operations use the same `add` name.
-This is a targeted naming exception to `with_*`, not a change to coordinate
-semantics: `clear_existing_2d=True` still replaces stored 2D conformers by
-default, while `False` appends. Do not retain the former `with`/`compute`
-entry points as compatibility aliases.
 
 ### 4.5 Parameters and overloads
 

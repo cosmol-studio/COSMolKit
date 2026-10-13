@@ -6,13 +6,13 @@ test('typed atom metadata preserves native values and COW',()=>{
   const tagged=source.withAtomProperty(0,'tracking_id',value);
   assert.deepEqual(tagged.atomProperty(0,'tracking_id'),value);
   assert.equal(source.atomProperty(0,'tracking_id'),null);
-  const copied=tagged.withAtomProperty(0,'copy_note','copy'); tagged.setAtomProperty(0,'tracking_id',7);
+  const copied=tagged.withAtomProperty(0,'copy_note','copy'); tagged.setAtomProperty_(0,'tracking_id',7);
   assert.deepEqual(copied.atomProperty(0,'tracking_id'),value);
   assert.equal(tagged.atomProperty(0,'tracking_id'),7);
  }
- assert.throws(()=>source.setAtomProperty(0,'_CIPCode','R'),e=>e.kind==='ReservedAtomPropertyKey');
- assert.throws(()=>source.setAtomProperty(9,'tracking_id',1),e=>e.kind==='AtomPropertyIndex');
- assert.throws(()=>source.setAtomProperty(0,'tracking_id',{}),TypeError);
+ assert.throws(()=>source.setAtomProperty_(0,'_CIPCode','R'),e=>e.kind==='ReservedAtomPropertyKey');
+ assert.throws(()=>source.setAtomProperty_(9,'tracking_id',1),e=>e.kind==='AtomPropertyIndex');
+ assert.throws(()=>source.setAtomProperty_(0,'tracking_id',{}),TypeError);
 });
 const sdf="binding record\n  COSMolKit         2D\n\n  2  1  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.4000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\nM  END\n>  <NOTE>\nfirst\nline\n\n>  <NOTE>\nsecond\n\n>  <atom.iprop.score>\n-2147483648 2147483647\n\n>  <atom.prop.label>\nalpha n/a\n\n>  <atom.dprop.weight>\n0.1 -0\n\n>  <atom.bprop.flag>\n1 0\n\n>  <bond.iprop.edge>\n7\n\n>  <bond.prop.label>\nbeta\n\n>  <bond.dprop.weight>\n0.1\n\n>  <bond.bprop.flag>\n1\n\n$$$$\n";
 test('Atom and bond property strings use canonical floating/integer/bool spelling and exact null absence',()=>{

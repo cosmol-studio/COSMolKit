@@ -1338,10 +1338,17 @@ fn validate_ring_inputs(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return 0;
     // RDKit✔️✔️: }
-    // Behavior: accept only the complete empty SymmSSSR sentinel here; keep
-    // rejecting uninitialized and partially populated mismatched carriers.
-    // Complexity: three O(1) metadata reads; no ring finding or allocation.
-    if rings.is_symm_sssr() && rings.atom_row_count() == 0 && rings.bond_row_count() == 0 {
+    // Behavior: candidate selective reset retains RDL and rebuilds only rows
+    // through the highest ring member. Accept that native carrier and the
+    // existing SMARTS empty sentinel without changing detached malformed-input
+    // rejection for other externally supplied prepared carriers.
+    // Complexity: native RDL needs only O(1) metadata reads. The older AddHs
+    // carrier alone retains its existing terminal-prefix proof; no allocation.
+    if (rings.are_ring_families_initialized()
+        && rings.atom_row_count() <= topology.atoms.len()
+        && rings.bond_row_count() <= topology.bonds.len())
+        || (rings.is_symm_sssr() && rings.atom_row_count() == 0 && rings.bond_row_count() == 0)
+    {
         return Ok(());
     }
     let preserved_prefix = (rings.atom_row_count() != topology.atoms.len()

@@ -849,6 +849,24 @@ mod reaction_writer_complete_source_tests {
             true,
         ))
         .unwrap();
+        let r = Reaction::from_templates(vec![q.clone()], vec![], vec![]).unwrap();
+        assert!(matches!(
+            run(&r, true, F::COORDS),
+            Err(ReactionWriteError::Template {
+                role: ReactionRole::Reactant,
+                template: 0,
+                source: cosmolkit_search::SmartsWriteError::CanonicalTraversal(
+                    cosmolkit_smiles::SmilesParseError::AmbiguousCoordinateSelection {
+                        two_d_count: 0,
+                        three_d_count: 2,
+                    }
+                ),
+            })
+        ));
+        // Close the source presence guard to reach CX emission independently
+        // of CK's approved unique-or-explicit stereo-preparation selection.
+        q.set_prop("_StereochemDone", PropertyValue::Bool(false))
+            .unwrap();
         let r = Reaction::from_templates(vec![q], vec![], vec![]).unwrap();
         let o = run(&r, true, F::COORDS).unwrap();
         assert_eq!(o.text, PropertyText::from("[#6]>> |(1,2,3)|"));

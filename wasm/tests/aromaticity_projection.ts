@@ -6,8 +6,8 @@ params.model = AromaticityModel.Simple;
 const source = Molecule.fromSmiles("c1ccccc1");
 const value: Molecule = source.withAssignedAromaticity();
 const selected: Molecule = source.withAssignedAromaticityWithParams(params);
-const inPlace: void = source.assignAromaticity();
-const inPlaceSelected: void = source.assignAromaticityWithParams(defaultParams);
+const inPlace: void = source.assignAromaticity_();
+const inPlaceSelected: void = source.assignAromaticityWithParams_(defaultParams);
 function inspect(error: AromaticityError) {
     const domain: string = error.domain, kind: string = error.kind, message: string = error.message;
     return [domain, kind, message, error.cause];

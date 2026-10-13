@@ -41,6 +41,8 @@ pub struct StructureTagAssignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StereoError {
+    #[error(transparent)]
+    Atropisomer(Box<crate::AtropisomerError>),
     #[error("{0}")]
     StereoGroup(#[from] cosmolkit_model::StereoGroupError),
 
@@ -1587,6 +1589,15 @@ pub fn assign_chiral_tags_from_structure(
         }
     }
 
+    // RDKit❗❌: Atropisomers::detectAtropisomerChirality(mol, &conf, replaceExistingTags);
+    let assignment = crate::detect_atropisomer_chirality_with_replacement(
+        &working,
+        Some(crate::AtropisomerConformer::ThreeD(conformer)),
+        params.replace_existing_tags,
+    )
+    .map_err(|error| StereoError::Atropisomer(Box::new(error)))?;
+    crate::atropisomer::apply_detected_atropisomers(&mut working, assignment)
+        .map_err(|error| StereoError::Atropisomer(Box::new(error)))?;
     Ok(StructureTagAssignment {
         topology: working,
         selected_conformer_id: Some(conformer.id()),

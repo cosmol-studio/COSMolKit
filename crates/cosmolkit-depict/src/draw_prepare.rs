@@ -1,5 +1,5 @@
-//! Detached legacy drawing preparation. Inherited source markers are not
-//! newly certified; the dimension-specific 2D selection is packet-authorized.
+//! Drawing preparation over detached topology and dimension-specific coordinates.
+//! Function-local source markers describe individual reproduction boundaries.
 #[cfg(test)]
 #[path = "draw_prepare_stage_probe.rs"]
 mod draw_prepare_stage_probe;

@@ -1,7 +1,8 @@
 # Crate Split Architecture Experiment
 
-This is an isolated architecture experiment. It is not part of the root
-workspace and does not depend on any published or local COSMolKit crate.
+This is a historical, isolated architecture experiment, not a current design
+or execution standard. It is not part of the root workspace and does not
+depend on any published or local COSMolKit crate.
 
 The experiment validates crate ownership and call direction only; the domain
 functions intentionally contain minimal behavior and are not chemistry ports.

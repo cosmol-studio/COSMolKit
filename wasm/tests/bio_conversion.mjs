@@ -15,9 +15,9 @@ test('BIO and Protein produce detached Molecules with alternate locations, hydro
   assert.equal(Array.from(s.atoms()).length,3);for(const value of [{},null,undefined,new b.BioReadParams()])assert.throws(()=>s.toMoleculeWithParams(value),TypeError);
   s.free();assert.equal(normal.numAtoms(),2);
   // Conversion returns a detached molecule, not a prepared runtime cache.
-  assert.throws(()=>normal.addHydrogens(),e=>e.name==='OperationError'&&e.kind==='Hydrogen'&&e.cause.name==='HydrogenError'&&e.cause.kind==='Valence');
+  assert.throws(()=>normal.addHydrogens_(),e=>e.name==='OperationError'&&e.kind==='Hydrogen'&&e.cause.name==='HydrogenError'&&e.cause.kind==='Valence');
   assert.equal(normal.numAtoms(),2);assert.deepEqual(Array.from(normal.coordinates3d(0)),[1,2,3,7,8,9]);
-  const prepared=normal.withAssignedValence();prepared.addHydrogens();assert.equal(prepared.numAtoms()>2,true);assert.equal(normal.numAtoms(),2);
+  const prepared=normal.withAssignedValence();prepared.addHydrogens_();assert.equal(prepared.numAtoms()>2,true);assert.equal(normal.numAtoms(),2);
   const h=T.fromPdb(hydrogen),withHs=h.toMoleculeWithParams(new b.BioMoleculeParams(true,false)),withoutHs=h.toMolecule();assert.equal(withHs.numAtoms(),3);assert.equal(withoutHs.numAtoms(),2);assert.equal(Array.from(h.atoms()).length,4);
   const unsanitized=h.toMoleculeWithParams(new b.BioMoleculeParams(false,true));assert.equal(unsanitized.numAtoms(),3);
   assert.equal(T.fromPdb('END\n').toMolecule().numAtoms(),0);

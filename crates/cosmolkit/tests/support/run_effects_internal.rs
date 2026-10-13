@@ -1351,11 +1351,111 @@ fn cip_assign_requires_exact_operation_authority_and_assignment_evidence() {
     ));
     let mut assigned = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
     let mut properties = assigned.checkout_properties_runtime().unwrap();
+    // CIPLabeler.cpp installs a BoolTag true, not the text "true".
+    properties.set_computed_prop("_CIPComputed", true).unwrap();
+    assigned.install_properties_runtime(properties).unwrap();
+    assigned.apply_cip_policy_runtime().unwrap();
+    let mut wrong_type = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    let mut properties = wrong_type.checkout_properties_runtime().unwrap();
     properties
         .set_computed_prop("_CIPComputed", "true")
         .unwrap();
-    assigned.install_properties_runtime(properties).unwrap();
-    assigned.apply_cip_policy_runtime().unwrap();
+    wrong_type.install_properties_runtime(properties).unwrap();
+    assert!(matches!(
+        wrong_type.apply_cip_policy_runtime(),
+        Err(OperationError::CipStateContract { .. })
+    ));
+}
+
+#[test]
+#[cfg(feature = "op-contracts")]
+fn cip_assignment_selection_and_completion_check_actual_candidate_state() {
+    use cosmolkit_model::CipAssignmentCompletion::{Completed, Interrupted};
+    let operation = spec(
+        "with_cip_labels_with_options",
+        MoleculeOpOutput::Single,
+        all_effect_access(),
+        all_effect_access().write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Assign,
+    );
+    let source = molecule();
+    // Cover both row kinds, marker truth/computedness, deduplicated full
+    // selections, completed partial selections and actual interrupted output.
+    for completion in [Completed, Interrupted] {
+        for full in [false, true] {
+            for marker in [None, Some(false), Some(true)] {
+                let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+                if let Some(value) = marker {
+                    let mut properties = parts.checkout_properties_runtime().unwrap();
+                    properties.set_computed_prop("_CIPComputed", value).unwrap();
+                    parts.install_properties_runtime(properties).unwrap();
+                }
+                let atoms: Vec<_> = if full {
+                    source
+                        .topology()
+                        .atoms
+                        .iter()
+                        .map(|a| a.id())
+                        .chain([AtomId::new(0)])
+                        .collect()
+                } else {
+                    vec![AtomId::new(0)]
+                };
+                let bonds: Vec<_> = if full {
+                    source.topology().bonds.iter().map(|b| b.id()).collect()
+                } else {
+                    vec![]
+                };
+                let result = parts.validate_cip_assignment_runtime(&atoms, &bonds, completion);
+                let expected = if full && completion == Completed {
+                    marker == Some(true)
+                } else {
+                    marker.is_none()
+                };
+                assert_eq!(
+                    result.is_ok(),
+                    expected,
+                    "{completion:?} full={full} marker={marker:?}: {result:?}"
+                );
+                if expected {
+                    parts.apply_cip_policy_runtime().unwrap();
+                }
+            }
+        }
+    }
+    for bond_row in [false, true] {
+        let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+        let mut topology = parts.checkout_topology_runtime().unwrap();
+        if bond_row {
+            topology.bonds[0].set_prop("_CIPCode", "E").unwrap();
+        } else {
+            topology.atoms[1].set_prop("_CIPCode", "R").unwrap();
+        }
+        parts.install_topology_runtime(topology).unwrap();
+        assert!(matches!(
+            parts.validate_cip_assignment_runtime(&[AtomId::new(0)], &[], Completed),
+            Err(OperationError::CipStateContract {
+                issue: "CIP assignment changed an unselected atom"
+                    | "CIP assignment changed an unselected bond",
+                ..
+            })
+        ));
+    }
+    let mut uncomputed = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    let mut properties = uncomputed.checkout_properties_runtime().unwrap();
+    properties.set_prop("_CIPComputed", true).unwrap();
+    uncomputed.install_properties_runtime(properties).unwrap();
+    assert!(
+        uncomputed
+            .validate_cip_assignment_runtime(&[], &[], Completed)
+            .is_err()
+    );
 }
 
 #[test]

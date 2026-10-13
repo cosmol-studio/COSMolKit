@@ -1,8 +1,7 @@
-//! Private active mmCIF `_cell` category emitter (BIO-CELL-CATEGORY1-28).
+//! Private mmCIF `_cell` category emitter.
 //!
-//! Active-helper only: the coordinate composer is NOT dispatched here and
-//! caller group dispatch remains ROOT-owned. Reuses the accepted six-field
-//! owner and the one existing category setter; no second implementation.
+//! Writes only this category; the caller selects categories and composes
+//! coordinates. Uses the shared six-field writer and category setter.
 
 use super::super::cif::CifBlock;
 use cosmolkit_bio::BioCrystalInfo;

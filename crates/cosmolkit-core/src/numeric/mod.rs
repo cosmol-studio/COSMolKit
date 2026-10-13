@@ -4,7 +4,8 @@
 //! Decimal conversion reuses the source-backed musl port. Hexadecimal
 //! rounding and signed NaN payloads use the pinned glibc 2.43 source branches.
 //! Acceptance remains independent; no numerical input exemptions are applied.
-//! This module is private to `cosmolkit-io`; no public API is added.
+//! This module is private to `cosmolkit-core`; only the shared detached
+//! byte-prefix helper is re-exported for notation/IO owners.
 //!
 //! Source basis: musl 1.2.5 (`third_party/musl/`), selected binary64
 //! configuration (`LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024`), prec=1,
@@ -20,7 +21,7 @@ pub(crate) use float_scan::float_scan;
 
 /// Parse the longest numeric prefix of `bytes` as a binary64 value and return
 /// it with the number of consumed bytes.
-pub(crate) fn parse_rdkit_atof_prefix(bytes: &[u8]) -> (f64, usize) {
+pub fn parse_rdkit_atof_prefix(bytes: &[u8]) -> (f64, usize) {
     // Pinned RDKit source calls atof. The original source-backed decimal
     // converter is reused; hexadecimal conversion and signed NaN payloads
     // use complete glibc 2.43 branches in their implementing functions.

@@ -2,12 +2,19 @@ use crate::stereo_graph::{BondRows, GraphAdjacency, NeighborRows, StereoGraphAcc
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 
 use cosmolkit_model::{
     AdjacencyError, AdjacencyList, AtomId, Bond, BondId, MoleculeProperties, MoleculePropertyError,
     NeighborRef, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::BondOrder;
+
+#[doc(hidden)]
+pub use cosmolkit_ringdecomposer::{
+    EdgeId as PersistedRingEdgeId, Graph as PersistedRingGraph,
+    RingDecomposition as PersistedRingDecomposition, persistence as ring_persistence,
+};
 
 const MAX_BFSQ_SIZE: usize = 200_000;
 
@@ -65,6 +72,7 @@ pub struct RingInfo {
     atom_ring_families: Vec<Vec<AtomId>>,
     bond_ring_families: Vec<Vec<BondId>>,
     relevant_cycle_count: Option<usize>,
+    decomposition: Option<Arc<cosmolkit_ringdecomposer::RingDecomposition>>,
     fused_rings: Vec<Vec<bool>>,
     num_fused_bonds: Vec<usize>,
 }
@@ -83,7 +91,7 @@ impl RingInfo {
         // Canonical CORE computations remain here. Explicit field transport
         // moves actual vectors, including membership order, preallocated rows,
         // fused caches and represented URF count, without rebuilding any data.
-        // The source URF object remains an independent unmodeled capability.
+        // Source shared_ptr<RDL_data> moves with the detached snapshot.
         // Constant-time moves, no cache recomputation or payload clone.
         cosmolkit_model::SourceRingInfo {
             initialized: self.initialized,
@@ -100,6 +108,7 @@ impl RingInfo {
             atom_ring_families: self.atom_ring_families,
             bond_ring_families: self.bond_ring_families,
             relevant_cycle_count: self.relevant_cycle_count,
+            decomposition: self.decomposition,
             fused_rings: self.fused_rings,
             num_fused_bonds: self.num_fused_bonds,
         }
@@ -139,6 +148,7 @@ impl RingInfo {
             atom_ring_families: source.atom_ring_families.clone(),
             bond_ring_families: source.bond_ring_families.clone(),
             relevant_cycle_count: source.relevant_cycle_count,
+            decomposition: source.decomposition.clone(),
             fused_rings: source.fused_rings.clone(),
             num_fused_bonds: source.num_fused_bonds.clone(),
         })
@@ -156,6 +166,7 @@ impl RingInfo {
             atom_ring_families: Vec::new(),
             bond_ring_families: Vec::new(),
             relevant_cycle_count: None,
+            decomposition: None,
             fused_rings: Vec::new(),
             num_fused_bonds: Vec::new(),
         };
@@ -188,6 +199,81 @@ impl RingInfo {
     #[doc(hidden)]
     pub const fn persisted_relevant_cycle_count(&self) -> Option<usize> {
         self.relevant_cycle_count
+    }
+
+    #[doc(hidden)]
+    pub fn persisted_decomposition(&self) -> Option<&PersistedRingDecomposition> {
+        self.decomposition.as_deref()
+    }
+
+    #[doc(hidden)]
+    pub fn persisted_atom_members(&self) -> &[Vec<usize>] {
+        &self.atom_members
+    }
+
+    #[doc(hidden)]
+    pub fn persisted_bond_members(&self) -> &[Vec<usize>] {
+        &self.bond_members
+    }
+
+    /// Restore optional additive archive state without finding rings or changing
+    /// the initialized predicate used by source algorithms for legacy snapshots.
+    #[doc(hidden)]
+    pub fn restore_persisted_state(
+        &mut self,
+        decomposition: Option<PersistedRingDecomposition>,
+        atom_members: Option<Vec<Vec<usize>>>,
+        bond_members: Option<Vec<Vec<usize>>>,
+    ) -> Result<(), &'static str> {
+        fn members(rows: &[Vec<usize>], rings: &[Vec<usize>]) -> bool {
+            rows.len() == rings.len()
+                && rows.iter().zip(rings).all(|(a, b)| {
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    let mut a = a.clone();
+                    let mut b = b.clone();
+                    a.sort_unstable();
+                    b.sort_unstable();
+                    a == b
+                })
+        }
+        if atom_members
+            .as_ref()
+            .is_some_and(|rows| !members(rows, &self.atom_members))
+            || bond_members
+                .as_ref()
+                .is_some_and(|rows| !members(rows, &self.bond_members))
+        {
+            return Err("persisted ring memberships do not match ring rows");
+        }
+        if let Some(d) = &decomposition {
+            if !self.initialized
+                || d.graph().node_count() < self.atom_members.len().max(1)
+                || checked_relevant_cycle_count(d.relevant_cycle_count()).ok()
+                    != self.relevant_cycle_count
+                || d.urf_count() != self.atom_ring_families.len()
+                || d.urfs()
+                    .iter()
+                    .zip(&self.atom_ring_families)
+                    .any(|(urf, atoms)| {
+                        !urf.nodes()
+                            .iter()
+                            .copied()
+                            .eq(atoms.iter().map(|a| a.index()))
+                    })
+            {
+                return Err("persisted RDL state does not match ring-family results");
+            }
+        }
+        if let Some(rows) = atom_members {
+            self.atom_members = rows;
+        }
+        if let Some(rows) = bond_members {
+            self.bond_members = rows;
+        }
+        self.decomposition = decomposition.map(Arc::new);
+        Ok(())
     }
 
     #[doc(hidden)]
@@ -236,6 +322,7 @@ impl RingInfo {
                 atom_ring_families,
                 bond_ring_families,
                 relevant_cycle_count,
+                decomposition: None,
                 fused_rings,
                 num_fused_bonds,
             });
@@ -316,6 +403,7 @@ impl RingInfo {
             atom_ring_families,
             bond_ring_families,
             relevant_cycle_count,
+            decomposition: None,
             fused_rings,
             num_fused_bonds,
         })
@@ -335,8 +423,12 @@ impl RingInfo {
 
     #[doc(hidden)]
     pub fn reset(&mut self) {
+        self.reset_with_ring_families(true);
+    }
+
+    fn reset_with_ring_families(&mut self, reset_families: bool) {
         // BEGIN RDKIT CPP FUNCTION RingInfo::reset
-        // RDKit✔️✔️: void RingInfo::reset() {
+        // RDKit✔️✔️: void RingInfo::reset(bool doRingFamilies) {
         // RDKit✔️✔️:   if (!df_init) {
         // RDKit✔️✔️:     return;
         // RDKit✔️✔️:   }
@@ -351,15 +443,31 @@ impl RingInfo {
         // RDKit✔️✔️:   d_bondMembers.clear();
         // RDKit✔️✔️:   d_atomRings.clear();
         // RDKit✔️✔️:   d_bondRings.clear();
-        // RDKit✔️✔️:   d_atomRingFamilies.clear();
-        // RDKit✔️✔️:   d_bondRingFamilies.clear();
         self.atom_members.clear();
         self.bond_members.clear();
         self.atom_rings.clear();
         self.bond_rings.clear();
-        self.atom_ring_families.clear();
-        self.bond_ring_families.clear();
-        self.relevant_cycle_count = None;
+        // RDKit✔️✔️:   if (doRingFamilies) {
+        // RDKit✔️✔️:     resetRingFamilies();
+        // RDKit✔️✔️:   }
+        if reset_families {
+            // BEGIN RDKIT CPP FUNCTION RingInfo::resetRingFamilies
+            // RDKit✔️✔️: void RingInfo::resetRingFamilies() {
+            // RDKit✔️✔️:   d_atomRingFamilies.clear();
+            // RDKit✔️✔️:   d_bondRingFamilies.clear();
+            // RDKit✔️✔️:   dp_urfData.reset();
+            // RDKit✔️✔️: }
+            // END RDKIT CPP FUNCTION RingInfo::resetRingFamilies
+            self.atom_ring_families.clear();
+            self.bond_ring_families.clear();
+            self.relevant_cycle_count = None;
+            self.decomposition = None;
+        }
+        // RDKit❗✔️: retained CK cache policy, not copied candidate reset code.
+        // Candidate reset does not clear d_fusedRings/d_numFusedBonds; its
+        // getters rebuild by row-count mismatch. CK retains its existing
+        // explicit invalidation, including equal-count ring replacements,
+        // so stale cached fusion relationships cannot survive this reset.
         self.fused_rings.clear();
         self.num_fused_bonds.clear();
         // RDKit✔️✔️: }
@@ -953,9 +1061,9 @@ impl RingInfo {
     pub const fn are_ring_families_initialized(&self) -> bool {
         // RDKit✔️✔️: bool areRingFamiliesInitialized() const { return dp_urfData != nullptr; }
         // The detached value retains the source observation without exposing
-        // RDL-owned mutable data: `Some(0)` distinguishes a calculated acyclic
-        // graph from a RingInfo on which family calculation never ran.
-        self.relevant_cycle_count.is_some()
+        // RDL-owned mutable data: an Arc also distinguishes a calculated
+        // acyclic graph from a RingInfo on which family calculation never ran.
+        self.decomposition.is_some()
     }
 
     pub fn num_relevant_cycles(&self) -> Result<usize, RingFindingError> {
@@ -1362,154 +1470,168 @@ fn symmetrize_sssr_from_context(
     context: &RingSearchContext<'_>,
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
-    mut properties: Option<&mut MoleculeProperties>,
+    _properties: Option<&mut MoleculeProperties>,
 ) -> Result<RingInfo, RingFindingError> {
-    // BEGIN RDKIT CPP FUNCTION MolOps::symmetrizeSSSR complete source
-    // RDKit✔️✔️: int symmetrizeSSSR(ROMol &mol, VECT_INT_VECT &res, bool includeDativeBonds,
-    // RDKit✔️✔️:                    bool includeHydrogenBonds) {
-    // RDKit✔️✔️:   res.clear();
-    // RDKit✔️✔️:   VECT_INT_VECT sssrs;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // FIX: need to set flag here the symmetrization has been done in order to
-    // RDKit✔️✔️:   // avoid repeating this work
-    // RDKit✔️❌:   findSSSR(mol, sssrs, includeDativeBonds, includeHydrogenBonds);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // reinit as SYMM_SSSR
-    // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SYMM_SSSR);
-    // RDKit✔️✔️:
-    // RDKit✔️🔝:   res.reserve(sssrs.size());
-    // RDKit✔️🔝:   for (const auto &r : sssrs) {
-    // RDKit✔️🔝:     res.emplace_back(r);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // now check if there are any extra rings on the molecule
-    // RDKit✔️✔️:   if (!mol.hasProp(common_properties::extraRings)) {
-    // RDKit✔️✔️:     // no extra rings nothing to be done
-    // RDKit✔️✔️:     return rdcast<int>(res.size());
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const VECT_INT_VECT &extras =
-    // RDKit✔️✔️:       mol.getProp<VECT_INT_VECT>(common_properties::extraRings);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // convert the rings to bond ids
-    // RDKit✔️✔️:   VECT_INT_VECT bondsssrs;
-    // RDKit✔️✔️:   RingUtils::convertToBonds(sssrs, bondsssrs, mol);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   //
-    // RDKit✔️✔️:   // For each "extra" ring, figure out if it could replace a single
-    // RDKit✔️✔️:   // ring in the SSSR. A ring could be swapped out if:
-    // RDKit✔️✔️:   //
-    // RDKit✔️✔️:   // * They are the same size
-    // RDKit✔️✔️:   // * The replacement doesn't remove any bonds from the union of the bonds
-    // RDKit✔️✔️:   //   in the SSSR.
-    // RDKit✔️✔️:   //
-    // RDKit✔️✔️:   // The latter can be checked by determining if the SSSR ring is the unique
-    // RDKit✔️✔️:   // provider of any ring bond. If it is, the replacement ring must also
-    // RDKit✔️✔️:   // provide that bond.
-    // RDKit✔️✔️:   //
-    // RDKit✔️✔️:   // May miss extra rings that would need to swap two (or three...) rings
-    // RDKit✔️✔️:   // to be included.
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   // counts of each bond
-    // RDKit✔️✔️:   std::vector<int> bondCounts(mol.getNumBonds(), 0);
-    // RDKit✔️✔️:   for (const auto &r : bondsssrs) {
-    // RDKit✔️✔️:     for (const auto &b : r) {
-    // RDKit✔️✔️:       bondCounts[b] += 1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   INT_VECT extraRing;
-    // RDKit✔️✔️:   for (auto &extraAtomRing : extras) {
-    // RDKit✔️❌:     RingUtils::convertToBonds(extraAtomRing, extraRing, mol);
-    // RDKit✔️✔️:     for (auto &ring : bondsssrs) {
-    // RDKit✔️✔️:       if (ring.size() != extraRing.size()) {
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       // If `ring` is the only provider of some bond, extraRing must also
-    // RDKit✔️✔️:       // provide that bond.
-    // RDKit✔️✔️:       bool shareBond = false;
-    // RDKit✔️✔️:       bool replacesAllUniqueBonds = true;
-    // RDKit✔️✔️:       for (auto &bondID : ring) {
-    // RDKit✔️✔️:         const int bondCount = bondCounts[bondID];
-    // RDKit✔️✔️:         if (bondCount == 1 || !shareBond) {
-    // RDKit✔️✔️:           auto position = find(extraRing.begin(), extraRing.end(), bondID);
-    // RDKit✔️✔️:           if (position != extraRing.end()) {
-    // RDKit✔️✔️:             shareBond = true;
-    // RDKit✔️✔️:           } else if (bondCount == 1) {
-    // RDKit✔️✔️:             // 1 means `ring` is the only ring in the SSSR to provide this
-    // RDKit✔️✔️:             // bond, and extraRing did not provide it (so extraRing is not an
-    // RDKit✔️✔️:             // acceptable substitution in the SSSR for ring)
-    // RDKit✔️✔️:             replacesAllUniqueBonds = false;
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       if (shareBond && replacesAllUniqueBonds) {
-    // RDKit✔️🔝:         res.push_back(extraAtomRing);
-    // RDKit✔️✔️:         FindRings::storeRingInfo(mol, extraAtomRing);
+    let mut info = RingInfo::new(
+        RingFindType::OtherOrUnknown,
+        context.atom_count(),
+        context.bond_count(),
+    );
+    symmetrize_sssr_source_context(
+        context,
+        &mut info,
+        true,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+    )?;
+    Ok(info)
+}
+
+/// Reuse the supplied detached source family decomposition during sanitize.
+#[doc(hidden)]
+pub fn symmetrized_sssr_with_existing(
+    topology: &TopologyBlock,
+    source: &mut RingInfo,
+    recalculate_families: bool,
+    params: &RingSearchParams,
+) -> Result<(), RingFindingError> {
+    // RDKit✔️✔️: ringInfo->reset(recalcSSSR);
+    // RDKit✔️✔️: ringInfo->initialize(FIND_RING_TYPE_SYMM_SSSR);
+    // Detached transport only; runtime still owns validity and installation.
+    let context =
+        RingSearchContext::from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency);
+    symmetrize_sssr_source_context(
+        &context,
+        source,
+        recalculate_families,
+        params.include_dative_bonds,
+        params.include_hydrogen_bonds,
+    )
+}
+
+fn symmetrize_sssr_source_context(
+    context: &RingSearchContext<'_>,
+    info: &mut RingInfo,
+    recalculate_families: bool,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<(), RingFindingError> {
+    // RDKit✔️✔️: auto ringInfo = mol.getRingInfo();
+    // RDKit✔️✔️: if (ringInfo->isInitialized()) {
+    // RDKit✔️✔️:   ringInfo->reset(recalcSSSR);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: ringInfo->initialize(FIND_RING_TYPE_SYMM_SSSR);
+    // RDKit✔️✔️: if (!ringInfo->areRingFamiliesInitialized()) {
+    // RDKit✔️✔️:   ringInfo->preallocate(mol.getNumAtoms(), mol.getNumBonds());
+    // RDKit✔️✔️:   findRingFamilies(mol, includeDativeBonds, includeHydrogenBonds);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: res = ringInfo->atomRelevantCycles();
+    // RDKit✔️✔️: for (const auto &atomRing : res) {
+    // RDKit✔️✔️:   INT_VECT bondRing;
+    // RDKit✔️✔️:   RingUtils::convertToBonds(atomRing, bondRing, mol);
+    // RDKit✔️✔️:   ringInfo->addRing(atomRing, bondRing);
+    // RDKit✔️✔️: }
+    // Candidate default is RDL. The independent legacy algorithm selector is
+    // not exposed by CK; no environment-dependent alternate chemistry is added.
+    // Preserve one shared decomposition, stream RCF paths in source order, and
+    // allocate only the resulting ring rows, not all shortest-path combinations.
+    if info.initialized {
+        info.reset_with_ring_families(recalculate_families);
+    }
+    info.initialize(RingFindType::SymmSssr);
+    if !info.are_ring_families_initialized() {
+        info.preallocate(context.atom_count(), context.bond_count());
+        find_ring_families_into(
+            context.atom_count(),
+            context.bonds(),
+            info,
+            include_dative_bonds,
+            include_hydrogen_bonds,
+        )?;
+    }
+    let decomposition = Arc::clone(info.decomposition.as_ref().expect("calculated source RDL"));
+    for cycle in decomposition.relevant_cycles() {
+        let ring = rdl_cycle_to_atom_ring(&decomposition, &cycle);
+        let bonds = convert_to_bonds(context, &ring, |atom| *atom, BondId::index)?;
+        info.add_ring(&ring, &bonds)?;
+    }
+    Ok(())
+}
+
+fn rdl_cycle_to_atom_ring(
+    decomposition: &cosmolkit_ringdecomposer::RingDecomposition,
+    cycle: &[cosmolkit_ringdecomposer::EdgeId],
+) -> Vec<usize> {
+    // RDKit✔️✔️: ring.reserve(cycle->weight);
+    // RDKit✔️✔️: boost::dynamic_bitset<> unseen_edges(cycle->weight);
+    // RDKit✔️✔️: unseen_edges.set();
+    // RDKit✔️✔️: ring.push_back(cycle->edges[0][0]);
+    // RDKit✔️✔️: ring.push_back(cycle->edges[0][1]);
+    // RDKit✔️✔️: unseen_edges.set(0, false);
+    // RDKit✔️✔️: while (ring.size() < cycle->weight) {
+    // RDKit✔️✔️:   for (auto edgeIdx = unseen_edges.find_first();
+    // RDKit✔️✔️:        edgeIdx != boost::dynamic_bitset<>::npos;
+    // RDKit✔️✔️:        edgeIdx = unseen_edges.find_next(edgeIdx)) {
+    // RDKit✔️✔️:     auto edge = cycle->edges[edgeIdx];
+    // RDKit✔️✔️:     for (auto j = 0; j < 2; ++j) {
+    // RDKit✔️✔️:       if (static_cast<unsigned int>(ring.back()) == edge[j]) {
+    // RDKit✔️✔️:         ring.push_back(edge[1 - j]);
+    // RDKit✔️✔️:         unseen_edges.set(edgeIdx, false);
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (ring.size() == cycle->weight) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (mol.hasProp(common_properties::extraRings)) {
-    // RDKit✔️❌:     mol.clearProp(common_properties::extraRings);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return rdcast<int>(res.size());
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolOps::symmetrizeSSSR complete source
-
-    let sssr = find_sssr_internal(
-        context,
-        include_dative_bonds,
-        include_hydrogen_bonds,
-        properties.as_deref_mut(),
-        None,
-        None,
-    )?;
-    let mut info = RingInfo::new(sssr.find_type, context.atom_count(), context.bond_count());
-    // findSSSR stores its original rows before Symm reinitializes the type.
-    // Reuse the canonical source conversion/storage, keeping memberships.
-    store_rings_info(context, &sssr.rings, &mut info)?;
-    info.initialize(RingFindType::SymmSssr);
-    // This detached carrier already owns the exact output ring rows. Returning
-    // it avoids the native separate res matrix copy without changing any row,
-    // membership, order or count. No res alias is exposed by this boundary.
-    if !sssr.extra_rings_present {
-        return Ok(info);
-    }
-    {
-        let bond_sssrs = convert_rings_to_bonds(&context, &sssr.rings)?;
-        let mut bond_counts = vec![0i32; context.bond_count()];
-        for ring in &bond_sssrs {
-            for &bond in ring {
-                bond_counts[bond] += 1;
+    // RDKit✔️✔️: normalizeRing(ring);
+    // The source edge scan may append multiple edges in one pass. Preserve
+    // that order and O(k²) worst case, with one packed unseen mask and ring.
+    let edges = decomposition.graph().edges();
+    let first = edges[cycle[0].index()];
+    let mut ring = Vec::with_capacity(cycle.len());
+    ring.extend([first.from(), first.to()]);
+    let mut unseen = vec![u64::MAX; cycle.len().div_ceil(64)];
+    unseen[0] &= !1;
+    while ring.len() < cycle.len() {
+        for index in 1..cycle.len() {
+            if unseen[index / 64] & (1_u64 << (index % 64)) == 0 {
+                continue;
             }
-        }
-        for extra_atom_ring in &sssr.extra_rings {
-            let extra_ring =
-                convert_to_bonds(&context, extra_atom_ring, |atom| *atom, BondId::index)?;
-            for ring in &bond_sssrs {
-                if extra_ring_can_replace_sssr_ring(&extra_ring, ring, &bond_counts) {
-                    // Native stores each accepted extra immediately, before
-                    // the next candidate and final computed-cache clear.
-                    store_rings_info(context, std::slice::from_ref(extra_atom_ring), &mut info)?;
-                    break;
-                }
+            let edge = edges[cycle[index].index()];
+            let last = *ring.last().expect("source cycle has first edge");
+            if last == edge.from() || last == edge.to() {
+                ring.push(if last == edge.from() {
+                    edge.to()
+                } else {
+                    edge.from()
+                });
+                unseen[index / 64] &= !(1_u64 << (index % 64));
+            }
+            if ring.len() == cycle.len() {
+                break;
             }
         }
     }
-    // Native conversion reuses extraRing capacity across iterations. The
-    // current canonical converter returns a new vector per extra: retained
-    // as a known allocation cost rather than claiming full perf equivalence.
-    // Native symmetrizeSSSR erases its transient extraRings property after
-    // using the typed cache. No other dictionary read/write intervenes.
-    if sssr.extra_rings_present {
-        if let Some(properties) = properties {
-            properties.clear_prop("extraRings")?;
-        }
+    // RDKit✔️✔️: auto newStart = std::ranges::min_element(ring);
+    // RDKit✔️✔️: std::ranges::rotate(ring, newStart);
+    // RDKit✔️✔️: if (ring.back() < ring[1]) {
+    // RDKit✔️✔️:   auto numPairsToMove = (ring.size() - 1) / 2;
+    // RDKit✔️✔️:   auto front = ring.begin() + 1;
+    // RDKit✔️✔️:   std::swap_ranges(front, front + numPairsToMove, ring.rbegin());
+    // RDKit✔️✔️: }
+    let minimum = ring
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, atom)| *atom)
+        .expect("nonempty cycle")
+        .0;
+    ring.rotate_left(minimum);
+    if ring[ring.len() - 1] < ring[1] {
+        ring[1..].reverse();
     }
-    Ok(info)
+    ring
 }
 
 pub fn find_sssr_from_parts(
@@ -1615,37 +1737,49 @@ fn find_sssr_source_context(
 fn find_sssr_reference_from_context(
     context: &RingSearchContext<'_>,
     source_rings: &mut RingInfo,
-    properties: Option<&mut MoleculeProperties>,
+    _properties: Option<&mut MoleculeProperties>,
     output: &mut Vec<Vec<usize>>,
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
 ) -> Result<i32, RingFindingError> {
-    // RDKit❗❌:   res.resize(0);
-    // RDKit❗❌:   if (mol.getRingInfo()->isInitialized()) {
-    // RDKit❗❌:     mol.getRingInfo()->reset();
-    // RDKit❗❌:   }
-    // RDKit❗❌:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SSSR);
-    // RDKit❗❌:   FindRings::storeRingsInfo(mol, res);
-    // RDKit❗❌:   return rdcast<int>(res.size());
-    // The reference kernel's complete anchor lives in find_sssr_internal;
-    // source output/cache state is supplied there, not inferred at success.
+    // RDKit✔️✔️: res.clear();
+    // RDKit✔️✔️: auto ringInfo = mol.getRingInfo();
+    // RDKit✔️✔️: if (ringInfo->isInitialized()) {
+    // RDKit✔️✔️:   ringInfo->reset();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: ringInfo->initialize(FIND_RING_TYPE_SSSR);
+    // RDKit✔️✔️: ringInfo->preallocate(mol.getNumAtoms(), mol.getNumBonds());
+    // RDKit✔️✔️: findRingFamilies(mol, includeDativeBonds, includeHydrogenBonds);
+    // RDKit✔️✔️: auto urfdata = mol.getRingInfo()->dp_urfData.get();
+    // RDKit✔️✔️: auto sssrSize = RDL_getSSSR(urfdata, &sssr);
+    // RDKit✔️✔️: auto ring = RingUtils::rdlCycleToAtomRing(sssr[i]);
+    // RDKit✔️✔️: res.push_back(std::move(ring));
+    // RDKit✔️✔️: std::ranges::sort(res, ringComparer);
+    // RDKit✔️✔️: FindRings::storeRingsInfo(mol, res);
+    // Same RDL packed Gaussian basis and size/lexical sorting. Cache owns one
+    // Arc; ring rows allocate once in output and once in source membership.
     output.clear();
-    if source_rings.is_initialized() {
+    if source_rings.initialized {
         source_rings.reset();
     }
     source_rings.initialize(RingFindType::Sssr);
-    let result = find_sssr_internal(
-        context,
+    source_rings.preallocate(context.atom_count(), context.bond_count());
+    find_ring_families_into(
+        context.atom_count(),
+        context.bonds(),
+        source_rings,
         include_dative_bonds,
         include_hydrogen_bonds,
-        properties,
-        Some(output),
-        Some(source_rings),
     )?;
-    if result.find_type != RingFindType::Fast {
-        store_rings_info(context, &result.rings, source_rings)?;
+    let decomposition = source_rings
+        .decomposition
+        .as_ref()
+        .expect("source RDL calculated");
+    for cycle in decomposition.smallest_ring_basis() {
+        output.push(rdl_cycle_to_atom_ring(decomposition, &cycle));
     }
-    // Ordinary pinned rdcast is static_cast<int>, not checked/saturating.
+    output.sort_by(|left, right| left.len().cmp(&right.len()).then_with(|| left.cmp(right)));
+    store_rings_info(context, output, source_rings)?;
     Ok(output.len() as i32)
 }
 
@@ -1722,16 +1856,19 @@ fn find_sssr_from_context(
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
 ) -> Result<RingInfo, RingFindingError> {
-    let result = find_sssr_internal(
+    let mut info = RingInfo::new(
+        RingFindType::OtherOrUnknown,
+        context.atom_count(),
+        context.bond_count(),
+    );
+    find_sssr_reference_from_context(
         context,
+        &mut info,
+        None,
+        &mut Vec::new(),
         include_dative_bonds,
         include_hydrogen_bonds,
-        None,
-        None,
-        None,
     )?;
-    let mut info = RingInfo::new(result.find_type, context.atom_count(), context.bond_count());
-    store_rings_info(&context, &result.rings, &mut info)?;
     Ok(info)
 }
 
@@ -1816,8 +1953,25 @@ pub fn find_ring_families_from_parts(
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
 ) -> Result<RingInfo, RingFindingError> {
+    let mut info = RingInfo::new(RingFindType::OtherOrUnknown, atom_count, bonds.len());
+    find_ring_families_into(
+        atom_count,
+        BondRows::Concrete(bonds),
+        &mut info,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+    )?;
+    Ok(info)
+}
+
+fn find_ring_families_into(
+    atom_count: usize,
+    bonds: BondRows<'_>,
+    info: &mut RingInfo,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<(), RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::findRingFamilies
-    // RDKit✔️✔️: #ifdef RDK_USE_URF
     // RDKit✔️✔️: void findRingFamilies(const ROMol &mol, bool includeDativeBonds,
     // RDKit✔️✔️:                       bool includeHydrogenBonds) {
     // RDKit✔️✔️:   if (mol.getRingInfo()->isInitialized()) {
@@ -1828,8 +1982,19 @@ pub fn find_ring_families_from_parts(
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     mol.getRingInfo()->initialize();
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   RDL_graph *graph = RDL_initNewGraph(mol.getNumAtoms());
-    let mut graph = cosmolkit_ringdecomposer::Graph::new(atom_count);
+    if info.is_initialized() && info.are_ring_families_initialized() {
+        return Ok(());
+    }
+    if !info.is_initialized() {
+        info.initialize(RingFindType::OtherOrUnknown);
+    }
+    // RDKit✔️✔️:   auto numAtoms = mol.getNumAtoms();
+    // RDKit✔️✔️:   if (numAtoms == 0) {
+    // RDKit✔️✔️:     numAtoms = 1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   RDL_graph *graph = RDL_initNewGraph(numAtoms);
+    // Zero atoms have an empty decomposition, not an RDL construction error.
+    let mut graph = cosmolkit_ringdecomposer::Graph::new(atom_count.max(1));
     let mut graph_edge_to_bond_idx = Vec::with_capacity(bonds.len());
     // RDKit✔️✔️:   for (auto cbi : mol.bonds()) {
     for bond in bonds {
@@ -1855,11 +2020,20 @@ pub fn find_ring_families_from_parts(
     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   RDL_data *urfdata = RDL_calculate(graph);
-    let decomposition = cosmolkit_ringdecomposer::RingDecomposition::calculate(graph)?;
+    let decomposition = Arc::new(cosmolkit_ringdecomposer::RingDecomposition::calculate(
+        graph,
+    )?);
     let relevant_cycle_count = checked_relevant_cycle_count(decomposition.relevant_cycle_count())?;
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < RDL_getNofURF(urfdata); ++i) {
-    let mut info = RingInfo::new(RingFindType::OtherOrUnknown, atom_count, bonds.len());
+    // RDKit✔️✔️:   mol.getRingInfo()->dp_urfData.reset(urfdata, &RDL_deleteData);
+    // Move one immutable decomposition into the cache, never deep-copy its
+    // shortest paths or enumerate all relevant cycles during family finding.
+    info.decomposition = Some(Arc::clone(&decomposition));
     info.relevant_cycle_count = Some(relevant_cycle_count);
+    // A persisted pre-RDL snapshot can retain explicit family rows without
+    // internal decomposition. Replace those rows, rather than append duplicates.
+    info.atom_ring_families.clear();
+    info.bond_ring_families.clear();
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < RDL_getNofURF(urfdata); ++i) {
     for urf in decomposition.urfs() {
         // RDKit✔️✔️:     RDL_node *nodes = nullptr;
         // RDKit✔️✔️:     unsigned nNodes = RDL_getNodesForURF(urfdata, i, &nodes);
@@ -1895,7 +2069,7 @@ pub fn find_ring_families_from_parts(
     // in the pinned baseline and is represented by the absence of an alternate
     // build configuration rather than a runtime fallback path.
     // END RDKIT CPP FUNCTION MolOps::findRingFamilies
-    Ok(info)
+    Ok(())
 }
 
 fn checked_relevant_cycle_count(count: f64) -> Result<usize, RingFindingError> {
@@ -4701,6 +4875,47 @@ mod source586_sssr_tests {
             ],
         )
     }
+
+    #[test]
+    fn candidate_rdl_basis_relevant_order_shared_snapshot_and_selective_reset() {
+        let edges = [(0, 2), (2, 1), (0, 3), (3, 1), (0, 4), (4, 1)]
+            .map(|(a, b)| (a, b, BondOrder::Single));
+        let topology = graph(5, &edges);
+        let mut rings = find_sssr(&topology, &Default::default()).unwrap();
+        let rows = |info: &RingInfo| {
+            info.atom_rings()
+                .iter()
+                .map(|ring| ring.iter().map(|atom| atom.index()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows(&rings), [vec![0, 2, 1, 3], vec![0, 2, 1, 4]]);
+        let decomposition = Arc::clone(rings.decomposition.as_ref().unwrap());
+        let snapshot = rings.clone().into_source_snapshot();
+        assert!(Arc::ptr_eq(
+            snapshot.decomposition.as_ref().unwrap(),
+            &decomposition
+        ));
+        let restored = RingInfo::from_source_snapshot(&snapshot).unwrap();
+        assert!(Arc::ptr_eq(
+            restored.decomposition.as_ref().unwrap(),
+            &decomposition
+        ));
+        symmetrized_sssr_with_existing(&topology, &mut rings, false, &Default::default()).unwrap();
+        assert_eq!(
+            rows(&rings),
+            [vec![0, 2, 1, 3], vec![0, 2, 1, 4], vec![0, 3, 1, 4]]
+        );
+        assert!(Arc::ptr_eq(
+            rings.decomposition.as_ref().unwrap(),
+            &decomposition
+        ));
+        rings.reset();
+        assert!(!rings.are_ring_families_initialized());
+        assert!(rings.decomposition.is_none());
+        assert!(rings.atom_ring_families.is_empty());
+        assert!(rings.bond_ring_families.is_empty());
+        assert!(rings.atom_rings.is_empty());
+    }
     fn old_state() -> RingInfo {
         let mut r = RingInfo::new(RingFindType::SymmSssr, 3, 3);
         r.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
@@ -4760,8 +4975,9 @@ mod source586_sssr_tests {
         assert_eq!(output.len(), 2);
         assert!(output[0].iter().all(|i| *i < 3));
         assert!(output[1].iter().all(|i| *i >= 3));
-        assert!(a.atom_ring_families.is_empty());
-        assert_eq!(a.relevant_cycle_count, None);
+        // Candidate findSSSR obtains and retains the shared RDL decomposition.
+        assert_eq!(a.atom_ring_families.len(), 2);
+        assert_eq!(a.relevant_cycle_count, Some(2));
     }
 
     #[test]
@@ -4806,7 +5022,7 @@ mod source586_sssr_tests {
     }
 
     #[test]
-    fn source586_property_failure_follows_output_clear_cache_reset_and_sssr_initialize() {
+    fn candidate_rdl_ring_search_does_not_read_legacy_computed_dictionary() {
         let g = triangle(BondOrder::Single);
         let mut r = old_state();
         let mut output = vec![vec![70]];
@@ -4815,7 +5031,7 @@ mod source586_sssr_tests {
         p.set_prop("__computedProps", PropertyValue::Bool(false))
             .unwrap();
         let before = p.clone();
-        assert!(matches!(
+        assert_eq!(
             find_sssr_with_source_outputs_from_parts(
                 3,
                 &g.bonds,
@@ -4825,15 +5041,16 @@ mod source586_sssr_tests {
                 Some(&mut output),
                 false,
                 false
-            ),
-            Err(RingFindingError::MoleculeProperty(_))
-        ));
-        assert!(output.is_empty());
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(output, vec![vec![0, 1, 2]]);
         assert!(r.is_initialized());
         assert_eq!(r.find_type(), RingFindType::Sssr);
-        assert!(r.atom_rings().is_empty());
-        assert!(r.atom_ring_families.is_empty());
-        assert_eq!(r.relevant_cycle_count, None);
+        assert_eq!(r.atom_rings().len(), 1);
+        assert_eq!(r.atom_ring_families.len(), 1);
+        assert_eq!(r.relevant_cycle_count, Some(1));
         assert_eq!(p, before);
     }
 
@@ -4866,7 +5083,8 @@ mod source586_sssr_tests {
             assert!(r.atom_rings().is_empty());
             assert!(r.is_initialized());
             assert_eq!(r.find_type(), RingFindType::Sssr);
-            assert_eq!(p.prop("extraRings"), None);
+            // The RDL branch never reads or clears the old Figueras extraRings.
+            assert_eq!(p.prop("extraRings"), Some(&PropertyValue::UInt(1)));
             assert_eq!(
                 p.prop("keep"),
                 Some(&PropertyValue::String("retained".into()))

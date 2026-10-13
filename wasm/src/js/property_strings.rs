@@ -87,7 +87,7 @@ impl Molecule {
     }
     /// Set metadata in place; COW keeps other molecule copies unchanged.
     #[cfg(feature = "cap-transforms")]
-    #[wasm_bindgen(js_name=setAtomProperty)]
+    #[wasm_bindgen(js_name=setAtomProperty_)]
     pub fn set_atom_property_(&self, #[wasm_bindgen(unchecked_param_type="number")] atom:JsValue,key:&str,#[wasm_bindgen(unchecked_param_type="boolean | number | string | number[] | string[]")] value:JsValue)->Result<(),JsValue> {
         self.inner.set_atom_property_(usize_value(&atom,"atom")?,key,&native_property(&value)?)
             .map_err(|e| crate::alignment_values::operation_error(&e).unwrap_or_else(|e|e))

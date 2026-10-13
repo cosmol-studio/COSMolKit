@@ -240,7 +240,7 @@ impl Molecule {
         values.push(&AlignmentResult { inner: result.1 }.into());
         Ok(values.into())
     }
-    #[wasm_bindgen(js_name = alignTo)]
+    #[wasm_bindgen(js_name = alignTo_)]
     pub fn align_to_(
         &self,
         reference: &Molecule,
@@ -261,7 +261,7 @@ impl Molecule {
             crate::alignment_parameters::AlignmentParameters::from_js_configuration(&params)?;
         self.align_to_with_params_(reference, &configuration_0)
     }
-    #[wasm_bindgen(js_name = alignToWithParams)]
+    #[wasm_bindgen(js_name = alignToWithParams_)]
     pub fn align_to_with_params_(
         &self,
         reference: &Molecule,
@@ -322,7 +322,7 @@ impl Molecule {
         values.push(&ConformerAlignmentReport { inner: result.1 }.into());
         Ok(values.into())
     }
-    #[wasm_bindgen(js_name = alignConformers)]
+    #[wasm_bindgen(js_name = alignConformers_)]
     pub fn align_conformers_(
         &self,
         #[wasm_bindgen(
@@ -344,7 +344,7 @@ impl Molecule {
             )?;
         self.align_conformers_with_params_(&configuration_0)
     }
-    #[wasm_bindgen(js_name = alignConformersWithParams)]
+    #[wasm_bindgen(js_name = alignConformersWithParams_)]
     pub fn align_conformers_with_params_(
         &self,
         params: &ConformerAlignmentParameters,

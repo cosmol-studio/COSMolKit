@@ -4,7 +4,7 @@ test('Both radical methods preserve molecule value semantics and canonical unsan
  const p=new b.SmilesParseParams(false);
  for(const text of ['', 'C','[C]','[CH]','[CH2]','[CH3]','[O]','[OH]','[H]','[Fe]','[Fe+3]','[Na+]','[Cl-]','*','C[CH2]','[O][O]']){
   const m=b.Molecule.fromSmilesWithParams(text,p),before=m.toSmiles(),out=m.withAssignedRadicals();
-  assert.equal(m.toSmiles(),before);assert.equal(out.numAtoms(),m.numAtoms());assert.equal(m.assignRadicals(),undefined);assert.equal(m.toSmiles(),out.toSmiles());
+  assert.equal(m.toSmiles(),before);assert.equal(out.numAtoms(),m.numAtoms());assert.equal(m.assignRadicals_(),undefined);assert.equal(m.toSmiles(),out.toSmiles());
   const second=out.withAssignedRadicals();assert.equal(second.toSmiles(),out.toSmiles());
   const detached=m.withAssignedRadicals();m.free();assert.equal(detached.toSmiles(),out.toSmiles());
  }

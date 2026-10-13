@@ -80,7 +80,7 @@ Create a molecule from SMILES and export a depiction:
    import cosmolkit as ck
 
    mol = ck.mol_from_smiles("c1ccccc1O")
-   drawn = mol.add_2d_coordinates()
+   drawn = mol.with_2d_coordinates()
 
    print(mol.to_smiles())
    drawn.write_png("python/examples/output/phenol.png", width=400, height=300)
@@ -177,7 +177,7 @@ Access coordinates as NumPy arrays:
 
 .. code-block:: python
 
-   mol2d = ck.mol_from_smiles("CCO").add_2d_coordinates()
+   mol2d = ck.mol_from_smiles("CCO").with_2d_coordinates()
    coords = mol2d.coordinates_2d()
 
    print(coords.shape)
@@ -188,7 +188,7 @@ Round-trip a molecule through Python pickle:
 
    import pickle
 
-   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").add_2d_coordinates()
+   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
 
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
@@ -350,7 +350,7 @@ Process a list of molecules:
    for error in batch.errors():
        print(error.index(), error.operation(), error.message())
 
-   prepared = batch.add_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
+   prepared = batch.with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
    fingerprints = prepared.fingerprint_morgan_list(fp_size=2048)
 
    print(prepared.valid_mask())

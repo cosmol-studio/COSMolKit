@@ -15,7 +15,7 @@ impl Molecule {
             })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=assignRadicals)]
+    #[wasm_bindgen(js_name=assignRadicals_)]
     pub fn assign_radicals_(&self) -> Result<(), JsValue> {
         // COSMolKit❗✔️: self.inner.assign_radicals_()
         self.inner

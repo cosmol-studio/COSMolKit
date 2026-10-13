@@ -291,8 +291,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     expected.push("Molecule.has_2d_coordinates");
     if cfg!(feature = "cap-depict") {
         expected.extend([
-            "Molecule.add_2d_coordinates",
-            "Molecule.add_2d_coordinates_with_params",
+            "Molecule.with_2d_coordinates",
+            "Molecule.with_2d_coordinates_with_params",
             "types.DrawingError",
             "Molecule.to_svg",
             "Molecule.to_png",
@@ -2038,8 +2038,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         }
         if cfg!(feature = "cap-depict") {
             expected.extend([
-                "MoleculeBatch.add_2d_coordinates",
-                "MoleculeBatch.add_2d_coordinates_with_params",
+                "MoleculeBatch.with_2d_coordinates",
+                "MoleculeBatch.with_2d_coordinates_with_params",
             ]);
         }
         expected.extend(["types.BatchQueryParams"]);
@@ -2737,7 +2737,7 @@ fn hydrogen_entries_bind_value_and_in_place_names_with_parity_support() {
         (
             "Molecule.add_hydrogens_",
             "add_hydrogens_",
-            "addHydrogens",
+            "addHydrogens_",
             "()",
             StateModel::InPlace,
         ),
@@ -2751,7 +2751,7 @@ fn hydrogen_entries_bind_value_and_in_place_names_with_parity_support() {
         (
             "Molecule.remove_hydrogens_",
             "remove_hydrogens_",
-            "removeHydrogens",
+            "removeHydrogens_",
             "()",
             StateModel::InPlace,
         ),
@@ -2961,8 +2961,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.without_hydrogens_with_params"
                 | "MoleculeBatch.with_kekulized_bonds"
                 | "MoleculeBatch.with_kekulized_bonds_with_params"
-                | "MoleculeBatch.add_2d_coordinates"
-                | "MoleculeBatch.add_2d_coordinates_with_params"
+                | "MoleculeBatch.with_2d_coordinates"
+                | "MoleculeBatch.with_2d_coordinates_with_params"
                 | "types.BatchQueryParams"
                 | "MoleculeBatch.to_smiles_list"
                 | "MoleculeBatch.to_smiles_list_with_params"

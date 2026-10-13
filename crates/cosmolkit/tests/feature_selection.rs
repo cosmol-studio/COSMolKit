@@ -397,7 +397,7 @@ fn selected_public_methods_are_available() {
     methods!("cap-stereo"; potential_stereo);
     methods!("cap-rings"; with_assigned_rings);
     methods!("cap-valence"; with_assigned_valence);
-    methods!("cap-depict"; add_2d_coordinates, to_svg, to_png);
+    methods!("cap-depict"; with_2d_coordinates, to_svg, to_png);
     methods!("cap-forcefields";
         with_uff_optimized, with_uff_optimized_with_params,
         with_uff_optimized_conformers, with_uff_optimized_conformers_with_params,

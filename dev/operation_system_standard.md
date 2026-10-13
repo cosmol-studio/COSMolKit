@@ -614,7 +614,7 @@ Changing labels or metadata without behavior and test evidence is non-compliant.
 
 ---
 
-## 21. Migration Direction
+## 21. Framework Evolution
 
 Operation-system evolution must move toward more explicit framework ownership.
 

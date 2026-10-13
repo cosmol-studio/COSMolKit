@@ -1,10 +1,7 @@
-//! Private mmCIF `_database_PDB_matrix` (ORIGX) category emitter
-//! (BIO-ORIGX-WRITE1-32).
+//! Private mmCIF `_database_PDB_matrix` (ORIGX) category emitter.
 //!
-//! Complete selected-category helper only: the coordinate composer is NOT
-//! dispatched here and caller group dispatch remains ROOT-owned. Reuses the
-//! ONE existing category setter and the ONE existing double formatter; no
-//! copied CIF mutation or conversion algorithm.
+//! Writes only this category; the caller selects categories and composes
+//! coordinates. Uses the shared category setter and double formatter.
 
 use cosmolkit_bio::BioTransform;
 

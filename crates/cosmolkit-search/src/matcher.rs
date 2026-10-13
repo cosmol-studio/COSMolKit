@@ -104,6 +104,8 @@ pub enum SubstructMatchError {
     },
     #[error(transparent)]
     QueryContext(#[from] super::query_behavior::QueryMatchContextError),
+    #[error("query atom iteration requires initialized recursive queries")]
+    UninitializedRecursiveQuery,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,7 +360,7 @@ enum RecursiveQueryCacheKey {
     OwnedQuery(usize),
 }
 
-type RecursiveQueryMatchCache = BTreeMap<RecursiveQueryCacheKey, Vec<bool>>;
+type RecursiveQueryMatchCache = BTreeMap<RecursiveQueryCacheKey, BTreeSet<i32>>;
 
 struct RecursiveLocker {
     cache: RecursiveQueryMatchCache,
@@ -366,9 +368,10 @@ struct RecursiveLocker {
 
 impl RecursiveLocker {
     fn new(query: &QueryGraph, recursion_possible: bool) -> Self {
-        // RDKit❗🔝: RecursiveLocker(const ROMol &query, const bool recursionPossible) {
+        // RDKit❗🔝: RecursiveLocker::RecursiveLocker(const size_t numAtoms,
+        // RDKit❗🔝:                                  const bool recursionPossible) {
         // RDKit❗🔝:   if (recursionPossible) {
-        // RDKit❗🔝:     locked.reserve(query.getNumAtoms());
+        // RDKit❗🔝:     locked.reserve(numAtoms);
         // RDKit❗🔝:   }
         // RDKit❗🔝: }
         // Rust keeps recursive match state in this call-local cache instead of
@@ -387,19 +390,22 @@ impl Drop for RecursiveLocker {
     fn drop(&mut self) {
         // RDKit❗✔️: ~RecursiveLocker() {
         // RDKit❗✔️:   for (auto v : locked) {
-        // RDKit❗✔️:     v->clear();
+        // RDKit❗✔️:     if (df_clearOnDestruct) {
+        // RDKit❗✔️:       v->clear();
+        // RDKit❗✔️:     }
         // RDKit❗✔️: #ifdef RDK_BUILD_THREADSAFE_SSS
         // RDKit❗✔️:     v->d_mutex.unlock();
         // RDKit❗✔️: #endif
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
         // Complexity review: dropping the call-local cache clears each stored
-        // atom-membership vector once, matching RDKit's linear clear pass.
+        // atom-membership set once, matching RDKit's linear clear pass.
         // No unlock is required because immutable query nodes are never shared
         // mutably; ownership clears prepared state on every return path.
-        // Native also clears externally visible pre-existing query-node sets;
-        // immutable query values retain those sets. That observable difference
-        // is explicitly deferred, not marked as native mutation equivalence.
+        // The prepared sets belong to this invocation, not the immutable input
+        // query. Dropping them implements ordinary-search cleanup without a
+        // source-query write. Prepared iteration transfers these sets into its
+        // own query copy before this local owner is dropped.
         self.cache.clear();
     }
 }
@@ -412,6 +418,252 @@ fn recursive_query_cache_key(
     } else {
         RecursiveQueryCacheKey::OwnedQuery(query as *const _ as usize)
     }
+}
+
+fn has_uninitialized_recursive_query(query: &QueryNode<AtomQueryPredicate>) -> bool {
+    // RDKit✔️✔️: if (q->getDescription() == "RecursiveStructure" &&
+    // RDKit✔️✔️:     (!checkInitialized ||
+    // RDKit✔️✔️:      !static_cast<RecursiveStructureQuery const *>(q)->getInitialized())) {
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: for (auto iter = q->beginChildren(); iter != q->endChildren(); ++iter) {
+    // RDKit✔️✔️:   if (hasRecursiveQuery(iter->get(), checkInitialized)) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return false;
+    // Same short-circuit child traversal, without allocation. Inner query
+    // molecules are not children of the recursive predicate in this check.
+    match query {
+        QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(query)) => !query.is_initialized(),
+        QueryNode::Predicate(_) => false,
+        QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+            children.iter().any(has_uninitialized_recursive_query)
+        }
+        QueryNode::Not(child) => has_uninitialized_recursive_query(child),
+    }
+}
+
+fn copy_prepared_recursive_state(
+    original: &QueryNode<AtomQueryPredicate>,
+    copied: &mut QueryNode<AtomQueryPredicate>,
+    cache: &RecursiveQueryMatchCache,
+) {
+    // RDKit✔️✔️: for (i = d_set.begin(); i != d_set.end(); i++) {
+    // RDKit✔️✔️:   res->insert(*i);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: res->df_initialized = df_initialized;
+    // The source prepares mutable nodes, then copies them for iteration. CK
+    // prepares call-owned sets, then installs them in that same query copy.
+    // No source-query mutation or second graph clone. Tree shape is preserved
+    // by QueryNode::clone; set insertion has the same native O(M log M) cost.
+    match (original, copied) {
+        (
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(original)),
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(copied)),
+        ) => {
+            if let Some(members) = cache.get(&recursive_query_cache_key(original)) {
+                copied.clear_atom_indices();
+                copied.set_initialized(true);
+                for &member in members {
+                    copied.insert_atom_index(member);
+                }
+            }
+            if let (Some(original), Some(copied)) =
+                (original.query_graph(), copied.query_graph_mut())
+            {
+                for (original, copied) in original.atoms().iter().zip(copied.atoms_mut()) {
+                    copy_prepared_recursive_state(
+                        original.predicate(),
+                        copied.predicate_mut(),
+                        cache,
+                    );
+                }
+            }
+        }
+        (QueryNode::Predicate(_), QueryNode::Predicate(_)) => {}
+        (QueryNode::And(original), QueryNode::And(copied))
+        | (QueryNode::Or(original), QueryNode::Or(copied))
+        | (QueryNode::Xor(original), QueryNode::Xor(copied)) => {
+            for (original, copied) in original.iter().zip(copied) {
+                copy_prepared_recursive_state(original, copied, cache);
+            }
+        }
+        (QueryNode::Not(original), QueryNode::Not(copied)) => {
+            copy_prepared_recursive_state(original, copied, cache);
+        }
+        _ => unreachable!("copying a query preserves its predicate tree shape"),
+    }
+}
+
+/// Detached atom iteration over an initialized, privately owned query copy.
+/// The target/context are borrowed; neither input can be mutated by iteration.
+#[doc(hidden)]
+pub struct QueryAtomIterator<'a> {
+    target: &'a SearchTarget<'a>,
+    context: &'a QueryMatchContext<'a>,
+    query: QueryAtom,
+    position: Option<usize>,
+    advance: bool,
+}
+
+impl<'a> QueryAtomIterator<'a> {
+    /// Low-level iteration requires prepared recursive nodes, like beginQueryAtoms.
+    pub fn new(
+        target: &'a SearchTarget<'a>,
+        query: &QueryAtom,
+        context: &'a QueryMatchContext<'a>,
+    ) -> Result<Self, SubstructMatchError> {
+        // RDKit✔️✔️: if (hasUninitializedRecursiveQuery(*what)) {
+        // RDKit✔️✔️:   throw ValueErrorException(
+        // RDKit✔️✔️:       "QueryAtomIterator does not support uninitialized recursive queries");
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: _qA = new QueryAtom(*what);
+        // One source-shaped query copy, never a target graph clone.
+        if !query.predicate_is_carrier_derived()
+            && has_uninitialized_recursive_query(query.predicate())
+        {
+            return Err(SubstructMatchError::UninitializedRecursiveQuery);
+        }
+        Self::from_owned(target, query.clone(), context)
+    }
+
+    fn from_owned(
+        target: &'a SearchTarget<'a>,
+        mut query: QueryAtom,
+        context: &'a QueryMatchContext<'a>,
+    ) -> Result<Self, SubstructMatchError> {
+        // RDKit✔️✔️: _mol = mol;
+        // RDKit✔️✔️: _end = mol->getNumAtoms();
+        // RDKit✔️✔️: _pos = _findNext(0);
+        // Evaluate the first candidate at construction, including errors.
+        if query.predicate_is_carrier_derived() {
+            // RDKit✔️✔️: _qA = new QueryAtom(*what);
+            // QueryAtom(const Atom&) constructs predicates from an ordinary
+            // carrier; an internal placeholder is not a source query.
+            let predicate = crate::query_behavior::query_from_plain_atom_carrier(
+                query.atomic_number(),
+                query.isotope(),
+                query.formal_charge(),
+                query.radical_electrons(),
+                || Ok::<_, std::convert::Infallible>(None),
+            )
+            .unwrap_or_else(|never| match never {});
+            *query.predicate_mut() = predicate;
+        }
+        let mut iterator = Self {
+            target,
+            context,
+            query,
+            position: None,
+            advance: false,
+        };
+        iterator.position = iterator.find_next(0)?;
+        Ok(iterator)
+    }
+
+    fn find_next(&self, from: usize) -> Result<Option<usize>, SubstructMatchError> {
+        // RDKit✔️✔️: while (from < _end) {
+        // RDKit✔️✔️:   if (_qA->Match((*_mol)[from])) {
+        // RDKit✔️✔️:     break;
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     from++;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // Direct QueryAtom::Match, not AtomLabelFunctor: in particular no
+        // SubstructMatchParams::useChirality suppression of chiral predicates.
+        for index in from..self.target.num_atoms() {
+            if crate::query_behavior::atom_matches_query_with_context(
+                &self.target.atoms()[index],
+                self.query.predicate(),
+                self.target,
+                self.context,
+            )? {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl Clone for QueryAtomIterator<'_> {
+    fn clone(&self) -> Self {
+        // RDKit✔️✔️: _mol = other._mol;
+        // RDKit✔️✔️: _pos = other._pos;
+        // RDKit✔️✔️: _end = other._end;
+        // RDKit✔️✔️: _qA = static_cast<QueryAtom *>(other._qA->copy());
+        // The copied predicate includes initialized flags and membership sets;
+        // target and already prepared target context remain borrowed.
+        Self {
+            target: self.target,
+            context: self.context,
+            query: self.query.clone(),
+            position: self.position,
+            advance: self.advance,
+        }
+    }
+}
+
+impl Iterator for QueryAtomIterator<'_> {
+    type Item = Result<cosmolkit_model::AtomId, SubstructMatchError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // RDKit✔️✔️: _pos = _findNext(_pos + 1);
+        // Rust iteration reports a reached predicate error as an Err item,
+        // then terminates; it never converts the error into zero matches.
+        let current = self.position?;
+        if self.advance {
+            match self.find_next(current + 1) {
+                Ok(position) => self.position = position,
+                Err(error) => {
+                    self.position = None;
+                    return Some(Err(error));
+                }
+            }
+        }
+        self.advance = true;
+        self.position
+            .map(|index| Ok(cosmolkit_model::AtomId::new(index)))
+    }
+}
+
+impl std::iter::FusedIterator for QueryAtomIterator<'_> {}
+
+/// Prepare recursive predicates for this target and retain them for iteration.
+#[doc(hidden)]
+pub fn query_atom_iterator<'a>(
+    target: &'a SearchTarget<'a>,
+    query: &QueryAtom,
+    context: &'a QueryMatchContext<'a>,
+) -> Result<QueryAtomIterator<'a>, SubstructMatchError> {
+    // RDKit✔️✔️: if (qa && hasRecursiveQuery(*qa)) {
+    // RDKit✔️✔️:   SubstructMatchParameters params;
+    // RDKit✔️✔️:   detail::SUBQUERY_MAP subqueryMap;
+    // RDKit✔️✔️:   detail::RecursiveLocker locker;
+    // RDKit✔️✔️:   locker.df_clearOnDestruct = false;
+    // RDKit✔️✔️:   detail::MatchSubqueries(*mol, qa->getQuery(), params, subqueryMap,
+    // RDKit✔️✔️:                           locker.locked);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: auto res = new QueryAtomIterSeq(mol, mol->beginQueryAtoms(qa),
+    // RDKit✔️✔️:                                 mol->endQueryAtoms(), AtomCountFunctor(mol));
+    // Retain prepared sets in the iterator's query, not in the caller's input.
+    // Shared serials reuse preparation; one query copy, O(query + memberships),
+    // no full target clone or target-sized membership allocation.
+    let mut cache = RecursiveQueryMatchCache::new();
+    if !query.predicate_is_carrier_derived() {
+        match_subqueries(
+            target,
+            query.predicate(),
+            &SubstructMatchParams::default(),
+            &mut cache,
+            Some(context),
+        )?;
+    }
+    let mut copied = query.clone();
+    if !query.predicate_is_carrier_derived() {
+        copy_prepared_recursive_state(query.predicate(), copied.predicate_mut(), &cache);
+    }
+    QueryAtomIterator::from_owned(target, copied, context)
 }
 
 impl Default for SubstructMatchParams {
@@ -1283,7 +1535,7 @@ fn recursive_smarts_root_matches(
     // If preparation is disabled, use the modeled pre-existing source set;
     // newly parsed sets are empty, but manually populated sets are valid too.
     // Query negation is applied by the canonical outer QueryNode::Not wrapper.
-    // Cache lookup is O(log recursive nodes) then O(1) indexed membership;
+    // Cache lookup is O(log recursive nodes) then O(log members) membership;
     // existing node-set lookup is O(log members), like native std::set.
     // No allocation or recursive match starts during predicate evaluation.
     // Source Atom::getIdx unsigned-to-int conversion is explicit below;
@@ -1291,10 +1543,7 @@ fn recursive_smarts_root_matches(
     if let Some(cache) = recursive_cache
         && let Some(match_starts) = cache.get(&recursive_query_cache_key(recursive_query))
     {
-        return match_starts
-            .get(atom.id().index())
-            .copied()
-            .unwrap_or(false);
+        return match_starts.contains(&(atom.id().index() as u32 as i32));
     }
     recursive_query.contains_atom_index(atom.id().index() as u32 as i32)
 }
@@ -3030,7 +3279,7 @@ fn vf2_entry_one(
     // RDKit❗✔️:   int n = 0;
     // RDKit❗✔️:
     // RDKit❗✔️:   F.clear();
-    // RDKit❗✔️:   RDKit::ControlCHandler::reset();
+    // RDKit✔️✔️:   RDKit::ControlCHandler hdlr;
     // RDKit❗✔️:   if (match(&n, ni1, ni2, s0)) {
     // RDKit❗✔️:     auto sz = num_vertices(g1);
     // RDKit❗✔️:     F.reserve(sz);
@@ -3039,7 +3288,7 @@ fn vf2_entry_one(
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // RDKit❗✔️:
-    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:   if (hdlr.getGotSignal()) {
     // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
     // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
     // RDKit❗✔️:         << std::endl;
@@ -3059,7 +3308,12 @@ fn vf2_entry_one(
     let mut c1 = vec![NULL_NODE; g1.num_atoms()];
     let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     result.clear();
-    vf2_reset_interrupt();
+    // Source constructor does not clear a pre-existing flag; destruction
+    // restores the shared previous handler and clears the flag on all exits.
+    // Constant-size scope, no allocation or extra search traversal.
+    let _interrupt_handler = cosmolkit_core::source_control_c::ControlCHandler::new();
+    #[cfg(test)]
+    let _interrupt_trace = search08_test_state::HandlerGuard::new();
     if vf2_match(&mut state, atom_fn, bond_fn, match_check, &mut c1, &mut c2) {
         let matched = state.core_len;
         result.reserve(g1.num_atoms());
@@ -3127,11 +3381,11 @@ fn vf2_entry_all_ordered(
     // RDKit❗✔️:
     // RDKit❗✔️:   F.clear();
     // RDKit❗✔️:
-    // RDKit❗✔️:   RDKit::ControlCHandler::reset();
+    // RDKit✔️✔️:   RDKit::ControlCHandler hdlr;
     // RDKit❗✔️:
     // RDKit❗✔️:   match(ni1.get(), ni2.get(), s0, F, max_results);
     // RDKit❗✔️:
-    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:   if (hdlr.getGotSignal()) {
     // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
     // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
     // RDKit❗✔️:         << std::endl;
@@ -3152,7 +3406,11 @@ fn vf2_entry_all_ordered(
     let mut c1 = vec![NULL_NODE; g1.num_atoms()];
     let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     results.clear();
-    vf2_reset_interrupt();
+    // Candidate vf2_all has the same constructor/destructor lifetime as vf2,
+    // including typed-error/early return; reuse the sole CORE signal owner.
+    let _interrupt_handler = cosmolkit_core::source_control_c::ControlCHandler::new();
+    #[cfg(test)]
+    let _interrupt_trace = search08_test_state::HandlerGuard::new();
     let matched = vf2_match_all(
         &mut state,
         atom_fn,
@@ -4047,7 +4305,7 @@ fn recursive_matcher(
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
     query_context: Option<&QueryMatchContext<'_>>,
-) -> Result<Vec<bool>, SubstructMatchError> {
+) -> Result<BTreeSet<i32>, SubstructMatchError> {
     // BEGIN COMPLETE PINNED SF265 RecursiveMatcher
     // RDKit❗❌: unsigned int RecursiveMatcher(const ROMol &mol, const ROMol &query,
     // RDKit❗❌:                               std::vector<int> &matches,
@@ -4113,9 +4371,9 @@ fn recursive_matcher(
     // through the canonical int reader, then cast to unsigned source width.
     // Call-local immutable membership replaces mutable query-node sets and
     // preserves cleanup/serial reuse without leaking matches across calls.
-    // Cost axis ❌: source root output is O(matches), while this existing bool
-    // membership carrier allocates O(target atoms). VF2 also retains canonical
-    // indexed mapping projection buffers. No graph/bond mapping is cloned here.
+    // Membership storage is O(distinct matching roots), with source-shaped
+    // ordered-set insertion/lookup rather than an O(target atoms) dense vector.
+    // VF2 retains its canonical indexed projection buffers; no graph is cloned.
     // Behavior axis ❗ retains native-width, property/callee and ownership-state
     // gaps for final whole-source comparison; local fixtures are not an oracle.
     let mut local_params = params.clone();
@@ -4154,7 +4412,7 @@ fn recursive_matcher(
             Some(recursive_cache),
         ),
     }?;
-    let mut match_starts = vec![false; mol.num_atoms()];
+    let mut match_starts = BTreeSet::new();
     let mut appended = 0usize;
     for matched in matches {
         // The source reads this property only for a successful VF2 result.
@@ -4169,9 +4427,9 @@ fn recursive_matcher(
         };
         if let Some(&root_atom_idx) = matched.get(root_index)
             && root_atom_idx != NULL_NODE
-            && root_atom_idx < match_starts.len()
+            && root_atom_idx < mol.num_atoms()
         {
-            match_starts[root_atom_idx] = true;
+            match_starts.insert(root_atom_idx as u32 as i32);
             appended += 1;
         } else if query.prop("_queryRootAtom").is_some() {
             eprintln!("no match found for queryRootAtom");
@@ -4203,6 +4461,7 @@ fn match_subqueries(
     // RDKit❗❌: #endif
     // RDKit❗❌:     locked.push_back(rsq);
     // RDKit❗❌:     rsq->clear();
+    // RDKit❗❌:     rsq->setInitialized(true);
     // RDKit❗❌:     bool matchDone = false;
     // RDKit❗❌:     if (rsq->getSerialNumber() &&
     // RDKit❗❌:         subqueryMap.find(rsq->getSerialNumber()) != subqueryMap.end()) {
@@ -4249,13 +4508,13 @@ fn match_subqueries(
     // reuse the first prepared membership, including an empty/null-query set.
     // Native SUBQUERY_MAP is std::map, so BTreeMap's O(log R) lookup matches
     // its asymptotic shape; it is not an unordered-map replacement.
-    // Existing dense O(target atoms) membership allocation has a material
-    // cost for sparse roots, retained on the independent ❌ cost axis. Serial
-    // reuse avoids native per-node set copying; no graph/query cloning occurs.
+    // Sparse membership has the native ordered-set cost. Serial reuse avoids
+    // native per-node set copying; no graph/query cloning occurs here.
     // Children visit in source order after preparation, including every
     // represented composite and explicit outer negation wrapper.
-    // Behavior ❗ retains the source-visible mutable node-set cleanup versus
-    // immutable project query state, source widths and reached-callee gaps.
+    // A present cache entry represents initialized membership, including an
+    // empty set. Ordinary searches own it locally; prepared iterators copy it
+    // with initialized=true. Source-width/callee boundaries remain explicit.
     match query {
         crate::QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive_query)) => {
             let cache_key = recursive_query_cache_key(recursive_query);
@@ -4264,7 +4523,7 @@ fn match_subqueries(
                     Some(inner_query) => {
                         recursive_matcher(mol, inner_query, params, recursive_cache, query_context)?
                     }
-                    None => vec![false; mol.num_atoms()],
+                    None => BTreeSet::new(),
                 };
                 recursive_cache.insert(cache_key, match_starts);
             }
@@ -9728,7 +9987,7 @@ mod source_recursive_matcher_complete_tests {
             Some(&context),
         )
         .unwrap();
-        assert_eq!(result, [true]);
+        assert_eq!(result, BTreeSet::from([0]));
         assert!(
             cache.is_empty(),
             "native hasQuery=false must skip its arbitrary placeholder"
@@ -9778,7 +10037,7 @@ mod source_recursive_matcher_complete_tests {
             Some(&context),
         )
         .unwrap();
-        assert_eq!(result, [true, false, false]);
+        assert_eq!(result, BTreeSet::from([0]));
         assert_eq!(
             calls.load(Ordering::SeqCst),
             2,
@@ -9825,7 +10084,7 @@ mod source_recursive_matcher_complete_tests {
                     })
                 ));
             } else {
-                assert_eq!(result.unwrap(), [false]);
+                assert!(result.unwrap().is_empty());
             }
         }
     }
@@ -9876,6 +10135,201 @@ mod source_match_subqueries_complete_tests {
             )],
             Vec::new(),
         )
+    }
+
+    fn recursive_node() -> crate::query_behavior::RecursiveStructureQuery {
+        crate::query_behavior::RecursiveStructureQuery::from_query_graph(
+            graph(
+                vec![QueryAtom::from_parts(
+                    carbon(0),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )],
+                Vec::new(),
+            ),
+            466,
+        )
+    }
+
+    #[test]
+    fn direct_recursive_match_reads_the_set_without_implicitly_preparing_it() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![carbon(0), carbon(1)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&topology, &coordinates, &[], None, None);
+        let context = build_query_match_context(&target);
+        let mut node = recursive_node();
+        node.insert_atom_index(1);
+        // SetQuery::Match itself ignores initialization. Only the iterator
+        // constructor checks it; manually populated uninitialized sets work.
+        let predicate = QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(node));
+        for (index, expected) in [(0, false), (1, true)] {
+            assert_eq!(
+                crate::atom_matches_query_with_context(
+                    &topology.atoms[index],
+                    &predicate,
+                    &target,
+                    &context,
+                )
+                .unwrap(),
+                expected
+            );
+            assert_eq!(
+                crate::atom_matches_query_with_context(
+                    &topology.atoms[index],
+                    &QueryNode::Not(Box::new(predicate.clone())),
+                    &target,
+                    &context,
+                )
+                .unwrap(),
+                !expected
+            );
+        }
+    }
+
+    #[test]
+    fn recursive_iteration_rejects_uninitialized_and_preserves_initialized_empty_copies() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![carbon(0), carbon(1)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&topology, &coordinates, &[], None, None);
+        let context = build_query_match_context(&target);
+        let mut node = recursive_node();
+        for (initialized, members) in [(false, vec![1]), (true, vec![]), (true, vec![1])] {
+            node.clear_atom_indices();
+            node.set_initialized(initialized);
+            for &index in &members {
+                node.insert_atom_index(index);
+            }
+            let query = QueryAtom::from_parts(
+                carbon(0),
+                QueryNode::And(vec![
+                    QueryNode::predicate(AtomQueryPredicate::Any),
+                    QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(node.clone())),
+                ]),
+            );
+            let iterator = QueryAtomIterator::new(&target, &query, &context);
+            if !initialized {
+                assert!(matches!(
+                    iterator,
+                    Err(SubstructMatchError::UninitializedRecursiveQuery)
+                ));
+            } else {
+                let iterator = iterator.unwrap();
+                let copied = iterator.clone();
+                drop(query);
+                for iterator in [iterator, copied] {
+                    assert_eq!(
+                        iterator.collect::<Result<Vec<_>, _>>().unwrap(),
+                        members
+                            .iter()
+                            .map(|&index| AtomId::new(index as usize))
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
+        }
+        let plain = QueryAtom::from_carrier_parts(
+            carbon(0),
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive_node())),
+        );
+        for iterator in [
+            QueryAtomIterator::new(&target, &plain, &context).unwrap(),
+            query_atom_iterator(&target, &plain, &context).unwrap(),
+        ] {
+            assert_eq!(
+                iterator.collect::<Result<Vec<_>, _>>().unwrap(),
+                [AtomId::new(0), AtomId::new(1)],
+                "ordinary carriers use QueryAtom(const Atom&) rather than their placeholder"
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_recursive_iteration_owns_nested_state_and_reprepares_each_target() {
+        let carbon_topology = TopologyBlock::try_from_parts(
+            vec![carbon(0), carbon(1)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let nitrogen_topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::N))],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let carbon_target = SearchTarget::new(&carbon_topology, &coordinates, &[], None, None);
+        let nitrogen_target = SearchTarget::new(&nitrogen_topology, &coordinates, &[], None, None);
+        let carbon_context = build_query_match_context(&carbon_target);
+        let nitrogen_context = build_query_match_context(&nitrogen_target);
+        let inner = graph(
+            vec![QueryAtom::from_parts(
+                carbon(0),
+                QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive_node())),
+            )],
+            Vec::new(),
+        );
+        let mut node = crate::query_behavior::RecursiveStructureQuery::from_query_graph(inner, 0);
+        node.insert_atom_index(99);
+        let query = QueryAtom::from_parts(
+            carbon(0),
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(node)),
+        );
+        let mut carbon_iterator =
+            query_atom_iterator(&carbon_target, &query, &carbon_context).unwrap();
+        assert_eq!(carbon_iterator.next().unwrap().unwrap(), AtomId::new(0));
+        let nitrogen_iterator =
+            query_atom_iterator(&nitrogen_target, &query, &nitrogen_context).unwrap();
+        let copied = carbon_iterator.clone();
+        let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(original)) = query.predicate()
+        else {
+            panic!()
+        };
+        assert!(!original.is_initialized());
+        assert!(original.contains_atom_index(99));
+        assert!(!original.contains_atom_index(0));
+        let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(prepared)) =
+            nitrogen_iterator.query.predicate()
+        else {
+            panic!()
+        };
+        assert!(
+            prepared.is_initialized(),
+            "zero matches is still initialized"
+        );
+        assert!(!prepared.contains_atom_index(99));
+        let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(nested)) =
+            prepared.query_graph().unwrap().atoms()[0].predicate()
+        else {
+            panic!()
+        };
+        assert!(nested.is_initialized());
+        drop(query);
+        assert!(
+            nitrogen_iterator
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+                .is_empty()
+        );
+        for iterator in [carbon_iterator, copied] {
+            assert_eq!(
+                iterator.collect::<Result<Vec<_>, _>>().unwrap(),
+                [AtomId::new(1)]
+            );
+        }
     }
 
     #[test]
@@ -10575,6 +11029,7 @@ fn vf2_got_signal() -> bool {
     }
     cosmolkit_core::source_control_c::got_signal()
 }
+#[cfg(test)]
 fn vf2_reset_interrupt() {
     // BEGIN RDKIT CPP FUNCTION RDKit::ControlCHandler::reset_search
     // RDKit❗✔️:   static void reset() {
@@ -10590,7 +11045,7 @@ fn vf2_reset_interrupt() {
 }
 fn vf2_warn_if_interrupted() {
     // BEGIN RDKIT CPP FUNCTION boost::vf2_all::interrupted_warning
-    // RDKit❗✔️:   if (RDKit::ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:   if (hdlr.getGotSignal()) {
     // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
     // RDKit❗✔️:         << "Substructure search was interrupted, result may not include all matches"
     // RDKit❗✔️:         << std::endl;
@@ -10617,6 +11072,27 @@ mod search08_test_state {
     }
     thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
     pub(super) struct Scope(Option<State>);
+    // Passive fake-state projection of the production CORE guard. This is
+    // test-only: entering does not clear a signal, leaving does, including an
+    // inner interrupted search whose destructor clears the outer shared flag.
+    pub(super) struct HandlerGuard;
+    impl HandlerGuard {
+        pub(super) fn new() -> Self {
+            event("install");
+            Self
+        }
+    }
+    impl Drop for HandlerGuard {
+        fn drop(&mut self) {
+            event("restore");
+            STATE.with(|s| {
+                let mut state = s.borrow_mut();
+                if state.fake.is_some() {
+                    state.fake = Some(false);
+                }
+            });
+        }
+    }
     impl Scope {
         pub(super) fn new(fake: Option<bool>) -> Self {
             Self(Some(STATE.with(|s| {
@@ -10836,9 +11312,9 @@ mod search08_interrupt_tests {
         });
     }
     #[test]
-    fn search08_fake_nested_inner_entry_resets_outer_and_single_is_unchanged() {
+    fn search08_fake_nested_scope_preserves_entry_flag_and_clears_on_exit() {
         isolated(
-            "search08_fake_nested_inner_entry_resets_outer_and_single_is_unchanged",
+            "search08_fake_nested_scope_preserves_entry_flag_and_clears_on_exit",
             || {
                 let _scope = search08_test_state::Scope::new(Some(false));
                 let q = graph(1);
@@ -10852,7 +11328,7 @@ mod search08_interrupt_tests {
                         search08_test_state::set(true);
                         let mut inner = vec![];
                         let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
-                        assert!(vf2_entry_all(
+                        assert!(!vf2_entry_all(
                             Vf2GraphRef::compiled(&q),
                             Vf2GraphRef::compiled(&inner_m),
                             &|_, _| true,
@@ -10876,12 +11352,15 @@ mod search08_interrupt_tests {
                     &mut outer,
                     0
                 ));
-                assert_eq!(nested_count, 1);
+                // Candidate constructor does not reset the outer signal:
+                // the inner search stops before feasibility, then its scope
+                // destruction clears the shared flag for outer continuation.
+                assert_eq!(nested_count, 0);
                 assert_eq!(outer.len(), 3);
                 assert_eq!(
                     search08_test_state::events()
                         .iter()
-                        .filter(|&&e| e == "reset")
+                        .filter(|&&e| e == "install")
                         .count(),
                     2
                 );
@@ -10899,7 +11378,7 @@ mod search08_interrupt_tests {
                     &mut one
                 ));
                 assert_eq!(one, vec![(0, 0)]);
-                assert!(vf2_got_signal());
+                assert!(!vf2_got_signal());
             },
         );
     }
@@ -10931,7 +11410,7 @@ mod search08_interrupt_tests {
                 );
                 assert!(error.get());
                 assert!(rows.is_empty());
-                assert!(vf2_got_signal());
+                assert!(!vf2_got_signal());
                 assert!(!search08_test_state::events().contains(&"warn"));
             },
         );
@@ -10942,6 +11421,11 @@ mod search08_interrupt_tests {
             "search08_native_first_signal_keeps_prefix_and_next_entry_resets_shared_flag",
             || {
                 let _scope = search08_test_state::Scope::new(None);
+                // Native child owns this handler: verify both real entry
+                // variants restore it, rather than only tracing fake state.
+                unsafe {
+                    libc::signal(libc::SIGINT, libc::SIG_IGN);
+                }
                 let q = graph(1);
                 let m = graph(3);
                 let mut check = |_: &[NodeId], _: &[NodeId]| {
@@ -10959,7 +11443,11 @@ mod search08_interrupt_tests {
                     0
                 ));
                 assert_eq!(rows, vec![vec![(0, 0)]]);
-                assert!(cosmolkit_core::source_control_c::got_signal());
+                assert!(!cosmolkit_core::source_control_c::got_signal());
+                assert_eq!(
+                    unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) },
+                    libc::SIG_IGN
+                );
                 let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
                 assert!(vf2_entry_all(
                     Vf2GraphRef::compiled(&q),
@@ -10972,6 +11460,21 @@ mod search08_interrupt_tests {
                 ));
                 assert_eq!(rows.len(), 3);
                 assert!(!cosmolkit_core::source_control_c::got_signal());
+                let mut one = vec![];
+                let no_check: Option<&mut fn(&[NodeId], &[NodeId]) -> bool> = None;
+                assert!(vf2_entry_one(
+                    Vf2GraphRef::compiled(&q),
+                    Vf2GraphRef::compiled(&m),
+                    &|_, _| true,
+                    &|_, _| true,
+                    no_check,
+                    &mut one,
+                ));
+                assert_eq!(one, vec![(0, 0)]);
+                assert_eq!(
+                    unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) },
+                    libc::SIG_IGN
+                );
             },
         );
     }

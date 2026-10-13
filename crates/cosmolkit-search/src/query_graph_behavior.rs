@@ -300,7 +300,10 @@ fn cleanup_query_parser_state(graph: &mut QueryGraph) -> Result<(), crate::Smart
     // non-tetrahedral pass order. Shared CORE owns both atom algorithms.
     // Known cost: each local SGroup clone includes tree/order key storage.
 
-    cosmolkit_core::parser_helpers::cleanup_parser_atoms(graph.atoms_mut())?;
+    for index in 0..graph.num_atoms() {
+        let degree = graph.adjacency()[index].len();
+        cosmolkit_core::parser_helpers::cleanup_parser_atom(&mut graph.atoms_mut()[index], degree)?;
+    }
     for bond in graph.bonds_mut() {
         bond.bond_mut().clear_prop("_unspecifiedOrder")?;
         bond.bond_mut().clear_prop(CXSMILES_BOND_IDX_PROP)?;

@@ -1,4 +1,4 @@
-//! QED: migrated existing modern implementation; pinned RDKit QED.py and CPython3.13 sum.
+//! QED calculation following pinned RDKit QED.py and CPython 3.13 summation.
 use crate::{DescriptorError, DescriptorInput, DescriptorResult};
 
 #[derive(Debug, Clone, Copy)]

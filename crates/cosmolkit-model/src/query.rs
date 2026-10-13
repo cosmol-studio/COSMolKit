@@ -268,6 +268,7 @@ pub struct RecursiveStructureQuery {
     source_smarts: Option<PropertyText>,
     atom_indices: BTreeSet<i32>,
     serial_number: u32,
+    initialized: bool,
 }
 
 impl RecursiveStructureQuery {
@@ -284,6 +285,7 @@ impl RecursiveStructureQuery {
             source_smarts: None,
             atom_indices: BTreeSet::new(),
             serial_number: 0,
+            initialized: false,
         }
     }
 
@@ -303,6 +305,7 @@ impl RecursiveStructureQuery {
             source_smarts: None,
             atom_indices: BTreeSet::new(),
             serial_number,
+            initialized: false,
         }
     }
 
@@ -350,6 +353,26 @@ impl RecursiveStructureQuery {
         self.atom_indices.contains(&index)
     }
 
+    #[doc(hidden)]
+    pub fn set_initialized(&mut self, initialized: bool) {
+        // RDKit✔️✔️: void setInitialized(bool initialized) { df_initialized = initialized; }
+        self.initialized = initialized;
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn is_initialized(&self) -> bool {
+        // RDKit✔️✔️: bool getInitialized() const { return df_initialized; }
+        self.initialized
+    }
+
+    #[doc(hidden)]
+    pub fn clear_atom_indices(&mut self) {
+        // RDKit✔️✔️: void clear() { this->d_set.clear(); }
+        // SetQuery::clear does not reset RecursiveStructureQuery::df_initialized.
+        self.atom_indices.clear();
+    }
+
     #[must_use]
     pub const fn serial_number(&self) -> u32 {
         self.serial_number
@@ -370,6 +393,7 @@ impl Clone for RecursiveStructureQuery {
         // RDKit❗✔️:     res->setNegation(getNegation());
         // RDKit❗✔️:     res->d_description = d_description;
         // RDKit❗✔️:     res->d_serialNumber = d_serialNumber;
+        // RDKit❗✔️:     res->df_initialized = df_initialized;
         // RDKit❗✔️:     return res;
         // RDKit❗✔️:   }
         // RDKit❗✔️:   unsigned int getSerialNumber() const { return d_serialNumber; }
@@ -387,6 +411,7 @@ impl Clone for RecursiveStructureQuery {
             source_smarts: self.source_smarts.clone(),
             atom_indices: self.atom_indices.clone(),
             serial_number: self.serial_number,
+            initialized: self.initialized,
         }
     }
 }
@@ -3411,8 +3436,11 @@ mod source_romol_copy_complete_tests {
     #[test]
     fn recursive_copy_reaches_quick_graph_constructor_and_preserves_source_set() {
         let mut query = RecursiveStructureQuery::from_query_graph(fixture(), u32::MAX);
+        assert!(!query.is_initialized());
+        assert!(!query.clone().is_initialized());
         query.insert_atom_index(-1);
         query.insert_atom_index(0);
+        query.set_initialized(true);
         let mut copied = query.clone();
         let inner = copied.query_graph().unwrap();
         assert_eq!(inner, &query.query_graph().unwrap().source_copy(true, -1));
@@ -3426,6 +3454,20 @@ mod source_romol_copy_complete_tests {
         assert_eq!(copied.serial_number(), u32::MAX);
         assert!(copied.contains_atom_index(-1));
         assert!(copied.contains_atom_index(0));
+        assert!(copied.is_initialized());
+        copied.clear_atom_indices();
+        assert!(
+            copied.is_initialized(),
+            "clearing SetQuery does not reset initialization"
+        );
+        assert!(!copied.contains_atom_index(-1));
+        assert!(!copied.contains_atom_index(0));
+        assert!(
+            copied.clone().is_initialized(),
+            "initialized zero matches survives copying"
+        );
+        assert!(query.contains_atom_index(-1));
+        assert!(query.contains_atom_index(0));
         copied.query_graph_mut().unwrap().atoms[0]
             .set_prop("atom-note", PropertyValue::UInt(99))
             .unwrap();
@@ -3480,6 +3522,7 @@ mod source_ring_info_tests {
             atom_ring_families: vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]],
             bond_ring_families: vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]],
             relevant_cycle_count: Some(1),
+            decomposition: None,
             fused_rings: vec![vec![false]],
             num_fused_bonds: vec![0],
         }

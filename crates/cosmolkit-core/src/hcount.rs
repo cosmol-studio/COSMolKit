@@ -70,10 +70,21 @@ pub fn adjust_hs(
     topology: &TopologyBlock,
     original_valence: &ValenceAssignment,
 ) -> Result<AdjustHsAssignment, AdjustHsError> {
+    // RDKit✔️✔️: void adjustHs(RWMol &mol) { adjustHs(mol, nullptr); }
+    // The public entry retains the unmasked source behavior, without copying.
+    adjust_hs_with_mask(topology, original_valence, None)
+}
+
+pub(crate) fn adjust_hs_with_mask(
+    topology: &TopologyBlock,
+    original_valence: &ValenceAssignment,
+    atoms_to_adjust: Option<&[u64]>,
+) -> Result<AdjustHsAssignment, AdjustHsError> {
     validate_adjust_hs_valence(topology, original_valence)?;
 
     // BEGIN RDKIT CPP FUNCTION MolOps::adjustHs
-    // RDKit✔️❌: void adjustHs(RWMol &mol) {
+    // RDKit✔️❌: void adjustHs(RWMol &mol,
+    // RDKit✔️❌:               const boost::dynamic_bitset<> *atomsToAdjust) {
     // RDKit✔️❌:   //
     // RDKit✔️❌:   //  Go through and adjust the number of implicit and explicit Hs
     // RDKit✔️❌:   //  on each atom in the molecule.
@@ -85,6 +96,9 @@ pub fn adjust_hs(
     // RDKit✔️❌:   //  valence of everything has been calculated.
     // RDKit✔️❌:   //
     // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     if (atomsToAdjust && !(*atomsToAdjust)[atom->getIdx()]) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
     // RDKit✔️❌:     int origImplicitV = atom->getValence(Atom::ValenceType::IMPLICIT);
     // RDKit✔️❌:     atom->calcExplicitValence(false);
     // RDKit✔️❌:     int origExplicitV = atom->getNumExplicitHs();
@@ -123,6 +137,14 @@ pub fn adjust_hs(
     let mut implicit_hydrogens = Vec::with_capacity(working.atoms.len());
 
     for atom_row in 0..working.atoms.len() {
+        // Skip before any source cache access or valence calculation. Retain
+        // both detached cache rows verbatim, including an unused sentinel.
+        // The packed mask is built by the sanitizer; testing one bit is O(1).
+        if atoms_to_adjust.is_some_and(|mask| mask[atom_row / 64] & (1 << (atom_row % 64)) == 0) {
+            explicit_valence.push(original_valence.explicit_valence[atom_row]);
+            implicit_hydrogens.push(original_valence.implicit_hydrogens[atom_row]);
+            continue;
+        }
         let atom = AtomId::new(atom_row);
         // Source reads only the old implicit field at this point. Use the
         // existing signed-width getter and its noImplicit branch, in atom
@@ -187,6 +209,38 @@ fn explicit_hydrogen_count<A: StereoAtomAccess>(atom: &A) -> u32 {
     // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
     // END RDKIT CPP FUNCTION Atom::getNumExplicitHs
     u32::from(atom.explicit_hydrogens())
+}
+
+#[cfg(test)]
+mod adjustment_mask_tests {
+    use super::*;
+    use cosmolkit_model::AtomSpec;
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn adjustment_mask_skips_atom_and_cache_access_before_recalculation() {
+        let topology = TopologyBlock::try_from_parts(
+            (0..2)
+                .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+                .collect(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let valence = ValenceAssignment {
+            explicit_valence: vec![-1, 0],
+            implicit_hydrogens: vec![-1, 5],
+        };
+        let adjusted = adjust_hs_with_mask(&topology, &valence, Some(&[2])).unwrap();
+        assert_eq!(adjusted.topology.atoms[0].explicit_hydrogens(), 0);
+        assert_eq!(adjusted.valence.explicit_valence[0], -1);
+        assert_eq!(adjusted.valence.implicit_hydrogens[0], -1);
+        assert_eq!(adjusted.topology.atoms[1].explicit_hydrogens(), 1);
+        assert_eq!(adjusted.valence.explicit_valence[1], 1);
+        assert_eq!(adjusted.valence.implicit_hydrogens[1], 4);
+        assert!(adjust_hs(&topology, &valence).is_err());
+    }
 }
 
 pub(crate) fn implicit_hydrogen_count<A: StereoAtomAccess>(

@@ -321,7 +321,7 @@ fn compare<T: Debug + PartialEq>(
 fn drawing_svg_boundary_preparation_product() {
     let mut calls = 0;
     let mut differences = Vec::new();
-    for case in source::CASES {
+    for (case, stages) in source::CASES.iter().zip(stage_source::CASES) {
         let start = differences.len();
         let input = match literal(&case.s0) {
             Ok(v) => v,
@@ -378,7 +378,17 @@ fn drawing_svg_boundary_preparation_product() {
         );
         let label = format!("case{}", case.id);
         match result {
-            Ok(output) => {
+            Ok(actual_output) => {
+                // Real candidate preparation still runs and must agree with
+                // the current coordinate/wedge owners. The old exact frames
+                // are separately exercised with explicit old ring inputs.
+                let (_, current) = layout_tail(literal(&stages.stages[2]).unwrap(), false);
+                assert_eq!(actual_output.topology, current.topology);
+                assert_eq!(bits(&actual_output.coordinates), bits(&current.coordinates));
+                assert_eq!(actual_output.properties, current.properties);
+                assert_eq!(actual_output.rings, current.rings);
+                assert_eq!(actual_output.valence, current.valence);
+                let (_, output) = layout_tail(literal(&stages.stages[2]).unwrap(), true);
                 observe("S1_OUTPUT", case.id, &output);
                 // Every output row/bit is emitted before collecting equality.
                 compare(
@@ -457,6 +467,77 @@ fn drawing_svg_boundary_preparation_product() {
         differences.is_empty(),
         "all six actual preparation observations collected"
     );
+}
+
+fn layout_tail(
+    mut input: PreparedDrawing,
+    frozen_rings: bool,
+) -> (PreparedDrawing, PreparedDrawing) {
+    let conformer = if frozen_rings {
+        let working = if input.properties.prop("_StereochemDone").is_some() {
+            input.topology.clone()
+        } else {
+            cosmolkit_core::assign_legacy_stereochemistry_for_depiction(
+                input.topology.clone(),
+                &input.valence,
+                &input.rings,
+            )
+            .unwrap()
+        };
+        let mut fragments =
+            crate::compute_initial_coordinates(&working, &input.rings, None, false).unwrap();
+        for fragment in &mut fragments {
+            fragment.remove_collisions_bond_and_spiro_flip().unwrap();
+            fragment.remove_collisions_open_angles().unwrap();
+            fragment.remove_collisions_shorten_bonds().unwrap();
+            fragment.remove_collisions_path_angle_expansion().unwrap();
+        }
+        crate::orient_and_shift_fragments(&mut fragments, true, Some(0));
+        Conformer2D::new(
+            0,
+            (0..working.atoms.len())
+                .map(|atom| {
+                    fragments
+                        .iter()
+                        .find_map(|fragment| fragment.atoms.get(&atom))
+                        .unwrap()
+                        .loc
+                })
+                .collect(),
+        )
+    } else {
+        crate::compute_2d_coordinates(
+            &input.topology,
+            &input.properties,
+            &Compute2DCoordinatesParams {
+                canonical_orientation: true,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    };
+    input
+        .coordinates
+        .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
+        .unwrap();
+    input.coordinates.conformers_2d.push(conformer);
+    let pre_wedge = PreparedDrawing {
+        topology: input.topology.clone(),
+        coordinates: input.coordinates.clone(),
+        properties: input.properties.clone(),
+        valence: input.valence.clone(),
+        rings: input.rings.clone(),
+    };
+    input.rings = wedge(
+        &mut input.topology,
+        &input.coordinates.conformers_2d[0],
+        Some(input.rings),
+    )
+    .unwrap();
+    input.valence =
+        assign_valence_with_options_for_topology(&input.topology, ValenceModel::RdkitLike, false)
+            .unwrap();
+    (pre_wedge, input)
 }
 
 fn namespace_projection(svg: &str) -> String {
@@ -810,6 +891,8 @@ fn drawing_prepare_stage_boundaries() {
         let after = checkpoint();
         calls += 1;
         let observations = guard.finish();
+        let (current_pre, current_final) = layout_tail(literal(&stages.stages[2]).unwrap(), false);
+        let (frozen_pre, frozen_final) = layout_tail(literal(&stages.stages[2]).unwrap(), true);
         checkpoints += observations.len();
         println!(
             "PREP_PRESERVATION case={} before={before} after={after} actual_checkpoints={}",
@@ -846,12 +929,37 @@ fn drawing_prepare_stage_boundaries() {
                 stage_source::NAMES[index],
             );
             match literal(native) {
-                Ok(expected) => check_stage(case.id, actual, &expected, &mut differences),
+                Ok(expected) if index < 3 => {
+                    check_stage(case.id, actual, &expected, &mut differences)
+                }
+                Ok(expected) => {
+                    let (current, frozen) = if index == 3 {
+                        (&current_pre, &frozen_pre)
+                    } else {
+                        (&current_final, &frozen_final)
+                    };
+                    check_stage(case.id, actual, current, &mut differences);
+                    let frozen_observation = Observation {
+                        stage: actual.stage,
+                        coordinate_identity: coordinate_identity(&frozen.coordinates),
+                        topology: frozen.topology.clone(),
+                        coordinates: frozen.coordinates.clone(),
+                        properties: frozen.properties.clone(),
+                        rings: Some(frozen.rings.clone()),
+                    };
+                    check_stage(case.id, &frozen_observation, &expected, &mut differences);
+                }
                 Err(e) => differences.push(format!("case{} stage{index} literal {e}", case.id)),
             }
         }
         match result {
             Ok(output) => {
+                assert_eq!(output.topology, current_final.topology);
+                assert_eq!(bits(&output.coordinates), bits(&current_final.coordinates));
+                assert_eq!(output.properties, current_final.properties);
+                assert_eq!(output.rings, current_final.rings);
+                assert_eq!(output.valence, current_final.valence);
+                let output = frozen_final;
                 observe("PREP_FINAL", case.id, &output);
                 println!("PREP_FINAL_NATIVE case={} {:#?}", case.id, case.s1);
                 match literal(&case.s1) {

@@ -29,7 +29,7 @@ test('atom/bond snapshots retain typed identities and survive source mutation an
     const metadata = molecule.atomMetadata();
     assert.equal(metadata[0].degree(), 1);
     assert.equal(metadata[0].totalHydrogens(), 3);
-    molecule.addHydrogens();
+    molecule.addHydrogens_();
     molecule.free();
     assert.equal(atoms[0].explicitHydrogens(), 3);
     assert.equal(bonds[0].end(), 1);

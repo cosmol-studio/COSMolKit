@@ -74,9 +74,9 @@ test("fromRecords borrows classes and returns independent Molecule values", () =
     assert.equal(record.errorValue(),null);assert.equal(failed.moleculeValue(),null);
     const batch = b.MoleculeBatch.fromRecords([record,failed],b.BatchErrorMode.KeepErrors);
     assert.equal(source.numAtoms(),6);assert.equal(record.moleculeValue().numAtoms(),6);assert.equal(failed.errorValue().index(),0);
-    source.assignAromaticity();assert.equal(source.toSmiles(),"c1ccccc1");
+    source.assignAromaticity_();assert.equal(source.toSmiles(),"c1ccccc1");
     assert.equal(record.moleculeValue().toSmiles(),"C1=CC=CC=C1");
-    const extracted = batch.toList()[0];extracted.assignAromaticity();assert.equal(extracted.toSmiles(),"c1ccccc1");
+    const extracted = batch.toList()[0];extracted.assignAromaticity_();assert.equal(extracted.toSmiles(),"c1ccccc1");
     assert.equal(batch.toList()[0].toSmiles(),"C1=CC=CC=C1");assert.deepEqual(batch.validMask(),[true,false]);
     assert.throws(() => b.MoleculeBatch.fromRecords([failed],b.BatchErrorMode.Strict),e => e.errors === 1);
     assert.equal(failed.errorValue().index(),0);

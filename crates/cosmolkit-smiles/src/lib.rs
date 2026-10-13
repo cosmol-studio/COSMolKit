@@ -1355,7 +1355,10 @@ fn cleanup_after_parsing_impl(
     // Atom algorithms remain in CORE; copying each SGroup matches native
     // by-value iteration, with the known canonical tree/order allocation cost.
 
-    cosmolkit_core::parser_helpers::cleanup_parser_atoms(&mut record.topology.atoms)?;
+    for (index, atom) in record.topology.atoms.iter_mut().enumerate() {
+        let degree = record.topology.adjacency.neighbors_of(index).len();
+        cosmolkit_core::parser_helpers::cleanup_parser_atom(atom, degree)?;
+    }
     for bond in &mut record.topology.bonds {
         bond.clear_prop("_unspecifiedOrder")?;
         bond.clear_prop(CXSMILES_BOND_IDX_PROP)?;
@@ -1991,7 +1994,6 @@ fn parse_smiles_stages(
     }
     apply_parser_wedge_stereo(&mut record)?;
     apply_parser_3d_stereo(&mut record)?;
-    apply_parser_atrop_stereo(&mut record)?;
     if complete {
         // Preserve the actual source-selected conformer identity across removeHs;
         // the hydrogen owner remaps coordinate rows without changing these IDs.
@@ -2131,13 +2133,12 @@ fn apply_parser_wedge_stereo(record: &mut SmilesRecord) -> Result<(), SmilesPars
     // RDKit✔️✔️:     // these need to be handled the same way they were in mol files
     // RDKit✔️✔️:     res->clearProp(SmilesParseOps::detail::_needsDetectAtomStereo);
     // RDKit✔️✔️:
-    // RDKit✔️✔️:     if (conf) {
-    // RDKit✔️✔️:       MolOps::assignChiralTypesFromBondDirs(*res, conf->getId());
-    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     MolOps::assignChiralTypesFromBondDirs(*res, conf ? conf->getId() : 0);
     // RDKit✔️✔️:   }
     // END RDKIT COMPLETE SOURCE MolFromSmiles pending wedge stage
     // Consume only after handleCXPartAndName, clear pending before the core
-    // assignment/error, and use the exact selected false-is3D conformer. The
+    // assignment/error, and use the selected false-is3D conformer or numeric
+    // ID zero when only genuine 3D conformers exist, as the source does. The
     // normal native Point3D-backed 2D path is borrowed with no allocation.
     // Legacy detached XY rows need the existing exact XYZ(z=0) lift: O(V)
     // allocation versus the native borrowed Point3D row, a known worse cost.
@@ -2146,10 +2147,18 @@ fn apply_parser_wedge_stereo(record: &mut SmilesRecord) -> Result<(), SmilesPars
         return Ok(());
     }
     record.properties.clear_prop("_needsDetectAtomStereo")?;
-    match two_d {
+    let selected = match two_d {
+        Some(row) => Some(row),
+        None if record.coordinates.conformers_2d.is_empty()
+            && record.coordinates.conformers_3d.is_empty() =>
+        {
+            None
+        }
+        None => Some(cx_writer::source_conformer_by_id(&record.coordinates, 0)?),
+    };
+    match selected {
         Some(CoordinateSource::ThreeD(row)) => {
             cosmolkit_core::assign_chiral_types_from_bond_dirs(&mut record.topology, row, false)
-                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
         }
         Some(CoordinateSource::TwoD(row)) => {
             let xyz = cosmolkit_model::Conformer3D::new(
@@ -2161,10 +2170,19 @@ fn apply_parser_wedge_stereo(record: &mut SmilesRecord) -> Result<(), SmilesPars
                 false,
             );
             cosmolkit_core::assign_chiral_types_from_bond_dirs(&mut record.topology, &xyz, false)
-                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
         }
-        None => {}
+        None => cosmolkit_core::assign_chiral_types_from_bond_dirs_with_optional_conformer(
+            &mut record.topology,
+            None,
+            false,
+        ),
     }
+    .map_err(|error| match error {
+        cosmolkit_core::BondDirectionStereoError::Atropisomer(cause) => {
+            SmilesParseError::ParserAtropisomer(cause)
+        }
+        other => SmilesParseError::WriterStereo(other.to_string()),
+    })?;
     Ok(())
 }
 
@@ -2217,49 +2235,15 @@ fn apply_parser_3d_stereo(record: &mut SmilesRecord) -> Result<(), SmilesParseEr
             replace_existing_tags: true,
         },
     )
-    .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+    .map_err(|error| match error {
+        // Moving atrop perception into the shared structure owner must not
+        // stringify the original typed numerical cause at this parser edge.
+        cosmolkit_core::StereoError::Atropisomer(cause) => {
+            SmilesParseError::ParserAtropisomer(*cause)
+        }
+        other => SmilesParseError::WriterStereo(other.to_string()),
+    })?;
     record.topology = assignment.topology;
-    Ok(())
-}
-
-fn apply_parser_atrop_stereo(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
-    // BEGIN COMPLETE PINNED MolFromSmiles sourceatrop stage
-    // RDKit❗❌:   if (conf) {
-    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf);
-    // RDKit❗❌:   } else if (conf3d) {
-    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf3d);
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, nullptr);
-    // RDKit❗❌:   }
-    // END COMPLETE PINNED MolFromSmiles sourceatrop stage
-    // Borrow the genuine first false-is3D row, else true-is3D row, else null.
-    // CORE owns all cache/conjugation/hybridization/detection algorithms.
-    // This source-owned parse result applies explicit detached writes; it is
-    // discarded on error. The remaining full-function comparison includes
-    // native pointer-set traversal/diagnostic order (currently unresolved).
-    let (two_d, three_d) = parser_conformers(&record.coordinates)?;
-    let conformer = two_d.or(three_d).map(|row| match row {
-        CoordinateSource::TwoD(row) => cosmolkit_core::AtropisomerConformer::TwoD(row),
-        CoordinateSource::ThreeD(row) => cosmolkit_core::AtropisomerConformer::ThreeD(row),
-    });
-    let assignment = cosmolkit_core::detect_atropisomer_chirality(&record.topology, conformer)
-        .map_err(SmilesParseError::ParserAtropisomer)?;
-    for (id, facts) in assignment.atom_valence_updates {
-        record.topology.atoms[id.index()].set_source_valence_facts(facts);
-    }
-    if let Some(flags) = assignment.conjugated_bonds {
-        for (bond, flag) in record.topology.bonds.iter_mut().zip(flags) {
-            bond.set_conjugated(flag);
-        }
-    }
-    if let Some(hybridization) = assignment.hybridization {
-        for (atom, value) in record.topology.atoms.iter_mut().zip(hybridization.values) {
-            atom.set_hybridization(value);
-        }
-    }
-    for update in assignment.bond_updates {
-        record.topology.bonds[update.bond.index()].set_stereo(update.stereo)?;
-    }
     Ok(())
 }
 
@@ -3447,11 +3431,13 @@ mod source_parser_atrop_tests {
     fn native_normalization_failure_propagates_the_original_core_error_type() {
         let huge = "1.7976931348623157e308";
         let coords = format!("(0,1,0;0,0,0;0,-1,0;{huge},0,0;{huge},0,1;{huge},0,-1)");
+        let result = parse_smiles(&format!("CC(=O)C(=O)C |{coords},wU:1.0,3.4|"), &params());
         assert!(
-            matches!(parse_smiles(&format!("CC(=O)C(=O)C |{coords},wU:1.0,3.4|"),&params()),
+            matches!(&result,
             Err(SmilesParseError::ParserAtropisomer(cosmolkit_core::AtropisomerError::Normalization(
                 cosmolkit_core::StereoError::ZeroLengthVector {center,neighbor}
-            ))) if center==AtomId::new(1) && neighbor==AtomId::new(3))
+            ))) if *center==AtomId::new(1) && *neighbor==AtomId::new(3)),
+            "retain the concrete shared-owner cause: {result:?}"
         );
     }
 }
