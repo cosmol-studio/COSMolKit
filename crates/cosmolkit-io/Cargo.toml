@@ -19,20 +19,22 @@ molecule = ["dep:cosmolkit-core"]
 search = ["molecule", "dep:cosmolkit-search"]
 depict = ["molecule", "dep:cosmolkit-depict"]
 binary = ["molecule", "dep:serde", "dep:postcard", "dep:musli"]
-bio = ["dep:cosmolkit-bio"]
+bio = ["dep:cosmolkit-bio", "dep:compact_str", "dep:lexical-core"]
 # Forwarding feature (BIO-ROWS-PROBE): enables only the existing optional
 # BIO dependency's test-probes feature; no new dependency edge, no
 # default activation.
 test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
-cosmolkit-depict = { version = "0.5.1-rc.2", path = "../cosmolkit-depict", optional = true }
-cosmolkit-bio = { version = "0.5.1-rc.2", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.5.1-rc.2", path = "../cosmolkit-core", optional = true }
-cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.2", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-types = { version = "0.5.1-rc.2", path = "../cosmolkit-types" }
+cosmolkit-depict = { version = "0.5.1-rc.3", path = "../cosmolkit-depict", optional = true }
+cosmolkit-bio = { version = "0.5.1-rc.3", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.5.1-rc.3", path = "../cosmolkit-core", optional = true }
+cosmolkit-model = { version = "0.5.1-rc.3", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.1-rc.3", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-types = { version = "0.5.1-rc.3", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
+compact_str = { version = "0.10.0", default-features = false, features = ["std"], optional = true }
+lexical-core = { version = "=1.0.6", default-features = false, features = ["parse-floats"], optional = true }
 
 # Native archives are not compiled or linked into WASM, even under `full`.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -46,7 +48,7 @@ name = "migration_io_bio_rows"
 required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.5.1-rc.3", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 tempfile = "3"
 
 [[test]]

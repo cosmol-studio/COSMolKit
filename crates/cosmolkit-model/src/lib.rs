@@ -97,6 +97,8 @@ pub use topology::add_source_bond_value;
 #[doc(hidden)]
 pub use coordinates::source_set_atom_position;
 
+#[doc(hidden)]
+pub mod ring_decomposition;
 mod source_ring_info;
 #[doc(hidden)]
 pub use source_ring_info::SourceRingInfo;

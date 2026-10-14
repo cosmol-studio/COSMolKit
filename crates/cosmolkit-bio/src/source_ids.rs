@@ -1,5 +1,7 @@
 //! Immutable source identifiers retained from PDB/mmCIF input.
 
+use compact_str::CompactString;
+
 /// PDB atom serial number. This is source provenance, not a row identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PdbAtomSerial(i32);
@@ -208,8 +210,8 @@ pub struct ResidueSourceIds {
     seq_id: Option<PdbSeqId>,
     label_seq_id: Option<i32>,
     segment_id: Option<[u8; 4]>,
-    subchain_id: Option<String>,
-    label_entity_id: Option<String>,
+    subchain_id: Option<CompactString>,
+    label_entity_id: Option<CompactString>,
 }
 
 impl ResidueSourceIds {
@@ -227,6 +229,9 @@ impl ResidueSourceIds {
         //
         // Source entity spelling is retained as source text, not confused
         // with the hierarchy unit's future stable EntityId row identity.
+        // Storage only: inline short UTF-8 labels so residue-block COW does
+        // not allocate one buffer per identifier. Owned long buffers transfer
+        // through CompactString; the String inputs and &str outputs stay unchanged.
         if segment_id.is_some_and(|segment| !segment.is_ascii()) {
             return None;
         }
@@ -234,8 +239,8 @@ impl ResidueSourceIds {
             seq_id,
             label_seq_id,
             segment_id,
-            subchain_id,
-            label_entity_id,
+            subchain_id: subchain_id.map(CompactString::from),
+            label_entity_id: label_entity_id.map(CompactString::from),
         })
     }
 
@@ -268,7 +273,7 @@ impl ResidueSourceIds {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct ChainSourceIds {
     auth_chain_id: Option<PdbChainId>,
-    label_asym_id: Option<String>,
+    label_asym_id: Option<CompactString>,
 }
 
 impl ChainSourceIds {
@@ -276,7 +281,7 @@ impl ChainSourceIds {
     pub fn new(auth_chain_id: Option<PdbChainId>, label_asym_id: Option<String>) -> Self {
         Self {
             auth_chain_id,
-            label_asym_id,
+            label_asym_id: label_asym_id.map(CompactString::from),
         }
     }
 
@@ -320,17 +325,77 @@ impl ChainSourceIds {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct EntitySourceIds {
-    source_entity_id: String,
+    source_entity_id: CompactString,
 }
 
 impl EntitySourceIds {
     #[must_use]
     pub fn new(source_entity_id: String) -> Self {
-        Self { source_entity_id }
+        Self {
+            source_entity_id: source_entity_id.into(),
+        }
     }
 
     #[must_use]
     pub fn source_entity_id(&self) -> &str {
         &self.source_entity_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_source_ids_preserve_text_and_public_signatures() {
+        // The storage representation must not leak into public signatures.
+        let _: fn(
+            Option<PdbSeqId>,
+            Option<i32>,
+            Option<[u8; 4]>,
+            Option<String>,
+            Option<String>,
+        ) -> Option<ResidueSourceIds> = ResidueSourceIds::new;
+        let _: fn(Option<PdbChainId>, Option<String>) -> ChainSourceIds = ChainSourceIds::new;
+        let _: fn(String) -> EntitySourceIds = EntitySourceIds::new;
+        for text in ["", "Axp", "标签\0A", &"long-label".repeat(32)] {
+            let residue = ResidueSourceIds::new(
+                None,
+                Some(7),
+                Some(*b"SEG1"),
+                Some(text.into()),
+                Some(text.into()),
+            )
+            .unwrap();
+            let chain = ChainSourceIds::new(PdbChainId::from_ascii(b"A"), Some(text.into()));
+            let entity = EntitySourceIds::new(text.into());
+            assert_eq!(residue.subchain_id(), Some(text));
+            assert_eq!(residue.label_entity_id(), Some(text));
+            assert_eq!(residue.label_seq_id(), Some(7));
+            assert_eq!(residue.segment_id(), Some(b"SEG1"));
+            assert_eq!(chain.label_asym_id(), Some(text));
+            assert_eq!(entity.source_entity_id(), text);
+            assert_eq!(residue.clone(), residue);
+            assert_eq!(chain.clone(), chain);
+            assert_eq!(entity.clone(), entity);
+            if text.len() <= 12 {
+                assert!(!residue.subchain_id.as_ref().unwrap().is_heap_allocated());
+                assert!(
+                    !residue
+                        .label_entity_id
+                        .as_ref()
+                        .unwrap()
+                        .is_heap_allocated()
+                );
+                assert!(!chain.label_asym_id.as_ref().unwrap().is_heap_allocated());
+                assert!(!entity.source_entity_id.is_heap_allocated());
+            }
+        }
+        let absent = ResidueSourceIds::new(None, None, None, None, None).unwrap();
+        let empty = ResidueSourceIds::new(None, None, None, Some(String::new()), None).unwrap();
+        assert_eq!(absent.subchain_id(), None);
+        assert_eq!(empty.subchain_id(), Some(""));
+        assert_ne!(absent, empty);
+        assert!(ResidueSourceIds::new(None, None, Some([0xff; 4]), None, None).is_none());
     }
 }

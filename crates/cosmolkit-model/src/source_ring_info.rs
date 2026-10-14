@@ -18,7 +18,7 @@ pub struct SourceRingInfo {
     pub bond_ring_families: Vec<Vec<BondId>>,
     pub relevant_cycle_count: Option<usize>,
     /// Immutable source RDL data; lifecycle/validity belongs to the runtime.
-    pub decomposition: Option<std::sync::Arc<cosmolkit_ringdecomposer::RingDecomposition>>,
+    pub decomposition: Option<std::sync::Arc<crate::ring_decomposition::RingDecomposition>>,
     pub fused_rings: Vec<Vec<bool>>,
     pub num_fused_bonds: Vec<usize>,
 }

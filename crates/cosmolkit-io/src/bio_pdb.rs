@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use compact_str::CompactString;
+
 use cosmolkit_bio::{
     AltLocLabel, AltLocRequest, AtomAddress, AtomName, AtomSourceIds, BioAssembly,
     BioAssemblyGenerator, BioAssemblyOperator, BioAssemblySpecialKind, BioAsu, BioAtomRow,
@@ -4451,7 +4453,7 @@ struct PdbResidueGroup {
     address: ResidueAddress,
     het_flag: u8,
     entity_kind: EntityKind,
-    subchain_id: String,
+    subchain_id: CompactString,
     atoms: Vec<PdbAtomFields>,
 }
 
@@ -5413,7 +5415,7 @@ impl PdbHierarchyGrouping {
                             address: residue,
                             het_flag: record_type & !0x20,
                             entity_kind,
-                            subchain_id: String::new(),
+                            subchain_id: CompactString::default(),
                             atoms: Vec::new(),
                         });
                         chain.residue_indices.insert(key, local_index);
@@ -5520,10 +5522,12 @@ fn assign_pdb_subchain_names(
     // rather than wrapping or saturating.
     // Complexity review: each residue is visited once. Source String insert
     // at a fixed position can shift an O(log36 n) digit suffix; Rust uses the
-    // same insertion position and work, with one generated String per row.
+    // same insertion position and work. Compact storage keeps the source's
+    // generated short UTF-8 subchain inline, avoiding a heap buffer and its
+    // growth allocation per residue; neither spelling nor ordering changes.
     let chain_name = chain.source_id;
     for residue in &mut chain.residues {
-        let mut subchain = chain_name.as_str().to_owned();
+        let mut subchain = CompactString::new(chain_name.as_str());
         subchain.push('x');
         match residue.entity_kind {
             EntityKind::Polymer => subchain.push('p'),
@@ -6573,7 +6577,7 @@ fn materialize_pdb_bio_structure(
                     sequence_id,
                     None,
                     segment_id,
-                    Some(residue.subchain_id.clone()),
+                    Some(residue.subchain_id.to_string()),
                     None,
                 )
                 .ok_or(
@@ -7699,11 +7703,9 @@ fn read_double(field: &[u8]) -> f64 {
     // that status. The prefix scanner also models the source general-format
     // incomplete-exponent rewind. Parity remains unverified pending P06 tests.
     // Complexity review: fixed PDB fields are at most 50 bytes. This path has
-    // no heap allocation and O(n) time/O(1) auxiliary state, but Rust first
-    // scans for the source prefix and then `FromStr` parses that prefix, so it
-    // performs an additional linear pass relative to fast_float. The short,
-    // fixed field bounds show no clear material cost difference by inspection;
-    // the performance marker remains unresolved after that review.
+    // no heap allocation and O(n) time/O(1) auxiliary state. The shared owner
+    // retains the source prefix scan and converts its validated decimal bytes
+    // directly with lexical-core, without a separate UTF-8 validation pass.
     // BIO-CID-NUM N02: delegated to the canonical bio-gated numeric owner.
     crate::bio_numeric::gemmi_fast_atof_with_end(field).0
 }
@@ -10237,14 +10239,14 @@ mod tests {
         }
         let chains = &mut transition.grouping.models[0].chains;
         chains[0].residues[0].entity_kind = EntityKind::Unknown;
-        chains[0].residues[0].subchain_id = "old1".to_owned();
+        chains[0].residues[0].subchain_id = "old1".into();
         chains[0].residues[1].entity_kind = EntityKind::Polymer;
-        chains[0].residues[1].subchain_id = "old2".to_owned();
+        chains[0].residues[1].subchain_id = "old2".into();
         chains[1].residues[0].entity_kind = EntityKind::Polymer;
-        chains[1].residues[0].subchain_id = "stale".to_owned();
+        chains[1].residues[0].subchain_id = "stale".into();
         chains[1].residues[1].entity_kind = EntityKind::NonPolymer;
         chains[2].residues[0].entity_kind = EntityKind::Unknown;
-        chains[2].residues[0].subchain_id = "keep".to_owned();
+        chains[2].residues[0].subchain_id = "keep".into();
         chains[2].residues[1].entity_kind = EntityKind::Polymer;
         chains.push(super::PdbChainGroup {
             row_id: cosmolkit_bio::BioChainId::new(3),

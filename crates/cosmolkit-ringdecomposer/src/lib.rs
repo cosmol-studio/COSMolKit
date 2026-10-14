@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 mod cycles;
+pub use cycles::{CycleComponentAccess, relevant_cycles, smallest_ring_basis};
 #[doc(hidden)]
 pub mod persistence;
 

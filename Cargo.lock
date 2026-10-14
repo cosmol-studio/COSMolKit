@@ -94,14 +94,23 @@ checksum = "6a1f896587b6f2c069c73d2f0913e2d590c3990285cd2f0b6aa02b786b4c679c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "castaway"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
 name = "cc"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50a649af8a827553c29fb0cb4bd4a6f1a0dd695bd3232b9bc98bd9c8a3ffbb8b"
+checksum = "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -136,6 +145,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "compact_str"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79fcda08c33bb58b97008b2cdada6622500e949e060f5913361763121abd2416"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "static_assertions",
+ "zmij",
+]
+
+[[package]]
 name = "console"
 version = "0.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -161,7 +183,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cosmolkit"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-batch",
@@ -190,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-alignment"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -201,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-batch"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-io",
  "cosmolkit-model",
@@ -212,8 +234,9 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-bio"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
+ "compact_str",
  "cosmolkit-model",
  "cosmolkit-types",
  "serde",
@@ -222,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-conformer"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-core",
@@ -240,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-ringdecomposer",
@@ -253,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-cx"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -261,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-depict"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -275,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-descriptors"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -287,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-fingerprints"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -299,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-forcefields"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-io",
@@ -311,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -321,14 +344,16 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-io"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
+ "compact_str",
  "cosmolkit-bio",
  "cosmolkit-core",
  "cosmolkit-depict",
  "cosmolkit-model",
  "cosmolkit-search",
  "cosmolkit-types",
+ "lexical-core",
  "musli",
  "postcard",
  "serde",
@@ -338,11 +363,11 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -351,14 +376,13 @@ version = "0.5.0-rc.2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "cosmolkit-model"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
- "cosmolkit-ringdecomposer",
  "cosmolkit-types",
  "serde_json",
  "thiserror",
@@ -379,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit",
  "cosmolkit-macros",
@@ -395,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-reaction"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -408,14 +432,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-search"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -430,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-smiles"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -441,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-stereo"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-conformer",
  "cosmolkit-core",
@@ -454,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-tautomer"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -468,8 +492,9 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-types"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
+ "hashify",
  "serde",
  "serde_json",
  "thiserror",
@@ -477,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-wasm"
-version = "0.5.1-rc.2"
+version = "0.5.1-rc.3"
 dependencies = [
  "cosmolkit",
  "cosmolkit-macros",
@@ -550,9 +575,9 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "deranged"
-version = "0.5.8"
+version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
+checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
 
 [[package]]
 name = "digest"
@@ -591,9 +616,9 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "equivalent"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
 name = "errno"
@@ -767,6 +792,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hashify"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66f5a65bf7824ada2de4a2cf9fa0981dabffc5392bb8550767c3c3d71ed52e4d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -921,6 +957,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
+name = "lexical-core"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8d125a277f807e55a77304455eb7b1cb52f2b18c143b60e766c120bd64a594"
+dependencies = [
+ "lexical-parse-float",
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-parse-float"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52a9f232fbd6f550bc0137dcb5f99ab674071ac2d690ac69704593cb4abbea56"
+dependencies = [
+ "lexical-parse-integer",
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-parse-integer"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a7a039f8fb9c19c996cd7b2fcce303c1b2874fe1aca544edc85c4a5f8489b34"
+dependencies = [
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-util"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2604dd126bb14f13fb5d1bd6a66155079cb9fa655b37f875b3a742c705dbed17"
+
+[[package]]
 name = "libc"
 version = "0.2.190"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1031,7 +1102,7 @@ checksum = "8392bf99d3af026789519f2bd08e412d387d8c6a8c3b2c181c8e1dea50c5bc5c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -1339,7 +1410,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustpython-parser",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -1595,14 +1666,14 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
  "itoa",
  "memchr",
@@ -1622,9 +1693,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -1742,9 +1813,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.7"
+version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d62a2e0561533f2ca2561d0cf27fd9fedb640a1bf2616ff5d5c80d99017faadc"
+checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1787,7 +1858,7 @@ checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -2013,9 +2084,9 @@ checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.26"
+version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "unicode-script"
@@ -2140,7 +2211,7 @@ dependencies = [
  "bumpalo",
  "proc-macro2",
  "quote",
- "syn 3.0.7",
+ "syn 3.0.9",
  "wasm-bindgen-shared",
 ]
 
@@ -2245,18 +2316,18 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.62"
+version = "0.8.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86502bf56ac7c77571a32e2647bb2a15894565e981fb2a48d7bde2d91c965a9d"
+checksum = "e5fe1f8f1b06191a00962174c61aa5005e0bb391a6d80d07e24d115c01a92ed8"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.62"
+version = "0.8.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5457206954b06561e2608c7e19cf58b1926586d999c246eebe4502f7e2039d1a"
+checksum = "863ad3ac83293fb4d740aedbfdc9240dd8d1a50c1099acd76ce80ce7c7230c7f"
 dependencies = [
  "proc-macro2",
  "quote",

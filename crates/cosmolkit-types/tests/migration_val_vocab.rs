@@ -116,10 +116,57 @@ fn element_symbol_parsing_is_case_sensitive_and_supports_source_aliases() {
     assert_eq!(Element::from_symbol("Uup"), Some(Element::MC));
     assert_eq!(Element::from_symbol("Nh").unwrap().symbol(), "Nh");
     assert_eq!(Element::from_symbol("Mc").unwrap().symbol(), "Mc");
-    for invalid in ["", "Xx", "uut", "uup", "nh", "mc", "CL"] {
+    for invalid in [
+        "",
+        "Xx",
+        "uut",
+        "uup",
+        "nh",
+        "mc",
+        "CL",
+        "C@",
+        "C@@",
+        "C@H",
+        "C]",
+        "Clx",
+        "C\0",
+        "\0C",
+        "C ",
+        "é",
+        "碳",
+        "this_is_not_an_element_symbol",
+    ] {
         assert_eq!(Element::from_symbol(invalid), None);
         let error = Element::from_str(invalid).unwrap_err();
         assert_eq!(error.input(), invalid);
+    }
+}
+
+#[test]
+fn element_symbol_lookup_checks_the_complete_key_not_only_its_hash() {
+    // A non-key can land in an occupied perfect-hash slot. Compare neighboring
+    // byte strings against the independent source-symbol table, including
+    // mutations that happen to be other valid symbols.
+    for symbol in SYMBOLS.into_iter().chain(["Uut", "Uup"]) {
+        for byte in 0..symbol.len() {
+            for bit in 0..8 {
+                let mut changed = symbol.as_bytes().to_vec();
+                changed[byte] ^= 1 << bit;
+                let Ok(changed) = std::str::from_utf8(&changed) else {
+                    continue;
+                };
+                let expected = SYMBOLS
+                    .iter()
+                    .position(|symbol| *symbol == changed)
+                    .and_then(|number| Element::from_atomic_number(number as u8))
+                    .or(match changed {
+                        "Uut" => Some(Element::NH),
+                        "Uup" => Some(Element::MC),
+                        _ => None,
+                    });
+                assert_eq!(Element::from_symbol(changed), expected, "{changed:?}");
+            }
+        }
     }
 }
 

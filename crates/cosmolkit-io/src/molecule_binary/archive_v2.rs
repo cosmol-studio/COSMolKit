@@ -7,10 +7,13 @@
 //! No legacy raw or canonical companion is emitted by this writer.
 
 use super::*;
+#[cfg(test)]
+use cosmolkit_core::ring_persistence::ComponentView;
 use cosmolkit_core::{
     PersistedRingDecomposition, PersistedRingEdgeId, PersistedRingGraph,
-    ring_persistence::{ComponentState, ComponentView, CycleFamilyState},
+    ring_persistence::{ComponentState, CycleFamilyState},
 };
+use cosmolkit_model::ring_decomposition::{RingComponent, RingDecomposition, RingGraph};
 use musli::mode::Binary;
 use musli::{Decode, Encode};
 
@@ -1094,8 +1097,22 @@ fn wire_rows(values: &[Vec<usize>]) -> Vec<Vec<u64>> {
         .collect()
 }
 
+#[cfg(test)]
 impl From<&PersistedRingGraph> for RdlGraph {
     fn from(graph: &PersistedRingGraph) -> Self {
+        Self {
+            nodes: graph.node_count() as u64,
+            edges: graph
+                .edges()
+                .iter()
+                .map(|e| [e.from() as u64, e.to() as u64])
+                .collect(),
+        }
+    }
+}
+
+impl From<&RingGraph> for RdlGraph {
+    fn from(graph: &RingGraph) -> Self {
         Self {
             nodes: graph.node_count() as u64,
             edges: graph
@@ -1122,6 +1139,7 @@ impl RdlGraph {
     }
 }
 
+#[cfg(test)]
 impl From<ComponentView<'_>> for RdlComponent {
     fn from(c: ComponentView<'_>) -> Self {
         fn optional_rows(values: &[Vec<Option<usize>>]) -> Vec<Vec<Option<u64>>> {
@@ -1153,6 +1171,46 @@ impl From<ComponentView<'_>> for RdlComponent {
             prototype_counts: c.prototype_counts.iter().map(|&v| v as u64).collect(),
             relations: c.relations.to_vec(),
             urfs: wire_rows(c.urfs),
+        }
+    }
+}
+
+impl From<&RingComponent> for RdlComponent {
+    fn from(c: &RingComponent) -> Self {
+        fn optional_rows(values: &[Vec<Option<usize>>]) -> Vec<Vec<Option<u64>>> {
+            values
+                .iter()
+                .map(|row| row.iter().map(|v| v.map(|v| v as u64)).collect())
+                .collect()
+        }
+        Self {
+            graph: (&c.graph).into(),
+            original_nodes: c.original_nodes.iter().map(|&v| v as u64).collect(),
+            original_edges: c.original_edges.iter().map(|&v| v as u64).collect(),
+            predecessor: optional_rows(&c.predecessor),
+            distance: optional_rows(&c.distance),
+            reachable: c.reachable.clone(),
+            directed_paths: c
+                .directed_paths
+                .iter()
+                .map(|rows| wire_rows(rows))
+                .collect(),
+            families: c
+                .cycle_families
+                .iter()
+                .map(|f| RdlFamily {
+                    weight: f.weight as u64,
+                    root: f.root as u64,
+                    p: f.p as u64,
+                    q: f.q as u64,
+                    x: f.x.map(|v| v as u64),
+                    prototype: f.prototype.clone(),
+                    relevant: f.relevant,
+                })
+                .collect(),
+            prototype_counts: c.prototype_counts.iter().map(|&v| v as u64).collect(),
+            relations: c.relations.clone(),
+            urfs: wire_rows(&c.urfs),
         }
     }
 }
@@ -1239,6 +1297,7 @@ impl RdlComponent {
     }
 }
 
+#[cfg(test)]
 impl From<&PersistedRingDecomposition> for RdlRecord {
     fn from(d: &PersistedRingDecomposition) -> Self {
         Self {
@@ -1255,6 +1314,26 @@ impl From<&PersistedRingDecomposition> for RdlRecord {
                 .collect(),
             relevant_cycle_count_bits: d.relevant_cycle_count().to_bits(),
             components: d.persisted_components().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&RingDecomposition> for RdlRecord {
+    fn from(d: &RingDecomposition) -> Self {
+        Self {
+            graph: d.graph().into(),
+            family_nodes: d
+                .urfs()
+                .iter()
+                .map(|u| u.nodes().iter().map(|&v| v as u64).collect())
+                .collect(),
+            family_edges: d
+                .urfs()
+                .iter()
+                .map(|u| u.edges().iter().map(|&v| v as u64).collect())
+                .collect(),
+            relevant_cycle_count_bits: d.relevant_cycle_count().to_bits(),
+            components: d.components.iter().map(Into::into).collect(),
         }
     }
 }
@@ -2348,6 +2427,19 @@ mod tests {
                 restored.relevant_cycles().collect::<Vec<_>>(),
                 original.relevant_cycles().collect::<Vec<_>>()
             );
+            // The independent native encoder predates the ownership boundary:
+            // representation changes must not change either V2 codec's bytes.
+            let native_wire = musli::wire::to_vec(&RdlRecord::from(&original)).unwrap();
+            let native_storage = musli::storage::to_vec(&RdlRecord::from(&original)).unwrap();
+            let detached = cosmolkit_core::rdl_state::into_model(original);
+            assert_eq!(
+                musli::wire::to_vec(&RdlRecord::from(&detached)).unwrap(),
+                native_wire
+            );
+            assert_eq!(
+                musli::storage::to_vec(&RdlRecord::from(&detached)).unwrap(),
+                native_storage
+            );
         }
         let (topology, original) = rdl_fixture();
         let payload = musli::wire::to_vec(&RingRecord::from(&original)).unwrap();
@@ -2356,10 +2448,13 @@ mod tests {
         assert_eq!(restored, original);
         let before = original.persisted_decomposition().unwrap();
         let after = restored.persisted_decomposition().unwrap();
-        assert_eq!(after.smallest_ring_basis(), before.smallest_ring_basis());
         assert_eq!(
-            after.relevant_cycles().collect::<Vec<_>>(),
-            before.relevant_cycles().collect::<Vec<_>>()
+            cosmolkit_core::rdl_state::smallest_ring_basis(after),
+            cosmolkit_core::rdl_state::smallest_ring_basis(before)
+        );
+        assert_eq!(
+            cosmolkit_core::rdl_state::relevant_cycles(after).collect::<Vec<_>>(),
+            cosmolkit_core::rdl_state::relevant_cycles(before).collect::<Vec<_>>()
         );
         assert_eq!(
             after.relevant_cycle_count().to_bits(),

@@ -268,7 +268,41 @@ fn optional_dependencies_and_io_branches_stay_independent() {
             .iter()
             .map(|v| v.as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["dep:cosmolkit-bio"],
+        ["dep:cosmolkit-bio", "dep:compact_str", "dep:lexical-core"],
+    );
+    assert_eq!(
+        io["dependencies"]["compact_str"]["optional"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        io["dependencies"]["compact_str"]["default-features"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(
+        io["dependencies"]["compact_str"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["std"]
+    );
+    assert_eq!(
+        io["dependencies"]["lexical-core"]["optional"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        io["dependencies"]["lexical-core"]["default-features"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(
+        io["dependencies"]["lexical-core"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["parse-floats"]
     );
     let molecule: BTreeSet<_> = io["features"]["molecule"]
         .as_array()
@@ -286,6 +320,8 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         "dep:cosmolkit-depict",
         "dep:musli",
         "dep:postcard",
+        "dep:compact_str",
+        "dep:lexical-core",
     ] {
         assert!(!molecule.contains(dependency));
     }

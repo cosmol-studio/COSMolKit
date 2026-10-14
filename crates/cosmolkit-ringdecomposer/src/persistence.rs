@@ -1,6 +1,7 @@
 //! Detached persistence boundary. Restoring state does not run ring finding.
 use super::*;
 
+#[derive(Clone, Copy)]
 pub struct CycleFamilyView<'a> {
     pub weight: usize,
     pub root: usize,
@@ -74,7 +75,84 @@ pub struct ComponentState {
     pub urfs: Vec<Vec<usize>>,
 }
 
+/// Complete owned decomposition. Exporting consumes the engine value; it does
+/// not rerun ring finding or copy the shortest-path/relation/prototype buffers.
+pub struct DecompositionState {
+    pub graph: Graph,
+    pub urfs: Vec<UniqueRingFamily>,
+    pub relevant_cycle_count: f64,
+    pub components: Vec<ComponentState>,
+}
+
+/// Owned graph buffers, including the original adjacency and lookup ordering.
+pub struct GraphState {
+    pub node_count: usize,
+    pub adjacency: Vec<Vec<(usize, EdgeId)>>,
+    pub edges: Vec<Edge>,
+    pub edge_ids_by_endpoints: BTreeMap<(usize, usize), EdgeId>,
+}
+
+impl Graph {
+    pub fn into_state(self) -> GraphState {
+        GraphState {
+            node_count: self.node_count,
+            adjacency: self.adjacency,
+            edges: self.edges,
+            edge_ids_by_endpoints: self.edge_ids_by_endpoints,
+        }
+    }
+}
+
+impl UniqueRingFamily {
+    pub fn into_parts(self) -> (Vec<usize>, Vec<EdgeId>) {
+        (self.nodes, self.edges)
+    }
+}
+
 impl RingDecomposition {
+    pub fn into_state(self) -> DecompositionState {
+        DecompositionState {
+            graph: self.graph,
+            urfs: self.urfs,
+            relevant_cycle_count: self.relevant_cycle_count,
+            components: self
+                .components
+                .into_iter()
+                .map(|d| ComponentState {
+                    graph: d.component.graph,
+                    original_nodes: d.component.original_nodes,
+                    original_edges: d.component.original_edges,
+                    predecessor: d.shortest_paths.predecessor,
+                    distance: d.shortest_paths.distance,
+                    reachable: d.shortest_paths.reachable,
+                    directed_paths: d
+                        .shortest_paths
+                        .directed_paths
+                        .into_iter()
+                        .map(|p| p.adjacency)
+                        .collect(),
+                    cycle_families: d
+                        .cycle_families
+                        .families
+                        .into_iter()
+                        .map(|f| CycleFamilyState {
+                            weight: f.weight,
+                            root: f.r,
+                            p: f.p,
+                            q: f.q,
+                            x: f.x,
+                            prototype: f.prototype,
+                            relevant: f.relevant,
+                        })
+                        .collect(),
+                    prototype_counts: d.urf_info.nof_protos,
+                    relations: d.urf_info.relations,
+                    urfs: d.urf_info.urfs,
+                })
+                .collect(),
+        }
+    }
+
     pub fn persisted_components(&self) -> impl Iterator<Item = ComponentView<'_>> {
         self.components.iter().map(|data| ComponentView {
             graph: &data.component.graph,

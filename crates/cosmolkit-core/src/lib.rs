@@ -203,7 +203,8 @@ pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_ra
 
 #[doc(hidden)]
 pub use rings::{
-    PersistedRingDecomposition, PersistedRingEdgeId, PersistedRingGraph, ring_persistence,
+    PersistedRingDecomposition, PersistedRingEdgeId, PersistedRingGraph, rdl_state,
+    ring_persistence,
 };
 
 pub use rings::{

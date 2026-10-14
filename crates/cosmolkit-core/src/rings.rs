@@ -11,6 +11,9 @@ use cosmolkit_model::{
 use cosmolkit_types::BondOrder;
 
 #[doc(hidden)]
+pub mod rdl_state;
+
+#[doc(hidden)]
 pub use cosmolkit_ringdecomposer::{
     EdgeId as PersistedRingEdgeId, Graph as PersistedRingGraph,
     RingDecomposition as PersistedRingDecomposition, persistence as ring_persistence,
@@ -72,7 +75,7 @@ pub struct RingInfo {
     atom_ring_families: Vec<Vec<AtomId>>,
     bond_ring_families: Vec<Vec<BondId>>,
     relevant_cycle_count: Option<usize>,
-    decomposition: Option<Arc<cosmolkit_ringdecomposer::RingDecomposition>>,
+    decomposition: Option<Arc<cosmolkit_model::ring_decomposition::RingDecomposition>>,
     fused_rings: Vec<Vec<bool>>,
     num_fused_bonds: Vec<usize>,
 }
@@ -202,7 +205,9 @@ impl RingInfo {
     }
 
     #[doc(hidden)]
-    pub fn persisted_decomposition(&self) -> Option<&PersistedRingDecomposition> {
+    pub fn persisted_decomposition(
+        &self,
+    ) -> Option<&cosmolkit_model::ring_decomposition::RingDecomposition> {
         self.decomposition.as_deref()
     }
 
@@ -272,7 +277,7 @@ impl RingInfo {
         if let Some(rows) = bond_members {
             self.bond_members = rows;
         }
-        self.decomposition = decomposition.map(Arc::new);
+        self.decomposition = decomposition.map(rdl_state::into_model).map(Arc::new);
         Ok(())
     }
 
@@ -1550,7 +1555,7 @@ fn symmetrize_sssr_source_context(
         )?;
     }
     let decomposition = Arc::clone(info.decomposition.as_ref().expect("calculated source RDL"));
-    for cycle in decomposition.relevant_cycles() {
+    for cycle in rdl_state::relevant_cycles(&decomposition) {
         let ring = rdl_cycle_to_atom_ring(&decomposition, &cycle);
         let bonds = convert_to_bonds(context, &ring, |atom| *atom, BondId::index)?;
         info.add_ring(&ring, &bonds)?;
@@ -1559,7 +1564,7 @@ fn symmetrize_sssr_source_context(
 }
 
 fn rdl_cycle_to_atom_ring(
-    decomposition: &cosmolkit_ringdecomposer::RingDecomposition,
+    decomposition: &cosmolkit_model::ring_decomposition::RingDecomposition,
     cycle: &[cosmolkit_ringdecomposer::EdgeId],
 ) -> Vec<usize> {
     // RDKit✔️✔️: ring.reserve(cycle->weight);
@@ -1775,7 +1780,7 @@ fn find_sssr_reference_from_context(
         .decomposition
         .as_ref()
         .expect("source RDL calculated");
-    for cycle in decomposition.smallest_ring_basis() {
+    for cycle in rdl_state::smallest_ring_basis(decomposition) {
         output.push(rdl_cycle_to_atom_ring(decomposition, &cycle));
     }
     output.sort_by(|left, right| left.len().cmp(&right.len()).then_with(|| left.cmp(right)));
@@ -2020,9 +2025,9 @@ fn find_ring_families_into(
     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   RDL_data *urfdata = RDL_calculate(graph);
-    let decomposition = Arc::new(cosmolkit_ringdecomposer::RingDecomposition::calculate(
-        graph,
-    )?);
+    let decomposition = Arc::new(rdl_state::into_model(
+        cosmolkit_ringdecomposer::RingDecomposition::calculate(graph)?,
+    ));
     let relevant_cycle_count = checked_relevant_cycle_count(decomposition.relevant_cycle_count())?;
     // RDKit✔️✔️:   mol.getRingInfo()->dp_urfData.reset(urfdata, &RDL_deleteData);
     // Move one immutable decomposition into the cache, never deep-copy its
@@ -2044,15 +2049,16 @@ fn find_ring_families_into(
             .collect::<Vec<_>>();
         // RDKit✔️✔️:     RDL_edge *edges = nullptr;
         // RDKit✔️✔️:     unsigned nEdges = RDL_getEdgesForURF(urfdata, i, &edges);
-        let bond_indices =
-            urf.edges()
-                .iter()
-                .map(|edge| {
-                    graph_edge_to_bond_idx.get(edge.index()).copied().ok_or(
-                        RingFindingError::RingFamilyEdgeMappingMissing { edge: edge.index() },
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+        let bond_indices = urf
+            .edges()
+            .iter()
+            .map(|edge| {
+                graph_edge_to_bond_idx
+                    .get(*edge)
+                    .copied()
+                    .ok_or(RingFindingError::RingFamilyEdgeMappingMissing { edge: *edge })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         // RDKit✔️✔️:     mol.getRingInfo()->addRingFamily(nvect, evect);
         info.add_ring_family(&atom_indices, &bond_indices)?;
     }
