@@ -12,7 +12,7 @@ use cosmolkit_model::{BondOrder, BondStereo, TopologyBlock};
 use cosmolkit_search::{
     QueryGraph, QueryMatchContext, SearchTarget, SearchTargetAccess, SmartsParseError,
     SmartsParseParams, SubstructMatchParams, parse_smarts,
-    try_get_substruct_matches_with_params_and_context,
+    try_get_substruct_atom_matches_with_params_and_context,
 };
 
 /// Fill the source-sized connectivity-invariant prefix without changing any
@@ -24,7 +24,7 @@ pub(crate) fn get_connectivity_invariants(
     invars: &mut [u32],
     include_ring_membership: bool,
     valence: &ValenceAssignment,
-    rings: &RingInfo,
+    rings: Option<&RingInfo>,
 ) -> Result<(), MorganError> {
     // BEGIN RDKIT CPP FUNCTION MorganFingerprints::getConnectivityInvariants
     // RDKit❗🔝: void getConnectivityInvariants(const ROMol &mol, std::vector<uint32_t> &invars,
@@ -235,6 +235,7 @@ pub(crate) fn get_connectivity_invariants(
         let mut component_count = 5;
 
         if include_ring_membership {
+            let rings = crate::prepared::required_morgan_rings(rings)?;
             if !rings.is_initialized() {
                 return Err(FingerprintError::PreconditionViolation {
                     what: "RingInfo not initialized",
@@ -283,7 +284,7 @@ impl MorganAtomInvGenerator {
         &self,
         topology: &TopologyBlock,
         valence: &ValenceAssignment,
-        rings: &RingInfo,
+        rings: Option<&RingInfo>,
     ) -> Result<Vec<u32>, MorganError> {
         // BEGIN RDKIT CPP FUNCTION MorganAtomInvGenerator::getAtomInvariants
         // RDKit❗🔝: std::vector<std::uint32_t> *MorganAtomInvGenerator::getAtomInvariants(
@@ -689,14 +690,14 @@ pub(crate) fn get_feature_invariants_with_patterns(
             .into());
         }
         let mask = 1_u32 << query_index;
-        let matches = try_get_substruct_matches_with_params_and_context(
+        let matches = try_get_substruct_atom_matches_with_params_and_context(
             target,
             query,
             &params,
             query_context,
         )?;
         for matched in matches {
-            for atom_index in matched.atom_mapping {
+            for atom_index in matched {
                 invars[atom_index] |= mask;
             }
         }
@@ -714,11 +715,12 @@ pub(crate) fn get_feature_invariants_with_patterns(
     // existing query and target graph rows directly and allocates its two
     // query-sized mapping buffers once per invocation for reuse at every goal.
     // One paired row is allocated only after a mapping passes final checks.
-    // After enumeration, Search projects each accepted row once into atom and
-    // bond maps; resolving each query bond scans the selected target neighbor
-    // row. These accepted-output/map allocations and remaining source-profile
-    // differences leave total cost unresolved: this path claims neither zero
-    // allocation nor whole-Search cost equivalence.
+    // After enumeration, Search projects each accepted row only into the source
+    // atom mapping. Its shared atom-only projection preserves all preflight,
+    // recursive matching and final-check ordering while avoiding the unused
+    // bond vector and its per-query-bond target neighbor scans. Accepted atom
+    // mappings still allocate; remaining source-profile differences leave total
+    // Search cost unresolved rather than claiming whole-Search equivalence.
     Ok(())
 }
 
@@ -919,6 +921,35 @@ mod tests {
         assert_eq!(invariants[atom_count], 0, "source clears the whole slice");
         invariants.truncate(atom_count);
         (record, invariants)
+    }
+
+    #[test]
+    fn morgan_feature_atom_projection_preserves_multiatom_pattern_masks() {
+        for (smiles, smarts, expected) in [
+            (
+                "CCCO",
+                ["[#6]-[#6]", "[#6]-[#8]", "[#6]-[#6]"],
+                vec![5, 5, 7, 2],
+            ),
+            (
+                "CCCO",
+                ["[#6]-[#8]", "[#6]-[#6]", "[#6]-[#6]"],
+                vec![6, 6, 7, 1],
+            ),
+            (
+                "C1CC1CO",
+                ["[#6]-[#6]", "[#6]-[#8]", "[#6;$([#6]-[#8])]"],
+                vec![1, 1, 1, 7, 2],
+            ),
+        ] {
+            let patterns = parse_feature_patterns(&smarts);
+            let (_, actual) = evaluate_features_with_patterns(smiles, Some(&patterns));
+            // Source FingerprintUtil.cpp applies each pattern's ordinal mask
+            // to every atom pair in every accepted MatchVectType. Repeated
+            // symmetric matches are idempotent; duplicate patterns retain
+            // their distinct bits and multiatom mappings include both ends.
+            assert_eq!(actual, expected, "{smiles}: {smarts:?}");
+        }
     }
 
     fn evaluate_features_with_patterns(
@@ -1345,7 +1376,7 @@ mod tests {
             &mut invariants,
             include_ring_membership,
             &valence,
-            &rings,
+            Some(&rings),
         )
         .expect("prepared fixed topology produces invariants");
 
@@ -1362,7 +1393,7 @@ mod tests {
             .expect("fixed generator target has source-valid valence");
         let rings = fast_find_rings(&record.topology).expect("fixed target has ring information");
         let invariants = generator
-            .get_atom_invariants(&record.topology, &valence, &rings)
+            .get_atom_invariants(&record.topology, &valence, Some(&rings))
             .expect("prepared fixed target produces atom invariants");
         (record, invariants)
     }

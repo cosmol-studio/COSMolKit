@@ -3127,7 +3127,10 @@ fn set_14_bounds(
         ));
     }
     let mut rings = rinfo.bond_rings().to_vec();
-    rings.sort_unstable_by_key(|ring| std::cmp::Reverse(ring.len()));
+    // RDKit✔️✔️: std::ranges::sort(bondRings, std::ranges::greater{}, &std::vector<int>::size);
+    // Equal-size ring order propagates to forced torsion accumulation. Reuse
+    // the existing source sorter rather than inventing a deterministic tie key.
+    cosmolkit_core::sort_bond_rings_by_descending_size(&mut rings);
     let nb = mol.bonds.len();
     let pair_bits = nb
         .checked_mul(nb)
@@ -5123,6 +5126,37 @@ mod tests {
         for path in &accum.paths14[9..] {
             assert!(six.contains(&BondId::new(path.bid2)));
         }
+    }
+
+    #[test]
+    fn set14_equal_size_rings_preserve_source_torsion_path_order() {
+        // Seventeen independent cycles exercise libstdc++'s partition boundary
+        // without embedding, large molecular fixtures, or native dependencies.
+        let sizes = [6, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 14, 16, 16, 16, 16];
+        let input = sizes
+            .iter()
+            .map(|&n| format!("C1{}1", "C".repeat(n - 1)))
+            .collect::<Vec<_>>()
+            .join(".");
+        let mol = fixed_topology(&input, true);
+        let rings = fixed_rings(&mol);
+        assert_eq!(
+            rings.bond_rings().iter().map(Vec::len).collect::<Vec<_>>(),
+            sizes
+        );
+        let (_, accum, _) = run_set14_bounds(&mol, false, true);
+        let mut offset = 0;
+        for index in [16, 15, 14, 13, 12, 11, 8, 10, 9, 0, 7, 6, 5, 4, 3, 2, 1] {
+            let ring = &rings.bond_rings()[index];
+            for path in &accum.paths14[offset..offset + ring.len()] {
+                assert!(
+                    ring.contains(&BondId::new(path.bid2)),
+                    "ring {index}, path {offset}"
+                );
+            }
+            offset += ring.len();
+        }
+        assert_eq!(offset, accum.paths14.len());
     }
 
     #[test]

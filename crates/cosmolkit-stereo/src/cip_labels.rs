@@ -9,8 +9,9 @@ use std::collections::HashMap;
 #[cfg(test)]
 use crate::cip_graph::CipRuleView;
 use crate::cip_graph::{
-    CipDigraph, CipEdgeId, CipLabelerContext, CipLabelerError, CipNode, CipNodeId, CipRules,
-    CipSequenceRule, Descriptor, cip_all_rules, cip_constitutional_rules, descriptor_to_string,
+    CipDigraph, CipEdgeId, CipLabelerContext, CipLabelerError, CipMol, CipNode, CipNodeId,
+    CipRules, CipSequenceRule, Descriptor, cip_all_rules, cip_constitutional_rules,
+    descriptor_to_string,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +90,7 @@ impl CipLabelAssignment {
 }
 
 fn cip_find_configs<'a>(
-    molecule: &'a TopologyBlock,
+    molecule: impl Into<CipMol<'a>>,
     atom_mask: &[bool],
     bond_mask: &[bool],
 ) -> Result<Vec<CipConfig<'a>>, CipLabelerError> {
@@ -159,6 +160,8 @@ fn cip_find_configs<'a>(
     // RDKit✔️❌:   return configs;
     // RDKit✔️❌: }
     // END RDKit 2026.09.1 cip_find_configs
+    let cipmol = molecule.into();
+    let molecule = cipmol.topology();
     let mut configs = Vec::new();
 
     // RDKit✔️✔️:   // All configurations are required here, including unselected ones: they may
@@ -175,7 +178,7 @@ fn cip_find_configs<'a>(
             })?;
         match atom.chiral_tag() {
             ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
-                let mut config = CipTetrahedral::new(molecule, index)?;
+                let mut config = CipTetrahedral::new(cipmol.clone(), index)?;
                 config.configuration.selected = selected;
                 if config.get_carriers().len() == 4 {
                     configs.push(CipConfig::Tetrahedral(config));
@@ -204,7 +207,7 @@ fn cip_find_configs<'a>(
                     continue;
                 }
                 let mut config = CipSp2Bond::new(
-                    molecule,
+                    cipmol.clone(),
                     index,
                     bond.begin().index(),
                     bond.end().index(),
@@ -220,7 +223,7 @@ fn cip_find_configs<'a>(
                     continue;
                 }
                 let mut config = CipAtropisomerBond::new(
-                    molecule,
+                    cipmol.clone(),
                     index,
                     bond.begin().index(),
                     bond.end().index(),
@@ -721,6 +724,8 @@ fn assign_cip_labels_for_masks<'a>(
     atom_mask: &[bool],
     bond_mask: &[bool],
     max_recursive_iterations: u32,
+    prepared_valence: Option<&cosmolkit_core::ValenceAssignment>,
+    prepared_rings: Option<&cosmolkit_core::RingInfo>,
 ) -> Result<
     (
         Cow<'a, TopologyBlock>,
@@ -790,7 +795,8 @@ fn assign_cip_labels_for_masks<'a>(
     properties.to_mut().clear_prop("_CIPComputed")?;
     cip_clear_selected_labels(&mut topology, atom_mask, bond_mask)?;
 
-    let mut configs = cip_find_configs(&topology, atom_mask, bond_mask)?;
+    let cipmol = CipMol::with_prepared_state(&topology, prepared_valence, prepared_rings);
+    let mut configs = cip_find_configs(cipmol, atom_mask, bond_mask)?;
     // RDKit✔️✔️:   try {
     // RDKit✔️✔️:     label(configs, maxRecursiveIterations);
     // RDKit✔️✔️:   } catch (const ControlCCaught &) {
@@ -875,6 +881,23 @@ pub fn assign_cip_labels_cow<'a>(
     ),
     CipLabelerError,
 > {
+    assign_cip_labels_cow_with_prepared_state(topology, properties, options, None, None)
+}
+
+pub(crate) fn assign_cip_labels_cow_with_prepared_state<'a>(
+    topology: Cow<'a, TopologyBlock>,
+    properties: Cow<'a, MoleculeProperties>,
+    options: &CipLabelOptions,
+    prepared_valence: Option<&cosmolkit_core::ValenceAssignment>,
+    prepared_rings: Option<&cosmolkit_core::RingInfo>,
+) -> Result<
+    (
+        Cow<'a, TopologyBlock>,
+        Cow<'a, MoleculeProperties>,
+        cosmolkit_types::CipAssignmentCompletion,
+    ),
+    CipLabelerError,
+> {
     // RDKit❗❌: void assignCIPLabels(ROMol &mol, unsigned int maxRecursiveIterations) {
     // RDKit❗❌:   boost::dynamic_bitset<> atoms(mol.getNumAtoms());
     // RDKit❗❌:   boost::dynamic_bitset<> bonds(mol.getNumBonds());
@@ -883,8 +906,9 @@ pub fn assign_cip_labels_cow<'a>(
     // RDKit❗❌:   assignCIPLabels(mol, atoms, bonds, maxRecursiveIterations);
     // RDKit❗❌: }
     // Existing explicit selection/error adapters feed the same mask owner.
-    // Full detached validation scans the graph, unlike upstream's direct
-    // molecule access. Keep that known cost separate from lazy block copying.
+    // Selection validation visits requested rows; masks retain O(V+E) source
+    // storage. One call-local CIP molecule lazily shares prepared state across
+    // configurations without sharing any per-digraph expansion state.
     if topology.atoms.len() > u32::MAX as usize {
         return Err(CipLabelerError::SourceIndexWidthExceeded {
             kind: "atom count",
@@ -934,6 +958,8 @@ pub fn assign_cip_labels_cow<'a>(
         &atom_mask,
         &bond_mask,
         options.max_recursive_iterations,
+        prepared_valence,
+        prepared_rings,
     )
 }
 
@@ -1338,7 +1364,10 @@ impl<'a> CipConfiguration<'a> {
     // RDKit✔️✔️:   return Descriptor::UNKNOWN;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Configuration constructors/getters/setCarriers/label
-    pub(crate) fn new(molecule: &'a TopologyBlock, focus: usize) -> Result<Self, CipLabelerError> {
+    pub(crate) fn new(
+        molecule: impl Into<CipMol<'a>>,
+        focus: usize,
+    ) -> Result<Self, CipLabelerError> {
         Ok(Self {
             selected: true,
             foci: vec![focus],
@@ -1348,7 +1377,7 @@ impl<'a> CipConfiguration<'a> {
     }
 
     pub(crate) fn with_foci(
-        molecule: &'a TopologyBlock,
+        molecule: impl Into<CipMol<'a>>,
         foci: Vec<usize>,
         atropisomer_mode: bool,
     ) -> Result<Self, CipLabelerError> {
@@ -1499,7 +1528,10 @@ pub(crate) struct CipTetrahedral<'a> {
 }
 
 impl<'a> CipTetrahedral<'a> {
-    pub(crate) fn new(molecule: &'a TopologyBlock, focus: usize) -> Result<Self, CipLabelerError> {
+    pub(crate) fn new(
+        molecule: impl Into<CipMol<'a>>,
+        focus: usize,
+    ) -> Result<Self, CipLabelerError> {
         // BEGIN RDKit 2026.09.1 Tetrahedral::Tetrahedral
         // RDKit✔️❌: Tetrahedral::Tetrahedral(const CIPMol &mol, Atom *focus)
         // RDKit✔️❌:     : Configuration(mol, focus) {
@@ -2036,7 +2068,7 @@ impl<'a> CipSp2Bond<'a> {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Chirality::findStereoAtoms
     pub(crate) fn new(
-        molecule: &'a TopologyBlock,
+        molecule: impl Into<CipMol<'a>>,
         bond_idx: usize,
         start_atom: usize,
         end_atom: usize,
@@ -2083,8 +2115,10 @@ impl<'a> CipSp2Bond<'a> {
         // RDKit✔️❌:   setCarriers(std::move(anchors));
         // RDKit✔️❌: }
         // END RDKit 2026.09.1 Sp2Bond::Sp2Bond
+        let cipmol = molecule.into();
+        let molecule = cipmol.topology();
         let mut configuration =
-            CipConfiguration::with_foci(molecule, vec![start_atom, end_atom], false)?;
+            CipConfiguration::with_foci(cipmol, vec![start_atom, end_atom], false)?;
         configuration.digraph.mol().atom(start_atom)?;
         configuration.digraph.mol().atom(end_atom)?;
         let bond = configuration.digraph.mol().bond(bond_idx)?;
@@ -2541,9 +2575,10 @@ impl<'a> CipSp2Bond<'a> {
         let focus2 = foci[1];
         ranked_anchors.clear();
 
-        let root1_edges = digraph.node_edges(root1)?;
+        digraph.ensure_expanded(root1)?;
+        let root1_edges = digraph.node(root1).get_edges()?;
         let Some(internal) =
-            CipConfiguration::find_internal_edge(digraph, &root1_edges, focus1, focus2)
+            CipConfiguration::find_internal_edge(digraph, root1_edges, focus1, focus2)
         else {
             return Ok(Descriptor::Unknown);
         };
@@ -2637,7 +2672,7 @@ pub(crate) struct CipAtropisomerBond<'a> {
 
 impl<'a> CipAtropisomerBond<'a> {
     pub(crate) fn new(
-        molecule: &'a TopologyBlock,
+        molecule: impl Into<CipMol<'a>>,
         bond_idx: usize,
         start_atom: usize,
         end_atom: usize,
@@ -2669,8 +2704,10 @@ impl<'a> CipAtropisomerBond<'a> {
         // RDKit✔️❌:   setCarriers(std::move(anchors));
         // RDKit✔️❌: }
         // END RDKit 2026.09.1 AtropisomerBond::AtropisomerBond
+        let cipmol = molecule.into();
+        let molecule = cipmol.topology();
         let mut configuration =
-            CipConfiguration::with_foci(molecule, vec![start_atom, end_atom], true)?;
+            CipConfiguration::with_foci(cipmol, vec![start_atom, end_atom], true)?;
         configuration.digraph.mol().atom(start_atom)?;
         configuration.digraph.mol().atom(end_atom)?;
         let bond = configuration.digraph.mol().bond(bond_idx)?;
@@ -3074,9 +3111,10 @@ impl<'a> CipAtropisomerBond<'a> {
         let focus2 = foci[1];
         ranked_anchors.clear();
 
-        let root1_edges = digraph.node_edges(root1)?;
+        digraph.ensure_expanded(root1)?;
+        let root1_edges = digraph.node(root1).get_edges()?;
         let Some(internal) =
-            CipConfiguration::find_internal_edge(digraph, &root1_edges, focus1, focus2)
+            CipConfiguration::find_internal_edge(digraph, root1_edges, focus1, focus2)
         else {
             return Ok(Descriptor::Unknown);
         };
@@ -3474,6 +3512,8 @@ mod recovery_chem02 {
             &atom_mask,
             &bond_mask,
             0,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(

@@ -67,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.1-rc.1", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.1-rc.2", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -159,21 +159,20 @@ Consult the package API and support status for the selected version.
 | [cosmolkit-batch](https://crates.io/crates/cosmolkit-batch) | Detached batch processing and ordered results |
 | [cosmolkit-bio](https://crates.io/crates/cosmolkit-bio) | Structural-biology values and hierarchy operations |
 
-## Validation Status
+## Validation: COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 
-COSMolKit 0.5.0 validation covers **18,000 ChEMBL 37 source records** and
-**20,505,775 parameterized comparisons** against RDKit **2026.03.6**, with
-**zero mismatches**. Reference timeouts (216 observations) and upstream crashes
-(27 observations) are recorded separately, not counted as matches.
-Million-scale 0.5.0 validation remains pending. See
+Current validation covers **180,000 ChEMBL 37 source records** across completed
+task runs, with **220,258,878 matching observations** and **zero unresolved
+mismatches**. Conformer and CIP checks have passed revalidation. Timeouts and
+incomplete task groups are recorded separately, not counted as matches.
+Million-scale coverage remains pending. See
 [VALIDATION.md](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
 for completed functional/profile coverage and comparison rules.
 
-Discrete results and fingerprints compare exactly. Descriptor floating-point
-values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
-bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
-MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
-The standard preparation and comparison workflow is documented in
+Discrete results and fingerprints compare exactly. All numerical observations,
+including coordinates, energies, gradients and alignment matrices, compare
+**bit-exactly**, without numerical tolerances.
+The current preparation and comparison workflow is documented in
 [`parity-tests/README.md`](../../parity-tests/README.md).
 
 ## Installation
@@ -293,7 +292,7 @@ assert_eq!(parsed.to_inchi()?, identifier);
 true). `InchiWriteParams` carries the engine option string. The corresponding
 `*_with_params` methods accept these values. Queries leave the molecule
 unchanged; failures return typed `InchiError` values. The implementation uses
-the official InChI v1.07.5 engine and RDKit 2026.03.6 adapter source. IXA, AuxInfo
+the official InChI v1.07.5 engine and RDKit 2026.09.1 adapter source. IXA, AuxInfo
 reconstruction, INCHIGEN, version-query, and extended-polymer entry points are
 not exposed by this facade.
 

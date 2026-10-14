@@ -1107,10 +1107,13 @@ impl Molecule {
         &self,
         include_unassigned: bool,
     ) -> Result<Vec<(usize, String)>, crate::StereoReadError> {
-        cosmolkit_stereo::find_chiral_centers(
+        let cache = self.derived_cache_runtime();
+        cosmolkit_stereo::find_chiral_centers_with_prepared_state(
             self.topology(),
             self.properties(),
             include_unassigned,
+            cache.valence_assignment(),
+            cache.valid_ring_info(),
         )
     }
 

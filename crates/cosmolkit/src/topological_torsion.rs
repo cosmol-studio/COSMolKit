@@ -78,7 +78,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = TopologicalTorsionCall {
@@ -113,7 +113,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = TopologicalTorsionCall {
@@ -148,7 +148,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = TopologicalTorsionCall {
@@ -183,7 +183,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = TopologicalTorsionCall {
@@ -298,7 +298,7 @@ impl TopologicalTorsionFingerprintGenerator {
                         properties: base.properties,
                         coordinates: base.coordinates,
                         valence: base.valence,
-                        rings: base.rings,
+                        rings: base.rings.expect("required ring preparation provides rows"),
                         use_legacy_stereo_perception: true,
                     }
                 })
@@ -332,7 +332,7 @@ impl TopologicalTorsionFingerprintGenerator {
                         properties: base.properties,
                         coordinates: base.coordinates,
                         valence: base.valence,
-                        rings: base.rings,
+                        rings: base.rings.expect("required ring preparation provides rows"),
                         use_legacy_stereo_perception: true,
                     }
                 })
@@ -366,7 +366,7 @@ impl TopologicalTorsionFingerprintGenerator {
                         properties: base.properties,
                         coordinates: base.coordinates,
                         valence: base.valence,
-                        rings: base.rings,
+                        rings: base.rings.expect("required ring preparation provides rows"),
                         use_legacy_stereo_perception: true,
                     }
                 })
@@ -400,7 +400,7 @@ impl TopologicalTorsionFingerprintGenerator {
                         properties: base.properties,
                         coordinates: base.coordinates,
                         valence: base.valence,
-                        rings: base.rings,
+                        rings: base.rings.expect("required ring preparation provides rows"),
                         use_legacy_stereo_perception: true,
                     }
                 })
@@ -455,7 +455,7 @@ fn with_reusable_input<T>(
         properties: base.properties,
         coordinates: base.coordinates,
         valence: base.valence,
-        rings: base.rings,
+        rings: base.rings.expect("required ring preparation provides rows"),
         use_legacy_stereo_perception: params.use_legacy_stereo_perception,
     };
     consumer(&input, &params.owner_call()).map_err(TopologicalTorsionReadError::Generator)

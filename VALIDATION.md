@@ -1,10 +1,96 @@
 # COSMolKit Validation
 
-## 0.5.0: ChEMBL 37 parity results
+## Current status: COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
+
+Current validation covers **180,000 ChEMBL 37 source records** across **894
+completed task runs**, with **220,258,878 matching observations**, including
+matching source-defined errors and verified corrections. The identified
+conformer differences have passed bit-exact revalidation, and CIP node-limit
+rejections now pair correctly. **No unresolved chemical mismatches remain in
+these completed observations.**
+
+### Reference and comparison rules
+
+- Chemistry reference: RDKit **2026.09.1**, source revision
+  `fece8caa860bdf6c9c82bdb9253f22a0cf87150c`.
+- Corpus: ChEMBL 37, 2,897,819 available source records, processed in
+  20,000-record batches through `parity-tests` prepare and Cargo comparison.
+- Execution: release optimization with `cosmolkit/op-contracts-strict`.
+- All numerical observations compare their encoded IEEE-754 bits, including
+  descriptors, coordinates, force-field energies/gradients and alignment
+  matrices. **No numerical tolerance is used.** Other outputs follow their
+  declared exact representations; source-defined errors pair with concrete
+  Rust error kinds.
+- Counts combine completed measurements and verified corrections. Duplicate
+  attempts and interrupted task groups are excluded. A comparison is one
+  input/profile observation, not one additional distinct molecule.
+
+### Completed ChEMBL coverage
+
+| Result | Count |
+|---|---:|
+| Source records with completed task coverage | 180,000 |
+| Records covered by all 100 scheduled corpus tasks | 60,000 |
+| Records covered by 99 tasks, excluding incomplete tautomer preparation | 120,000 |
+| Completed task runs | 894 |
+| Exact matching values, including verified corrections | 220,015,543 |
+| Matching source-defined errors, including corrected pairing | 243,335 |
+| Unresolved mismatches | 0 |
+| Reference timeout observations | 1,072 |
+| COSMolKit timeout observations | 633 |
+| Timeout observations on either side, not compared | 1,122 |
+| Upstream crashes / undefined outcomes | 0 / 0 |
+
+Coverage includes SMILES parsing and the 768-profile writer matrix; CIP,
+valence and potential stereo; Morgan, MACCS, Avalon, topological, Layered,
+Pattern, AtomPair and Torsion fingerprints and fingerprint operations;
+descriptors and ring counts; sanitization, kekulization and hydrogen transforms;
+fragments and scaffolds; substructure matching; tautomer enumeration; 2D
+coordinates and drawing; bounds and conformer generation; alignment/RMSD;
+MMFF/UFF availability, optimization and persistent force fields.
+
+Tautomer coverage comprises 60,000 records. Its preparation in six other
+batches exceeded the 128 MiB reference-record bound and remains incomplete.
+Timeouts and unfinished groups are not counted as matches. Million-scale
+ChEMBL coverage remains pending.
+
+### Verified corrections and maintained-suite results
+
+| Check | Current result | Evidence |
+|---|---|---|
+| ETKDGv3 single-/multi-conformer coordinates | **Pass — bit-exact** | Retained-reference reproduction matches all ten profiles, covering count 1 and count 2; all 4,233 instrumented checkpoints agree |
+| CIP digraph node-limit rejection | **Pass — matching source error** | Retained-reference replay matches all four profiles; typed error pairing retains wrong-kind, wrong-limit and wrong-task negative checks |
+| Standard full suite with `smiles_5000` | **Pass — zero mismatches** | 113 task reports; 6,139,696 matching values and 8,083 matching source errors; 44 timeout observations separately recorded |
+| Post-correction CIP `smiles_5000` | **Pass — zero mismatches** | Four profiles: 16,918 matching values and 3,082 matching source errors; no timeouts |
+| Post-correction conformer `smiles_5000` | **Pass — bit-exact, zero mismatches** | Ten profiles: 49,953 matching values and one matching source error; 46 timeout observations separately recorded |
+
+The full maintained suite ran before the larger ChEMBL queue. After correction,
+the affected CIP and conformer tasks were compared once more using their
+existing references. These checks are separate evidence sets, not additional
+ChEMBL input breadth. Fixed-input BIO and special-regression groups in the
+standard suite retain their own recipe boundaries. Corrections are protected
+by local behavior regressions, not new corpus fixtures.
+
+Completed batch receipts and original reports remain under
+`target/parity-20k-20261013/`. Source-localization and correction evidence is in
+`target/parity-known-fixes-20261014/EVIDENCE.md`; the post-correction 5000 reports
+are under `parity-tests/reports/run-7e9eo4/`. Original measurements are retained
+alongside correction results. Generated inputs, references and reports are not
+committed.
+
+## Previous validation: COSMolKit 0.5.0 / RDKit 2026.03.6
+
+<details>
+<summary>Expand the previous ChEMBL 37 results and comparison boundaries</summary>
+
+### ChEMBL 37 parity results
 
 Completed validation comprises nine batches covering **18,000 ChEMBL 37
 source records** and **20,505,775 parameterized comparisons**, with **zero
 mismatches**. Million-scale validation remains pending.
+
+These results and comparison rules apply to **COSMolKit 0.5.0 against RDKit
+2026.03.6**, not the current development version targeting RDKit 2026.09.1.
 
 ### Reference and execution scope
 
@@ -14,7 +100,7 @@ mismatches**. Million-scale validation remains pending.
   `ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
 - Selection: nine consecutive 2,000-record batches, retaining source order and
   ChEMBL IDs. The completed boundary is source offsets `0..18000`.
-- Execution: standard [`parity-tests_fixed`](parity-tests_fixed/README.md)
+- Execution: the then-current `parity-tests_fixed`
   preparation and Cargo comparison, release optimization and
   `cosmolkit/op-contracts-strict`. Every completed batch's Cargo command exited
   successfully; together they produced 1,046 task reports.
@@ -116,7 +202,7 @@ is `target/overnight-parity-20261010/morning-report.json`; batch receipts are
 `parity-tests_fixed/expected/`, and comparison/exception reports under
 `parity-tests_fixed/reports/`. Generated data are not committed.
 
-The latest completed test-runner library validation passed 77 tests. Focused
+The test-runner library validation recorded for this run passed 77 tests. Focused
 adapter checks and replayed existing-reference comparisons are additional
 runner evidence, not additional distinct ChEMBL records.
 
@@ -127,6 +213,8 @@ options, distance-geometry/conformer matrices, full MOL/SDF/binary-state
 coverage, unsanitized/in-place hydrogen/cache observations, and full
 composition/batch/concurrent-read matrices. The functional coverage above
 records what was executed; it is not a complete 0.3.0-equivalent audit.
+
+</details>
 
 ## Historical evidence: 0.3.0
 

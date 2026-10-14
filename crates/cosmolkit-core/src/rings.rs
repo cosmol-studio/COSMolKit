@@ -3629,6 +3629,42 @@ fn rdkit_std_sort_rings_by_size(rings: &mut [Vec<usize>]) {
     crate::source_sort::sort_by(rings, |left, right| left.len() < right.len());
 }
 
+/// Source-ordered bond rings for distance-bound construction.
+#[doc(hidden)]
+pub fn sort_bond_rings_by_descending_size(rings: &mut [Vec<BondId>]) {
+    // RDKit✔️✔️: auto bondRings = rinfo->bondRings();
+    // RDKit✔️✔️: std::ranges::sort(bondRings, std::ranges::greater{}, &std::vector<int>::size);
+    // BoundsMatrixBuilder.cpp::set14Bounds consumes equal-size rings in the
+    // resulting libstdc++ order. That order also fixes forced torsion energy
+    // accumulation; Rust's unstable sort uses a different permutation.
+    // Reuse the existing source sorter: O(R log R), logarithmic stack, no
+    // extra graph traversal, allocation, ring cloning or tie-breaking key.
+    crate::source_sort::sort_by(rings, |left, right| left.len() > right.len());
+}
+
+#[cfg(test)]
+mod bounds_ring_order_tests {
+    use super::*;
+
+    #[test]
+    fn bounds_ring_size_ties_keep_source_partition_order() {
+        // libstdc++ std::ranges::sort with descending size projection. The
+        // seventeenth element crosses its insertion-sort threshold; no graph
+        // or corpus fixture is needed to exercise equivalent-key permutation.
+        let sizes = [6, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 12, 14, 16, 16, 16, 16];
+        let mut rings: Vec<_> = sizes
+            .iter()
+            .enumerate()
+            .map(|(index, &size)| vec![BondId::new(index); size])
+            .collect();
+        sort_bond_rings_by_descending_size(&mut rings);
+        assert_eq!(
+            rings.iter().map(|r| r[0].index()).collect::<Vec<_>>(),
+            [16, 15, 14, 13, 12, 11, 8, 10, 9, 0, 7, 6, 5, 4, 3, 2, 1]
+        );
+    }
+}
+
 fn atom_search_bfs(
     context: &RingSearchContext<'_>,
     start_atom: usize,

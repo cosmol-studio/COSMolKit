@@ -12,14 +12,14 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-core = { version = "0.5.1-rc.1", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.1", path = "../cosmolkit-search" }
+cosmolkit-core = { version = "0.5.1-rc.2", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.1-rc.2", path = "../cosmolkit-search" }
 
-cosmolkit-stereo = { version = "0.5.1-rc.1", path = "../cosmolkit-stereo", default-features = false }
+cosmolkit-stereo = { version = "0.5.1-rc.2", path = "../cosmolkit-stereo", default-features = false }
 
 serde_json = { version = "1", features = ["raw_value"] }
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
-cosmolkit-smiles = { version = "0.5.1-rc.1", path = "../cosmolkit-smiles" }
+cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-smiles = { version = "0.5.1-rc.2", path = "../cosmolkit-smiles" }

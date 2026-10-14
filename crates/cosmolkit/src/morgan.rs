@@ -40,8 +40,24 @@ impl std::error::Error for MorganReadError {
 }
 
 enum MorganReadRings<'a> {
+    NotNeeded,
     Cached(&'a RingInfo),
     Temporary(RingInfo),
+}
+
+#[cfg(test)]
+pub(super) mod ring_preparation_probe {
+    std::thread_local! {
+        static ACQUISITIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    pub(super) fn record() {
+        ACQUISITIONS.with(|count| count.set(count.get() + 1));
+    }
+
+    pub(crate) fn acquisitions() -> usize {
+        ACQUISITIONS.with(std::cell::Cell::get)
+    }
 }
 
 pub(super) struct MorganReadPreparation<'a> {
@@ -53,8 +69,9 @@ pub(super) struct MorganReadPreparation<'a> {
 impl MorganReadPreparation<'_> {
     pub(super) fn owner_input(&self) -> MorganPreparedInput<'_> {
         let rings = match &self.rings {
-            MorganReadRings::Cached(rings) => *rings,
-            MorganReadRings::Temporary(rings) => rings,
+            MorganReadRings::NotNeeded => None,
+            MorganReadRings::Cached(rings) => Some(*rings),
+            MorganReadRings::Temporary(rings) => Some(rings),
         };
         MorganPreparedInput {
             topology: self.molecule.topology(),
@@ -69,6 +86,13 @@ impl MorganReadPreparation<'_> {
 pub(super) fn prepare_morgan_read_input(
     molecule: &Molecule,
 ) -> Result<MorganReadPreparation<'_>, FingerprintPreparationError> {
+    prepare_morgan_read_input_with_rings(molecule, true)
+}
+
+pub(super) fn prepare_morgan_read_input_with_rings(
+    molecule: &Molecule,
+    needs_rings: bool,
+) -> Result<MorganReadPreparation<'_>, FingerprintPreparationError> {
     let cache = molecule.derived_cache_runtime();
     let valence = cache
         .valence_assignment()
@@ -80,12 +104,17 @@ pub(super) fn prepare_morgan_read_input(
         .then(|| cache.ring_info())
         .flatten()
         .filter(|rings| rings.is_initialized());
-    let rings = match cached_rings {
-        Some(rings) => MorganReadRings::Cached(rings),
-        None => MorganReadRings::Temporary(
-            symmetrized_sssr(molecule.topology(), &RingSearchParams::default())
-                .map_err(FingerprintPreparationError::RingPreparation)?,
-        ),
+    let rings = match (needs_rings, cached_rings) {
+        (false, _) => MorganReadRings::NotNeeded,
+        (true, Some(rings)) => MorganReadRings::Cached(rings),
+        (true, None) => {
+            #[cfg(test)]
+            ring_preparation_probe::record();
+            MorganReadRings::Temporary(
+                symmetrized_sssr(molecule.topology(), &RingSearchParams::default())
+                    .map_err(FingerprintPreparationError::RingPreparation)?,
+            )
+        }
     };
 
     Ok(MorganReadPreparation {
@@ -93,6 +122,34 @@ pub(super) fn prepare_morgan_read_input(
         valence,
         rings,
     })
+}
+
+fn prepare_configured_morgan_read_input<'a>(
+    molecule: &'a Molecule,
+    params: &MorganFingerprintParams,
+) -> Result<MorganReadPreparation<'a>, FingerprintPreparationError> {
+    // RDKit✔️✔️: if (dp_fingerprintArguments->df_includeChirality &&
+    // RDKit✔️✔️:     !mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:   MolOps::assignStereochemistry(*tmol);
+    // RDKit✔️✔️: if (args.customAtomInvariants) {
+    // RDKit✔️✔️:   atomInvariants.reset(
+    // RDKit✔️✔️:       new std::vector<std::uint32_t>(*args.customAtomInvariants));
+    // RDKit✔️✔️: } else if (dp_atomInvariantsGenerator) {
+    // RDKit✔️✔️:   atomInvariants.reset(dp_atomInvariantsGenerator->getAtomInvariants(mol));
+    // RDKit✔️✔️: if (includeRingMembership &&
+    // RDKit✔️✔️:     atom->getOwningMol().getRingInfo()->numAtomRings(atom->getIdx())) {
+    // FingerprintGenerator.cpp:330-353 and FingerprintUtil.cpp:257-259:
+    // custom invariants bypass the provider; chirality reads rings only when
+    // source assignment runs. Feature matching retains its existing ring
+    // context. No ring-free call synthesizes rows or writes the live cache.
+    let needs_stereo_rings = params.generator.include_chirality
+        && molecule.properties().prop("_StereochemDone").is_none();
+    let needs_invariant_rings = params.custom_atom_invariants.is_none()
+        && match &params.invariants {
+            MorganInvariants::Connectivity => params.generator.include_ring_membership,
+            MorganInvariants::Features | MorganInvariants::FeaturePatterns(_) => true,
+        };
+    prepare_morgan_read_input_with_rings(molecule, needs_stereo_rings || needs_invariant_rings)
 }
 
 /// Select the atom invariant source for a Morgan fingerprint call.
@@ -162,7 +219,8 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
+        let prepared = prepare_configured_morgan_read_input(self, params)
+            .map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -200,7 +258,8 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
+        let prepared = prepare_configured_morgan_read_input(self, params)
+            .map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -238,7 +297,8 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
+        let prepared = prepare_configured_morgan_read_input(self, params)
+            .map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -276,7 +336,8 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
+        let prepared = prepare_configured_morgan_read_input(self, params)
+            .map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -321,7 +382,161 @@ mod tests {
         MorganReadError, QueryGraph, SparseBitFingerprint, StateModel,
     };
 
-    use super::{MorganReadRings, prepare_morgan_read_input};
+    use super::{MorganReadRings, prepare_configured_morgan_read_input, prepare_morgan_read_input};
+
+    #[cfg(all(feature = "cap-smiles", feature = "cap-valence"))]
+    #[test]
+    fn morgan_public_preparation_skips_unused_rings_without_cache_writes() {
+        let molecule = Molecule::from_smiles_with_params(
+            "CCO",
+            &crate::SmilesParseParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .with_assigned_valence()
+        .unwrap();
+        assert!(molecule.derived_cache_runtime().valid_ring_info().is_none());
+        let topology = molecule.topology_arc_runtime();
+        let coordinates = molecule.coordinates_arc_runtime();
+        let properties = molecule.properties_arc_runtime();
+        let cache = molecule.derived_cache_arc_runtime();
+        for custom in [false, true] {
+            let params = MorganFingerprintParams {
+                generator: MorganParams {
+                    radius: 2,
+                    include_ring_membership: custom,
+                    ..Default::default()
+                },
+                custom_atom_invariants: custom.then(|| vec![2246728737, 2245384272, 864662311]),
+                // A custom invariant vector bypasses even a configured feature
+                // provider, exactly like FingerprintGenerator.cpp:347-353.
+                invariants: if custom {
+                    MorganInvariants::Features
+                } else {
+                    MorganInvariants::Connectivity
+                },
+                ..Default::default()
+            };
+            let prepared = prepare_configured_morgan_read_input(&molecule, &params).unwrap();
+            assert!(matches!(prepared.rings, MorganReadRings::NotNeeded));
+            assert!(prepared.owner_input().rings.is_none());
+            assert_eq!(
+                molecule
+                    .fingerprint_morgan_with_params(&params, None)
+                    .unwrap()
+                    .on_bits(),
+                [80, 222, 294, 807, 1057, 1410],
+            );
+            assert_eq!(
+                molecule
+                    .fingerprint_morgan_count_with_params(&params, None)
+                    .unwrap()
+                    .nonzero_elements(),
+                &BTreeMap::from([(80, 1), (222, 1), (294, 1), (807, 1), (1057, 1), (1410, 1)]),
+            );
+            assert_eq!(
+                molecule
+                    .fingerprint_morgan_sparse_count_with_params(&params, None)
+                    .unwrap()
+                    .nonzero_elements(),
+                &BTreeMap::from([
+                    (864662311, 1),
+                    (1535166686, 1),
+                    (2245384272, 1),
+                    (2246728737, 1),
+                    (3542456614, 1),
+                    (4018048386, 1)
+                ]),
+            );
+            assert_eq!(
+                molecule
+                    .fingerprint_morgan_sparse_with_params(&params, None)
+                    .unwrap()
+                    .on_bits(),
+                [
+                    -2049583024,
+                    -2048238559,
+                    -752510682,
+                    -276918910,
+                    864662311,
+                    1535166686
+                ],
+            );
+        }
+        let mut params = MorganFingerprintParams::default();
+        assert!(matches!(
+            prepare_configured_morgan_read_input(&molecule, &params)
+                .unwrap()
+                .rings,
+            MorganReadRings::Temporary(_)
+        ));
+        params.generator.include_ring_membership = false;
+        params.generator.include_chirality = true;
+        assert!(matches!(
+            prepare_configured_morgan_read_input(&molecule, &params)
+                .unwrap()
+                .rings,
+            MorganReadRings::Temporary(_)
+        ));
+
+        let mut done_properties = molecule.properties().clone();
+        done_properties.set_prop("_StereochemDone", 0_i32).unwrap();
+        let done = Molecule::from_runtime_parts(
+            topology.clone(),
+            coordinates.clone(),
+            Arc::new(done_properties),
+            cache.clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            prepare_configured_morgan_read_input(&done, &params)
+                .unwrap()
+                .rings,
+            MorganReadRings::NotNeeded
+        ));
+        assert_eq!(
+            done.fingerprint_morgan_with_params(&params, None)
+                .unwrap()
+                .on_bits(),
+            [80, 222, 294, 807, 1057, 1410]
+        );
+
+        let generator = crate::MorganFingerprintGenerator::new(
+            Some(&MorganParams {
+                radius: 2,
+                include_ring_membership: false,
+                ..Default::default()
+            }),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            molecule
+                .fingerprint_morgan_with_generator(&generator, None, None)
+                .unwrap()
+                .on_bits(),
+            [80, 222, 294, 807, 1057, 1410]
+        );
+        assert_eq!(
+            generator.fingerprints(&[Some(&molecule), None], 1).unwrap()[0]
+                .as_ref()
+                .unwrap()
+                .on_bits(),
+            [80, 222, 294, 807, 1057, 1410]
+        );
+        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+        assert!(Arc::ptr_eq(
+            &coordinates,
+            &molecule.coordinates_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+        assert!(Arc::ptr_eq(&cache, &molecule.derived_cache_arc_runtime()));
+        assert!(molecule.derived_cache_runtime().valid_ring_info().is_none());
+    }
 
     fn empty_molecule_with_cache(cache: DerivedCacheBlock) -> Result<Molecule, OperationError> {
         let empty = Molecule::new();
@@ -386,7 +601,10 @@ mod tests {
                 .expect("the runtime-valid empty valence rows remain borrowed")
         ));
         assert_eq!(owner_input.valence, &valid_empty_valence());
-        assert_eq!(owner_input.rings.find_type(), RingFindType::SymmSssr);
+        assert_eq!(
+            owner_input.rings.unwrap().find_type(),
+            RingFindType::SymmSssr
+        );
 
         assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
         assert!(Arc::ptr_eq(
@@ -432,7 +650,7 @@ mod tests {
         assert_eq!(rings.num_rings(), 0);
 
         let owner_input = prepared.owner_input();
-        assert!(std::ptr::eq(owner_input.rings, cached_rings));
+        assert!(std::ptr::eq(owner_input.rings.unwrap(), cached_rings));
         assert!(std::ptr::eq(owner_input.topology, molecule.topology()));
         assert!(std::ptr::eq(
             owner_input.coordinates,
@@ -446,7 +664,7 @@ mod tests {
                 .valence_assignment()
                 .expect("valid valence remains borrowed")
         ));
-        assert_eq!(owner_input.rings.find_type(), RingFindType::Fast);
+        assert_eq!(owner_input.rings.unwrap().find_type(), RingFindType::Fast);
 
         assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
         assert!(Arc::ptr_eq(

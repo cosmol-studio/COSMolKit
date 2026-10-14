@@ -1603,6 +1603,27 @@ fn aromaticity_helper_with_query_state(
     query_state: Option<QueryStateRef<'_>>,
     cached_valence: Option<&ValenceAssignment>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    aromaticity_helper_owned(
+        topology.clone(),
+        rings,
+        min_ring_size,
+        max_ring_size,
+        include_fused,
+        query_state,
+        cached_valence,
+    )
+}
+
+fn aromaticity_helper_owned(
+    owned: TopologyBlock,
+    rings: &RingInfo,
+    min_ring_size: usize,
+    max_ring_size: usize,
+    include_fused: bool,
+    query_state: Option<QueryStateRef<'_>>,
+    cached_valence: Option<&ValenceAssignment>,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    let topology = &owned;
     // BEGIN RDKit 2026.03.6 COMPLETE aromaticityHelper
     // RDKit❗❌: int aromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings,
     // RDKit❗❌:                       unsigned int minRingSize, unsigned int maxRingSize,
@@ -1836,7 +1857,9 @@ fn aromaticity_helper_with_query_state(
         }
     }
     let bond_rings = convert_to_bonds(topology, &candidate_rings)?;
-    let mut working = topology.clone();
+    // Candidate inspection ends here. Move the same detached graph into the
+    // source's flag-update loop instead of copying every atom and bond.
+    let mut working = owned;
     let mut aromatic_ring_count = 0usize;
     if include_fused {
         let neighbor_map = make_ring_neighbor_map(&bond_rings, 24, 1);
@@ -2634,6 +2657,42 @@ pub(crate) fn assign_default_aromaticity_with_cached_valence(
         query_state,
         Some(valence),
     )
+}
+
+pub(crate) fn assign_default_aromaticity_owned_with_cached_valence(
+    topology: TopologyBlock,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    // RDKit✔️✔️:     case AROMATICITY_DEFAULT:
+    // RDKit✔️✔️:     case AROMATICITY_RDKIT:
+    // RDKit✔️✔️:       res = aromaticityHelper(mol, srings, 0, 0, true);
+    // The default model dispatch is fixed here; the single helper below owns
+    // candidate selection and aromatic flag updates for both entry forms.
+    let (input_atoms, input_bonds) = (topology.atoms.len(), topology.bonds.len());
+    let assignment =
+        aromaticity_helper_owned(topology, rings, 0, 0, true, query_state, Some(valence))?;
+    if assignment.topology.atoms.len() != input_atoms
+        || assignment.topology.bonds.len() != input_bonds
+    {
+        return Err(AromaticityError::UnexpectedTopologyShape {
+            input_atoms,
+            input_bonds,
+            output_atoms: assignment.topology.atoms.len(),
+            output_bonds: assignment.topology.bonds.len(),
+        });
+    }
+    // The shared helper mutates only aromatic atom/bond fields: it never
+    // inserts, removes, replaces or renumbers rows, so IDs stay in place.
+    if assignment.aromatic_ring_count > rings.atom_rings().len() {
+        return Err(AromaticityError::AromaticRingCountOutOfRange {
+            model: AromaticityModel::Rdkit,
+            actual: assignment.aromatic_ring_count,
+            maximum: rings.atom_rings().len(),
+        });
+    }
+    Ok(assignment)
 }
 
 fn assign_aromaticity_impl(

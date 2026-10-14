@@ -7,7 +7,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cosmolkit_cx::parse_cx_extensions_with_atom_window;
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, CoordinateBlock,
     MoleculeProperties, PropertyValue, TopologyBlock,
@@ -1251,46 +1250,45 @@ fn adjust_atom_chirality_flags(
     ring_closures_by_atom: &[Vec<RingClosureRecord>],
     smiles_start_atoms: &[bool],
 ) -> Result<(), SmilesParseError> {
-    let rings = ring_closures_by_atom
-        .iter()
-        .map(|records| {
-            records
+    // Keep the original all-closure validation before any stereochemical
+    // adjustment, but borrow these rows instead of building another graph table.
+    for records in ring_closures_by_atom {
+        for record in records {
+            if record.bond.is_none() {
+                return Err(SmilesParseError::Model(format!(
+                    "ring closure {} remained unresolved during chirality adjustment",
+                    record.ring
+                )));
+            }
+        }
+    }
+    for (index, atom) in atoms.iter_mut().enumerate() {
+        let (tag, permutation) = cosmolkit_core::parser_helpers::parser_atom_chirality_assignment(
+            atom,
+            AtomId::new(index),
+            bonds,
+            || {
+                adjacency
+                    .neighbors_of(index)
+                    .iter()
+                    .map(|neighbor| (neighbor.atom_index, neighbor.bond))
+            },
+            ring_closures_by_atom[index]
                 .iter()
-                .map(|record| {
-                    record.bond.ok_or_else(|| {
-                        SmilesParseError::Model(format!(
-                            "ring closure {} remained unresolved during chirality adjustment",
-                            record.ring
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let assignments = cosmolkit_core::parser_helpers::parser_chirality_assignments(
-        atoms,
-        bonds,
-        |index| {
-            adjacency
-                .neighbors_of(index)
-                .iter()
-                .map(|neighbor| (neighbor.atom_index, neighbor.bond))
-        },
-        &rings,
-        smiles_start_atoms,
-    )
-    .map_err(|error| match error {
-        cosmolkit_core::parser_helpers::ParserCarrierError::PropertyString(source) => {
-            SmilesParseError::WriterProperty(source)
-        }
-        cosmolkit_core::parser_helpers::ParserCarrierError::Model(message) => {
-            SmilesParseError::Model(message)
-        }
-        cosmolkit_core::parser_helpers::ParserCarrierError::AtomProperty(source) => {
-            SmilesParseError::AtomProperty(source)
-        }
-    })?;
-    for (atom, (tag, permutation)) in atoms.iter_mut().zip(assignments) {
+                .map(|record| record.bond.expect("validated closure")),
+            smiles_start_atoms[index],
+        )
+        .map_err(|error| match error {
+            cosmolkit_core::parser_helpers::ParserCarrierError::PropertyString(source) => {
+                SmilesParseError::WriterProperty(source)
+            }
+            cosmolkit_core::parser_helpers::ParserCarrierError::Model(message) => {
+                SmilesParseError::Model(message)
+            }
+            cosmolkit_core::parser_helpers::ParserCarrierError::AtomProperty(source) => {
+                SmilesParseError::AtomProperty(source)
+            }
+        })?;
         atom.set_chiral_tag(tag);
         atom.set_chiral_permutation(permutation);
     }
@@ -1612,8 +1610,9 @@ fn parse_smiles_stages(
     // Canonical CORE owners execute the source sanitize/H-removal branches.
     // Atrop candidate ordering remains user-authorized deferred equivalence.
     // Concrete SMILES query-only capabilities remain explicitly unsupported.
-    // Local cost: sanitizer detached topology copy and geometry XY lift are
-    // known extra allocation; no duplicated chemistry algorithm is introduced.
+    // Sanitization consumes this unique detached topology without graph copies.
+    // Geometry XY lifting remains an additional coordinate-view allocation;
+    // no duplicated chemistry algorithm is introduced.
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles (debug selection)
     // RDKit✔️✔️:   if (yysmiles_debug != params.debugParse) {
     // RDKit✔️✔️:     yysmiles_debug = params.debugParse;
@@ -1923,9 +1922,8 @@ fn parse_smiles_stages(
         // RDKit✔️✔️:   }
         // END RDKIT CPP FUNCTION handleCXPartAndName
         if params.allow_cxsmiles && cx.starts_with('|') {
-            // RDKit❗❌: New duplicate failures preserve source-completed CX
-            // records. An extra syntax pass isolates them without extending
-            // unchanged malformed-CX recovery; see the private adapter's cost.
+            // Inspect source-completed CX records once, then move that same
+            // progress into the normal lowering path. Recovery is unchanged.
             let atom_count = u32::try_from(record.topology.atoms.len()).map_err(|_| {
                 SmilesParseError::Cx("CX atom count exceeds source unsigned32 domain".into())
             })?;
@@ -1951,9 +1949,13 @@ fn parse_smiles_stages(
                     .set_prop("_CXSMILES_Data", &cx[..cursor])?;
                 // Both new rejection forms suppress name parsing in lax mode.
             } else {
-                match parse_cx_extensions_with_atom_window(cx, 0, record.topology.atoms.len()) {
+                match progress.into_parsed() {
                     Ok(parsed) => {
-                        match cx_lowering::apply_cx_to_smiles_record(&mut record, &parsed) {
+                        match cx_lowering::apply_cx_to_smiles_record(
+                            &mut record,
+                            &parsed,
+                            params.strict_cxsmiles,
+                        ) {
                             Ok(()) => {
                                 record
                                     .properties
@@ -2024,8 +2026,8 @@ fn parse_smiles_stages(
             final_valence = removed.final_valence;
             final_rings = removed.final_rings;
         } else if params.sanitize {
-            let sanitized = cosmolkit_core::sanitize_topology(
-                &record.topology,
+            let sanitized = cosmolkit_core::sanitize_owned_topology(
+                record.topology,
                 &cosmolkit_core::SanitizeParams::default(),
             )
             .map_err(SmilesParseError::ParserSanitize)?;
@@ -3676,7 +3678,7 @@ mod recovery_chem26 {
                 // Real shared lowerer before the separate parser stereo finalizer.
                 let mut r = parse_smiles(text, &params()).unwrap();
                 let cx = cosmolkit_cx::parse_cx_extensions(format!("|{kind}:{raw}|")).unwrap();
-                cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+                cx_lowering::apply_cx_to_smiles_record(&mut r, &cx, false).unwrap();
                 assert_eq!(r.topology.bonds[physical].stereo(), expected);
             }
         }
@@ -3695,11 +3697,11 @@ mod recovery_chem26 {
             "|wD:99.0|",
         ] {
             let cx = cosmolkit_cx::parse_cx_extensions(text).unwrap();
-            cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+            cx_lowering::apply_cx_to_smiles_record(&mut r, &cx, false).unwrap();
             assert_eq!(r, before, "{text}");
         }
         let cx = cosmolkit_cx::parse_cx_extensions("|Z:5,3|").unwrap();
-        cx_lowering::apply_cx_to_smiles_record(&mut r, &cx).unwrap();
+        cx_lowering::apply_cx_to_smiles_record(&mut r, &cx, false).unwrap();
         assert_eq!(r.topology.bonds[2].order(), BondOrder::Zero);
         assert_eq!(r.topology.bonds[4].order(), BondOrder::Single);
     }

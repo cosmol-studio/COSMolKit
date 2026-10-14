@@ -1028,7 +1028,14 @@ pub fn cleanup_chirality(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<TopologyBlock, StereoError> {
-    validate_valence(topology, valence)?;
+    cleanup_chirality_owned(topology.clone(), valence)
+}
+
+pub(crate) fn cleanup_chirality_owned(
+    topology: TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<TopologyBlock, StereoError> {
+    validate_valence(&topology, valence)?;
 
     // Complete pinned source: Chirality.cpp::cleanupChirality.
     // RDKit✔️❌: void cleanupChirality(RWMol &mol) {
@@ -1109,10 +1116,9 @@ pub fn cleanup_chirality(
     // RDKit✔️❌:     Chirality::cleanupStereoGroups(mol);
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
-    // The detached owner clones the complete topology to preserve value and
-    // failure atomicity, adding O(atoms+bonds+properties) work over the source
-    // in-place function. Per-atom degree and permutation checks remain direct.
-    let mut result = topology.clone();
+    // The same detached graph is already isolated from live state. Update its
+    // tags in place; the borrowed public entry owns its one necessary copy.
+    let mut result = topology;
     let mut need_cleanup_stereo_groups = false;
     for index in 0..result.atoms.len() {
         let tag = result.atoms[index].chiral_tag();

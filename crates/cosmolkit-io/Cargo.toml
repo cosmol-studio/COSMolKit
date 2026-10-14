@@ -26,12 +26,12 @@ bio = ["dep:cosmolkit-bio"]
 test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
-cosmolkit-depict = { version = "0.5.1-rc.1", path = "../cosmolkit-depict", optional = true }
-cosmolkit-bio = { version = "0.5.1-rc.1", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.5.1-rc.1", path = "../cosmolkit-core", optional = true }
-cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.1", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-types = { version = "0.5.1-rc.1", path = "../cosmolkit-types" }
+cosmolkit-depict = { version = "0.5.1-rc.2", path = "../cosmolkit-depict", optional = true }
+cosmolkit-bio = { version = "0.5.1-rc.2", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.5.1-rc.2", path = "../cosmolkit-core", optional = true }
+cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.1-rc.2", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-types = { version = "0.5.1-rc.2", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 
 # Native archives are not compiled or linked into WASM, even under `full`.
@@ -46,7 +46,7 @@ name = "migration_io_bio_rows"
 required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.1-rc.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.5.1-rc.2", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 tempfile = "3"
 
 [[test]]

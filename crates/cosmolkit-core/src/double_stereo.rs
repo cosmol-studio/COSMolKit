@@ -1,6 +1,6 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
-use std::{collections::BTreeSet, f64::consts::PI};
+use std::f64::consts::PI;
 
 use cosmolkit_model::{
     AtomId, Bond, BondId, BondValueError, Conformer3D, CoordinateValidationError, PropertyValue,
@@ -779,7 +779,10 @@ pub fn assign_directional_double_bond_stereo_source(
     validate_ring_inputs(&topology, rings)?;
     validate_ranks(&topology, ranks)?;
     let mut assignments = Vec::new();
-    let mut clear_directions = BTreeSet::new();
+    // RDKit✔️✔️: boost::dynamic_bitset<> bondsToClear(mol.getNumBonds());
+    // Conflicting directions remain visible throughout assignment, then clear
+    // in bond order. Dense marks match the source without O(q log q) tree work.
+    let mut clear_directions = vec![false; topology.bonds.len()];
     let mut unassigned_bonds = 0usize;
     let mut assigned_any = false;
     for bond in &mut topology.bonds {
@@ -968,10 +971,10 @@ pub fn assign_directional_double_bond_stereo_source(
         if conflicting_begin || conflicting_end {
             assigned_any = true;
             if conflicting_begin {
-                clear_directions.extend(direction_bonds(&topology, bond.begin(), bond.id()));
+                mark_direction_bonds(&topology, bond.begin(), bond.id(), &mut clear_directions);
             }
             if conflicting_end {
-                clear_directions.extend(direction_bonds(&topology, bond.end(), bond.id()));
+                mark_direction_bonds(&topology, bond.end(), bond.id(), &mut clear_directions);
             }
         } else {
             assignments.push((
@@ -989,8 +992,15 @@ pub fn assign_directional_double_bond_stereo_source(
         }
         unassigned_bonds -= 1;
     }
-    for bond in clear_directions {
-        topology.bonds[bond.index()].set_direction(BondDirection::None);
+    // RDKit✔️✔️: for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
+    // RDKit✔️✔️:   if (bondsToClear[i]) {
+    // RDKit✔️✔️:     mol.getBondWithIdx(i)->setBondDir(Bond::NONE);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    for (bond, clear) in topology.bonds.iter_mut().zip(clear_directions) {
+        if clear {
+            bond.set_direction(BondDirection::None);
+        }
     }
     for (bond, references, stereo) in assignments {
         topology.bonds[bond.index()].set_stereo_atoms(Some(references));
@@ -2005,14 +2015,94 @@ fn highest_ranked_direction(
     }
 }
 
-fn direction_bonds(topology: &TopologyBlock, atom: AtomId, reference: BondId) -> Vec<BondId> {
-    topology
-        .adjacency
-        .neighbors_of(atom.index())
-        .iter()
-        .filter(|neighbor| neighbor.bond != reference)
-        .map(|neighbor| neighbor.bond)
-        .collect()
+fn mark_direction_bonds(
+    topology: &TopologyBlock,
+    atom: AtomId,
+    reference: BondId,
+    marks: &mut [bool],
+) {
+    // RDKit✔️✔️:                 bondsToClear[mol.getBondBetweenAtoms(begAtomNeighbors[0].first,
+    // RDKit✔️✔️:                                                      begAtom->getIdx())
+    // RDKit✔️✔️:                                  ->getIdx()] = 1;
+    // The caller reaches this only for the two conflicting substituents.
+    // Source-ordered adjacency provides their bond IDs without a temporary Vec.
+    for neighbor in topology.adjacency.neighbors_of(atom.index()) {
+        if neighbor.bond != reference {
+            marks[neighbor.bond.index()] = true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod port_cost_round2_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn conflict_marks_clear_after_neighboring_double_bond_assignment() {
+        // Pinned Chirality.cpp:1814,1889-1945: a conflict marks directions
+        // for later clearing, so a second double bond still sees a shared
+        // direction during the same source assignment pass.
+        // F/C(Cl)=C(/Br)/C=C/I has conflicting effective end directions
+        // on the first double bond; its shared slash still assigns the second.
+        let elements = [
+            Element::F,
+            Element::C,
+            Element::CL,
+            Element::C,
+            Element::BR,
+            Element::C,
+            Element::C,
+            Element::I,
+        ];
+        let specs = [
+            (0, 1, BondOrder::Single, BondDirection::EndUpRight),
+            (1, 2, BondOrder::Single, BondDirection::None),
+            (1, 3, BondOrder::Double, BondDirection::None),
+            (3, 4, BondOrder::Single, BondDirection::EndUpRight),
+            (3, 5, BondOrder::Single, BondDirection::EndUpRight),
+            (5, 6, BondOrder::Double, BondDirection::None),
+            (6, 7, BondOrder::Single, BondDirection::EndUpRight),
+        ];
+        let mut topology = TopologyBlock::try_from_parts(
+            elements
+                .into_iter()
+                .enumerate()
+                .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(element)))
+                .collect(),
+            specs
+                .into_iter()
+                .enumerate()
+                .map(|(index, (begin, end, order, direction))| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(AtomId::new(begin), AtomId::new(end), order)
+                            .with_direction(direction),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let rings = crate::fast_find_rings(&topology).unwrap();
+        // Every competing substituent pair has distinct ranks.
+        let ranks = (0..elements.len() as u32).collect::<Vec<_>>();
+        let result =
+            assign_directional_double_bond_stereo_source(&mut topology, &ranks, &rings).unwrap();
+        assert_eq!(result, (false, true));
+        assert_eq!(topology.bonds[2].stereo(), BondStereo::None);
+        assert_eq!(topology.bonds[5].stereo(), BondStereo::E);
+        assert_eq!(
+            topology.bonds[5].stereo_atoms(),
+            Some([AtomId::new(3), AtomId::new(7)])
+        );
+        assert_eq!(topology.bonds[3].direction(), BondDirection::None);
+        assert_eq!(topology.bonds[4].direction(), BondDirection::None);
+        assert_eq!(topology.bonds[0].direction(), BondDirection::EndUpRight);
+        assert_eq!(topology.bonds[6].direction(), BondDirection::EndUpRight);
+    }
 }
 
 fn candidate_unchecked(topology: &TopologyBlock, rings: &RingInfo, bond: &Bond) -> bool {

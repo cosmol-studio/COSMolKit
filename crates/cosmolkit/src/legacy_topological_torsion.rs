@@ -75,7 +75,7 @@ fn with_legacy_input<T>(
         properties: base.properties,
         coordinates: base.coordinates,
         valence: base.valence,
-        rings: base.rings,
+        rings: base.rings.expect("required ring preparation provides rows"),
         use_legacy_stereo_perception: true,
     };
     consume(&input, &params.owner_params(), &params.owner_call())

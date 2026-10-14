@@ -5,6 +5,8 @@ mod cip_graph;
 mod cip_labels;
 mod tetrahedral;
 pub use chiral_centers::find_chiral_centers;
+#[doc(hidden)]
+pub use chiral_centers::find_chiral_centers_with_prepared_state;
 pub use tetrahedral::{StereoReadError, perceive_stereochemistry, tetrahedral_stereo};
 
 pub use cip_graph::CipLabelerError;

@@ -133,14 +133,7 @@ pub fn parse_cx_extensions(text: impl AsRef<[u8]>) -> Result<ParsedCxExtensions,
     }
         */
     let progress = parse_cx_extensions_progress(text);
-    progress.emit_source_warning();
-    let (records, _, consumed, complete, error) = progress.into_parts();
-    if !complete {
-        return Err(error.unwrap_or_else(|| {
-            CxParseError::new(consumed, "failure parsing CXSMILES extensions")
-        }));
-    }
-    Ok(ParsedCxExtensions::new(records, consumed))
+    progress.into_parsed()
 }
 
 /// Parse one CX block while retaining its source cursor and committed record
@@ -163,14 +156,7 @@ pub fn parse_cx_extensions_with_atom_window(
     let atom_count = u32::try_from(atom_count)
         .map_err(|_| CxParseError::new(0, "CX atom count exceeds source unsigned32 domain"))?;
     let progress = parse_cx_extensions_progress_with_atom_window(text, start_atom, atom_count);
-    progress.emit_source_warning();
-    let (records, _, consumed, complete, error) = progress.into_parts();
-    if !complete {
-        return Err(error.unwrap_or_else(|| {
-            CxParseError::new(consumed, "failure parsing CXSMILES extensions")
-        }));
-    }
-    Ok(ParsedCxExtensions::new(records, consumed))
+    progress.into_parsed()
 }
 
 /// Retain CX source progress with the caller's actual destination atom window.

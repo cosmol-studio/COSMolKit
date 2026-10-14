@@ -74,18 +74,16 @@ impl State {
                 .expect("connectivity state has its configured owner")
                 .get_atom_invariants(input.topology, input.valence, input.rings),
             Some(AtomProvider::Features(owner)) => {
+                let rings = crate::prepared::required_morgan_rings(input.rings)?;
                 let target = SearchTarget::new(
                     input.topology,
                     input.coordinates,
                     &input.topology.stereo_groups,
-                    Some(input.rings),
+                    Some(rings),
                     Some(input.valence),
                 );
-                let context = build_ring_query_match_context(
-                    input.topology,
-                    input.rings,
-                    Some(input.valence),
-                )?;
+                let context =
+                    build_ring_query_match_context(input.topology, rings, Some(input.valence))?;
                 owner.get_atom_invariants(&target, &context)
             }
             Some(AtomProvider::AtomPair(owner)) => owner
@@ -94,7 +92,7 @@ impl State {
                     properties: input.properties,
                     coordinates: input.coordinates,
                     valence: input.valence,
-                    rings: input.rings,
+                    rings: crate::prepared::required_morgan_rings(input.rings)?,
                     use_legacy_stereo_perception: true,
                 })
                 .map_err(MorganError::from),
@@ -105,6 +103,46 @@ impl State {
 pub struct MorganOperator {
     state: Arc<Mutex<State>>,
 }
+/// One locked Morgan calculation state shared by detached preparation and use.
+#[doc(hidden)]
+pub struct MorganCalculation<'a> {
+    state: MutexGuard<'a, State>,
+}
+
+impl MorganCalculation<'_> {
+    pub fn needs_ring_info(&self, properties: &MoleculeProperties, call: &MorganCall<'_>) -> bool {
+        // RDKit✔️✔️:   if (dp_fingerprintArguments->df_includeChirality &&
+        // RDKit✔️✔️:       !mol.hasProp(common_properties::_StereochemDone)) {
+        // RDKit✔️✔️:   if (args.customAtomInvariants) {
+        // RDKit✔️✔️:   } else if (dp_atomInvariantsGenerator) {
+        // RDKit✔️✔️:     atomInvariants.reset(dp_atomInvariantsGenerator->getAtomInvariants(mol));
+        // RDKit✔️✔️:     if (includeRingMembership &&
+        // RDKit✔️✔️:         atom->getOwningMol().getRingInfo()->numAtomRings(atom->getIdx())) {
+        // FingerprintGenerator.cpp:330-353 and FingerprintUtil.cpp:257-259.
+        // Inspect the actual captured provider, not the factory's original
+        // flags. Custom invariants bypass it and any done-property value
+        // suppresses stereo preparation. The same guard executes the call;
+        // no unlocked snapshot, provider clone or live-cache write is needed.
+        let needs_stereo = self.state.backend.fingerprint_arguments.include_chirality
+            && properties.prop("_StereochemDone").is_none();
+        let needs_invariants = call.custom_atom_invariants.is_none()
+            && match &self.state.atom_provider {
+                // A missing JSON provider without custom invariants is a
+                // failing branch. Retain its earlier preparation/error order;
+                // this optimization targets successful ring-free providers.
+                None => true,
+                Some(AtomProvider::Connectivity) => self
+                    .state
+                    .backend
+                    .atom_invariants
+                    .as_ref()
+                    .expect("connectivity state has its configured owner")
+                    .include_ring_membership(),
+                Some(AtomProvider::Features(_) | AtomProvider::AtomPair(_)) => true,
+            };
+        needs_stereo || needs_invariants
+    }
+}
 #[derive(Debug, Clone)]
 pub struct MorganSettings {
     state: Arc<Mutex<State>>,
@@ -114,6 +152,14 @@ fn lock(state: &Mutex<State>) -> Result<MutexGuard<'_, State>, MorganError> {
 }
 
 impl MorganOperator {
+    /// Lock once across detached preparation and the corresponding calculation.
+    #[doc(hidden)]
+    pub fn lock_for_calculation(&self) -> Result<MorganCalculation<'_>, MorganError> {
+        Ok(MorganCalculation {
+            state: lock(&self.state)?,
+        })
+    }
+
     pub fn new(
         params: &MorganParams,
         atoms: Option<MorganAtomProvider>,
@@ -660,8 +706,7 @@ macro_rules! calculation {
                 call: &MorganCall<'_>,
                 output: Option<&mut FingerprintAdditionalOutput>,
             ) -> Result<$result, MorganError> {
-                let state = lock(&self.state)?;
-                Self::$state_name(&state, input, call, output)
+                self.lock_for_calculation()?.$name(input, call, output)
             }
             fn $state_name(
                 state: &State,
@@ -689,11 +734,28 @@ macro_rules! calculation {
                 inputs: &[Option<MorganPreparedInput<'_>>],
                 num_threads: i32,
             ) -> Result<Vec<Option<$result>>, MorganError> {
-                let state = lock(&self.state)?;
+                self.lock_for_calculation()?.$bulk(inputs, num_threads)
+            }
+        }
+        impl MorganCalculation<'_> {
+            pub fn $name(
+                &self,
+                input: &MorganPreparedInput<'_>,
+                call: &MorganCall<'_>,
+                output: Option<&mut FingerprintAdditionalOutput>,
+            ) -> Result<$result, MorganError> {
+                MorganOperator::$state_name(&self.state, input, call, output)
+            }
+            pub fn $bulk(
+                &self,
+                inputs: &[Option<MorganPreparedInput<'_>>],
+                num_threads: i32,
+            ) -> Result<Vec<Option<$result>>, MorganError> {
+                let state = &*self.state;
                 let workers = crate::fingerprint_bulk::workers(num_threads)?;
                 let call = MorganCall::default();
                 crate::fingerprint_bulk::ordered_bulk(inputs, workers, |input| {
-                    Self::$state_name(&state, input, &call, None)
+                    MorganOperator::$state_name(state, input, &call, None)
                 })
             }
         }
@@ -794,12 +856,71 @@ mod tests {
             properties: &m.properties,
             coordinates: &m.coordinates,
             valence: &m.valence,
-            rings: &m.rings,
+            rings: Some(&m.rings),
         }
     }
     fn generator() -> MorganOperator {
         MorganOperator::new(&MorganParams::default(), None, None).unwrap()
     }
+
+    #[test]
+    fn morgan_calculation_guard_keeps_ring_decision_and_execution_locked() {
+        let molecule = TestMolecule::from_smiles("CCO").unwrap();
+        let generator = MorganOperator::new(
+            &MorganParams {
+                radius: 2,
+                ..Default::default()
+            },
+            Some(MorganAtomProvider::Connectivity {
+                include_ring_membership: false,
+            }),
+            None,
+        )
+        .unwrap();
+        let call = MorganCall::default();
+        let mut prepared = input(&molecule);
+        prepared.rings = None;
+        let expected;
+        {
+            let calculation = generator.lock_for_calculation().unwrap();
+            assert!(!calculation.needs_ring_info(prepared.properties, &call));
+            assert!(matches!(
+                generator.state.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ));
+            expected = calculation.sparse_count(&prepared, &call, None).unwrap();
+            assert!(matches!(
+                generator.state.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ));
+        }
+        assert_eq!(
+            generator.sparse_count(&prepared, &call, None).unwrap(),
+            expected
+        );
+        generator.settings().set_include_chirality(true).unwrap();
+        let calculation = generator.lock_for_calculation().unwrap();
+        let mut properties = MoleculeProperties::default();
+        assert!(calculation.needs_ring_info(&properties, &call));
+        properties.set_prop("_StereochemDone", 0_i32).unwrap();
+        assert!(!calculation.needs_ring_info(&properties, &call));
+        drop(calculation);
+
+        let mut json: Value =
+            serde_json::from_slice(generator.to_json().unwrap().as_bytes()).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("atomInvariantsGenerator");
+        let missing = MorganOperator::from_json(&json.to_string()).unwrap();
+        let calculation = missing.lock_for_calculation().unwrap();
+        assert!(calculation.needs_ring_info(&properties, &call));
+        let custom = MorganCall {
+            custom_atom_invariants: Some(&[11, 12, 13]),
+            ..Default::default()
+        };
+        assert!(!calculation.needs_ring_info(&properties, &custom));
+    }
+
     #[test]
     fn source_self_ring_and_duplicate_bond_null_patterns_preserve_valid_query_order() {
         let mut value: Value =

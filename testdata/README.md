@@ -27,8 +27,10 @@ Keep source versions, selection notes, licenses and checksums with existing
 fixtures. An unresolved provenance gap remains unresolved; do not infer a
 source from the filename.
 
-[VALIDATION.md](../VALIDATION.md) records completed COSMolKit 0.5.0 validation:
-18,000 ChEMBL 37 source records and 20,505,775 parameterized comparisons against
-RDKit 2026.03.6, with zero mismatches under the documented exact, bit-exact and
-tolerance rules. Reference timeouts and upstream crashes are reported separately.
-Million-scale 0.5.0 validation remains pending.
+[VALIDATION.md](../VALIDATION.md) records current COSMolKit **0.5.1-rc.2**
+validation against RDKit **2026.09.1**: **180,000 ChEMBL 37 source records**
+across completed task runs, **220,258,878 matching observations** and **zero
+unresolved mismatches**. Numerical comparisons are bit-exact, without
+tolerances. Conformer and CIP checks have passed revalidation. Timeouts and
+incomplete task groups are recorded separately, not counted as matches.
+Million-scale coverage remains pending.

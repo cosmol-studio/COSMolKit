@@ -8,7 +8,7 @@
 use crate::{
     RingInfo, SanitizeError, SanitizeParams, ValenceAssignment, ValenceError, ValenceModel,
     assign_valence_state_for_atom_from_parts, assign_valence_with_options_for_topology, rdkit_rb0,
-    rdkit_valence_list, sanitize_topology_with_query_state,
+    rdkit_valence_list,
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomMapping, AtomPdbResidueInfo, AtomSpec, Bond, BondDirection, BondId,
@@ -3671,8 +3671,8 @@ fn remove_hydrogens_pass(
         // state, Some = exact initialized state incl. zero rings) passes
         // through unchanged. Cost review: one move of the already-owned
         // carrier; no clone, re-find or quality upgrade is added.
-        let sanitized = sanitize_topology_with_query_state(
-            &topology,
+        let sanitized = crate::sanitize::sanitize_owned_topology_with_query_state(
+            topology,
             &SanitizeParams::default(),
             sanitize_state,
         )?;

@@ -504,7 +504,8 @@ fn install_ring_special_cases(
     // END RDKIT CPP FUNCTION findChiralAtomSpecialCases delegated relation installation
     // Apply the one engine's detached changes in source property insertion
     // order; ordinary writes retain computed membership in the model store.
-    let result = crate::potential_stereo::special_ring_cases(topology, valence, rings, ranks)?;
+    let result =
+        crate::potential_stereo::special_ring_cases(topology, valence, rings, ranks, false)?;
     for update in result.updates {
         let atom = &mut topology.atoms[update.atom.index()];
         if update.computed {
@@ -541,9 +542,10 @@ fn clean_directional_state(topology: &mut TopologyBlock) {
     // Behavior review: wedge/dash protection inspects only the source begin
     // endpoint; slash/backslash cleanup is handled by the source loop below.
     // Complexity review: bounded adjacency scans per incident bond match the
-    // source loop nesting and introduce no whole-graph clones.
-    let mut clear = BTreeSet::new();
-    for bond in &topology.bonds {
+    // source loop nesting. Clear reached rows directly, without a global tree
+    // or deferred cleanup; subsequent checks observe the source direction state.
+    for index in 0..topology.bonds.len() {
+        let bond = &topology.bonds[index];
         if matches!(
             bond.direction(),
             BondDirection::BeginWedge | BondDirection::BeginDash
@@ -561,7 +563,7 @@ fn clean_directional_state(topology: &mut TopologyBlock) {
                     )
                 });
             if !adjacent_atrop {
-                clear.insert(bond.id());
+                topology.bonds[index].set_direction(BondDirection::None);
             }
         }
     }
@@ -592,15 +594,18 @@ fn clean_directional_state(topology: &mut TopologyBlock) {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // RDKit✔️✔️: }
-    for bond in &topology.bonds {
+    for index in 0..topology.bonds.len() {
+        let bond = &topology.bonds[index];
         if bond.order() != BondOrder::Double
             || !matches!(bond.stereo(), BondStereo::Any | BondStereo::None)
         {
             continue;
         }
-        for endpoint in [bond.begin(), bond.end()] {
+        let id = bond.id();
+        let endpoints = [bond.begin(), bond.end()];
+        for endpoint in endpoints {
             for neighbor in topology.adjacency.neighbors_of(endpoint.index()) {
-                if neighbor.bond == bond.id() {
+                if neighbor.bond == id {
                     continue;
                 }
                 let directed = &topology.bonds[neighbor.bond.index()];
@@ -627,13 +632,75 @@ fn clean_directional_state(topology: &mut TopologyBlock) {
                                 && !matches!(candidate.stereo(), BondStereo::Any | BondStereo::None)
                         });
                 if !consumed {
-                    clear.insert(directed.id());
+                    topology.bonds[neighbor.bond.index()].set_direction(BondDirection::None);
                 }
             }
         }
     }
-    for bond in clear {
-        topology.bonds[bond.index()].set_direction(BondDirection::None);
+}
+
+#[cfg(test)]
+mod port_cost_round2_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec};
+    use cosmolkit_types::Element;
+
+    fn graph(count: usize, specs: Vec<BondSpec>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..count)
+                .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+                .collect(),
+            specs
+                .into_iter()
+                .enumerate()
+                .map(|(index, spec)| Bond::from_spec(BondId::new(index), spec))
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn direction_cleanup_keeps_slash_consumed_by_other_double_bond() {
+        // Chirality.cpp:2491-2515 protects the shared single bond when its
+        // other endpoint participates in assigned double-bond stereo.
+        let mut topology = graph(
+            5,
+            vec![
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Double),
+                BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single)
+                    .with_direction(BondDirection::EndUpRight),
+                BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Double)
+                    .with_stereo(BondStereo::E),
+                BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single)
+                    .with_direction(BondDirection::EndDownRight),
+            ],
+        );
+        let mut expected = topology.clone();
+        expected.bonds[3].set_direction(BondDirection::None);
+        clean_directional_state(&mut topology);
+        assert_eq!(topology, expected);
+    }
+
+    #[test]
+    fn direction_cleanup_atrop_protection_uses_begin_endpoint_only() {
+        // Chirality.cpp:2458-2468 checks begin-atom incident atrop bonds.
+        let mut topology = graph(
+            4,
+            vec![
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
+                BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single)
+                    .with_stereo(BondStereo::AtropCw),
+                BondSpec::new(AtomId::new(3), AtomId::new(0), BondOrder::Single)
+                    .with_direction(BondDirection::BeginDash),
+            ],
+        );
+        let mut expected = topology.clone();
+        expected.bonds[2].set_direction(BondDirection::None);
+        clean_directional_state(&mut topology);
+        assert_eq!(topology, expected);
     }
 }
 
@@ -969,7 +1036,11 @@ pub fn assign_legacy_stereochemistry_source_with_conformer(
         if clean_it {
             topology.bonds[bond_index].clear_prop("_CIPCode")?;
         }
-        let bond = topology.bonds[bond_index].clone();
+        // RDKit iterates Bond pointers. Borrow the same detached row instead
+        // of copying its properties/query/stereo payload on every iteration.
+        // Cleanup below changes only fields that subsequent reads are meant
+        // to observe; the inventory pass then borrows the updated row.
+        let bond = &mut topology.bonds[bond_index];
         let source_should_detect =
             rings.num_bond_rings(bond.id()) == 0 || rings.min_bond_ring_size(bond.id()) >= 8;
         if clean_it {
@@ -977,20 +1048,20 @@ pub fn assign_legacy_stereochemistry_source_with_conformer(
                 && !source_should_detect
             {
                 if bond.direction() == BondDirection::EitherDouble {
-                    topology.bonds[bond_index].set_direction(BondDirection::None);
+                    bond.set_direction(BondDirection::None);
                 }
                 if bond.stereo() != BondStereo::None {
-                    topology.bonds[bond_index].set_stereo_atoms(None);
-                    topology.bonds[bond_index].set_stereo(BondStereo::None)?;
+                    bond.set_stereo_atoms(None);
+                    bond.set_stereo(BondStereo::None)?;
                 }
             } else if bond.order() == BondOrder::Double {
                 if bond.direction() == BondDirection::EitherDouble {
-                    topology.bonds[bond_index].set_stereo_atoms(None);
-                    topology.bonds[bond_index].set_stereo(BondStereo::Any)?;
-                    topology.bonds[bond_index].set_direction(BondDirection::None);
+                    bond.set_stereo_atoms(None);
+                    bond.set_stereo(BondStereo::Any)?;
+                    bond.set_direction(BondDirection::None);
                 } else if bond.stereo() != BondStereo::Any {
-                    topology.bonds[bond_index].set_stereo_atoms(None);
-                    topology.bonds[bond_index].set_stereo(BondStereo::None)?;
+                    bond.set_stereo_atoms(None);
+                    bond.set_stereo(BondStereo::None)?;
                 }
             }
         }

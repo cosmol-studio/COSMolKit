@@ -1246,12 +1246,27 @@ mod d2_probe1_tests {
             let mut preserved = 0;
             let mut dispatch_matches = 0;
             let mut working_matches = 0;
+            let mut numeric_matches = 0;
             CAPTURE.with(|capture| capture.borrow_mut().0 = true);
             for cell in cells {
                 let row = cell.split('\t').collect::<Vec<_>>();
                 assert_eq!(row.len(), 7);
                 let label = row[1];
                 let expected_working = captured_topology(blocks[row[4]]);
+                let expected_xy = blocks[row[6]]
+                    .lines()
+                    .enumerate()
+                    .map(|(index, line)| {
+                        let fields = line.split('\t').collect::<Vec<_>>();
+                        assert_eq!(fields.len(), 4);
+                        assert_eq!(fields[0], "XY");
+                        assert_eq!(fields[1].parse::<usize>().unwrap(), index);
+                        [
+                            fields[2].parse::<u64>().unwrap(),
+                            fields[3].parse().unwrap(),
+                        ]
+                    })
+                    .collect::<Vec<_>>();
                 for repeat in 0..2 {
                     let topology = captured_topology(blocks[row[2]]);
                     let properties = captured_properties(blocks[row[3]]);
@@ -1321,16 +1336,34 @@ mod d2_probe1_tests {
                         Ok(conformer) => {
                             assert_eq!(
                                 conformer.coordinates().len(),
-                                topology.atoms.len(),
+                                expected_xy.len(),
                                 "{label}/{repeat}"
                             );
+                            let first_difference = conformer
+                                .coordinates()
+                                .iter()
+                                .zip(&expected_xy)
+                                .enumerate()
+                                .find_map(|(atom, (actual, expected))| {
+                                    (0..2).find_map(|axis| {
+                                        let bits = actual[axis].to_bits();
+                                        (bits != expected[axis]).then(|| {
+                                            format!("{label}/{repeat}: XY atom={atom} axis={axis} bits={bits:016x} expected={:016x}", expected[axis])
+                                        })
+                                    })
+                                });
+                            if let Some(difference) = first_difference {
+                                discrepancies.push(difference);
+                            } else {
+                                numeric_matches += 1;
+                            }
                         }
                     }
                 }
             }
             CAPTURE.with(|capture| capture.borrow_mut().0 = false);
             println!(
-                "D2-PREPARED domain_calls={calls} errors={errors} preservation={preserved}/96 dispatch={dispatch_matches}/96 working={working_matches}/96"
+                "D2-PREPARED domain_calls={calls} errors={errors} preservation={preserved}/96 dispatch={dispatch_matches}/96 working={working_matches}/96 coordinates_bit_exact={numeric_matches}/96"
             );
             assert_eq!(calls, 96);
             assert!(discrepancies.is_empty(), "{}", discrepancies.join("\n"));

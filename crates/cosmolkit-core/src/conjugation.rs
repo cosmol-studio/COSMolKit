@@ -210,9 +210,9 @@ fn build_conjugation_atom_info(
 }
 
 fn mark_conjugated_atom_bonds(
-    source: &TopologyBlock,
+    adjacency: &cosmolkit_model::AdjacencyList,
     atom_info: &[ConjugationAtomInfo],
-    write_flag: &mut impl FnMut(usize, bool),
+    output: &mut ConjugationOutput<'_>,
     atom_id: AtomId,
 ) -> Result<(), ConjugationError> {
     // BEGIN RECOVERY CHEM-15 SOURCE markConjAtomBonds_cached
@@ -260,15 +260,15 @@ fn mark_conjugated_atom_bonds(
     if !(2..=3).contains(&info.num_substituents) {
         return Ok(());
     }
-    let incident = source.adjacency.neighbors_of(atom_id.index());
+    let incident = adjacency.neighbors_of(atom_id.index());
     for first in incident {
         let first_bond =
-            source
-                .bonds
+            output
+                .bonds()
                 .get(first.bond.index())
                 .ok_or(ConjugationError::BondOutOfRange {
                     bond: first.bond,
-                    bond_count: source.bonds.len(),
+                    bond_count: output.bonds().len(),
                 })?;
         if bond_valence_contrib(first_bond, atom_id)? < 1.5
             || !atom_info[first.atom_index].is_candidate
@@ -284,8 +284,8 @@ fn mark_conjugated_atom_bonds(
                 continue;
             }
             if second_info.is_candidate {
-                write_flag(first.bond.index(), true);
-                write_flag(second.bond.index(), true);
+                output.set(first.bond.index(), true);
+                output.set(second.bond.index(), true);
             }
         }
     }
@@ -330,12 +330,81 @@ pub fn assign_conjugation(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<TopologyBlock, ConjugationError> {
-    validate_valence(topology, valence)?;
-    let mut working = topology.clone();
-    assign_conjugation_with_writer(topology, valence, &mut |index, value| {
-        working.bonds[index].set_conjugated(value)
-    })?;
-    Ok(working)
+    assign_conjugation_owned(topology.clone(), valence)
+}
+
+pub(crate) fn assign_conjugation_owned(
+    mut topology: TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<TopologyBlock, ConjugationError> {
+    // RDKit❗✔️:   for (auto bond : mol.bonds()) {
+    // RDKit❗✔️:     bond->setIsConjugated(bond->getIsAromatic());
+    // RDKit❗✔️:   }
+    // Reset the owned bond rows before constructing the same atomInfo cache;
+    // only that source-sized cache is allocated, never a second graph.
+    validate_valence(&topology, valence)?;
+    for bond in &mut topology.bonds {
+        bond.set_conjugated(bond.is_aromatic());
+    }
+    let atom_info = build_conjugation_atom_info(&topology, valence)?;
+    assign_conjugation_to(
+        &topology.adjacency,
+        &atom_info,
+        &mut ConjugationOutput::Bonds(&mut topology.bonds),
+    )?;
+    Ok(topology)
+}
+
+enum ConjugationOutput<'a> {
+    Bonds(&'a mut [cosmolkit_model::Bond]),
+    Flags {
+        bonds: &'a [cosmolkit_model::Bond],
+        flags: &'a mut [bool],
+    },
+    #[cfg(test)]
+    Trace {
+        bonds: &'a [cosmolkit_model::Bond],
+        writer: &'a mut dyn FnMut(usize, bool),
+    },
+}
+
+impl ConjugationOutput<'_> {
+    fn bonds(&self) -> &[cosmolkit_model::Bond] {
+        match self {
+            Self::Bonds(bonds) => bonds,
+            Self::Flags { bonds, .. } => bonds,
+            #[cfg(test)]
+            Self::Trace { bonds, .. } => bonds,
+        }
+    }
+    fn set(&mut self, index: usize, value: bool) {
+        match self {
+            Self::Bonds(bonds) => bonds[index].set_conjugated(value),
+            Self::Flags { flags, .. } => flags[index] = value,
+            #[cfg(test)]
+            Self::Trace { writer, .. } => writer(index, value),
+        }
+    }
+}
+
+#[cfg(test)]
+fn assign_conjugation_with_writer(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    writer: &mut impl FnMut(usize, bool),
+) -> Result<(), ConjugationError> {
+    for (index, bond) in topology.bonds.iter().enumerate() {
+        writer(index, bond.is_aromatic());
+    }
+    let atom_info = build_conjugation_atom_info(topology, valence)?;
+    assign_conjugation_to(
+        &topology.adjacency,
+        &atom_info,
+        &mut ConjugationOutput::Trace {
+            bonds: &topology.bonds,
+            writer,
+        },
+    )
 }
 /// Detached bond flags for consumers that do not mutate topology.
 /// Uses the same source loop and candidate/valence rules as the topology transform.
@@ -345,13 +414,24 @@ pub fn assign_conjugation_flags(
 ) -> Result<Vec<bool>, ConjugationError> {
     validate_valence(topology, valence)?;
     let mut flags = vec![false; topology.bonds.len()];
-    assign_conjugation_with_writer(topology, valence, &mut |index, value| flags[index] = value)?;
+    for (flag, bond) in flags.iter_mut().zip(&topology.bonds) {
+        *flag = bond.is_aromatic();
+    }
+    let atom_info = build_conjugation_atom_info(topology, valence)?;
+    assign_conjugation_to(
+        &topology.adjacency,
+        &atom_info,
+        &mut ConjugationOutput::Flags {
+            bonds: &topology.bonds,
+            flags: &mut flags,
+        },
+    )?;
     Ok(flags)
 }
-fn assign_conjugation_with_writer(
-    topology: &TopologyBlock,
-    valence: &ValenceAssignment,
-    writer: &mut impl FnMut(usize, bool),
+fn assign_conjugation_to(
+    adjacency: &cosmolkit_model::AdjacencyList,
+    atom_info: &[ConjugationAtomInfo],
+    output: &mut ConjugationOutput<'_>,
 ) -> Result<(), ConjugationError> {
     // BEGIN RECOVERY CHEM-15 SOURCE MolOps_setConjugation
     // RDKit❗❌: void setConjugation(ROMol &mol) {
@@ -381,14 +461,11 @@ fn assign_conjugation_with_writer(
     // END RECOVERY CHEM-15 SOURCE MolOps_setConjugation
     // Both public result forms and all conformer/DG callers share this owner.
     // Source order is reset every bond, build all atom rows, then mark atoms.
-    // Extra detached validation/cloning and typed-error behavior remain baseline;
-    // cache removes repeated candidate/H-count work only, not all old costs.
-    for (index, bond) in topology.bonds.iter().enumerate() {
-        writer(index, bond.is_aromatic());
-    }
-    let atom_info = build_conjugation_atom_info(topology, valence)?;
-    for atom_index in 0..topology.atoms.len() {
-        mark_conjugated_atom_bonds(topology, &atom_info, writer, AtomId::new(atom_index))?;
+    // Reset and candidate-cache construction precede this shared marking loop.
+    // Owned topology updates retain their buffers; flag-only consumers allocate
+    // only their requested output. No graph clone or extra marking buffer.
+    for atom_index in 0..atom_info.len() {
+        mark_conjugated_atom_bonds(adjacency, atom_info, output, AtomId::new(atom_index))?;
     }
     Ok(())
 }

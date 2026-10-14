@@ -85,6 +85,29 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     atom_dir_counts: &mut [i8],
     stack: &[MolStackElem],
 ) -> Result<(), SmilesParseError> {
+    let mut seen = vec![false; topology.bonds.len()];
+    canonicalize_double_bonds_for_writer_with_seen(
+        topology,
+        bond_visit_orders,
+        atom_visit_orders,
+        traversal_ring_closure_bonds,
+        bond_dir_counts,
+        atom_dir_counts,
+        stack,
+        &mut seen,
+    )
+}
+
+pub(super) fn canonicalize_double_bonds_for_writer_with_seen(
+    topology: &mut TopologyBlock,
+    bond_visit_orders: &[usize],
+    atom_visit_orders: &[usize],
+    traversal_ring_closure_bonds: &[bool],
+    bond_dir_counts: &mut [i8],
+    atom_dir_counts: &mut [i8],
+    stack: &[MolStackElem],
+    seen: &mut [bool],
+) -> Result<(), SmilesParseError> {
     // BEGIN CHEM09 canonicalizeDoubleBonds
     // RDKit❗❌: void canonicalizeDoubleBonds(ROMol &mol, const UINT_VECT &bondVisitOrders,
     // RDKit❗❌:                              const UINT_VECT &atomVisitOrders,
@@ -227,7 +250,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     // RDKit❗❌: }
     // END CHEM09 canonicalizeDoubleBonds
     // New presence/cleanup guards below match source precisely. The whole owner
-    // retains preexisting BTreeMap/incident Vec/neighbor clone costs, all-neighbor
+    // retains preexisting BTreeMap costs and all-neighbor
     // dedup instead of source first-per-bridge; source visit sorting is preserved.
     // All callers use the same source0/positive visit contract.
     // Unchanged direction preclear belongs to the outer caller in this port.
@@ -271,16 +294,21 @@ pub(super) fn canonicalize_double_bonds_for_writer(
         stereo_nbrs.sort_by_key(|neighbor| bond_visit_orders[neighbor.index()]);
         #[cfg(test)]
         chem09_trace::record(chem09_trace::Event::Neighbors(bond, stereo_nbrs.clone()));
-        stereo_bond_neighbors.insert(bond, stereo_nbrs.clone());
+        let stereo_neighbor_count = stereo_nbrs.len();
+        // The source owns currentNbrs directly in its map. Move the sorted
+        // result into the map without allocating and copying a second row.
+        stereo_bond_neighbors.insert(bond, stereo_nbrs);
         candidates.push((
-            usize::MAX - stereo_nbrs.len(),
+            usize::MAX - stereo_neighbor_count,
             bond_visit_orders[bond.index()],
             bond,
         ));
     }
     candidates.sort_by_key(|(stereo_rank, visit_order, _)| (*stereo_rank, *visit_order));
 
-    let mut seen = vec![false; topology.bonds.len()];
+    // The whole writer lends one reusable source-indexed bitset, resetting only
+    // the completed component's bonds. Standalone fragment callers lend a new
+    // bitset above. Priority order, queue order and source guards are unchanged.
     for (_, _, start_bond) in candidates {
         if seen[start_bond.index()] {
             #[cfg(test)]
@@ -1177,15 +1205,20 @@ pub(super) fn neighboring_stereo_double_bonds_for_writer(
 ) -> Vec<BondId> {
     let mut out = Vec::new();
     let bond = &topology.bonds[dbl_bond.index()];
+    // Borrow source-ordered adjacency rows, as mol.atomBonds does upstream.
+    // Keep this port's existing all-neighbor enumeration and deduplication;
+    // only the temporary incident-bond Vec allocations are removed.
     for atom in [bond.begin(), bond.end()] {
-        for nbr_bond in incident_bonds(topology, atom) {
+        for neighbor in topology.adjacency.neighbors_of(atom.index()) {
+            let nbr_bond = neighbor.bond;
             if !can_have_direction_for_writer(topology.bonds[nbr_bond.index()].order()) {
                 continue;
             }
             let Some(other_atom) = bond_other_atom(&topology.bonds[nbr_bond.index()], atom) else {
                 continue;
             };
-            for other_bond in incident_bonds(topology, other_atom) {
+            for other_neighbor in topology.adjacency.neighbors_of(other_atom.index()) {
+                let other_bond = other_neighbor.bond;
                 if other_bond != nbr_bond
                     && is_writer_stereo_double_bond(&topology.bonds[other_bond.index()])
                     && !out.contains(&other_bond)

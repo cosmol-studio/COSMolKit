@@ -19,7 +19,9 @@ pub struct MorganPreparedInput<'a> {
     pub coordinates: &'a CoordinateBlock,
     pub properties: &'a MoleculeProperties,
     pub valence: &'a ValenceAssignment,
-    pub rings: &'a RingInfo,
+    /// Ring rows are absent when the selected invariants and stereo preparation
+    /// do not read them. Absence is not an initialized empty ring assignment.
+    pub rings: Option<&'a RingInfo>,
 }
 
 /// Environment view matching RDKit's conditional `lmol` selection.
@@ -46,7 +48,7 @@ pub(crate) fn prepare_morgan_environment<'a>(
     topology: &'a TopologyBlock,
     properties: &'a MoleculeProperties,
     valence: &ValenceAssignment,
-    rings: &RingInfo,
+    rings: Option<&RingInfo>,
     include_chirality: bool,
 ) -> Result<PreparedMorganEnvironment<'a>, MorganError> {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper chirality preparation
@@ -100,14 +102,26 @@ pub(crate) fn prepare_morgan_environment<'a>(
         });
     }
 
-    let assigned_topology =
-        assign_legacy_stereochemistry_for_depiction(topology.clone(), valence, rings)?;
+    let assigned_topology = assign_legacy_stereochemistry_for_depiction(
+        topology.clone(),
+        valence,
+        required_morgan_rings(rings)?,
+    )?;
     let mut assigned_properties = properties.clone();
     assigned_properties.set_computed_prop("_StereochemDone", 1_i32)?;
 
     Ok(PreparedMorganEnvironment {
         topology: Cow::Owned(assigned_topology),
         properties: Cow::Owned(assigned_properties),
+    })
+}
+
+pub(crate) fn required_morgan_rings(rings: Option<&RingInfo>) -> Result<&RingInfo, MorganError> {
+    rings.ok_or_else(|| {
+        crate::FingerprintError::PreconditionViolation {
+            what: "RingInfo not initialized",
+        }
+        .into()
     })
 }
 
@@ -135,7 +149,7 @@ mod tests {
             &record.topology,
             &record.properties,
             &valence,
-            &rings,
+            Some(&rings),
             include_chirality,
         )
         .expect("fixed I07 chirality preparation succeeds")

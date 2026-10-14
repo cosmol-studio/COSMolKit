@@ -44,7 +44,7 @@ cargo run -p cosmolkit-inchi --example inchi_to_neutral_graph
 ## Behavior Boundary
 
 The four public operations target pinned official InChI v1.07.5 and RDKit
-2026.03.6 behavior where the official C source defines behavior. The
+2026.09.1 behavior where the official C source defines behavior. The
 audited `NormalizeAndCompare` initial-buffer allocation-failure path executes
 undefined C behavior; the Rust API returns a deterministic structured
 allocation error for that path.
@@ -84,8 +84,12 @@ cargo test -p cosmolkit-inchi --release \
 
 ## Validation Status
 
-Completed ChEMBL 37 validation covers other registered COSMolKit 0.5.0
-surfaces; it did not include the InChI corpus/diagnostic matrix. See
+Current COSMolKit **0.5.1-rc.2** validation against RDKit **2026.09.1** covers
+**180,000 ChEMBL 37 source records** across completed task runs, with
+**220,258,878 matching observations** and **zero unresolved mismatches**.
+Numerical comparisons are bit-exact; timeouts and incomplete task groups are
+recorded separately. This ChEMBL coverage does not include the InChI
+corpus/diagnostic matrix. See
 [VALIDATION.md](../../VALIDATION.md) for completed coverage and comparison rules.
 Million-scale validation remains pending.
 Focused source-port tests cover the active official-engine call graph, and
@@ -108,9 +112,11 @@ The official engine source is pinned to IUPAC InChI `v1.07.5`:
 - approved production target:
   `INCHI-1-SRC/INCHI_API/libinchi/src/CMakeLists.txt`
 
-The COSMolKit adapter targets RDKit `2026.03.6`, revision
-`0e0d85f4ca34aeae15dfc0f7cf5503bdb0a8e985`, independently
+The COSMolKit adapter targets RDKit `2026.09.1`, revision
+`fece8caa860bdf6c9c82bdb9253f22a0cf87150c`, independently
 traceable to `third_party/rdkit/External/INCHI-API/inchi.cpp` and `inchi.h`.
+Both adapter files are unchanged from RDKit `2026.03.6`; existing source
+anchors retain that original attribution.
 Official engine and RDKit adapter source frames remain separately attributed.
 
 Every source-backed Rust function retains its complete C/C++ source frame and

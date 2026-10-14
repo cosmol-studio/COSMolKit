@@ -31,7 +31,7 @@ For supported cheminformatics operations, RDKit-compatible behavior is treated a
 
 COSMolKit combines a native Rust API with Python interfaces for scientific and machine-learning workflows and JavaScript/TypeScript interfaces for browser applications. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data integrate with NumPy, PyTorch and JavaScript typed arrays.
 
-## COSMolKit 0.5.0
+## COSMolKit
 
 The current chemistry reference is RDKit **2026.09.1** (Python distribution
 `2026.9.1`). See the [upstream-diff audit](dev/source_provenance/rdkit_2026_03_6_to_2026_09_1.md)
@@ -74,18 +74,14 @@ browser-based JavaScript without relearning the chemistry API.
 
 COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
 
-COSMolKit 0.5.0 validation covers **18,000 ChEMBL 37 source records**
-and **20,505,775 parameterized comparisons** against RDKit **2026.03.6**, with
-**zero mismatches**. Separately recorded reference outcomes comprise 216
-timeouts and 27 upstream crashes; these are not counted as matches.
-Million-scale 0.5.0 validation remains pending.
-
-Discrete results and fingerprints compare exactly. Descriptor floating-point
-values, persistent MMFF/UFF evaluators and ordinary UFF optimization compare
-bit-exactly. Ordinary MMFF optimization uses absolute `1e-6` tolerance;
-MolAlign/RMSD and direct 2D coordinates use absolute `1e-8` tolerance.
-See [`VALIDATION.md`](VALIDATION.md) for completed functional/profile coverage,
-comparison boundaries.
+Validation of **COSMolKit 0.5.1-rc.2 against RDKit 2026.09.1** covers
+**180,000 ChEMBL 37 source records** across completed task runs, with
+**220,258,878 matching observations** and **zero unresolved mismatches**.
+Conformer and CIP checks have passed revalidation. All numerical comparisons
+are **bit-exact**, without tolerances. Timeouts and incomplete task groups are
+recorded separately, not counted as matches. Million-scale coverage remains
+pending. See [`VALIDATION.md`](VALIDATION.md) for functional coverage, profile
+boundaries and completed verification results.
 -->
 
 ## Installation
@@ -386,7 +382,7 @@ enables operation contracts and runtime invariants on `cosmolkit` independently
 of the build profile. Distribution builds use `--release` with fat LTO and
 one codegen unit; daily `dev-test` builds avoid that overhead.
 
-## Functionality in 0.5.0
+## Functionality
 
 Status labels:
 

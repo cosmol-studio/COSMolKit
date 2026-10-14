@@ -606,7 +606,7 @@ fn configured_count_helper(
         input.topology,
         input.properties,
         input.valence,
-        input.rings,
+        Some(input.rings),
         common,
         &args,
         output,
@@ -934,7 +934,7 @@ pub fn legacy_topological_torsion_sparse_count(
         input.topology,
         input.properties,
         input.valence,
-        input.rings,
+        Some(input.rings),
         params.include_chirality,
     )?;
     let prepared_input = AtomPairPreparedInput {
@@ -1003,7 +1003,7 @@ pub fn legacy_topological_torsion_count(
         input.topology,
         input.properties,
         input.valence,
-        input.rings,
+        Some(input.rings),
         params.include_chirality,
     )?;
     let prepared_input = AtomPairPreparedInput {

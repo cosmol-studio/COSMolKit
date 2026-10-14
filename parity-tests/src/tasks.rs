@@ -338,12 +338,14 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
                 && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)] if kind == "BfgsBadDirection")
         }
         "cip" => {
-            // CIPLabeler/Digraph.cpp::expand, before neighbor expansion:
-            // RDKit✔️✔️:   if (MAX_NODE_COUNT > 0 && d_nodes.size() >= MAX_NODE_COUNT) {
+            // CIPLabeler/Digraph.cpp::addNode, before insertion:
+            // RDKit✔️✔️: if constexpr (MAX_NODE_COUNT > 0) {
+            // RDKit✔️✔️:   if (d_nodes.size() >= MAX_NODE_COUNT) {
             // RDKit✔️✔️:     std::stringstream errmsg;
             // RDKit✔️✔️:     errmsg << "Digraph generation failed: more than " << MAX_NODE_COUNT
-            // RDKit✔️✔️:            << "nodes found.";
+            // RDKit✔️✔️:            << " nodes found.";
             // RDKit✔️✔️:     throw TooManyNodesException(errmsg.str());
+            // RDKit✔️✔️:   }
             // RDKit✔️✔️:   }
             // Match only the typed cause and identical limit, not arbitrary errors.
             // One bounded diagnostic comparison; calculated values remain untouched.
@@ -351,7 +353,7 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
                 && matches!(ck.as_slice(),[Value::Text(kind),Value::Text(_)] if kind=="CipMaxIterationsExceeded"))
                 || matches!(ck.as_slice(), [Value::Text(kind), Value::UInt(limit), Value::Text(_)]
                     if kind == "CipTooManyNodes"
-                        && native == format!("RuntimeError: Digraph generation failed: more than {limit}nodes found."))
+                        && native == format!("RuntimeError: Digraph generation failed: more than {limit} nodes found."))
         }
         "smiles_write" | "sanitize" | "kekulize" => {
             if let [Value::Text(class), Value::List(atoms), Value::Text(_)] = ck.as_slice() {
@@ -844,7 +846,7 @@ mod tests {
         let native = outcome(
             5,
             Value::Text(
-                "RuntimeError: Digraph generation failed: more than 100000nodes found.".into(),
+                "RuntimeError: Digraph generation failed: more than 100000 nodes found.".into(),
             ),
         );
         let actual = failed_error(&cosmolkit::CipLabelerError::TooManyNodes { limit: 100_000 });

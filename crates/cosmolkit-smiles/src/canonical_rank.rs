@@ -1,6 +1,11 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
-use cosmolkit_core::{CanonicalRankError, CanonicalRankParams, rank_mol_atoms_with_params};
+#[cfg(test)]
+use cosmolkit_core::rank_mol_atoms_with_params;
+use cosmolkit_core::{
+    CanonicalRankError, CanonicalRankParams, RingInfo, ValenceAssignment,
+    fast_find_rings_from_parts, rank_mol_atoms_with_prepared_state,
+};
 use cosmolkit_model::{
     AdjacencyList, AtomId, BondId, StereoGroup, TopologyBlock, set_stereo_group_write_id,
     stereo_group_write_id,
@@ -48,6 +53,7 @@ impl CanonicalRankPolicy {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn rank_component_atoms(
     topology: &TopologyBlock,
     component_atoms: &[usize],
@@ -55,6 +61,7 @@ pub(crate) fn rank_component_atoms(
     rank_component_atoms_with_policy(topology, component_atoms, CanonicalRankPolicy::default())
 }
 
+#[cfg(test)]
 pub(crate) fn rank_component_atoms_with_policy(
     topology: &TopologyBlock,
     component_atoms: &[usize],
@@ -80,6 +87,68 @@ pub(crate) fn rank_component_atoms_with_policy(
         ranks[old_index] = local_ranks[new_index];
     }
     Ok(ranks)
+}
+
+/// Component-local ranks over the writer's actual prepared working state.
+pub(crate) fn rank_component_atoms_with_prepared_state(
+    topology: &TopologyBlock,
+    component_atoms: &[usize],
+    policy: CanonicalRankPolicy,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+) -> Result<Vec<usize>, CanonicalRankError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::detail::MolToSmiles fragment ranking
+    // RDKit✔️✔️:     ROMol *tmol = mols[fragIdx].get();
+    // RDKit✔️✔️:       atom->updatePropertyCache(false);
+    // RDKit✔️✔️:       Canon::rankMolAtoms(*tmol, ranks, breakTies, includeChirality,
+    // RDKit✔️✔️:                           includeIsotopes, includeAtomMaps,
+    // RDKit✔️✔️:                           includeChiralPresence, includeStereoGroups,
+    // RDKit✔️✔️:                           useNonStereoRanks);
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::detail::MolToSmiles fragment ranking
+    // Source-order whole components need no second topology copy. Smaller
+    // components retain the existing remapper but project already prepared
+    // valence rows. Their extracted RingInfo is reset upstream, so prepare it
+    // once locally; the shared ranker then borrows both assignments.
+    // Ranks stay component-sized rather than allocating a full source row for
+    // every component. Neither the rank kernel nor its policy is duplicated.
+    if valence.explicit_valence.len() != topology.atoms.len()
+        || valence.implicit_hydrogens.len() != topology.atoms.len()
+    {
+        return Err(CanonicalRankError::PreparedValenceLength {
+            atom_count: topology.atoms.len(),
+            explicit_len: valence.explicit_valence.len(),
+            implicit_len: valence.implicit_hydrogens.len(),
+        });
+    }
+    if component_atoms.len() == topology.atoms.len()
+        && component_atoms.iter().copied().eq(0..topology.atoms.len())
+    {
+        return rank_mol_atoms_with_prepared_state(
+            topology,
+            &policy.core_params(),
+            valence,
+            Some(rings),
+        );
+    }
+    let fragment = build_ranking_fragment(topology, component_atoms)?;
+    let local_valence = ValenceAssignment {
+        explicit_valence: component_atoms
+            .iter()
+            .map(|&index| valence.explicit_valence[index])
+            .collect(),
+        implicit_hydrogens: component_atoms
+            .iter()
+            .map(|&index| valence.implicit_hydrogens[index])
+            .collect(),
+    };
+    let local_rings =
+        fast_find_rings_from_parts(fragment.atoms.len(), &fragment.bonds, &fragment.adjacency)?;
+    rank_mol_atoms_with_prepared_state(
+        &fragment,
+        &policy.core_params(),
+        &local_valence,
+        Some(&local_rings),
+    )
 }
 
 /// Builds the detached renumbered fragment for one connected component.
@@ -294,6 +363,38 @@ mod tests {
                 atom_count: 3,
             })
         );
+    }
+
+    #[test]
+    fn prepared_component_ranks_are_local_and_keep_input_assignments() {
+        let record = parse_smiles("CC.O", &Default::default()).unwrap();
+        let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+            &record.topology,
+            cosmolkit_core::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let rings = fast_find_rings_from_parts(
+            record.topology.atoms.len(),
+            &record.topology.bonds,
+            &record.topology.adjacency,
+        )
+        .unwrap();
+        let before = (record.topology.clone(), valence.clone(), rings.clone());
+        for (component, expected) in [(&[0, 1][..], vec![0, 1]), (&[2][..], vec![0])] {
+            assert_eq!(
+                rank_component_atoms_with_prepared_state(
+                    &record.topology,
+                    component,
+                    CanonicalRankPolicy::default(),
+                    &valence,
+                    &rings,
+                )
+                .unwrap(),
+                expected,
+            );
+        }
+        assert_eq!((record.topology, valence, rings), before);
     }
 
     #[test]

@@ -484,11 +484,16 @@ fn finalize_polymer_sgroup(
 pub(crate) fn apply_cx_to_smiles_record(
     record: &mut SmilesRecord,
     parsed: &ParsedCxExtensions,
+    strict: bool,
 ) -> Result<(), SmilesParseError> {
     // RDKit✔️❌: parseCXExtensions mutates the destination while parsing.
-    // COSMolKit stages one detached clone so non-strict recovery cannot expose
-    // a partially installed CX record. This preserves behavior on success but
-    // adds one O(molecule-size) clone to the source's record-linear work.
+    // Strict failures discard the entire new detached parse attempt, so mutate
+    // it directly, matching the source allocation shape on this branch. Lax
+    // recovery retains its existing O(graph-size) staged rollback copy; the
+    // whole entry therefore does not claim source-equivalent allocation cost.
+    if strict {
+        return apply_cx_to_smiles_record_in_place(record, parsed, None, &mut 0);
+    }
     let mut staged = record.clone();
     apply_cx_to_smiles_record_in_place(&mut staged, parsed, None, &mut 0)?;
     *record = staged;
@@ -610,6 +615,29 @@ mod tests {
     fn parse(input: &str) -> crate::SmilesRecord {
         crate::parse_smiles(input, &Default::default())
             .unwrap_or_else(|error| panic!("failed to parse {input:?}: {error}"))
+    }
+
+    #[test]
+    fn strict_cx_lowering_reuses_graph_buffers_and_lax_keeps_rollback() {
+        let mut strict = parse("CCCCC");
+        let mut lax = strict.clone();
+        let atoms = strict.topology.atoms.as_ptr();
+        let bonds = strict.topology.bonds.as_ptr();
+        let parsed = cosmolkit_cx::parse_cx_extensions("|$alpha;;omega$|").unwrap();
+        apply_cx_to_smiles_record(&mut strict, &parsed, true).unwrap();
+        apply_cx_to_smiles_record(&mut lax, &parsed, false).unwrap();
+        assert_eq!(strict.topology.atoms.as_ptr(), atoms);
+        assert_eq!(strict.topology.bonds.as_ptr(), bonds);
+        assert_eq!(strict, lax);
+        assert_eq!(
+            strict.topology.atoms[0].prop("atomLabel"),
+            Some(&PropertyValue::from("alpha"))
+        );
+
+        let before = lax.clone();
+        let invalid = cosmolkit_cx::parse_cx_extensions("|$changed$,Sg:n:1,2,3::ht:4:|").unwrap();
+        assert!(apply_cx_to_smiles_record(&mut lax, &invalid, false).is_err());
+        assert_eq!(lax, before);
     }
 
     #[test]

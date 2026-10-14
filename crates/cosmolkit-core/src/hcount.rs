@@ -80,7 +80,15 @@ pub(crate) fn adjust_hs_with_mask(
     original_valence: &ValenceAssignment,
     atoms_to_adjust: Option<&[u64]>,
 ) -> Result<AdjustHsAssignment, AdjustHsError> {
-    validate_adjust_hs_valence(topology, original_valence)?;
+    adjust_hs_owned_with_mask(topology.clone(), original_valence, atoms_to_adjust)
+}
+
+pub(crate) fn adjust_hs_owned_with_mask(
+    topology: TopologyBlock,
+    original_valence: &ValenceAssignment,
+    atoms_to_adjust: Option<&[u64]>,
+) -> Result<AdjustHsAssignment, AdjustHsError> {
+    validate_adjust_hs_valence(&topology, original_valence)?;
 
     // BEGIN RDKIT CPP FUNCTION MolOps::adjustHs
     // RDKit✔️❌: void adjustHs(RWMol &mol,
@@ -127,12 +135,10 @@ pub(crate) fn adjust_hs_with_mask(
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION MolOps::adjustHs
-    // The detached boundary must clone the full topology to preserve input
-    // immutability, unlike the source's in-place mutation. Per-atom valence
-    // calculations retain the source O(V + E) traversal shape, but the full
-    // topology clone is a material allocation difference.
+    // Consume the detached working graph. The borrowed entry copies only once
+    // to isolate its caller; sanitizer retains the existing graph allocation.
 
-    let mut working = topology.clone();
+    let mut working = topology;
     let mut explicit_valence = Vec::with_capacity(working.atoms.len());
     let mut implicit_hydrogens = Vec::with_capacity(working.atoms.len());
 

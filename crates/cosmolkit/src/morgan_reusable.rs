@@ -184,17 +184,38 @@ macro_rules! calculations {
                 molecules: &[Option<&Molecule>],
                 num_threads: i32,
             ) -> Result<Vec<Option<$result>>, MorganReadError> {
-                // Shared ROOT preparation boundary, with no molecule/state clones.
+                // Keep one owner lock across needs decisions and calculation.
+                // On poison, preserve the original ordered preparation errors
+                // before surfacing the owner error; never prescan valence.
+                let calculation = match self.inner.lock_for_calculation() {
+                    Ok(calculation) => calculation,
+                    Err(error) => {
+                        for molecule in molecules.iter().flatten() {
+                            crate::morgan::prepare_morgan_read_input(molecule)
+                                .map_err(MorganReadError::Preparation)?;
+                        }
+                        return Err(MorganReadError::Generator(error));
+                    }
+                };
+                let call = MorganCall::default();
                 let prepared = molecules
                     .iter()
-                    .map(|m| m.map(crate::morgan::prepare_morgan_read_input).transpose())
+                    .map(|m| {
+                        m.map(|molecule| {
+                            crate::morgan::prepare_morgan_read_input_with_rings(
+                                molecule,
+                                calculation.needs_ring_info(molecule.properties(), &call),
+                            )
+                        })
+                        .transpose()
+                    })
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(MorganReadError::Preparation)?;
                 let inputs = prepared
                     .iter()
                     .map(|p| p.as_ref().map(|p| p.owner_input()))
                     .collect::<Vec<_>>();
-                self.inner
+                calculation
                     .$bulk(&inputs, num_threads)
                     .map_err(MorganReadError::Generator)
             }
@@ -208,11 +229,22 @@ macro_rules! calculations {
             ) -> Result<$result, MorganReadError> {
                 let defaults = MorganCallParams::default();
                 let params = params.unwrap_or(&defaults);
-                let prepared = crate::morgan::prepare_morgan_read_input(self)
-                    .map_err(MorganReadError::Preparation)?;
-                generator
-                    .inner
-                    .$owner(&prepared.owner_input(), &params.owner_call(), output)
+                let call = params.owner_call();
+                let calculation = match generator.inner.lock_for_calculation() {
+                    Ok(calculation) => calculation,
+                    Err(error) => {
+                        crate::morgan::prepare_morgan_read_input(self)
+                            .map_err(MorganReadError::Preparation)?;
+                        return Err(MorganReadError::Generator(error));
+                    }
+                };
+                let prepared = crate::morgan::prepare_morgan_read_input_with_rings(
+                    self,
+                    calculation.needs_ring_info(self.properties(), &call),
+                )
+                .map_err(MorganReadError::Preparation)?;
+                calculation
+                    .$owner(&prepared.owner_input(), &call, output)
                     .map_err(MorganReadError::Generator)
             }
         }
@@ -242,3 +274,185 @@ calculations!(
     sparse_count,
     SparseCountFingerprint
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FingerprintPreparationError, MorganFingerprintParams, SmilesParseParams};
+
+    fn cold(smiles: &str, done: Option<i32>) -> Molecule {
+        let mut record = cosmolkit_smiles::parse_smiles(
+            smiles,
+            &SmilesParseParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        if let Some(value) = done {
+            record
+                .properties
+                .set_prop("_StereochemDone", value)
+                .unwrap();
+        }
+        Molecule::from_parts(record.topology, record.coordinates, record.properties)
+            .unwrap()
+            .with_assigned_valence()
+            .unwrap()
+    }
+
+    fn acquisitions() -> usize {
+        crate::morgan::ring_preparation_probe::acquisitions()
+    }
+
+    #[test]
+    fn morgan_locked_ring_free_calls_and_bulk_keep_cold_cache() {
+        let params = MorganParams {
+            radius: 2,
+            // Explicit captured provider below must override this factory flag.
+            include_ring_membership: true,
+            ..Default::default()
+        };
+        let provider = MorganAtomInvariantsGenerator::connectivity(false);
+        let generator =
+            MorganFingerprintGenerator::new(Some(&params), Some(&provider), None).unwrap();
+        let cold = cold("C1CCCCC1", None);
+        let before = acquisitions();
+        let configured = MorganFingerprintParams {
+            generator: MorganParams {
+                radius: 2,
+                include_ring_membership: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let expected = cold
+            .fingerprint_morgan_with_params(&configured, None)
+            .unwrap();
+        for _ in 0..2 {
+            assert_eq!(
+                cold.fingerprint_morgan_with_generator(&generator, None, None)
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                generator
+                    .fingerprints(&[Some(&cold), None, Some(&cold)], 2)
+                    .unwrap(),
+                vec![Some(expected.clone()), None, Some(expected.clone())]
+            );
+        }
+        assert_eq!(acquisitions(), before);
+        assert!(cold.derived_cache_runtime().valid_ring_info().is_none());
+
+        // Custom invariants bypass even a feature provider, whose own context
+        // would require rings. A present zero done marker suppresses chirality
+        // preparation just as source hasProp(), despite live settings changes.
+        let features = MorganAtomInvariantsGenerator::features(Some(vec![]));
+        let generator =
+            MorganFingerprintGenerator::new(Some(&params), Some(&features), None).unwrap();
+        let mut settings = generator.settings();
+        settings.set_include_chirality(true).unwrap();
+        let done_zero = self::cold("CCO", Some(0));
+        let custom = MorganCallParams {
+            custom_atom_invariants: Some(vec![11, 12, 13]),
+            ..Default::default()
+        };
+        let baseline = acquisitions();
+        for _ in 0..2 {
+            let result = done_zero
+                .fingerprint_morgan_sparse_count_with_generator(&generator, Some(&custom), None)
+                .unwrap();
+            assert!(result.nonzero_elements().contains_key(&11));
+        }
+        assert_eq!(acquisitions(), baseline);
+        assert!(
+            done_zero
+                .derived_cache_runtime()
+                .valid_ring_info()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn morgan_locked_required_rings_reuse_warm_and_prepare_cold() {
+        let generator = MorganFingerprintGenerator::new(
+            Some(&MorganParams {
+                radius: 2,
+                ..Default::default()
+            }),
+            None,
+            None,
+        )
+        .unwrap();
+        let cold = cold("C1CCCCC1", None);
+        let warm = Molecule::from_smiles("C1CCCCC1").unwrap();
+        let before = acquisitions();
+        let expected = warm
+            .fingerprint_morgan_with_generator(&generator, None, None)
+            .unwrap();
+        assert_eq!(acquisitions(), before);
+        for _ in 0..2 {
+            assert_eq!(
+                cold.fingerprint_morgan_with_generator(&generator, None, None)
+                    .unwrap(),
+                expected
+            );
+        }
+        assert_eq!(acquisitions() - before, 2);
+        assert!(cold.derived_cache_runtime().valid_ring_info().is_none());
+    }
+
+    #[test]
+    fn morgan_locked_preparation_errors_precede_poison_and_output_reset() {
+        let generator = MorganFingerprintGenerator::new(None, None, None).unwrap();
+        let valued = cold("CCO", None);
+        let raw = Molecule::from_smiles_with_params(
+            "CCO",
+            &SmilesParseParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut output = FingerprintAdditionalOutput::new();
+        output.allocate_atom_counts();
+        valued
+            .fingerprint_morgan_with_generator(&generator, None, Some(&mut output))
+            .unwrap();
+        let previous = output.atom_counts().unwrap().to_vec();
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _calculation = generator.inner.lock_for_calculation().unwrap();
+            panic!("fixed test poison");
+        }));
+        assert!(caught.is_err());
+        assert!(matches!(
+            raw.fingerprint_morgan_with_generator(&generator, None, Some(&mut output)),
+            Err(MorganReadError::Preparation(
+                FingerprintPreparationError::MissingPreparedValence
+            ))
+        ));
+        assert_eq!(output.atom_counts().unwrap(), previous);
+        let before = acquisitions();
+        assert!(matches!(
+            generator.fingerprints(&[Some(&valued), None, Some(&raw)], 0),
+            Err(MorganReadError::Preparation(
+                FingerprintPreparationError::MissingPreparedValence
+            ))
+        ));
+        assert_eq!(
+            acquisitions() - before,
+            1,
+            "prepare ordered items before poison"
+        );
+        assert!(matches!(
+            valued.fingerprint_morgan_with_generator(&generator, None, Some(&mut output)),
+            Err(MorganReadError::Generator(
+                cosmolkit_fingerprints::MorganError::StatePoisoned
+            ))
+        ));
+        assert_eq!(output.atom_counts().unwrap(), previous);
+    }
+}

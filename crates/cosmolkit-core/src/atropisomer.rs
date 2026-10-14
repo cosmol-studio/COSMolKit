@@ -4016,24 +4016,24 @@ pub fn cleanup_invalid_atropisomers(
         });
     }
 
-    // The one private engine below owns the clone/tag-loop/group-cleanup/
+    // The one private engine below owns the tag-loop/group-cleanup/
     // final-validation body; this wrapper keeps the source wrapper-before-
     // loop prevalidation and supplies the existing detached check primitive.
-    cleanup_invalid_atropisomers_engine(topology, |bond| {
-        check_invalid_atrop_bond(bond, hybridization, rings)
+    cleanup_invalid_atropisomers_engine(topology.clone(), |graph, index| {
+        check_invalid_atrop_bond(&mut graph.bonds[index], hybridization, rings)
     })
 }
 
 /// One private error-generic cleanup engine shared by the public detached
 /// wrapper and the owned-ring-state sanitize wrapper.
 ///
-/// `check` is called ONLY for AtropCw/AtropCcw bonds; it reports whether it
+/// `check` is called ONLY for AtropCw/AtropCcw bond indices; it reports whether it
 /// cleared the tag. Stereo-group cleanup inspects the RESULT topology after
 /// tag updates and runs only if a tag was cleared, exactly as the source
 /// does after its bond loop.
 fn cleanup_invalid_atropisomers_engine<E>(
-    topology: &TopologyBlock,
-    mut check: impl FnMut(&mut Bond) -> Result<bool, E>,
+    topology: TopologyBlock,
+    mut check: impl FnMut(&mut TopologyBlock, usize) -> Result<bool, E>,
 ) -> Result<TopologyBlock, E>
 where
     E: From<AtropisomerError>,
@@ -4060,13 +4060,16 @@ where
     // RDKit✔️❌:     Atropisomers::cleanupAtropisomerStereoGroups(mol);
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
-    // Returning a detached owned value requires one O(atoms+bonds) clone that
-    // the source in-place operation does not perform; loop and lookup costs
-    // after that clone remain linear/direct-indexed.
-    let mut result = topology.clone();
+    // Preserve the one detached graph allocation across sanitizer stages.
+    // Only the borrowed public entry copies before entering this engine.
+    let mut result = topology;
     let mut need_stereo_group_cleanup = false;
-    for bond in &mut result.bonds {
-        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) && check(bond)? {
+    for index in 0..result.bonds.len() {
+        if matches!(
+            result.bonds[index].stereo(),
+            BondStereo::AtropCw | BondStereo::AtropCcw
+        ) && check(&mut result, index)?
+        {
             need_stereo_group_cleanup = true;
         }
     }
@@ -4153,14 +4156,22 @@ pub(crate) mod cleanup_ring_state_probe {
 /// validation happens and the supplied state is preserved exactly (a
 /// malformed no-tag state remains unconsumed). For a tagged bond the source
 /// checkBond guard runs first: a state below SSSR-or-better acquires ONE
-/// canonical find_sssr from the ORIGINAL topology (cleanup changes only
-/// stereo tags in its clone, never graph/bond orders/endpoints/IDs) and
+/// canonical find_sssr from the same topology (cleanup changes only
+/// stereo tags, never graph/bond orders/endpoints/IDs) and
 /// replaces the carrier by move BEFORE any Sp2 endpoint short-circuit; an
 /// initialized-empty SSSR/Symm satisfies the guard and is never re-found.
 /// The consumed state is then dimension/index validated and the existing
 /// detached check primitive decides the tag.
 pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
     topology: &TopologyBlock,
+    hybridization: &HybridizationAssignment,
+    rings: Option<RingInfo>,
+) -> Result<(TopologyBlock, Option<RingInfo>), AtropisomerCleanupError> {
+    cleanup_owned_invalid_atropisomers_with_ring_state(topology.clone(), hybridization, rings)
+}
+
+pub(crate) fn cleanup_owned_invalid_atropisomers_with_ring_state(
+    topology: TopologyBlock,
     hybridization: &HybridizationAssignment,
     rings: Option<RingInfo>,
 ) -> Result<(TopologyBlock, Option<RingInfo>), AtropisomerCleanupError> {
@@ -4172,8 +4183,9 @@ pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
         .into());
     }
     let mut state = rings;
-    let output =
-        cleanup_invalid_atropisomers_engine::<AtropisomerCleanupError>(topology, |bond| {
+    let output = cleanup_invalid_atropisomers_engine::<AtropisomerCleanupError>(
+        topology,
+        |graph, index| {
             #[cfg(test)]
             cleanup_ring_state_probe::record_consumed();
             // Complete pinned source: MolOps.cpp anonymous-namespace checkBond
@@ -4185,7 +4197,7 @@ pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
                 .as_ref()
                 .is_some_and(|carrier| carrier.is_sssr_or_better());
             if below_quality {
-                let fresh = crate::rings::find_sssr(topology, &crate::RingSearchParams::default())?;
+                let fresh = crate::rings::find_sssr(graph, &crate::RingSearchParams::default())?;
                 #[cfg(test)]
                 cleanup_ring_state_probe::record_find();
                 #[cfg(test)]
@@ -4195,10 +4207,11 @@ pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
             let carrier = state
                 .as_ref()
                 .expect("ring state present after the guard branch");
-            validate_rings(topology, carrier)?;
-            check_invalid_atrop_bond(bond, hybridization, carrier)
+            validate_rings(graph, carrier)?;
+            check_invalid_atrop_bond(&mut graph.bonds[index], hybridization, carrier)
                 .map_err(AtropisomerCleanupError::from)
-        })?;
+        },
+    )?;
     Ok((output, state))
 }
 

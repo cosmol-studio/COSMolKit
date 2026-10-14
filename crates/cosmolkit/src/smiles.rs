@@ -346,8 +346,8 @@ impl Molecule {
             final_valence = result.final_valence;
             final_rings = result.final_rings;
         } else if params.sanitize {
-            let result = cosmolkit_core::sanitize_topology(
-                &topology,
+            let result = cosmolkit_core::sanitize_owned_topology(
+                topology,
                 &cosmolkit_core::SanitizeParams::default(),
             )?;
             // RDKit❗✔️: int narom = 0;

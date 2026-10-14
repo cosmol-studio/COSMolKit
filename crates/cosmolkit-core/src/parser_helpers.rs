@@ -105,7 +105,7 @@ fn get_bond_ordering<B: ParserBond>(
     atom: AtomId,
     bonds: &[B],
     incident: impl Iterator<Item = (usize, BondId)>,
-    ring_closures: &[BondId],
+    ring_closures: impl ExactSizeIterator<Item = BondId> + Clone,
 ) -> Result<(Vec<BondId>, usize), ParserCarrierError> {
     // BEGIN RDKIT CPP FUNCTION GetBondOrdering
     // RDKit✔️✔️: unsigned int GetBondOrdering(INT_LIST &bondOrdering, const RDKit::RWMol *mol,
@@ -141,7 +141,7 @@ fn get_bond_ordering<B: ParserBond>(
     // END RDKIT CPP FUNCTION GetBondOrdering
     let mut neighbors = vec![(atom.index(), None)];
     for (neighbor, bond) in incident {
-        if !ring_closures.contains(&bond) {
+        if !ring_closures.clone().any(|closed| closed == bond) {
             neighbors.push((neighbor, Some(bond)));
         }
     }
@@ -155,7 +155,7 @@ fn get_bond_ordering<B: ParserBond>(
     let mut ordering = Vec::with_capacity(neighbors.len().saturating_sub(1) + ring_closures.len());
     for (position, (_, bond)) in neighbors.into_iter().enumerate() {
         if position == self_position {
-            ordering.extend(ring_closures.iter().copied());
+            ordering.extend(ring_closures.clone());
         } else {
             ordering.push(bond.expect("only the self sentinel has no bond"));
         }
@@ -184,6 +184,37 @@ pub fn parser_chirality_assignments<
     ring_closures_by_atom: &[Vec<BondId>],
     smiles_start_atoms: &[bool],
 ) -> Result<Vec<(ChiralTag, Option<u32>)>, ParserCarrierError> {
+    atoms
+        .iter()
+        .enumerate()
+        .map(|(index, atom)| {
+            parser_atom_chirality_assignment(
+                atom,
+                AtomId::new(index),
+                bonds,
+                || neighbors(index),
+                ring_closures_by_atom[index].iter().copied(),
+                smiles_start_atoms[index],
+            )
+        })
+        .collect()
+}
+
+/// Adjust one detached parser atom using borrowed token-order closures.
+/// Only chiral centers allocate local bond orderings; no all-atom scratch rows.
+#[doc(hidden)]
+pub fn parser_atom_chirality_assignment<
+    A: ParserAtom,
+    B: ParserBond,
+    I: Iterator<Item = (usize, BondId)>,
+>(
+    atom: &A,
+    atom_id: AtomId,
+    bonds: &[B],
+    neighbors: impl Fn() -> I,
+    ring_closures: impl ExactSizeIterator<Item = BondId> + Clone,
+    smiles_start: bool,
+) -> Result<(ChiralTag, Option<u32>), ParserCarrierError> {
     // BEGIN RDKIT CPP FUNCTION AdjustAtomChiralityFlags
     // RDKit✔️✔️: void AdjustAtomChiralityFlags(RWMol *mol) {
     // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
@@ -225,94 +256,68 @@ pub fn parser_chirality_assignments<
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION AdjustAtomChiralityFlags
-    let mut invert = vec![false; atoms.len()];
-    let mut nontetrahedral_permutations = vec![None; atoms.len()];
-    for atom_index in 0..atoms.len() {
-        let atom = &atoms[atom_index];
-        let atom_id = AtomId::new(atom_index);
-        match atom.chiral_tag() {
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
-                let (ordering, num_closures) = get_bond_ordering(
-                    atom_id,
-                    bonds,
-                    neighbors(atom_index),
-                    &ring_closures_by_atom[atom_index],
-                )?;
-                let storage_order = neighbors(atom_index)
-                    .map(|(_, bond)| bond)
-                    .collect::<Vec<_>>();
-                let mut swaps = crate::parser_stereo_order::count_swaps_to_interconvert(
-                    &ordering,
-                    &storage_order,
-                )
-                .map_err(|_| {
-                    ParserCarrierError::Model(
-                        "SMILES and storage bond orderings are not permutations".into(),
-                    )
-                })?;
-                let unsaturated = neighbors(atom_index).any(|(_, bond)| {
-                    crate::parser_stereo_order::bond_order_as_double(bonds[bond.index()].order())
-                        > 1.0
-                });
-                if crate::parser_stereo_order::chiral_atom_needs_tag_inversion(
-                    neighbors(atom_index).count(),
+    let mut invert = false;
+    let mut permutation = None;
+    match atom.chiral_tag() {
+        ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
+            let (ordering, num_closures) =
+                get_bond_ordering(atom_id, bonds, neighbors(), ring_closures.clone())?;
+            let storage_order = neighbors().map(|(_, bond)| bond).collect::<Vec<_>>();
+            let mut swaps =
+                crate::parser_stereo_order::count_swaps_to_interconvert(&ordering, &storage_order)
+                    .map_err(|_| {
+                        ParserCarrierError::Model(
+                            "SMILES and storage bond orderings are not permutations".into(),
+                        )
+                    })?;
+            let unsaturated = neighbors().any(|(_, bond)| {
+                crate::parser_stereo_order::bond_order_as_double(bonds[bond.index()].order()) > 1.0
+            });
+            if crate::parser_stereo_order::chiral_atom_needs_tag_inversion(
+                neighbors().count(),
+                atom.explicit_hydrogens(),
+                smiles_start,
+                crate::parser_stereo_order::atom_has_fourth_valence(
                     atom.explicit_hydrogens(),
-                    smiles_start_atoms[atom_index],
-                    crate::parser_stereo_order::atom_has_fourth_valence(
-                        atom.explicit_hydrogens(),
-                        false,
-                    ),
-                    num_closures,
-                    unsaturated,
-                ) {
-                    swaps += 1;
-                }
-                invert[atom_index] = swaps % 2 == 1;
+                    false,
+                ),
+                num_closures,
+                unsaturated,
+            ) {
+                swaps += 1;
             }
-            ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
-                let (ordering, _) = get_bond_ordering(
-                    atom_id,
-                    bonds,
-                    neighbors(atom_index),
-                    &ring_closures_by_atom[atom_index],
-                )?;
-                let mut probe = ordering.into_iter().map(Some).collect::<Vec<_>>();
-                crate::parser_stereo_order::insert_implicit_nontetrahedral_neighbors(
-                    &mut probe,
-                    atom.chiral_tag(),
-                    smiles_start_atoms[atom_index],
-                );
-                let incident = neighbors(atom_index)
-                    .map(|(_, bond)| bond)
-                    .collect::<Vec<_>>();
-                nontetrahedral_permutations[atom_index] = Some(
-                    crate::parser_stereo_order::nontetrahedral_chiral_permutation(
-                        atom.chiral_permutation().unwrap_or(0),
-                        atom.chiral_tag(),
-                        bonds.len(),
-                        &incident,
-                        &probe,
-                        true,
-                    )
-                    .map_err(|error| ParserCarrierError::Model(error.to_string()))?,
-                );
-            }
-            _ => {}
+            invert = swaps % 2 == 1;
         }
+        ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
+            let (ordering, _) =
+                get_bond_ordering(atom_id, bonds, neighbors(), ring_closures.clone())?;
+            let mut probe = ordering.into_iter().map(Some).collect::<Vec<_>>();
+            crate::parser_stereo_order::insert_implicit_nontetrahedral_neighbors(
+                &mut probe,
+                atom.chiral_tag(),
+                smiles_start,
+            );
+            let incident = neighbors().map(|(_, bond)| bond).collect::<Vec<_>>();
+            permutation = Some(
+                crate::parser_stereo_order::nontetrahedral_chiral_permutation(
+                    atom.chiral_permutation().unwrap_or(0),
+                    atom.chiral_tag(),
+                    bonds.len(),
+                    &incident,
+                    &probe,
+                    true,
+                )
+                .map_err(|error| ParserCarrierError::Model(error.to_string()))?,
+            );
+        }
+        _ => {}
     }
-    Ok(atoms
-        .iter()
-        .zip(invert)
-        .zip(nontetrahedral_permutations)
-        .map(|((atom, invert), permutation)| {
-            let tag = if invert {
-                crate::parser_stereo_order::invert_tetrahedral_tag(atom.chiral_tag())
-            } else {
-                atom.chiral_tag()
-            };
-            (tag, permutation.or(atom.chiral_permutation()))
-        })
-        .collect())
+    let tag = if invert {
+        crate::parser_stereo_order::invert_tetrahedral_tag(atom.chiral_tag())
+    } else {
+        atom.chiral_tag()
+    };
+    Ok((tag, permutation.or(atom.chiral_permutation())))
 }
 
 pub fn cleanup_parser_atom<A: ParserAtom>(

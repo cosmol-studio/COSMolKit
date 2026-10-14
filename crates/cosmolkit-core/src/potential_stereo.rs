@@ -1801,6 +1801,7 @@ pub(crate) fn special_ring_cases(
     valence: &ValenceAssignment,
     input_rings: &RingInfo,
     ranks: &[u32],
+    collect_relations: bool,
 ) -> Result<RingSpecialCases, PotentialStereoError> {
     // RDKit❗❌:   boost::dynamic_bitset<> atomsSeen(mol.getNumAtoms());
     // RDKit❗❌:   boost::dynamic_bitset<> atomsUsed(mol.getNumAtoms());
@@ -2071,15 +2072,23 @@ pub(crate) fn special_ring_cases(
         }
         seen[start] = true;
     }
-    let mut relations = BTreeSet::new();
+    // Legacy installation consumes only source property updates and flags.
+    // Retain this late validation in its original row/entry order even when
+    // that caller needs no sorted relation projection. The modern read result
+    // alone allocates the set. This removes R log(U+1) + U projection work,
+    // not the source's per-ring-system V-sized `same` scratch above.
+    let mut relations = collect_relations.then(BTreeSet::new);
     for (index, row) in vectors.iter().enumerate() {
         if let Some(row) = row {
             for &entry in row {
-                relations.insert(RingStereoRelation {
-                    atom: AtomId::new(index),
-                    other: AtomId::new(ring_reference_index(AtomId::new(index), entry, count)?),
-                    same_orientation: entry > 0,
-                });
+                let other = AtomId::new(ring_reference_index(AtomId::new(index), entry, count)?);
+                if let Some(relations) = &mut relations {
+                    relations.insert(RingStereoRelation {
+                        atom: AtomId::new(index),
+                        other,
+                        same_orientation: entry > 0,
+                    });
+                }
             }
         }
     }
@@ -2104,7 +2113,9 @@ pub(crate) fn special_ring_cases(
         });
     }
     Ok(RingSpecialCases {
-        relations: relations.into_iter().collect(),
+        relations: relations
+            .map(|relations| relations.into_iter().collect())
+            .unwrap_or_default(),
         flags,
         updates,
     })
@@ -2159,7 +2170,112 @@ pub(crate) fn special_ring_relations(
     rings: &RingInfo,
     ranks: &[u32],
 ) -> Result<Vec<RingStereoRelation>, PotentialStereoError> {
-    Ok(special_ring_cases(topology, valence, rings, ranks)?.relations)
+    Ok(special_ring_cases(topology, valence, rings, ranks, true)?.relations)
+}
+
+#[cfg(test)]
+mod port_cost_round2_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+
+    fn ring_pair() -> (TopologyBlock, ValenceAssignment, RingInfo) {
+        let atoms = (0..8)
+            .map(|index| {
+                let mut spec = AtomSpec::new(Element::C);
+                if index == 0 || index == 5 {
+                    spec = spec
+                        .with_chiral_tag(ChiralTag::TetrahedralCw)
+                        .with_explicit_hydrogens(1);
+                }
+                Atom::from_spec(AtomId::new(index), spec)
+            })
+            .collect();
+        let bonds = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 4),
+            (4, 5),
+            (5, 0),
+            (0, 6),
+            (5, 7),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (begin, end))| {
+            Bond::from_spec(
+                BondId::new(index),
+                BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+            )
+        })
+        .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let valence =
+            crate::assign_valence_for_topology(&topology, crate::ValenceModel::RdkitLike).unwrap();
+        let rings =
+            crate::symmetrized_sssr(&topology, &crate::RingSearchParams::default()).unwrap();
+        (topology, valence, rings)
+    }
+
+    #[test]
+    fn ring_property_updates_keep_order_without_relation_projection() {
+        let (topology, valence, rings) = ring_pair();
+        let ranks = vec![1; topology.atoms.len()];
+        let projected = special_ring_cases(&topology, &valence, &rings, &ranks, true).unwrap();
+        let installation = special_ring_cases(&topology, &valence, &rings, &ranks, false).unwrap();
+        // Chirality.cpp:1558-1568 and1596-1633 install mutual signed refs.
+        assert_eq!(
+            projected.relations,
+            [
+                RingStereoRelation {
+                    atom: AtomId::new(0),
+                    other: AtomId::new(5),
+                    same_orientation: true
+                },
+                RingStereoRelation {
+                    atom: AtomId::new(5),
+                    other: AtomId::new(0),
+                    same_orientation: true
+                },
+            ]
+        );
+        assert!(installation.relations.is_empty());
+        assert_eq!(installation.flags, projected.flags);
+        assert_eq!(installation.updates.len(), projected.updates.len());
+        for (left, right) in installation.updates.iter().zip(&projected.updates) {
+            assert_eq!(
+                (left.atom, left.key, &left.value, left.computed),
+                (right.atom, right.key, &right.value, right.computed)
+            );
+        }
+        assert_eq!(
+            installation
+                .flags
+                .iter()
+                .enumerate()
+                .filter_map(|(index, flag)| flag.then_some(index))
+                .collect::<Vec<_>>(),
+            [0, 5]
+        );
+    }
+
+    #[test]
+    fn omitted_projection_retains_late_reference_error_order() {
+        let (mut topology, valence, rings) = ring_pair();
+        topology.atoms[5]
+            .set_prop("_ringStereoAtoms", PropertyValue::IntVector(vec![0, -99]))
+            .unwrap();
+        let ranks = vec![1; topology.atoms.len()];
+        for projection in [false, true] {
+            let error = special_ring_cases(&topology, &valence, &rings, &ranks, projection)
+                .err()
+                .unwrap();
+            assert!(
+                matches!(error, PotentialStereoError::InvalidRingStereoReference { atom, value: 0 } if atom == AtomId::new(5))
+            );
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -34,12 +34,6 @@ fn d2_prepared_property_public_twelve_native_operations() {
                     ..Default::default()
                 };
                 let params_before = params.clone();
-                let expected_owner = cosmolkit_depict::compute_2d_coordinates(
-                    &before_topology,
-                    &before_properties,
-                    &params,
-                )
-                .unwrap();
                 let result = source.with_2d_coordinates_with_params(&params);
                 calls += 1;
                 // Full original input checks precede inspecting Result.
@@ -64,25 +58,12 @@ fn d2_prepared_property_public_twelve_native_operations() {
                             coordinates.source_coordinate_dim,
                             Some(CoordinateDimension::TwoD)
                         );
-                        // The public operation commits the current detached owner
-                        // output exactly. Original full XY frames remain covered
-                        // at the owner's explicit frozen-ring algorithm boundary.
-                        assert_eq!(
-                            coordinates.conformers_2d[0]
-                                .coordinates()
-                                .iter()
-                                .map(|xy| xy.map(f64::to_bits))
-                                .collect::<Vec<_>>(),
-                            expected_owner
-                                .coordinates()
-                                .iter()
-                                .map(|xy| xy.map(f64::to_bits))
-                                .collect::<Vec<_>>(),
-                            "line:{line}/{orientation}/{repeat}: committed owner coordinates"
-                        );
-                        errors.extend(prepared_property_fixture::check_chemistry(
+                        // Compare the actual committed coordinates with independent
+                        // pinned-native bits, not a second call to the same owner.
+                        errors.extend(prepared_property_fixture::check(
                             output.topology(),
                             output.properties(),
+                            coordinates.conformers_2d[0].coordinates(),
                             line,
                             orientation,
                         ));

@@ -1,5 +1,6 @@
 //! Private fixed native literals, shared by the public and storage regressions.
-//! Provenance/qualification/license: prepared_property_presence.md/.LICENSE.
+//! Provenance/license: prepared_property_presence.source.json/.LICENSE.
+//! Input/working captures and current-pin coordinate captures have separate provenance.
 
 use cosmolkit_model::{MoleculeProperties, PropertyText, PropertyValue, TopologyBlock};
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,25 +45,6 @@ pub fn check(
     topology: &TopologyBlock,
     properties: &MoleculeProperties,
     xy: &[[f64; 2]],
-    line: usize,
-    orientation: bool,
-) -> Vec<String> {
-    check_fields(topology, properties, Some(xy), line, orientation)
-}
-
-pub fn check_chemistry(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    line: usize,
-    orientation: bool,
-) -> Vec<String> {
-    check_fields(topology, properties, None, line, orientation)
-}
-
-fn check_fields(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    xy: Option<&[[f64; 2]]>,
     line: usize,
     orientation: bool,
 ) -> Vec<String> {
@@ -220,9 +202,6 @@ fn check_fields(
     {
         errors.push(format!("{label}: modeled MOL scalar properties/computed differ actual={properties:?} expected={expected_mol:?}/{computed_mol:?}"));
     }
-    let Some(xy) = xy else {
-        return errors;
-    };
     let rows = expected_xy.lines().collect::<Vec<_>>();
     if xy.len() != rows.len() {
         errors.push(format!("{label}: XY lengths {}/{}", xy.len(), rows.len()));
@@ -232,11 +211,11 @@ fn check_fields(
         assert_eq!(fields[1].parse::<usize>().unwrap(), index);
         if let Some(actual) = xy.get(index) {
             for axis in 0..2 {
-                let expected = f64::from_bits(fields[axis + 2].parse().unwrap());
-                if (actual[axis] - expected).abs() > 1e-8 {
+                let expected = fields[axis + 2].parse::<u64>().unwrap();
+                let actual = actual[axis].to_bits();
+                if actual != expected {
                     errors.push(format!(
-                        "{label}: XY {index}/{axis} {} expected {expected}",
-                        actual[axis]
+                        "{label}: XY {index}/{axis} bits={actual:016x} expected={expected:016x}"
                     ));
                 }
             }

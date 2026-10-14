@@ -423,7 +423,7 @@ fn legacy_stereo_done_presence_custom_invariants_and_modern_original_provider_co
             input.topology,
             input.properties,
             input.valence,
-            input.rings,
+            Some(input.rings),
             true,
         )
         .unwrap();

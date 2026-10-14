@@ -156,9 +156,6 @@ mod prepared_property_tests {
                         ..Default::default()
                     };
                     let before_params = params.clone();
-                    let expected_owner =
-                        cosmolkit_depict::compute_2d_coordinates(&topology, &properties, &params)
-                            .unwrap();
                     let result = source.with_2d_coordinates_with_params(&params);
                     calls += 1;
                     // Both complete four-block source/peer snapshots precede Result inspection.
@@ -224,24 +221,12 @@ mod prepared_property_tests {
                                 output.derived_cache_runtime().valid_states(),
                                 cache.valid_states().difference(allowed_invalidations)
                             );
-                            // The operation commits the actual candidate owner
-                            // output exactly; frozen .03.6 layout frames remain
-                            // fully compared at the private fixed-ring boundary.
-                            assert_eq!(
-                                stored.conformers_2d[0]
-                                    .coordinates()
-                                    .iter()
-                                    .map(|xy| xy.map(f64::to_bits))
-                                    .collect::<Vec<_>>(),
-                                expected_owner
-                                    .coordinates()
-                                    .iter()
-                                    .map(|xy| xy.map(f64::to_bits))
-                                    .collect::<Vec<_>>(),
-                            );
-                            discrepancies.extend(prepared_property_fixture::check_chemistry(
+                            // Check independently captured native coordinates as
+                            // well as storage sharing and cache preservation.
+                            discrepancies.extend(prepared_property_fixture::check(
                                 output.topology(),
                                 output.properties(),
+                                stored.conformers_2d[0].coordinates(),
                                 line,
                                 orientation,
                             ));

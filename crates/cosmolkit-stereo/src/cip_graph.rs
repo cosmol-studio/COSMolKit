@@ -3,7 +3,7 @@
 // The assignment/configuration layer consumes this crate-private unit; this
 // module neither accepts a live molecule nor owns runtime state.
 
-use std::collections::VecDeque;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use cosmolkit_core::{
     AtropisomerError, DoubleBondStereoError, KekulizeAttempt, KekulizeError, KekulizeParams,
@@ -446,12 +446,28 @@ enum MancudeType {
     Other,
 }
 
+#[derive(Clone)]
 pub(crate) struct CipMol<'a> {
     molecule: &'a TopologyBlock,
+    prepared_rings: Option<&'a RingInfo>,
+    prepared_valence: Option<&'a ValenceAssignment>,
+    cache: Rc<RefCell<CipMolCache>>,
+}
+
+#[derive(Default)]
+struct CipMolCache {
     rings: Option<RingInfo>,
     kekulized_bond_orders: Option<Vec<BondOrder>>,
     fractional_atomic_numbers: Option<Vec<FractionalAtomicNum>>,
     valence: Option<ValenceAssignment>,
+    #[cfg(test)]
+    preparations: [usize; 4],
+}
+
+impl<'a> From<&'a TopologyBlock> for CipMol<'a> {
+    fn from(molecule: &'a TopologyBlock) -> Self {
+        Self::new(molecule)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -732,6 +748,73 @@ mod fraction_tests {
     use cosmolkit_model::{AtomId, AtomSpec};
 
     #[test]
+    fn digraphs_share_lazy_molecule_preparation_but_not_node_state() {
+        let topology = TopologyBlock::try_from_parts(
+            (0..6)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            (0..6)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        cosmolkit_model::BondSpec::new(
+                            AtomId::new(i),
+                            AtomId::new((i + 1) % 6),
+                            BondOrder::Single,
+                        ),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let shared = CipMol::new(&topology);
+        let mut first = CipDigraph::new(shared.clone(), 0, false).unwrap();
+        let mut second = CipDigraph::new(shared.clone(), 3, false).unwrap();
+        assert!(Rc::ptr_eq(&first.mol.cache, &second.mol.cache));
+        assert_eq!(shared.cache.borrow().preparations, [0; 4]);
+        assert_eq!(
+            first
+                .mol
+                .get_fractional_atomic_num(0)
+                .unwrap()
+                .value()
+                .tuple(),
+            (6, 1)
+        );
+        assert_eq!(shared.cache.borrow().preparations, [1; 4]);
+        assert_eq!(
+            second
+                .mol
+                .get_fractional_atomic_num(3)
+                .unwrap()
+                .value()
+                .tuple(),
+            (6, 1)
+        );
+        second.mol.get_bond_order(0).unwrap();
+        assert!(second.mol.is_in_ring(0).unwrap());
+        assert_eq!(second.mol.total_num_hs(3).unwrap(), 2);
+        assert_eq!(shared.cache.borrow().preparations, [1; 4]);
+        first.add_existing_node(first.nodes[0].clone()).unwrap();
+        assert_eq!(first.nodes.len(), 2);
+        assert_eq!(second.nodes.len(), 1);
+
+        let valence = assign_valence_for_topology(&topology, ValenceModel::RdkitLike).unwrap();
+        let rings = cosmolkit_core::symmetrized_sssr(
+            &topology,
+            &cosmolkit_core::RingSearchParams::default(),
+        )
+        .unwrap();
+        let mut prepared = CipMol::with_prepared_state(&topology, Some(&valence), Some(&rings));
+        prepared.get_fractional_atomic_num(0).unwrap();
+        assert_eq!(prepared.cache.borrow().preparations, [0, 1, 1, 0]);
+        assert!(prepared.cache.borrow().valence.is_none());
+        assert!(prepared.cache.borrow().rings.is_none());
+    }
+
+    #[test]
     fn integer_average_retains_raw_denominator_for_duplicate_nodes() {
         let topology = TopologyBlock::try_from_parts(
             vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
@@ -744,7 +827,7 @@ mod fraction_tests {
         assert!(raw.is_averaged());
         assert_eq!(raw.value().tuple(), (4, 1));
         let mut mol = CipMol::new(&topology);
-        mol.fractional_atomic_numbers = Some(vec![raw]);
+        mol.cache.borrow_mut().fractional_atomic_numbers = Some(vec![raw]);
         let parent = CipNode::new(0, vec![1], Some(0), RationalI32::new(6, 1), 1, 0, &mol).unwrap();
         let duplicate = parent
             .new_terminal_child(Some(0), Some(0), CipNode::BOND_DUPLICATE, &mut mol)
@@ -838,6 +921,102 @@ mod graph_limit_tests {
                 limit: CipDigraph::MAX_NODE_COUNT
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod port_cost_round2_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, BondSpec};
+
+    #[test]
+    fn borrowed_edge_traversal_keeps_cyclic_bfs_filter_and_reroot_order() {
+        // Digraph.cpp::getNodes/changeRoot and Node.cpp filtered getters walk
+        // incident edges in insertion order, including ring-duplicate leaves.
+        let topology = TopologyBlock::try_from_parts(
+            (0..3)
+                .map(|index| {
+                    Atom::from_spec(
+                        AtomId::new(index),
+                        AtomSpec::new(Element::C).with_no_implicit(true),
+                    )
+                })
+                .collect(),
+            [(0, 1), (1, 2), (2, 0)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (begin, end))| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let mut graph = CipDigraph::new(&topology, 0, false).unwrap();
+        let root = graph.get_original_root();
+        assert_eq!(
+            graph.get_nodes(1).unwrap(),
+            [CipNodeId::new(1), CipNodeId::new(4)]
+        );
+        assert_eq!(graph.get_num_nodes(), 7);
+        assert_eq!(
+            graph.node_edges_for_atom(root, Some(1)).unwrap(),
+            [CipEdgeId::new(0)]
+        );
+        assert_eq!(
+            graph.non_terminal_out_edges(root).unwrap(),
+            [CipEdgeId::new(0), CipEdgeId::new(1)]
+        );
+        let edge_order = graph.node(root).get_edges().unwrap().to_vec();
+        graph.change_root(CipNodeId::new(1)).unwrap();
+        assert_eq!(
+            graph.get_nodes(0).unwrap(),
+            [CipNodeId::new(0), CipNodeId::new(5), CipNodeId::new(6)]
+        );
+        assert_eq!(graph.edge(CipEdgeId::new(0)).get_beg(), CipNodeId::new(1));
+        graph.change_root(root).unwrap();
+        assert_eq!(graph.node(root).get_edges().unwrap(), edge_order);
+        assert_eq!(graph.edge(CipEdgeId::new(0)).get_beg(), root);
+        let rule = CipRule4b::new();
+        assert!(!rule.has_descriptors(&mut graph, root).unwrap());
+        graph.set_node_aux(CipNodeId::new(1), Descriptor::R);
+        assert!(rule.has_descriptors(&mut graph, root).unwrap());
+        assert_eq!(graph.get_num_nodes(), 7);
+    }
+
+    #[test]
+    fn failed_expansion_marks_node_before_error_and_does_not_retry() {
+        // Node.cpp::getEdges sets EXPANDED before expand can fail. A later
+        // getter must expose the existing partial edges without another error.
+        let topology = TopologyBlock::try_from_parts(
+            (0..2)
+                .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::ThreeCenter),
+            )],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let mut graph = CipDigraph::new(&topology, 0, false).unwrap();
+        graph.mol.cache.borrow_mut().kekulized_bond_orders = Some(vec![BondOrder::ThreeCenter]);
+        let root = graph.get_original_root();
+        assert!(matches!(
+            graph.ensure_expanded(root),
+            Err(CipLabelerError::NonIntegerBondOrder {
+                order: BondOrder::ThreeCenter
+            })
+        ));
+        assert!(graph.node(root).is_expanded());
+        graph.ensure_expanded(root).unwrap();
+        assert!(graph.node_edges_for_atom(root, Some(1)).unwrap().is_empty());
+        assert_eq!(graph.get_num_nodes(), 1);
     }
 }
 
@@ -2499,7 +2678,8 @@ impl CipRule4b {
             if digraph.node(current).get_aux() != Descriptor::None {
                 return Ok(true);
             }
-            for edge_id in digraph.node_edges(current)? {
+            digraph.ensure_expanded(current)?;
+            for &edge_id in digraph.node(current).get_edges()? {
                 let edge = digraph.edge(edge_id);
                 if edge.get_end() == current {
                     continue;
@@ -3888,7 +4068,7 @@ impl CipNode {
     }
 
     // Rust ownership note: the lazy expansion part of RDKit Node::getEdges is
-    // source-reproduced in CipDigraph::node_edges(), where the graph can mutate
+    // source-reproduced in CipDigraph::ensure_expanded(), where the graph can mutate
     // nodes and edges without self-referential borrowing.
     pub(crate) fn get_edges(&self) -> Result<&[CipEdgeId], CipLabelerError> {
         if !self.is_expanded() {
@@ -3984,11 +4164,11 @@ impl<'a> CipDigraph<'a> {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Digraph::Digraph
     pub(crate) fn new(
-        molecule: &'a TopologyBlock,
+        molecule: impl Into<CipMol<'a>>,
         atom_idx: usize,
         atropisomer_mode: bool,
     ) -> Result<Self, CipLabelerError> {
-        let mol = CipMol::new(molecule);
+        let mol = molecule.into();
         mol.atom(atom_idx)?;
         let mut digraph = Self {
             mol,
@@ -4092,26 +4272,37 @@ impl<'a> CipDigraph<'a> {
         self.nodes[end.index()].add(edge_id);
     }
 
-    // BEGIN RDKIT CPP FUNCTION Node::getEdges (CIPLabeler/Node.cpp)
-    // RDKit✔️❌: const std::vector<Edge *> &Node::getEdges() const {
-    // RDKit✔️❌:   if (!isExpanded()) {
-    // RDKit✔️❌:     auto non_const_this = const_cast<Node *>(this);
-    // RDKit✔️❌:     non_const_this->d_flags |= EXPANDED;
-    // RDKit✔️❌:     dp_g->expand(non_const_this);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return d_edges;
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION Node::getEdges
-    // Returning owned stable IDs avoids exposing references across lazy graph
-    // mutation, but clones the incident-edge vector instead of borrowing it.
-    pub(crate) fn node_edges(
-        &mut self,
-        node: CipNodeId,
-    ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
+    // Expand before taking an immutable view. Keep flag-before-expand even on
+    // errors: retries must observe the same partial expansion as the source.
+    pub(crate) fn ensure_expanded(&mut self, node: CipNodeId) -> Result<(), CipLabelerError> {
+        // BEGIN RDKIT CPP FUNCTION Node::getEdges (CIPLabeler/Node.cpp)
+        // RDKit✔️✔️: const std::vector<Edge *> &Node::getEdges() const {
+        // RDKit✔️✔️:   if (!isExpanded()) {
+        // RDKit✔️✔️:     auto non_const_this = const_cast<Node *>(this);
+        // RDKit✔️✔️:     non_const_this->d_flags |= EXPANDED;
+        // RDKit✔️✔️:     dp_g->expand(non_const_this);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return d_edges;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION Node::getEdges
         if !self.nodes[node.index()].is_expanded() {
             self.nodes[node.index()].flags |= CipNode::EXPANDED;
             self.expand(node)?;
         }
+        Ok(())
+    }
+
+    // Sorting callers need the same owned snapshot as source `auto edges =
+    // node->getEdges()`. Traversal callers instead ensure expansion and borrow
+    // the source-ordered stable IDs; they do not allocate an edge snapshot.
+    pub(crate) fn node_edges(
+        &mut self,
+        node: CipNodeId,
+    ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
+        // RDKit✔️✔️:   auto edges = node->getEdges();
+        // Tetrahedral.cpp::label copies the span before sorting; the analogous
+        // SequenceRule.cpp snapshots likewise remain owned in their callers.
+        self.ensure_expanded(node)?;
         Ok(self.nodes[node.index()].edges.clone())
     }
 
@@ -4120,7 +4311,7 @@ impl<'a> CipDigraph<'a> {
         node: CipNodeId,
         end_atom_idx: Option<usize>,
     ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
-        self.node_edges(node)?;
+        self.ensure_expanded(node)?;
         self.nodes[node.index()].get_edges_for_atom(end_atom_idx, &self.nodes, &self.edges)
     }
 
@@ -4128,32 +4319,10 @@ impl<'a> CipDigraph<'a> {
         &mut self,
         node: CipNodeId,
     ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
-        self.node_edges(node)?;
+        self.ensure_expanded(node)?;
         self.nodes[node.index()].get_non_terminal_out_edges(node, &self.nodes, &self.edges)
     }
 
-    // BEGIN RDKIT CPP FUNCTION Digraph::getNodes (CIPLabeler/Digraph.cpp)
-    // RDKit✔️❌: std::vector<Node *> Digraph::getNodes(Atom *atom) const {
-    // RDKit✔️❌:   std::vector<Node *> result;
-    // RDKit✔️❌:   std::vector<Node*> queue = {getCurrentRoot()};
-    // RDKit✔️❌:
-    // RDKit✔️❌:   for (size_t i=0; i<queue.size(); ++i) {
-    // RDKit✔️❌:     auto node = queue[i];
-    // RDKit✔️❌:     if (atom == node->getAtom()) {
-    // RDKit✔️❌:       result.push_back(node);
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     for (const auto &e : node->getEdges()) {
-    // RDKit✔️❌:       if (!e->isBeg(node)) {
-    // RDKit✔️❌:         continue;
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:       queue.push_back(e->getEnd());
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return result;
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION Digraph::getNodes
-    // Each lazy edge access returns an owned ID vector, adding temporary
-    // allocations beyond the source's borrowed Node edge view.
     pub(crate) fn seen_atom(&self, atom_idx: usize) -> bool {
         // BEGIN RDKit 2026.03.6 COMPLETE Digraph::seenAtom
         // RDKit✔️✔️: bool Digraph::seenAtom(Atom *atom) const {
@@ -4167,6 +4336,28 @@ impl<'a> CipDigraph<'a> {
     }
 
     pub(crate) fn get_nodes(&mut self, atom_idx: usize) -> Result<Vec<CipNodeId>, CipLabelerError> {
+        // BEGIN RDKIT CPP FUNCTION Digraph::getNodes (CIPLabeler/Digraph.cpp)
+        // RDKit✔️✔️: std::vector<Node *> Digraph::getNodes(Atom *atom) const {
+        // RDKit✔️✔️:   std::vector<Node *> result;
+        // RDKit✔️✔️:   std::vector<Node *> queue = {getCurrentRoot()};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   for (size_t i = 0; i < queue.size(); ++i) {
+        // RDKit✔️✔️:     auto node = queue[i];
+        // RDKit✔️✔️:     if (atom == node->getAtom()) {
+        // RDKit✔️✔️:       result.push_back(node);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     for (const auto &e : node->getEdges()) {
+        // RDKit✔️✔️:       if (!e->isBeg(node)) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       queue.push_back(e->getEnd());
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return result;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION Digraph::getNodes
+        // Same BFS and output allocations; incident edges are borrowed after
+        // expansion instead of copied once per visited node.
         self.mol.atom(atom_idx)?;
         let mut result = Vec::new();
         let mut queue = vec![self.get_current_root()];
@@ -4176,7 +4367,8 @@ impl<'a> CipDigraph<'a> {
             if self.nodes[node.index()].atom_idx == Some(atom_idx) {
                 result.push(node);
             }
-            for edge_id in self.node_edges(node)? {
+            self.ensure_expanded(node)?;
+            for &edge_id in &self.nodes[node.index()].edges {
                 let edge = &self.edges[edge_id.index()];
                 if !edge.is_beg(node) {
                     continue;
@@ -4206,33 +4398,34 @@ impl<'a> CipDigraph<'a> {
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION Digraph::changeRoot (CIPLabeler/Digraph.cpp)
-    // RDKit✔️❌: void Digraph::changeRoot(Node *newroot) {
-    // RDKit✔️❌:   std::vector<Edge *> toflip;
-    // RDKit✔️❌:   auto queue = std::list<Node *>({newroot});
-    // RDKit✔️❌:   for (const auto &node : queue) {
-    // RDKit✔️❌:     for (const auto &e : node->getEdges()) {
-    // RDKit✔️❌:       if (e->isEnd(node)) {
-    // RDKit✔️❌:         toflip.push_back(e);
-    // RDKit✔️❌:         queue.push_back(e->getBeg());
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   for (auto &e : toflip) {
-    // RDKit✔️❌:     e->flip();
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   dp_root = newroot;
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION Digraph::changeRoot
-    // The Rust traversal retains source complexity and order but additionally
-    // clones each lazily expanded node's edge-ID vector.
+    // Expand then borrow each incident-edge span, preserving source traversal
+    // order without allocating one temporary edge vector per visited node.
     pub(crate) fn change_root(&mut self, new_root: CipNodeId) -> Result<(), CipLabelerError> {
+        // BEGIN RDKIT CPP FUNCTION Digraph::changeRoot (CIPLabeler/Digraph.cpp)
+        // RDKit✔️✔️: void Digraph::changeRoot(Node *newroot) {
+        // RDKit✔️✔️:   std::vector<Edge *> toflip;
+        // RDKit✔️✔️:   auto queue = std::list<Node *>({newroot});
+        // RDKit✔️✔️:   for (const auto &node : queue) {
+        // RDKit✔️✔️:     for (const auto &e : node->getEdges()) {
+        // RDKit✔️✔️:       if (e->isEnd(node)) {
+        // RDKit✔️✔️:         toflip.push_back(e);
+        // RDKit✔️✔️:         queue.push_back(e->getBeg());
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   for (auto &e : toflip) {
+        // RDKit✔️✔️:     e->flip();
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   dp_root = newroot;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION Digraph::changeRoot
         let mut to_flip = Vec::new();
         let mut queue = vec![new_root];
         let mut i = 0_usize;
         while i < queue.len() {
             let node = queue[i];
-            for edge_id in self.node_edges(node)? {
+            self.ensure_expanded(node)?;
+            for &edge_id in &self.nodes[node.index()].edges {
                 let edge = &self.edges[edge_id.index()];
                 if edge.is_end(node) {
                     to_flip.push(edge_id);
@@ -4457,13 +4650,32 @@ impl<'a> CipMol<'a> {
     // RDKit✔️✔️: CIPMol::CIPMol(ROMol &mol) : d_mol{mol} {}
     // END RDKIT CPP FUNCTION CIPMol::CIPMol
     pub(crate) fn new(molecule: &'a TopologyBlock) -> Self {
+        Self::with_prepared_state(molecule, None, None)
+    }
+
+    pub(crate) fn with_prepared_state(
+        molecule: &'a TopologyBlock,
+        valence: Option<&'a ValenceAssignment>,
+        rings: Option<&'a RingInfo>,
+    ) -> Self {
+        // BEGIN RDKIT CPP FUNCTION CIPLabeler.cpp::assignCIPLabels shared molecule
+        // RDKit✔️✔️:   CIPMol cipmol{mol};
+        // RDKit✔️✔️:   auto configs = findConfigs(cipmol, atoms, bonds);
+        // END RDKIT CPP FUNCTION CIPLabeler.cpp::assignCIPLabels shared molecule
+        // Clone only this private handle, not any cache: every configuration in
+        // one assignment shares a single lazily prepared molecule. Digraph node,
+        // edge and visit state remains separate. All RefCell borrows below end
+        // before a lazy owner calls another lazy owner, preventing re-entry.
         Self {
             molecule,
-            rings: None,
-            kekulized_bond_orders: None,
-            fractional_atomic_numbers: None,
-            valence: None,
+            prepared_rings: rings.filter(|rings| rings.is_find_fast_or_better()),
+            prepared_valence: valence,
+            cache: Rc::new(RefCell::new(CipMolCache::default())),
         }
+    }
+
+    pub(crate) fn topology(&self) -> &'a TopologyBlock {
+        self.molecule
     }
 
     // BEGIN RDKIT CPP FUNCTION CIPMol::getFractionalAtomicNum (CIPMol.cpp)
@@ -4488,10 +4700,18 @@ impl<'a> CipMol<'a> {
         // RDKit✔️✔️: }
         // One cached raw pair copied by value; no reduction or heap copy.
         self.atom(atom_idx)?;
-        if self.fractional_atomic_numbers.is_none() {
-            self.fractional_atomic_numbers = Some(calc_frac_atom_nums(self)?);
+        let missing = self.cache.borrow().fractional_atomic_numbers.is_none();
+        if missing {
+            let fractions = calc_frac_atom_nums(self)?;
+            self.cache.borrow_mut().fractional_atomic_numbers = Some(fractions);
+            #[cfg(test)]
+            {
+                self.cache.borrow_mut().preparations[2] += 1;
+            }
         }
         Ok(self
+            .cache
+            .borrow()
             .fractional_atomic_numbers
             .as_ref()
             .expect("initialized")[atom_idx])
@@ -4603,10 +4823,21 @@ impl<'a> CipMol<'a> {
     // END RDKIT CPP FUNCTION CIPMol::isInRing
     pub(crate) fn is_in_ring(&mut self, bond_idx: usize) -> Result<bool, CipLabelerError> {
         self.bond(bond_idx)?;
-        if self.rings.is_none() {
-            self.rings = Some(fast_find_rings(self.molecule)?);
+        if let Some(rings) = self.prepared_rings {
+            return Ok(rings.num_bond_rings(BondId::new(bond_idx)) != 0);
+        }
+        let missing = self.cache.borrow().rings.is_none();
+        if missing {
+            let rings = fast_find_rings(self.molecule)?;
+            self.cache.borrow_mut().rings = Some(rings);
+            #[cfg(test)]
+            {
+                self.cache.borrow_mut().preparations[0] += 1;
+            }
         }
         Ok(self
+            .cache
+            .borrow()
             .rings
             .as_ref()
             .expect("initialized")
@@ -4665,7 +4896,8 @@ impl<'a> CipMol<'a> {
     // END RDKIT CPP FUNCTION CIPMol::getBondOrder
     pub(crate) fn get_bond_order(&mut self, bond_idx: usize) -> Result<i32, CipLabelerError> {
         self.bond(bond_idx)?;
-        if self.kekulized_bond_orders.is_none() {
+        let missing = self.cache.borrow().kekulized_bond_orders.is_none();
+        if missing {
             let mut orders = self
                 .molecule
                 .bonds()
@@ -4680,10 +4912,20 @@ impl<'a> CipMol<'a> {
                 }
                 KekulizeAttempt::NotKekulizable { .. } => {}
             }
-            self.kekulized_bond_orders = Some(orders);
+            self.cache.borrow_mut().kekulized_bond_orders = Some(orders);
+            #[cfg(test)]
+            {
+                self.cache.borrow_mut().preparations[1] += 1;
+            }
         }
 
-        match self.kekulized_bond_orders.as_ref().expect("initialized")[bond_idx] {
+        let order = self
+            .cache
+            .borrow()
+            .kekulized_bond_orders
+            .as_ref()
+            .expect("initialized")[bond_idx];
+        match order {
             BondOrder::Zero
             | BondOrder::Hydrogen
             | BondOrder::Dative
@@ -4702,13 +4944,21 @@ impl<'a> CipMol<'a> {
 
     fn total_num_hs(&mut self, atom_idx: usize) -> Result<i32, CipLabelerError> {
         let explicit = i32::from(self.atom(atom_idx)?.explicit_hydrogens());
-        if self.valence.is_none() {
-            self.valence = Some(assign_valence_for_topology(
-                self.molecule,
-                ValenceModel::RdkitLike,
-            )?);
+        if let Some(valence) = self.prepared_valence {
+            return Ok(explicit + valence.implicit_hydrogens[atom_idx].max(0));
+        }
+        let missing = self.cache.borrow().valence.is_none();
+        if missing {
+            let valence = assign_valence_for_topology(self.molecule, ValenceModel::RdkitLike)?;
+            self.cache.borrow_mut().valence = Some(valence);
+            #[cfg(test)]
+            {
+                self.cache.borrow_mut().preparations[3] += 1;
+            }
         }
         let implicit = self
+            .cache
+            .borrow()
             .valence
             .as_ref()
             .and_then(|valence| valence.implicit_hydrogens.get(atom_idx))

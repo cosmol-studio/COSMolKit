@@ -23,7 +23,7 @@ use crate::{
     symmetrized_sssr,
 };
 
-use crate::hcount::{AdjustHsError, adjust_hs, adjust_hs_with_mask};
+use crate::hcount::{AdjustHsError, adjust_hs};
 
 const NAMED_SANITIZE_BITS: u32 = 0x0000_0fff;
 const ALL_SANITIZE_BITS: u32 = 0x0fff_ffff;
@@ -628,6 +628,23 @@ pub fn sanitize_topology_with_query_state(
     params: &SanitizeParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<SanitizeAssignment, SanitizeError> {
+    sanitize_owned_topology_with_query_state(topology.clone(), params, query_state)
+}
+
+/// Sanitize one owned detached construction attempt without copying its graph.
+#[doc(hidden)]
+pub fn sanitize_owned_topology(
+    topology: TopologyBlock,
+    params: &SanitizeParams,
+) -> Result<SanitizeAssignment, SanitizeError> {
+    sanitize_owned_topology_with_query_state(topology, params, None)
+}
+
+pub(crate) fn sanitize_owned_topology_with_query_state(
+    topology: TopologyBlock,
+    params: &SanitizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<SanitizeAssignment, SanitizeError> {
     #[cfg(test)]
     if params.operations
         == (SanitizeOperations::SET_CONJUGATION | SanitizeOperations::SET_HYBRIDIZATION)
@@ -747,14 +764,12 @@ pub fn sanitize_topology_with_query_state(
     // RDKit✔️❌:   }
     // RDKit✔️❌:   operationThatFailed = 0;
     // RDKit✔️❌: }
-    // The source mutates one `RWMol`. This detached boundary clones the full
-    // topology to isolate the borrowed input. Cleanup stages now mutate that
-    // one detached attempt, retaining their input/output validation and stage
-    // order without cloning the topology again. Other owner-stage overhead
-    // remains; this does not promote the full sanitizer's complexity markers.
+    // The source mutates one RWMol. Move the already-owned construction attempt
+    // through the same stages. Only the borrowed public wrapper makes a copy;
+    // errors discard this detached attempt before any live state is installed.
 
     let operations = params.operations;
-    let mut working = topology.clone();
+    let mut working = topology;
     clear_topology_computed_properties(&mut working)?;
 
     if operations.contains(SanitizeOperations::CLEANUP) {
@@ -923,8 +938,8 @@ pub fn sanitize_topology_with_query_state(
         // source-refreshed Kekulize N/P rows applied above.
         // Complexity: borrow those rows into the default aromaticity owner,
         // avoiding a second O(V+E) assignment while keeping its validation.
-        let aromaticity = assign_default_aromaticity_with_cached_valence(
-            &working,
+        let aromaticity = crate::aromaticity::assign_default_aromaticity_owned_with_cached_valence(
+            working,
             &ring_assignment,
             &valence,
             query_state,
@@ -947,12 +962,13 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::SET_CONJUGATION) {
-        working = assign_conjugation(&working, &valence).map_err(|source| {
-            SanitizeError::Conjugation {
-                stage: SanitizeStage::SetConjugation,
-                source,
-            }
-        })?;
+        working =
+            crate::conjugation::assign_conjugation_owned(working, &valence).map_err(|source| {
+                SanitizeError::Conjugation {
+                    stage: SanitizeStage::SetConjugation,
+                    source,
+                }
+            })?;
     }
 
     let mut hybridization = None;
@@ -979,8 +995,8 @@ pub fn sanitize_topology_with_query_state(
         // before its tag loop and maps its two private causes structurally.
         let assignment = cleanup_stage_hybridizations(&working, hybridization.take())?;
         let (output, ring_state) =
-            crate::atropisomer::cleanup_invalid_atropisomers_with_ring_state(
-                &working,
+            crate::atropisomer::cleanup_owned_invalid_atropisomers_with_ring_state(
+                working,
                 &assignment,
                 rings.take(),
             )
@@ -1001,18 +1017,17 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::CLEANUP_CHIRALITY) {
-        working =
-            crate::structure_tags::cleanup_chirality(&working, &valence).map_err(|source| {
-                SanitizeError::Chirality {
-                    stage: SanitizeStage::CleanupChirality,
-                    source,
-                }
-            })?;
+        working = crate::structure_tags::cleanup_chirality_owned(working, &valence).map_err(
+            |source| SanitizeError::Chirality {
+                stage: SanitizeStage::CleanupChirality,
+                source,
+            },
+        )?;
     }
 
     if operations.contains(SanitizeOperations::ADJUST_HS) {
-        let assignment = adjust_hs_with_mask(
-            &working,
+        let assignment = crate::hcount::adjust_hs_owned_with_mask(
+            working,
             &valence,
             track_aromatic_atoms.then_some(atoms_to_adjust.as_slice()),
         )
@@ -1322,6 +1337,24 @@ mod tests {
             stereo_groups: Vec::new(),
             substance_groups: Vec::new(),
         }
+    }
+
+    #[test]
+    fn owned_sanitizer_preserves_graph_allocations_and_source_valence() {
+        let topology = ethanol_topology();
+        let atoms = topology.atoms.as_ptr();
+        let bonds = topology.bonds.as_ptr();
+        let neighbors = topology.adjacency.neighbors_of(1).as_ptr();
+        let result = sanitize_owned_topology(topology, &SanitizeParams::default()).unwrap();
+        assert_eq!(result.topology.atoms.as_ptr(), atoms);
+        assert_eq!(result.topology.bonds.as_ptr(), bonds);
+        assert_eq!(
+            result.topology.adjacency.neighbors_of(1).as_ptr(),
+            neighbors
+        );
+        let valence = result.final_valence.unwrap();
+        assert_eq!(valence.explicit_valence, [1, 2, 1]);
+        assert_eq!(valence.implicit_hydrogens, [3, 2, 1]);
     }
 
     #[test]

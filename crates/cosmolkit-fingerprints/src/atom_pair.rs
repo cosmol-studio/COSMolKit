@@ -696,7 +696,7 @@ fn count_helper(
         input.topology,
         input.properties,
         input.valence,
-        input.rings,
+        Some(input.rings),
         common,
         &args,
         output,

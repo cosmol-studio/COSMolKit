@@ -10,6 +10,12 @@ use cosmolkit::{BondOrder, Molecule};
 #[path = "fixtures/frozen_drawing_coordinates.rs"]
 mod frozen_coordinates;
 
+const AROMATIC: &str = r"O=C(O)/C(=C\c1ccccc1)Cc1ccccc1";
+const OVERLAPPING: &str = "CC12CC34CN(C(=N)N)CC3(C1)CC2(C)C4.Cl";
+const CANONICAL: &str =
+    "CC1=C(CCNCCN)c2cc3[nH]c(cc4[nH]c(cc5nc(cc1n2)C(C)=C5CCNCCN)c(C)c4CCNCCN)c(CCNCCN)c3C";
+const POLYCYCLIC: &str = "O=C1CCC(=O)O[C@@H]2[C@@H](O)[C@H](O)[C@@H](COC(=O)CCC(=O)O[C@@H]3[C@@H](O)[C@H](O)[C@@H](CO1)O[C@@H]3O)O[C@@H]2O";
+
 fn render_with_frozen_layout(prepared: &Molecule, xy: &[[f64; 2]]) -> String {
     assert_eq!(prepared.num_atoms(), xy.len());
     let molecule = Molecule::from_parts(
@@ -146,7 +152,7 @@ fn prepare_molecule_for_drawing(
 
 #[test]
 fn aromatic_outer_line_draw_coordinate_matches_rdkit_rounding_regression() {
-    let molecule = Molecule::from_smiles(r"O=C(O)/C(=C\c1ccccc1)Cc1ccccc1").unwrap();
+    let molecule = Molecule::from_smiles(AROMATIC).unwrap();
     let svg = render_with_frozen_layout(&molecule, frozen_coordinates::AROMATIC);
 
     assert!(svg.contains("<path class='bond-12 atom-12 atom-13' d='M 76.7,130.0 L 48.7,113.9'"));
@@ -154,7 +160,7 @@ fn aromatic_outer_line_draw_coordinate_matches_rdkit_rounding_regression() {
 
 #[test]
 fn overlapping_depiction_atoms_skip_bond_regression() {
-    let molecule = Molecule::from_smiles("CC12CC34CN(C(=N)N)CC3(C1)CC2(C)C4.Cl").unwrap();
+    let molecule = Molecule::from_smiles(OVERLAPPING).unwrap();
     let svg = render_with_frozen_layout(&molecule, frozen_coordinates::OVERLAPPING);
 
     assert!(!svg.contains("<path class='bond-16 atom-13 atom-1'"));
@@ -175,10 +181,7 @@ fn minimum_svg_font_size_clamps_at_binary64_boundary_regression() {
 
 #[test]
 fn prepared_drawing_uses_rdkit_canonical_kekule_assignment_regression() {
-    let molecule = Molecule::from_smiles(
-        "CC1=C(CCNCCN)c2cc3[nH]c(cc4[nH]c(cc5nc(cc1n2)C(C)=C5CCNCCN)c(C)c4CCNCCN)c(CCNCCN)c3C",
-    )
-    .unwrap();
+    let molecule = Molecule::from_smiles(CANONICAL).unwrap();
     let prepared = prepare_molecule_for_drawing(&molecule, true).unwrap();
     let bond_orders: String = prepared
         .bonds()
@@ -205,10 +208,7 @@ fn prepared_drawing_uses_rdkit_canonical_kekule_assignment_regression() {
 
 #[test]
 fn polycyclic_chiral_hydrogen_preparation_matches_rdkit_regression() {
-    let molecule = Molecule::from_smiles(
-        "O=C1CCC(=O)O[C@@H]2[C@@H](O)[C@H](O)[C@@H](COC(=O)CCC(=O)O[C@@H]3[C@@H](O)[C@H](O)[C@@H](CO1)O[C@@H]3O)O[C@@H]2O",
-    )
-    .unwrap();
+    let molecule = Molecule::from_smiles(POLYCYCLIC).unwrap();
     let prepared = prepare_molecule_for_drawing(&molecule, false).unwrap();
 
     assert_eq!(prepared.num_atoms(), 46);
@@ -223,6 +223,68 @@ fn polycyclic_chiral_hydrogen_preparation_matches_rdkit_regression() {
 
     let svg = render_with_frozen_layout(&prepared, frozen_coordinates::POLYCYCLIC);
     assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 189.8,250.4 L 186.4,239.5'"));
+}
+
+#[test]
+fn generated_drawing_layout_matches_pinned_rdkit_coordinate_bits() {
+    // Independent native capture: RDKit 2026.09.1, fece8caa860bdf6c9c82bdb9253f22a0cf87150c.
+    // PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True,
+    // forceCoords=True) selects canonical orientation (MolDraw2DUtils.cpp).
+    // These endpoints exercise the original rendering boundaries on ACTUAL
+    // generated layouts; the owner's 48-cell regression checks every XY value.
+    // Native SVG: 300x300, prepareMolsBeforeDrawing=False. No oracle runs in tests.
+    let cases: [(&str, &[(usize, [u64; 2])], &str); 4] = [
+        (
+            AROMATIC,
+            &[
+                (12, [4613032766328682881, 13828302655841107969]),
+                (13, [4615957940093015615, 13832806255468478468]),
+            ],
+            "<path class='bond-12 atom-12 atom-13' d='M 217.5,171.8 L 251.2,191.3'",
+        ),
+        (
+            OVERLAPPING,
+            &[
+                (4, [13831539710859547413, 4610839563589295723]),
+                (5, [13832707603999115181, 4599699880686433871]),
+            ],
+            "<path class='bond-4 atom-4 atom-5' d='M 135.4,107.8 L 131.8,128.4'",
+        ),
+        (
+            CANONICAL,
+            &[
+                (0, [13835671506291116628, 13843217216364623430]),
+                (1, [13835632716909517512, 13841528477871995783]),
+                (2, [13838342353362249806, 13840520171656593139]),
+                (3, [13840564083172681700, 13841023575102803764]),
+            ],
+            "<path class='bond-0 atom-0 atom-1' d='M 121.0,246.1 L 121.2,229.5'",
+        ),
+        (
+            POLYCYCLIC,
+            &[
+                (0, [13828061731183912176, 13842390984557266950]),
+                (1, [13826697605947869546, 13840710764850775524]),
+            ],
+            "<path class='bond-0 atom-0 atom-1' d='M 128.1,264.5 L 129.2,253.1'",
+        ),
+    ];
+    for (smiles, expected, path) in cases {
+        let molecule = Molecule::from_smiles(smiles).unwrap();
+        assert!(molecule.coordinates_2d().is_none());
+        let before = molecule.clone();
+        let prepared = prepare_molecule_for_drawing(&molecule, true).unwrap();
+        let xy = prepared.coordinates_2d().unwrap();
+        for &(atom, bits) in expected {
+            assert_eq!(xy[atom].map(f64::to_bits), bits, "{smiles}: atom {atom}");
+        }
+        let prepared_before = prepared.clone();
+        let svg = prepared.to_svg(300, 300).unwrap();
+        assert!(svg.contains(path), "{smiles}: generated SVG endpoint");
+        assert_eq!(prepared, prepared_before);
+        assert_eq!(molecule, before);
+        assert!(molecule.coordinates_2d().is_none());
+    }
 }
 
 #[test]

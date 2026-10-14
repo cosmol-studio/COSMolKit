@@ -67,10 +67,32 @@ impl MorganOutput for u64 {
 }
 
 /// Packed Boost bitset storage used for Morgan neighborhoods and atom state.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct MorganBondEnvironment {
     bit_count: usize,
     blocks: Vec<u64>,
+}
+
+impl Clone for MorganBondEnvironment {
+    fn clone(&self) -> Self {
+        Self {
+            bit_count: self.bit_count,
+            blocks: self.blocks.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        // BEGIN BOOST CPP FUNCTION dynamic_bitset::operator=(const dynamic_bitset&)
+        // Boost✔️✔️: m_bits = b.m_bits;
+        // Boost✔️✔️: m_num_bits = b.m_num_bits;
+        // Boost✔️✔️: return *this;
+        // END BOOST CPP FUNCTION dynamic_bitset::operator=(const dynamic_bitset&)
+        // Copy assignment preserves all logical bits and reuses an existing
+        // equal-sized buffer, as std::vector assignment does in Boost. Morgan
+        // calls this for every atom at the end of every radius layer.
+        self.blocks.clone_from(&source.blocks);
+        self.bit_count = source.bit_count;
+    }
 }
 
 impl PartialEq for MorganBondEnvironment {
@@ -1502,7 +1524,7 @@ fn selected_atom_invariants(
     topology: &TopologyBlock,
     coordinates: &cosmolkit_model::CoordinateBlock,
     valence: &ValenceAssignment,
-    rings: &RingInfo,
+    rings: Option<&RingInfo>,
     generator: &MorganGenerator,
     selection: MorganAtomInvariants<'_>,
 ) -> Result<Vec<u32>, MorganError> {
@@ -1529,6 +1551,7 @@ fn selected_atom_invariants(
             None => Ok(Vec::new()),
         },
         MorganAtomInvariants::Features | MorganAtomInvariants::FeaturePatterns(_) => {
+            let rings = crate::prepared::required_morgan_rings(rings)?;
             let patterns = match selection {
                 MorganAtomInvariants::Connectivity => unreachable!(),
                 MorganAtomInvariants::Features => None,
@@ -2048,6 +2071,30 @@ mod tests {
     use crate::hash::{hash_combine, hash_value_i32, hash_value_u32};
     use crate::invariants::MorganFeatureAtomInvGenerator;
     use crate::{FingerprintError, MorganError, MorganPreparedInput};
+
+    #[test]
+    fn morgan_neighborhood_clone_from_reuses_existing_word_buffers() {
+        let mut destinations = vec![MorganBondEnvironment::new(130); 3];
+        let pointers: Vec<_> = destinations
+            .iter()
+            .map(|mask| mask.blocks.as_ptr())
+            .collect();
+        let mut sources = destinations.clone();
+        for (index, source) in sources.iter_mut().enumerate() {
+            source.set(index * 64);
+        }
+        for _ in 0..2 {
+            destinations.clone_from(&sources);
+            assert_eq!(destinations, sources);
+            for (destination, pointer) in destinations.iter().zip(&pointers) {
+                assert_eq!(destination.blocks.as_ptr(), *pointer);
+            }
+        }
+        let resized = MorganBondEnvironment::new(65);
+        destinations[0].clone_from(&resized);
+        assert_eq!(destinations[0], resized);
+        assert_eq!(destinations[0].blocks.as_ptr(), pointers[0]);
+    }
     use cosmolkit_core::{
         RemoveHsParams, SanitizeParams, ValenceAssignment, fast_find_rings,
         remove_hydrogens_with_params, sanitize_topology,
@@ -2150,7 +2197,7 @@ mod tests {
             coordinates: &record.coordinates,
             properties: &record.properties,
             valence: &valence,
-            rings: &rings,
+            rings: Some(&rings),
         };
         let mut cases = 0;
 
@@ -2267,7 +2314,7 @@ mod tests {
             coordinates: &record.coordinates,
             properties: &record.properties,
             valence: &valence,
-            rings: &rings,
+            rings: Some(&rings),
         };
         let params = MorganParams {
             radius: 0,
@@ -2385,7 +2432,7 @@ mod tests {
                 coordinates: &record.coordinates,
                 properties: &record.properties,
                 valence: &valence,
-                rings: &rings,
+                rings: Some(&rings),
             };
             let atom_count = record.topology.atoms.len();
 
@@ -5113,7 +5160,7 @@ mod tests {
                 .atom_invariants
                 .as_ref()
                 .expect("factory supplies default atom provider")
-                .get_atom_invariants(&record.topology, &prepared_valence, &rings)
+                .get_atom_invariants(&record.topology, &prepared_valence, Some(&rings))
                 .expect("fixed prepared topology yields default Morgan atom invariants");
             let bond_invariants = generator
                 .bond_invariants

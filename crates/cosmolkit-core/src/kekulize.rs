@@ -3542,9 +3542,51 @@ pub fn rank_mol_atoms_with_params(
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
     let view = CanonRankReadView::from_topology(topology)?;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankMolAtoms
+    rank_mol_atoms_from_view(topology, params, &view)
+}
+
+/// Rank an already prepared detached working graph without rebuilding its caches.
+#[doc(hidden)]
+pub fn rank_mol_atoms_with_prepared_state(
+    topology: &TopologyBlock,
+    params: &CanonicalRankParams,
+    valence: &ValenceAssignment,
+    rings: Option<&RingInfo>,
+) -> Result<Vec<usize>, CanonicalRankError> {
+    // BEGIN RDKIT CPP FUNCTION new_canon.cpp::rankMolAtoms prepared cache selection
+    // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+    // RDKit✔️✔️:     clearRings = true;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION new_canon.cpp::rankMolAtoms prepared cache selection
+    // The caller supplies the property-cache rows of this exact working graph.
+    // Borrowing preserves source cache reuse; the existing view checks row
+    // dimensions and only prepares rings when the source cache is insufficient.
+    if topology.atoms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let view = CanonRankReadView::from_prepared_state(topology, valence, rings, None)?;
+    rank_mol_atoms_from_view(topology, params, &view)
+}
+
+fn rank_mol_atoms_from_view(
+    topology: &TopologyBlock,
+    params: &CanonicalRankParams,
+    view: &CanonRankReadView<'_>,
+) -> Result<Vec<usize>, CanonicalRankError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankMolAtoms
+    // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   std::vector<int> neighborIds(2 * mol.getNumBonds());
+    // RDKit✔️✔️:   initCanonAtoms(mol, atoms, neighborIds, includeChirality,
+    // RDKit✔️✔️:                  includeStereoGroups);
+    // Both preparation entrypoints use this single unchanged ranking kernel.
     let mut neighbor_ids = vec![0; 2 * view.bonds.len()];
     let mut atoms = init_canon_atoms(
-        &view,
+        view,
         topology,
         params.include_chirality,
         params.include_stereo_groups,
@@ -3565,7 +3607,7 @@ pub fn rank_mol_atoms_with_params(
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
     // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
     // RDKit✔️✔️:   }
-    let result = rank_initialized_atoms(&view, &mut atoms, *params)?;
+    let result = rank_initialized_atoms(view, &mut atoms, *params)?;
     // RDKit✔️✔️:
     // RDKit✔️✔️:   if (clearRings) {
     // RDKit✔️✔️:     mol.getRingInfo()->reset();
@@ -11340,6 +11382,12 @@ mod tests {
             CanonRankReadView::from_prepared_state(&graph, &valence, Some(&rings), None).unwrap();
         assert!(matches!(view.valence, Cow::Borrowed(_)));
         assert!(matches!(view.rings, Cow::Borrowed(_)));
+        let whole_options = CanonicalRankParams::default();
+        assert_eq!(
+            rank_mol_atoms_with_prepared_state(&graph, &whole_options, &valence, Some(&rings),)
+                .unwrap(),
+            rank_mol_atoms_with_params(&graph, &whole_options).unwrap(),
+        );
         let options = CanonicalRankParams::kekulize_fragment_default();
         let prepared = rank_fragment_atoms_with_prepared_state(
             &graph,

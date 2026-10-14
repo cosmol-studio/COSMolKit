@@ -72,7 +72,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = AtomPairCall {
@@ -102,7 +102,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = AtomPairCall {
@@ -132,7 +132,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = AtomPairCall {
@@ -164,7 +164,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = AtomPairCall {
@@ -199,7 +199,7 @@ impl Molecule {
             properties: base.properties,
             coordinates: base.coordinates,
             valence: base.valence,
-            rings: base.rings,
+            rings: base.rings.expect("required ring preparation provides rows"),
             use_legacy_stereo_perception: params.use_legacy_stereo_perception,
         };
         let call = AtomPairCall {

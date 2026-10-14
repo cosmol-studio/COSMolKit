@@ -130,6 +130,19 @@ impl CxParseProgress {
         self.error.as_ref()
     }
 
+    /// Consume completed syntax progress without scanning or copying it again.
+    #[doc(hidden)]
+    pub fn into_parsed(self) -> Result<ParsedCxExtensions, CxParseError> {
+        self.emit_source_warning();
+        let (records, _, consumed, complete, error) = self.into_parts();
+        if !complete {
+            return Err(error.unwrap_or_else(|| {
+                CxParseError::new(consumed, "failure parsing CXSMILES extensions")
+            }));
+        }
+        Ok(ParsedCxExtensions::new(records, consumed))
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -393,6 +406,20 @@ pub struct CxVariableAttachment {
 mod recovery_chem29_cx {
     use super::*;
     use crate::parse_cx_extensions_progress_with_atom_window;
+    #[test]
+    fn completed_progress_moves_records_and_preserves_syntax_errors() {
+        let progress = parse_cx_extensions_progress_with_atom_window("|$alpha;beta$|", 0, 2);
+        assert!(progress.is_complete());
+        let records = progress.records().as_ptr();
+        let consumed = progress.consumed();
+        let parsed = progress.into_parsed().unwrap();
+        assert_eq!(parsed.records().as_ptr(), records);
+        assert_eq!(parsed.consumed(), consumed);
+        let invalid = parse_cx_extensions_progress_with_atom_window("|$alpha", 0, 2);
+        let expected = invalid.error().unwrap().clone();
+        assert_eq!(invalid.into_parsed().unwrap_err(), expected);
+    }
+
     #[test]
     fn duplicate_valid_members_stop_before_completion_with_exact_warning() {
         for text in ["|a:0,0,o2:1|", "|o7:0,0,&2:1|", "|&7:0,0,a:1|"] {

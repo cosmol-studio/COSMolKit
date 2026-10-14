@@ -2,7 +2,7 @@
   "library": "RDKit",
   "commit": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
   "license": "BSD-3-Clause",
-  "fixture_sha256": "4841d9ef720b36546c3f54a8cf68a59fdd41f520f58376bde02a3c625cf2e89d",
+  "fixture_sha256": "2f72429debafad40967650a2360d8c80dc1b0663747d8dfdd5d912c12fd3c183",
   "generator": "tools/testdata/depict_2d/prepared_property_source.cpp",
   "generator_sha256": "cf186c175dbe9f43f16e5183f90df676a27ca69a692f8c70437c91bcabd56b2c",
   "fixed_behavior_cells": 48,
@@ -12,5 +12,18 @@
     2508,
     227,
     155
-  ]
+  ],
+  "coordinate_reference": {
+    "version": "2026.09.1",
+    "commit": "fece8caa860bdf6c9c82bdb9253f22a0cf87150c",
+    "generator": "tools/testdata/depict_2d/prepared_property_coordinates.py",
+    "generator_sha256": "c5d9741c83b6da199a3b174f0760cd53b30ba9f9539417fa075f7d789f0ae72b",
+    "input_cases": "crates/cosmolkit/tests/fixtures/d2_prepared_property.rs",
+    "input_selection": "CASES input literal table",
+    "input_cases_sha256": "e1ab29d2ed1a433833f325b8ad5cdb29f79ad36526e58a9d5833545b349ae973",
+    "fixed_behavior_cells": 48,
+    "coordinate_rows": 2976,
+    "unique_coordinate_blocks": 6,
+    "source_parameters": "legacy=1; preferCoordGen=0; canonOrient=O; clearConfs=1; coordMap=empty; nFlipsPerSample=0; nSamples=0; sampleSeed=0; permuteDeg4Nodes=0; forceRDKit=0; useRingTemplates=0; usePathAngleExpansion=1 (native default)"
+  }
 }

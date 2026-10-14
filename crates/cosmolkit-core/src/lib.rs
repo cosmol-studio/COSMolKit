@@ -42,6 +42,8 @@ mod scaffolds;
 pub mod source_control_c;
 mod source_sort;
 #[doc(hidden)]
+pub use rings::sort_bond_rings_by_descending_size;
+#[doc(hidden)]
 pub mod stereo_graph;
 mod stereo_order;
 mod structure_tags;
@@ -148,7 +150,7 @@ pub use kekulize::{
     kekulize_if_possible_with_query_state_and_ring_info, kekulize_selected_fragment,
     kekulize_with_query_state, kekulize_with_query_state_and_ring_info, rank_fragment_atoms,
     rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
-    rank_mol_atoms_with_params, source_kekulize_attempt,
+    rank_mol_atoms_with_params, rank_mol_atoms_with_prepared_state, source_kekulize_attempt,
 };
 
 pub use legacy_stereo::{
@@ -216,7 +218,8 @@ pub use rings::{
 pub use sanitize::{
     ChemistryProblem, ChemistryProblemError, ChemistryProblemReport, SanitizeAssignment,
     SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, detect_chemistry_problems,
-    sanitize_topology, sanitize_topology_with_query_state, source_sanitize_tautomer_product,
+    sanitize_owned_topology, sanitize_topology, sanitize_topology_with_query_state,
+    source_sanitize_tautomer_product,
 };
 pub(crate) use sanitize::{
     PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,
