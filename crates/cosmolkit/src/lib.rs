@@ -519,8 +519,8 @@ mod sdf_supplier;
 #[cfg(feature = "cap-io")]
 pub use molecular_io::{
     Mol2PostError, Mol2ReadError, Mol2ReadParams, Mol2Type, MolBlockWriteParams,
-    MolCoordinateSelection, MolWriteError, MolecularIoError, SdfFormat, XyzReadError,
-    XyzWriteError, XyzWriteParams,
+    MolCoordinateSelection, MolWriteError, MolecularIoError, PdbWriteError, PdbWriteParams,
+    SdfFormat, XyzReadError, XyzWriteError, XyzWriteParams,
 };
 #[cfg(feature = "cap-stereoisomers")]
 pub use ops::StereoisomerIterator;

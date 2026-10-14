@@ -46,6 +46,19 @@ pub enum PdbWriteError {
     Topology(#[from] cosmolkit_model::TopologyValidationError),
     #[error("detached PDB coordinates are invalid: {0}")]
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error(
+        "PDB output has {two_d} 2D and {three_d} 3D coordinate sets; select dimension and id or request all_conformers"
+    )]
+    AmbiguousCoordinates { two_d: usize, three_d: usize },
+    #[error("PDB output has no {dimension:?} coordinate set with id {id}")]
+    MissingCoordinate {
+        dimension: CoordinateDimension,
+        id: usize,
+    },
+    #[error("all_conformers cannot be combined with an explicit coordinate_selection")]
+    ConflictingCoordinateSelection,
+    #[error("PDB Kekule preprocessing failed: {0}")]
+    Kekulize(#[from] cosmolkit_core::KekulizeError),
 }
 
 /// Controls the source-defined PDB block-reader flavor flags.
@@ -66,6 +79,17 @@ pub struct PdbWriteParams {
     /// Bit 2 suppresses single/aromatic `CONECT` entries, bit 4 writes both
     /// directions, bit 8 suppresses bond-order multiplicity, bit 16 adds
     /// `MASTER`, and bit 32 adds `TER`.
+    pub flavor: u32,
+}
+
+/// Public exporter policy: unique-or-explicit coordinates, or all stored sets.
+/// All-set output uses 2D storage order followed by 3D storage order; IDs are
+/// not assumed contiguous. PDB stores 2D positions with z=0 and cannot retain
+/// the coordinate dimension or arbitrary CK conformer identifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PdbExportParams {
+    pub coordinate_selection: crate::MolCoordinateSelection,
+    pub all_conformers: bool,
     pub flavor: u32,
 }
 
@@ -1554,21 +1578,107 @@ pub fn write_pdb_detached_with_params(
     properties: &MoleculeProperties,
     params: PdbWriteParams,
 ) -> Result<PropertyText, PdbWriteError> {
-    if topology
-        .bonds
-        .iter()
-        .any(|bond| bond.order() == BondOrder::Aromatic || bond.is_aromatic())
-    {
-        // RDKit source: PDBWriter.cpp lines 267-270
-        // RDKit❌❌: std::string MolToPDBBlock(const ROMol &imol, int confId, unsigned int flavor) {
-        // RDKit❌❌:   RWMol rwmol(imol);
-        // RDKit❌❌:   MolOps::Kekulize(rwmol);
-        // RDKit❌❌:   Utils::LocaleSwitcher ls;
-        return Err(PdbWriteError::Unsupported {
-            feature: "RDKit Kekulize preprocessing for aromatic PDB output",
-        });
-    }
+    let topology = pdb_writer_topology(topology)?;
     let conformers = selected_conformers(coordinates, params.conformer_id)?;
+    write_selected_pdb(&topology, &conformers, properties, params.flavor, false)
+}
+
+fn pdb_writer_topology(topology: &TopologyBlock) -> Result<TopologyBlock, PdbWriteError> {
+    // BEGIN RDKIT CPP FUNCTION MolToPDBBlock preprocessing (PDBWriter.cpp)
+    // RDKit✔️✔️:   RWMol rwmol(imol);
+    // RDKit✔️✔️:   MolOps::Kekulize(rwmol);
+    // END RDKIT CPP FUNCTION
+    // Invoke the shared owner even for nonaromatic graphs: source Kekulize
+    // refreshes implicit valence before its nonaromatic early return. Stage
+    // only topology; coordinates and molecule properties remain borrowed.
+    // Source RWMol also copies the graph, so this adds no whole-value clone.
+    Ok(cosmolkit_core::kekulize(topology, &cosmolkit_core::KekulizeParams::default())?.topology)
+}
+
+/// Export using CK's approved dimension/ID selection rather than RDKit's
+/// implicit first-conformer/0..count lookup policy. Formatting and chemistry
+/// use the same source-backed encoder as the detached source-profile writer.
+pub fn write_pdb_export_with_params(
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    properties: &MoleculeProperties,
+    params: &PdbExportParams,
+) -> Result<PropertyText, PdbWriteError> {
+    use crate::MolCoordinateSelection as S;
+    if params.all_conformers && params.coordinate_selection != S::Auto {
+        return Err(PdbWriteError::ConflictingCoordinateSelection);
+    }
+    let topology = pdb_writer_topology(topology)?;
+    // CK approved export-selection difference: explicit All enumerates every
+    // stored set; Auto is unique-or-error. Never use I/O provenance as an
+    // algorithmic preference or reinterpret a conformer id as a vector index.
+    let conformers: Vec<SelectedConformer<'_>> = if params.all_conformers {
+        coordinates
+            .conformers_2d
+            .iter()
+            .map(SelectedConformer::TwoD)
+            .chain(
+                coordinates
+                    .conformers_3d
+                    .iter()
+                    .map(SelectedConformer::ThreeD),
+            )
+            .collect()
+    } else {
+        let selection = match params.coordinate_selection {
+            S::Auto => match (
+                coordinates.conformers_2d.as_slice(),
+                coordinates.conformers_3d.as_slice(),
+            ) {
+                ([], []) => None,
+                ([c], []) => Some(SelectedConformer::TwoD(c)),
+                ([], [c]) => Some(SelectedConformer::ThreeD(c)),
+                (two, three) => {
+                    return Err(PdbWriteError::AmbiguousCoordinates {
+                        two_d: two.len(),
+                        three_d: three.len(),
+                    });
+                }
+            },
+            S::TwoD { id } => Some(SelectedConformer::TwoD(
+                coordinates
+                    .conformers_2d
+                    .iter()
+                    .find(|c| c.id() == id)
+                    .ok_or(PdbWriteError::MissingCoordinate {
+                        dimension: CoordinateDimension::TwoD,
+                        id,
+                    })?,
+            )),
+            S::ThreeD { id } => Some(SelectedConformer::ThreeD(
+                coordinates
+                    .conformers_3d
+                    .iter()
+                    .find(|c| c.id() == id)
+                    .ok_or(PdbWriteError::MissingCoordinate {
+                        dimension: CoordinateDimension::ThreeD,
+                        id,
+                    })?,
+            )),
+        };
+        selection.into_iter().collect()
+    };
+    write_selected_pdb(
+        &topology,
+        &conformers,
+        properties,
+        params.flavor,
+        params.all_conformers,
+    )
+}
+
+fn write_selected_pdb(
+    topology: &TopologyBlock,
+    conformers: &[SelectedConformer<'_>],
+    properties: &MoleculeProperties,
+    flavor: u32,
+    write_models: bool,
+) -> Result<PropertyText, PdbWriteError> {
     let mut output = PropertyText::new();
     // RDKit❗✔️: std::string MolToPDBBlock(const ROMol &imol, int confId, unsigned int flavor) {
     // RDKit❗✔️:   RWMol rwmol(imol);
@@ -1642,7 +1752,7 @@ pub fn write_pdb_detached_with_params(
     let mut atom_count = 0;
     let mut ter_count = 0;
     let mut conect_count = 0;
-    if params.conformer_id.is_none() && conformers.len() > 1 {
+    if conformers.len() > 1 || (write_models && !conformers.is_empty()) {
         // RDKit source: PDBWriter.cpp lines 286-299
         // RDKit✔️✔️:   if (confId < 0 && rwmol.getNumConformers() > 1) {
         // RDKit✔️✔️:     int count = rwmol.getNumConformers();
@@ -1664,7 +1774,7 @@ pub fn write_pdb_detached_with_params(
                 (&pdb_body(
                     topology,
                     Some(conformer),
-                    params.flavor,
+                    flavor,
                     &mut atom_count,
                     &mut ter_count,
                     &mut conect_count,
@@ -1678,7 +1788,7 @@ pub fn write_pdb_detached_with_params(
             (&pdb_body(
                 topology,
                 conformers.first().copied(),
-                params.flavor,
+                flavor,
                 &mut atom_count,
                 &mut ter_count,
                 &mut conect_count,
@@ -1686,7 +1796,7 @@ pub fn write_pdb_detached_with_params(
                 .as_ref(),
         );
     }
-    if params.flavor & 16 != 0 {
+    if flavor & 16 != 0 {
         // RDKit source: PDBWriter.cpp lines 310-317
         // RDKit✔️✔️:   if (flavor & 16) {
         // RDKit✔️✔️:     std::stringstream ss;
@@ -2334,6 +2444,56 @@ mod tests {
         .map(super::fixture_writer_text)
         .expect_err("missing conformer");
         assert_eq!(missing, PdbWriteError::ConformerNotFound { id: 8 });
+    }
+
+    #[test]
+    fn exporter_selects_dimension_and_enumerates_stored_ids() {
+        let topology = TopologyBlock {
+            atoms: vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            adjacency: AdjacencyList::from_topology(1, &[]),
+            ..Default::default()
+        };
+        let coordinates = CoordinateBlock {
+            conformers_2d: vec![cosmolkit_model::Conformer2D::new(17, vec![[1.0, 2.0]])],
+            conformers_3d: vec![Conformer3D::new(91, vec![[3.0, 4.0, 5.0]], true)],
+            ..Default::default()
+        };
+        let properties = MoleculeProperties::default();
+        let write = |params| {
+            write_pdb_export_with_params(&topology, &coordinates, &properties, &params)
+                .map(fixture_writer_text)
+        };
+        assert_eq!(
+            write(PdbExportParams::default()).unwrap_err(),
+            PdbWriteError::AmbiguousCoordinates {
+                two_d: 1,
+                three_d: 1
+            }
+        );
+        let single = write(PdbExportParams {
+            coordinate_selection: crate::MolCoordinateSelection::ThreeD { id: 91 },
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(single.contains("   3.000   4.000   5.000"));
+        assert!(!single.contains("MODEL"));
+        let all = write(PdbExportParams {
+            all_conformers: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(all.matches("MODEL").count(), 2);
+        assert!(all.contains("   1.000   2.000   0.000"));
+        assert!(all.contains("   3.000   4.000   5.000"));
+        assert_eq!(
+            write(PdbExportParams {
+                all_conformers: true,
+                coordinate_selection: crate::MolCoordinateSelection::TwoD { id: 17 },
+                ..Default::default()
+            })
+            .unwrap_err(),
+            PdbWriteError::ConflictingCoordinateSelection
+        );
     }
 }
 

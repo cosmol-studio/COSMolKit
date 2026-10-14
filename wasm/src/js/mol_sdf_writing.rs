@@ -15,7 +15,7 @@ pub enum SdfFormat {
 }
 #[wasm_bindgen]
 pub struct MolCoordinateSelection {
-    inner: ck::MolCoordinateSelection,
+    pub(crate) inner: ck::MolCoordinateSelection,
 }
 #[wasm_bindgen]
 impl MolCoordinateSelection {
@@ -69,7 +69,7 @@ impl MolCoordinateSelection {
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitMolSelection)]
-    fn visit_selection(
+    pub(crate) fn visit_selection(
         v: &JsValue,
         f: &mut dyn FnMut(&MolCoordinateSelection),
     ) -> Result<(), JsValue>;

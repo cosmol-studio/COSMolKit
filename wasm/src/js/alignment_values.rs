@@ -299,6 +299,9 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
     if let Some(e) = source.downcast_ref::<ck::MolWriteError>() {
         return crate::mol_write_errors::mol_write_error(e);
     }
+    if let Some(e) = source.downcast_ref::<ck::PdbWriteError>() {
+        return crate::pdb_io::pdb_write_error(e);
+    }
 
     if let Some(source) = source.downcast_ref::<ck::XyzReadError>() {
         return crate::xyz_mol2_errors::xyz_read_error(source);

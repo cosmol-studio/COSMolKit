@@ -150,6 +150,7 @@ _binding_profile: builtins.str
         "ValenceError",
         "CipDescriptorError",
         "MolecularIoError",
+        "PdbWriteError",
         "MmffMolPropertiesError",
         "MmffOptimizationError",
         "UffOptimizationError",
@@ -177,6 +178,10 @@ _binding_profile: builtins.str
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     for (name, fields) in [
+        (
+            "PdbWriteError",
+            "    two_d: builtins.int\n    three_d: builtins.int\n    coordinate_id: builtins.int\n    dimension: builtins.str\n    feature: builtins.str\n",
+        ),
         (
             "PotentialStereoError",
             "    atom: builtins.int\n    property: builtins.str\n    property_kind: builtins.str\n    value: builtins.int\n    field: builtins.str\n    actual: builtins.int\n    atom_count: builtins.int\n    reason: builtins.str\n    row: builtins.int\n    limit: builtins.int\n    degree: builtins.int\n    bond: builtins.int\n    endpoint: builtins.str\n    order: BondOrder\n    permutation: builtins.int\n    iterations: builtins.int\n",

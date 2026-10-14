@@ -128,6 +128,9 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
     if let Some(error) = source.downcast_ref::<ck::ValenceError>() {
         return crate::canonical_atom_bond::valence_pyerr(py, error.clone());
     }
+    if let Some(error) = source.downcast_ref::<ck::PdbWriteError>() {
+        return crate::canonical_molecular_io::pdb_write_pyerr(py, error.clone());
+    }
     if let Some(error) = source.downcast_ref::<ck::KekulizeError>() {
         return crate::canonical_chemistry_values::kekulize_pyerr(py, error.clone());
     }

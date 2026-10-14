@@ -232,7 +232,7 @@ fn read_error(py: Python<'_>, source: ck::BioReadError) -> PyErr {
     };
     annotate(py, error, kind, &source)
 }
-fn pdb_error(py: Python<'_>, source: ck::BioPdbReadError) -> PyErr {
+pub(crate) fn pdb_error(py: Python<'_>, source: ck::BioPdbReadError) -> PyErr {
     let error = annotate(
         py,
         BioPdbReadError::new_err(source.to_string()),
@@ -260,7 +260,7 @@ fn pdb_error(py: Python<'_>, source: ck::BioPdbReadError) -> PyErr {
         Err(e) => e,
     }
 }
-fn mmcif_error(py: Python<'_>, source: ck::BioMmcifReadError) -> PyErr {
+pub(crate) fn mmcif_error(py: Python<'_>, source: ck::BioMmcifReadError) -> PyErr {
     let error = annotate(
         py,
         BioMmcifReadError::new_err(source.to_string()),
@@ -2753,7 +2753,7 @@ impl ProteinAtomRef {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
 pub(crate) struct BioMoleculeParams {
-    inner: ck::BioMoleculeParams,
+    pub(crate) inner: ck::BioMoleculeParams,
 }
 #[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -2794,7 +2794,7 @@ impl BioMoleculeParams {
         self.inner.proximity_bonding
     }
 }
-fn molecule_error(py: Python<'_>, source: ck::BioMoleculeError) -> PyErr {
+pub(crate) fn molecule_error(py: Python<'_>, source: ck::BioMoleculeError) -> PyErr {
     let kind = match &source {
         ck::BioMoleculeError::Conversion(_) => "Conversion",
         ck::BioMoleculeError::Construction(_) => "Construction",

@@ -7,7 +7,7 @@ use std::{error::Error as RustError, sync::Arc};
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 pub struct BioMoleculeParams {
-    inner: ck::BioMoleculeParams,
+    pub(crate) inner: ck::BioMoleculeParams,
 }
 #[cosmolkit_wasm::javascript_options("BioMoleculeParamsOptions")]
 #[wasm_bindgen]
@@ -56,7 +56,7 @@ impl BioMoleculeParams {
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitBioMoleculeParams)]
-    fn visit_params(
+    pub(crate) fn visit_params(
         value: &JsValue,
         visit: &mut dyn FnMut(&BioMoleculeParams),
     ) -> Result<(), JsValue>;

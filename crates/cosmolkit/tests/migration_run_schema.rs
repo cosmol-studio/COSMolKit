@@ -1865,6 +1865,20 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.atom_property_string",
             "Molecule.bond_property_string",
             "types.MolecularIoError",
+            "types.PdbWriteError",
+            "types.PdbWriteParams",
+        ]);
+        if cfg!(feature = "cap-bio") {
+            expected.extend([
+                "Molecule.from_pdb",
+                "Molecule.from_pdb_with_params",
+                "Molecule.from_mmcif",
+                "Molecule.from_mmcif_with_params",
+            ]);
+        }
+        expected.extend([
+            "Molecule.to_pdb",
+            "Molecule.to_pdb_with_params",
             "types.Mol2ReadParams",
             "types.Mol2Type",
             "types.Mol2ReadError",

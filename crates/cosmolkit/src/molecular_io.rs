@@ -4,6 +4,7 @@ pub use cosmolkit_io::{
     Mol2PostError, Mol2ReadError, Mol2Type, MolBlockWriteParams, MolCoordinateSelection,
     MolWriteError, SdfFormat, XyzReadError, XyzWriteError, XyzWriteParams,
 };
+pub use cosmolkit_io::{PdbExportParams as PdbWriteParams, PdbWriteError};
 use std::{
     fmt,
     fs::File,
@@ -23,6 +24,13 @@ pub enum MolecularIoError {
     Mol2Read(Mol2ReadError),
     Mol2Post(Mol2PostError),
     MolWrite(MolWriteError),
+    PdbWrite(PdbWriteError),
+    #[cfg(feature = "cap-bio")]
+    PdbRead(crate::BioPdbReadError),
+    #[cfg(feature = "cap-bio")]
+    MmcifRead(crate::BioMmcifReadError),
+    #[cfg(feature = "cap-bio")]
+    BioMolecule(crate::BioMoleculeError),
     Sdf(SdfError),
     NoRecord {
         format: &'static str,
@@ -46,6 +54,13 @@ impl fmt::Display for MolecularIoError {
             Self::Mol2Read(e) => write!(f, "MOL2 read: {e}"),
             Self::Mol2Post(e) => write!(f, "MOL2 finalization: {e}"),
             Self::MolWrite(e) => e.fmt(f),
+            Self::PdbWrite(e) => e.fmt(f),
+            #[cfg(feature = "cap-bio")]
+            Self::PdbRead(e) => e.fmt(f),
+            #[cfg(feature = "cap-bio")]
+            Self::MmcifRead(e) => e.fmt(f),
+            #[cfg(feature = "cap-bio")]
+            Self::BioMolecule(e) => e.fmt(f),
             Self::Sdf(e) => e.fmt(f),
             Self::NoRecord { format } => write!(f, "{format} found no molecule record"),
             Self::OutputUtf8 { format, source } => {
@@ -65,6 +80,13 @@ impl std::error::Error for MolecularIoError {
             Self::Mol2Read(e) => Some(e),
             Self::Mol2Post(e) => Some(e),
             Self::MolWrite(e) => Some(e),
+            Self::PdbWrite(e) => Some(e),
+            #[cfg(feature = "cap-bio")]
+            Self::PdbRead(e) => Some(e),
+            #[cfg(feature = "cap-bio")]
+            Self::MmcifRead(e) => Some(e),
+            #[cfg(feature = "cap-bio")]
+            Self::BioMolecule(e) => Some(e),
             Self::Sdf(e) => Some(e),
             Self::OutputUtf8 { source, .. } => Some(source),
             Self::Parameter { .. } | Self::NoRecord { .. } => None,
@@ -87,6 +109,52 @@ pub(crate) fn expanded_path(path: &str) -> Result<PathBuf, MolecularIoError> {
     }
 }
 impl Molecule {
+    /// Parse PDB text through the structural reader and canonical molecule
+    /// conversion. Requires `bio` and molecular IO; does not read a file.
+    #[cfg(feature = "cap-bio")]
+    pub fn from_pdb(text: &str) -> Result<Self, MolecularIoError> {
+        Self::from_pdb_with_params(text, &crate::BioMoleculeParams::default())
+    }
+    /// Parse PDB text with explicit conversion controls, preserving the shared
+    /// reader's metadata, filtering and typed chemistry failures.
+    #[cfg(feature = "cap-bio")]
+    pub fn from_pdb_with_params(
+        text: &str,
+        params: &crate::BioMoleculeParams,
+    ) -> Result<Self, MolecularIoError> {
+        // COSMolKit 0.3.0 io/pdb_molecule.rs:88-94:
+        // let structure = BioStructure::from_pdb_str(text)?;
+        // bio_structure_to_molecule(&structure, options)
+        // COSMolKit✔️✔️: unchanged owner composition, with validated construction
+        // delegated once to the existing BIO conversion; no graph or parser copy.
+        crate::BioStructure::from_pdb(text)
+            .map_err(MolecularIoError::PdbRead)?
+            .to_molecule_with_params(params)
+            .map_err(MolecularIoError::BioMolecule)
+    }
+    /// Parse coordinate mmCIF text into a molecule through the structural
+    /// reader and conversion. Requires `bio` and molecular IO, not a file path.
+    #[cfg(feature = "cap-bio")]
+    pub fn from_mmcif(text: &str) -> Result<Self, MolecularIoError> {
+        Self::from_mmcif_with_params(text, &crate::BioMoleculeParams::default())
+    }
+    /// Parse coordinate mmCIF text with the shared PDB-compatible conversion
+    /// policy. RDKit has no direct mmCIF molecule reader for this composition.
+    #[cfg(feature = "cap-bio")]
+    pub fn from_mmcif_with_params(
+        text: &str,
+        params: &crate::BioMoleculeParams,
+    ) -> Result<Self, MolecularIoError> {
+        // COSMolKit 0.3.0 io/pdb_molecule.rs:100-106:
+        // let structure = BioStructure::from_mmcif_str(text, "input.cif")?;
+        // bio_structure_to_molecule(&structure, options)
+        // COSMolKit✔️✔️: reuse the current mmCIF reader and the sole conversion
+        // owner; no independent model, sanitization policy or chemistry loop.
+        crate::BioStructure::from_mmcif(text)
+            .map_err(MolecularIoError::MmcifRead)?
+            .to_molecule_with_params(params)
+            .map_err(MolecularIoError::BioMolecule)
+    }
     /// Render an atom property using the source lexical conversion.
     pub fn atom_property_string(
         &self,
@@ -220,6 +288,27 @@ pub(crate) fn output_string(
         .map_err(|source| MolecularIoError::OutputUtf8 { format, source })
 }
 impl Molecule {
+    /// Return PDB text without modifying this molecule. Automatically use the
+    /// unique stored coordinate set, or zero coordinates when none are stored;
+    /// multiple sets require explicit dimension/id selection or all_conformers.
+    pub fn to_pdb(&self) -> Result<String, MolecularIoError> {
+        self.to_pdb_with_params(&PdbWriteParams::default())
+    }
+    /// Return PDB text with explicit coordinate and flavor policy. All-set
+    /// output writes 2D layouts first (z=0), then 3D conformers, in each
+    /// collection's stored order. PDB cannot preserve CK dimension/id metadata.
+    pub fn to_pdb_with_params(&self, params: &PdbWriteParams) -> Result<String, MolecularIoError> {
+        output_string(
+            cosmolkit_io::write_pdb_export_with_params(
+                self.topology(),
+                self.coordinate_block_runtime(),
+                self.properties(),
+                params,
+            )
+            .map_err(MolecularIoError::PdbWrite)?,
+            "PDB",
+        )
+    }
     pub fn from_mol(text: &str) -> Result<Self, SdfError> {
         Self::from_mol_with_params(text, &SdfReadParams::default())
     }

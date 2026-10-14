@@ -10,6 +10,114 @@ pyo3::create_exception!(
     PyValueError,
     "A molecular text format could not be parsed, serialized or read/written as a file."
 );
+pyo3::create_exception!(
+    cosmolkit,
+    PdbWriteError,
+    PyValueError,
+    "PDB output could not be produced with the selected coordinates and flavor."
+);
+
+/// Writable PDB output options. Select a dimension and stored ID when several
+/// coordinate sets exist, or request all sets explicitly. No coordinates are generated.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", dict, weakref)]
+pub(crate) struct PdbWriteParams {
+    pub(crate) inner: ck::PdbWriteParams,
+}
+#[cosmolkit_macros::python_configuration]
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PdbWriteParams {
+    #[new]
+    #[pyo3(signature = (*, coordinate_selection=None, all_conformers=false, flavor=0))]
+    fn new(
+        coordinate_selection: Option<&MolCoordinateSelection>,
+        all_conformers: bool,
+        flavor: u32,
+    ) -> Self {
+        Self {
+            inner: ck::PdbWriteParams {
+                coordinate_selection: coordinate_selection
+                    .map_or(ck::MolCoordinateSelection::Auto, |s| s.inner),
+                all_conformers,
+                flavor,
+            },
+        }
+    }
+    /// Automatic unique-or-error resolution, or an explicit dimension and stored ID.
+    #[getter]
+    fn coordinate_selection(&self) -> MolCoordinateSelection {
+        MolCoordinateSelection {
+            inner: self.inner.coordinate_selection,
+        }
+    }
+    /// Write every stored set (2D then 3D, each in storage order) as PDB models.
+    /// Cannot be combined with an explicit single-coordinate selection.
+    #[getter]
+    fn all_conformers(&self) -> bool {
+        self.inner.all_conformers
+    }
+    /// RDKit PDB writer bit mask: 2 suppresses single-bond CONECT, 4 writes both
+    /// directions, 8 suppresses bond multiplicity, 16 adds MASTER, 32 adds TER.
+    #[getter]
+    fn flavor(&self) -> u32 {
+        self.inner.flavor
+    }
+}
+
+pub(crate) fn pdb_write_pyerr(py: Python<'_>, source: ck::PdbWriteError) -> PyErr {
+    use ck::PdbWriteError as E;
+    let kind = match &source {
+        E::Property(_) => "Property",
+        E::ConformerNotFound { .. } => "ConformerNotFound",
+        E::Unsupported { .. } => "Unsupported",
+        E::Topology(_) => "Topology",
+        E::Coordinates(_) => "Coordinates",
+        E::AmbiguousCoordinates { .. } => "AmbiguousCoordinates",
+        E::MissingCoordinate { .. } => "MissingCoordinate",
+        E::ConflictingCoordinateSelection => "ConflictingCoordinateSelection",
+        E::Kekulize(_) => "Kekulize",
+    };
+    let error = crate::canonical_values::annotate(
+        py,
+        PdbWriteError::new_err(source.to_string()),
+        "io",
+        kind,
+        &source,
+    );
+    let fields = || -> PyResult<()> {
+        match &source {
+            E::AmbiguousCoordinates { two_d, three_d } => {
+                error.value(py).setattr("two_d", *two_d)?;
+                error.value(py).setattr("three_d", *three_d)?;
+            }
+            E::MissingCoordinate { dimension, id } => {
+                error.value(py).setattr(
+                    "dimension",
+                    match dimension {
+                        ck::CoordinateDimension::TwoD => "2d",
+                        ck::CoordinateDimension::ThreeD => "3d",
+                    },
+                )?;
+                error.value(py).setattr("coordinate_id", *id)?;
+            }
+            E::ConformerNotFound { id } => error.value(py).setattr("coordinate_id", *id)?,
+            E::Unsupported { feature } => error.value(py).setattr("feature", *feature)?,
+            _ => {}
+        }
+        Ok(())
+    };
+    if let Err(e) = fields() {
+        return e;
+    }
+    if let E::Kekulize(cause) = source {
+        error.set_cause(
+            py,
+            Some(crate::canonical_chemistry_values::kekulize_pyerr(py, cause)),
+        );
+    }
+    error
+}
 /// Writable configuration for XYZ text output.
 ///
 /// Set fields in the constructor or assign them afterward. Omitted values use the
@@ -54,6 +162,10 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: ck::MolecularIoError) -> PyErr
         E::Io { .. } => "Io",
         E::XyzRead(_) => "XyzRead",
         E::XyzWrite(_) => "XyzWrite",
+        E::PdbWrite(_) => "PdbWrite",
+        E::PdbRead(_) => "PdbRead",
+        E::MmcifRead(_) => "MmcifRead",
+        E::BioMolecule(_) => "BioMolecule",
         E::Construction(_) => "Construction",
         E::Mol2Read(_) => "Mol2Read",
         E::Mol2Post(_) => "Mol2Post",
@@ -124,6 +236,10 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: ck::MolecularIoError) -> PyErr
                 value.setattr("format", *format)?;
             }
             E::Mol2Read(_)
+            | E::PdbWrite(_)
+            | E::PdbRead(_)
+            | E::MmcifRead(_)
+            | E::BioMolecule(_)
             | E::Mol2Post(_)
             | E::MolWrite(_)
             | E::Sdf(_)
@@ -176,8 +292,16 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: ck::MolecularIoError) -> PyErr
             return e;
         }
     }
-    if let ck::MolecularIoError::Construction(cause) = source {
-        error.set_cause(py, Some(crate::drawing_binding::operation_pyerr(py, cause)));
+    let cause = match source {
+        E::Construction(cause) => Some(crate::drawing_binding::operation_pyerr(py, cause)),
+        E::PdbWrite(cause) => Some(pdb_write_pyerr(py, cause)),
+        E::PdbRead(cause) => Some(crate::canonical_bio_binding::pdb_error(py, cause)),
+        E::MmcifRead(cause) => Some(crate::canonical_bio_binding::mmcif_error(py, cause)),
+        E::BioMolecule(cause) => Some(crate::canonical_bio_binding::molecule_error(py, cause)),
+        _ => None,
+    };
+    if let Some(cause) = cause {
+        error.set_cause(py, Some(cause));
     }
     error
 }
@@ -187,6 +311,8 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<MolecularIoError>(),
     )?;
     module.add_class::<XyzWriteParams>()?;
+    module.add("PdbWriteError", module.py().get_type::<PdbWriteError>())?;
+    module.add_class::<PdbWriteParams>()?;
     module.add_class::<Mol2Type>()?;
     module.add_class::<Mol2ReadParams>()?;
     module.add_class::<SdfFormat>()?;

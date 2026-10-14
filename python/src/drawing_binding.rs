@@ -712,6 +712,61 @@ impl Molecule {
         crate::canonical_stereoisomers::stereoisomer_count_with_options(self, py, options)
     }
 
+    /// Parse PDB text through BIO conversion, preserving residue metadata.
+    #[staticmethod]
+    fn from_pdb(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_pdb(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    /// Parse PDB text with explicit sanitization, hydrogen and bonding options.
+    #[staticmethod]
+    fn from_pdb_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &crate::canonical_bio_binding::BioMoleculeParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_pdb_with_params(text, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    /// Parse mmCIF text through BIO conversion, preserving residue metadata.
+    #[staticmethod]
+    fn from_mmcif(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_mmcif(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    /// Parse mmCIF text with explicit sanitization, hydrogen and bonding options.
+    #[staticmethod]
+    fn from_mmcif_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &crate::canonical_bio_binding::BioMoleculeParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_mmcif_with_params(text, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    /// Return PDB text without changing the molecule. Multiple stored coordinate
+    /// sets require an explicit dimension/ID or all_conformers=True; no layout is generated.
+    fn to_pdb(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_pdb()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    /// Return PDB text using the supplied writer options. All-conformer output
+    /// writes 2D then 3D storage order; PDB cannot preserve CK IDs or dimension metadata.
+    fn to_pdb_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::PdbWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_pdb_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+
     /// Parse XYZ without inferring bonds; preserve raw source coordinate values.
     #[staticmethod]
     fn from_xyz_block(py: Python<'_>, text: &str) -> PyResult<Self> {

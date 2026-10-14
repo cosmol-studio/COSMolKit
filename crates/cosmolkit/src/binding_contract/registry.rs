@@ -10720,6 +10720,27 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"types.MolecularIoError",item:type,owner:type_,rust:crate::MolecularIoError,python:"MolecularIoError",javascript:"MolecularIoError",feature:"cap-io",status:experimental,role:error,},
         #[cfg(feature = "cap-io")]
+        {semantic_id:"types.PdbWriteError",item:type,owner:type_,rust:crate::PdbWriteError,python:"PdbWriteError",javascript:"PdbWriteError",feature:"cap-io",status:experimental,role:error,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"types.PdbWriteParams",item:type,owner:type_,rust:crate::PdbWriteParams,python:"PdbWriteParams",javascript:"PdbWriteParams",feature:"cap-io",status:experimental,
+            python_configuration: [
+                {name:coordinate_selection,python_type:"typing.Optional[MolCoordinateSelection]",default:"None"},
+                {name:all_conformers,python_type:"builtins.bool",default:"False"},
+                {name:flavor,python_type:"builtins.int",default:"0"},
+            ],role:parameter,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.from_pdb",convenience:mol_from_pdb,item:callable,owner:molecule,rust:crate::Molecule::from_pdb,python:"from_pdb",javascript:"fromPdb",feature:"cap-io",requires:["cap-bio"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.from_pdb_with_params",item:callable,owner:molecule,rust:crate::Molecule::from_pdb_with_params,python:"from_pdb_with_params",javascript:"fromPdbWithParams",feature:"cap-io",requires:["cap-bio"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::BioMoleculeParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::BioMoleculeParams)->Result<crate::Molecule,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.from_mmcif",convenience:mol_from_mmcif,item:callable,owner:molecule,rust:crate::Molecule::from_mmcif,python:"from_mmcif",javascript:"fromMmcif",feature:"cap-io",requires:["cap-bio"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.from_mmcif_with_params",item:callable,owner:molecule,rust:crate::Molecule::from_mmcif_with_params,python:"from_mmcif_with_params",javascript:"fromMmcifWithParams",feature:"cap-io",requires:["cap-bio"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::BioMoleculeParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::BioMoleculeParams)->Result<crate::Molecule,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.to_pdb",item:callable,owner:molecule,rust:crate::Molecule::to_pdb,python:"to_pdb",javascript:"toPdb",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:String,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<String,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
+        {semantic_id:"Molecule.to_pdb_with_params",item:callable,owner:molecule,rust:crate::Molecule::to_pdb_with_params,python:"to_pdb_with_params",javascript:"toPdbWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:params,type:&crate::PdbWriteParams,default:required}],output:String,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::PdbWriteParams)->Result<String,crate::MolecularIoError>,},
+        #[cfg(feature = "cap-io")]
         {semantic_id:"types.Mol2ReadParams",item:type,owner:type_,rust:crate::Mol2ReadParams,python:"Mol2ReadParams",javascript:"Mol2ReadParams",feature:"cap-io",status:experimental,
             python_configuration: [
                 { name: sanitize, python_type: "builtins.bool", default: "True" },

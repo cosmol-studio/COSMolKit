@@ -67,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.1-rc.3", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.1-rc.4", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -96,6 +96,16 @@ documented public APIs; internal helper reuse does not expose another domain.
 With defaults disabled, `features = ["bio", "core"]` does not pull in
 `cosmolkit-descriptors` or `cosmolkit-tautomer` through these selections.
 BIO alone activates only the structural-biology branch of IO.
+With `bio` and `core`, `Molecule::from_pdb` and `Molecule::from_mmcif`
+parse in-memory structural text through the shared BIO-to-molecule conversion;
+their `_with_params` variants use `BioMoleculeParams` for sanitization, hydrogen
+removal, proximity bonding and reader flavor.
+`Molecule::to_pdb` requires only `core` and returns text without modifying the
+molecule. Zero or one stored coordinate set is automatic; with several sets,
+use `PdbWriteParams.coordinate_selection` with `MolCoordinateSelection::TwoD`
+or `ThreeD` and its stored ID, or set `all_conformers: true`. All-set output
+writes 2D then 3D storage order as models, without generating coordinates;
+PDB cannot preserve CK coordinate dimensions or arbitrary conformer IDs.
 Query IO requires `search`; automatic coordinate generation requires `depict`.
 Ordinary molecular IO does not expose either domain. Another dependency's additive features
 can still enable these packages; inspect the resolved build graph, not just

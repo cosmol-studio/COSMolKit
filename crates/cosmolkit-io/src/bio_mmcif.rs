@@ -91,11 +91,11 @@ impl fmt::Display for BioMmcifReadStage {
 #[derive(Debug)]
 pub struct BioMmcifReadError {
     stage: BioMmcifReadStage,
-    cause: Box<dyn Error>,
+    cause: Box<dyn Error + Send + Sync>,
 }
 
 impl BioMmcifReadError {
-    fn new(stage: BioMmcifReadStage, cause: impl Error + 'static) -> Self {
+    fn new(stage: BioMmcifReadStage, cause: impl Error + Send + Sync + 'static) -> Self {
         Self {
             stage,
             cause: Box::new(cause),

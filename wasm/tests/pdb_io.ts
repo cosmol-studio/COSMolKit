@@ -1,0 +1,10 @@
+import * as ck from 'cosmolkit-generated';
+declare const molecule: ck.Molecule;
+const selected = new ck.PdbWriteParams(ck.MolCoordinateSelection.ThreeD(3));
+const output: string = molecule.toPdb(selected);
+const all: string = molecule.toPdb({allConformers: true, flavor: 16});
+selected.coordinateSelection = ck.MolCoordinateSelection.TwoD(0);
+selected.allConformers = false;
+selected.flavor = 0;
+const configured: string = molecule.toPdbWithParams(selected);
+void [output, all, configured];

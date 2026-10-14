@@ -12,12 +12,12 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-core = { version = "0.5.1-rc.3", path = "../cosmolkit-core", default-features = false }
-cosmolkit-model = { version = "0.5.1-rc.3", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.3", path = "../cosmolkit-search", default-features = false }
+cosmolkit-core = { version = "0.5.1-rc.4", path = "../cosmolkit-core", default-features = false }
+cosmolkit-model = { version = "0.5.1-rc.4", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.1-rc.4", path = "../cosmolkit-search", default-features = false }
 thiserror = "2"
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.1-rc.3", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
-cosmolkit-smiles = { version = "0.5.1-rc.3", path = "../cosmolkit-smiles" }
-cosmolkit-io = { version = "0.5.1-rc.3", path = "../cosmolkit-io" }
+cosmolkit-model = { version = "0.5.1-rc.4", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-smiles = { version = "0.5.1-rc.4", path = "../cosmolkit-smiles" }
+cosmolkit-io = { version = "0.5.1-rc.4", path = "../cosmolkit-io" }

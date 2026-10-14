@@ -376,6 +376,13 @@ pub(crate) fn io_error(source: &ck::MolecularIoError) -> Result<JsValue, JsValue
         }
         E::XyzRead(_) => "XyzRead",
         E::XyzWrite(_) => "XyzWrite",
+        E::PdbWrite(_) => "PdbWrite",
+        #[cfg(feature = "cap-bio")]
+        E::PdbRead(_) => "PdbRead",
+        #[cfg(feature = "cap-bio")]
+        E::MmcifRead(_) => "MmcifRead",
+        #[cfg(feature = "cap-bio")]
+        E::BioMolecule(_) => "BioMolecule",
         E::Mol2Read(_) => "Mol2Read",
         E::Construction(_) => "Construction",
         E::Sdf(_) => unreachable!("Sdf handled above"),

@@ -742,6 +742,12 @@ mod xyz_mol2;
 mod mol_sdf_writing;
 
 #[cfg(feature = "cap-io")]
+mod pdb_io;
+
+#[cfg(all(feature = "cap-io", feature = "cap-bio"))]
+mod molecule_structure_reading;
+
+#[cfg(feature = "cap-io")]
 mod sdf_datasets;
 #[cfg(feature = "cap-io")]
 pub use sdf_datasets::{SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordStream};

@@ -16,6 +16,9 @@
   <a href="https://pypi.org/project/cosmolkit/">
     <img src="https://img.shields.io/pypi/v/cosmolkit.svg" alt="pypi badge"/>
   </a>
+  <a href="https://anaconda.org/channels/cosmol-studio/packages/cosmolkit/overview">
+    <img src="https://anaconda.org/cosmol-studio/cosmolkit/badges/version.svg" alt="conda package version badge"/>
+  </a>
   <a href="https://www.npmjs.com/package/@cosmol-studio/cosmolkit">
     <img src="https://img.shields.io/npm/v/@cosmol-studio/cosmolkit.svg" alt="npm badge"/>
   </a>
