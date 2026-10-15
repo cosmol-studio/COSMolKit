@@ -15,6 +15,9 @@ const id:number|null=selected.coordinateSelection.id;
 const sets:Molecule[][]=molecule.reactionProductsWithParams(rxn,0,selected);
 const multi:Molecule[][]=molecule.reactionProductsFromInputs(rxn,[molecule,molecule],new ReactionRunParams(3));
 const runProducts:Molecule[][]=rxn.run([molecule],new ReactionRunParams());
+rxn.run([molecule], {maxProducts: 10});
+// @ts-expect-error options must reject unknown properties
+rxn.run([molecule], {unknown: true});
 // @ts-expect-error Reactants must be molecule objects.
 rxn.run(["C"],new ReactionRunParams());
 const result:ReactionApplyResult=molecule.applyReaction(rxn);

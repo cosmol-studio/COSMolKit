@@ -1,6 +1,9 @@
 //! Owned detached state over the single existing MMFF/UFF force-field kernel.
 //! Pinned RDKit: 351f8f378f8ad6bbd517980c38896e66bf907af8.
-use crate::kernel::{ForceField, ForceFieldKernelError};
+use crate::kernel::{
+    AngleConstraintContrib, DistanceConstraintContrib, ForceField, ForceFieldKernelError,
+    PositionConstraintContrib, TorsionConstraintContrib,
+};
 use std::{error::Error, fmt};
 
 /// Stable categories shared by persistent evaluators and their factories.
@@ -15,6 +18,8 @@ pub enum MolecularForceFieldErrorKind {
     CoordinateShape,
     NonFiniteCoordinate,
     InvalidTolerance,
+    InvalidConstraintBounds,
+    InvalidConstraintRange,
     Preparation,
     Construction,
     Initialization,
@@ -108,6 +113,12 @@ pub struct PreparedForceField {
     positions: cosmolkit_model::Conformer3D,
     field: Option<ForceField<'static>>,
 }
+#[derive(Clone, Copy)]
+enum ConstraintIndexKind {
+    Distance,
+    Angle,
+    Torsion,
+}
 impl fmt::Debug for PreparedForceField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PreparedForceField")
@@ -116,6 +127,187 @@ impl fmt::Debug for PreparedForceField {
     }
 }
 impl PreparedForceField {
+    pub fn add_position_constraint(
+        &mut self,
+        atom: usize,
+        max_displacement: f64,
+        force_constant: f64,
+    ) -> Result<(), ForceFieldError> {
+        // RDKit✔️✔️:   auto *constraint = new UFF::PositionConstraintContrib(
+        // RDKit✔️✔️:       self->field.get(), idx, maxDispl, forceConstant);
+        // RDKit✔️✔️:   self->field->contribs().push_back(ForceFields::ContribPtr(constraint));
+        // One current Point3 copy; no rebind, numeric filter or coordinate write.
+        let constraint = PositionConstraintContrib::new(
+            self.positions.coordinates(),
+            self.constraint_index(atom, 0, ConstraintIndexKind::Distance)?,
+            max_displacement,
+            force_constant,
+        )
+        .map_err(constraint_error)?;
+        self.field
+            .as_mut()
+            .expect("field available")
+            .add_contribution(Box::new(constraint));
+        Ok(())
+    }
+    pub fn add_torsion_constraint(
+        &mut self,
+        atom1: usize,
+        atom2: usize,
+        atom3: usize,
+        atom4: usize,
+        relative: bool,
+        min_dihedral_deg: f64,
+        max_dihedral_deg: f64,
+        force_constant: f64,
+    ) -> Result<(), ForceFieldError> {
+        // RDKit✔️✔️:   auto *constraint = new UFF::TorsionConstraintContrib(
+        // RDKit✔️✔️:       self->field.get(), idx1, idx2, idx3, idx4, relative, minDihedralDeg,
+        // RDKit✔️✔️:       maxDihedralDeg, forceConstant);
+        // RDKit✔️✔️:   self->field->contribs().push_back(ForceFields::ContribPtr(constraint));
+        // The one constructor captures only these four current rows and normalizes
+        // source bounds before append. No cache reset, term copies or rebinding.
+        if min_dihedral_deg > max_dihedral_deg {
+            return Err(constraint_error(ForceFieldKernelError::TorsionBoundsOrder));
+        }
+        let constraint = TorsionConstraintContrib::new_relative(
+            self.positions.coordinates(),
+            self.constraint_index(atom1, 0, ConstraintIndexKind::Torsion)?,
+            self.constraint_index(atom2, 1, ConstraintIndexKind::Torsion)?,
+            self.constraint_index(atom3, 2, ConstraintIndexKind::Torsion)?,
+            self.constraint_index(atom4, 3, ConstraintIndexKind::Torsion)?,
+            relative,
+            min_dihedral_deg,
+            max_dihedral_deg,
+            force_constant,
+        )
+        .map_err(constraint_error)?;
+        self.field
+            .as_mut()
+            .expect("field available")
+            .add_contribution(Box::new(constraint));
+        Ok(())
+    }
+    pub fn add_angle_constraint(
+        &mut self,
+        atom1: usize,
+        atom2: usize,
+        atom3: usize,
+        relative: bool,
+        min_angle_deg: f64,
+        max_angle_deg: f64,
+        force_constant: f64,
+    ) -> Result<(), ForceFieldError> {
+        // RDKit✔️✔️:   auto *constraint = new UFF::AngleConstraintContrib(
+        // RDKit✔️✔️:       self->field.get(), idx1, idx2, idx3, relative, minAngleDeg, maxAngleDeg,
+        // RDKit✔️✔️:       forceConstant);
+        // RDKit✔️✔️:   self->field->contribs().push_back(ForceFields::ContribPtr(constraint));
+        // The shared constructor reads only these three current owned rows.
+        let constraint = AngleConstraintContrib::new_relative(
+            self.positions.coordinates(),
+            self.constraint_index(atom1, 0, ConstraintIndexKind::Angle)?,
+            self.constraint_index(atom2, 1, ConstraintIndexKind::Angle)?,
+            self.constraint_index(atom3, 2, ConstraintIndexKind::Angle)?,
+            relative,
+            min_angle_deg,
+            max_angle_deg,
+            force_constant,
+        )
+        .map_err(constraint_error)?;
+        self.field
+            .as_mut()
+            .expect("field available")
+            .add_contribution(Box::new(constraint));
+        Ok(())
+    }
+    pub fn add_distance_constraint(
+        &mut self,
+        atom1: usize,
+        atom2: usize,
+        relative: bool,
+        min_distance: f64,
+        max_distance: f64,
+        force_constant: f64,
+    ) -> Result<(), ForceFieldError> {
+        // RDKit✔️✔️:   auto *constraint = new UFF::DistanceConstraintContrib(
+        // RDKit✔️✔️:       self->field.get(), idx1, idx2, relative, minLen, maxLen, forceConstant);
+        // RDKit✔️✔️:   self->field->contribs().push_back(ForceFields::ContribPtr(constraint));
+        // MMFF aliases the same contribution. Indexed owned rows give constant
+        // construction work; no N-row rebinding, clone, cache reset or rebuild.
+        let constraint = DistanceConstraintContrib::new_relative(
+            self.positions.coordinates(),
+            self.constraint_index(atom1, 0, ConstraintIndexKind::Distance)?,
+            self.constraint_index(atom2, 1, ConstraintIndexKind::Distance)?,
+            relative,
+            min_distance,
+            max_distance,
+            force_constant,
+        )
+        .map_err(constraint_error)?;
+        self.field
+            .as_mut()
+            .expect("field available")
+            .add_contribution(Box::new(constraint));
+        Ok(())
+    }
+
+    fn constraint_index(
+        &self,
+        atom: usize,
+        component: usize,
+        kind: ConstraintIndexKind,
+    ) -> Result<u32, ForceFieldError> {
+        use crate::kernel::{AngleIndexArgument, ForceFieldIndexArgument, TorsionIndexArgument};
+        // Native identifier representation boundary: do not narrow a usize ID
+        // into a different valid source u32 index. Constant work, no mutation.
+        // Validate each source range in argument order before converting the
+        // next ID, retaining the concrete original cause for representable IDs.
+        let count = self.positions.coordinates().len();
+        if atom >= count {
+            if let Ok(index) = u32::try_from(atom) {
+                let source = match kind {
+                    ConstraintIndexKind::Distance => ForceFieldKernelError::IndexOutOfRange {
+                        argument: if component == 0 {
+                            ForceFieldIndexArgument::I
+                        } else {
+                            ForceFieldIndexArgument::J
+                        },
+                        index,
+                        upper_bound: count as u32,
+                    },
+                    ConstraintIndexKind::Angle => ForceFieldKernelError::AngleIndexOutOfRange {
+                        argument: [
+                            AngleIndexArgument::First,
+                            AngleIndexArgument::Second,
+                            AngleIndexArgument::Third,
+                        ][component],
+                        index,
+                        upper_bound: count,
+                    },
+                    ConstraintIndexKind::Torsion => ForceFieldKernelError::TorsionIndexOutOfRange {
+                        argument: [
+                            TorsionIndexArgument::First,
+                            TorsionIndexArgument::Second,
+                            TorsionIndexArgument::Third,
+                            TorsionIndexArgument::Fourth,
+                        ][component],
+                        index,
+                        upper_bound: count,
+                    },
+                };
+                return Err(constraint_error(source));
+            }
+        }
+        u32::try_from(atom).map_err(|_| {
+            ForceFieldError::input(
+                MolecularForceFieldErrorKind::InvalidAtomIndex,
+                Some(atom),
+                Some(component),
+                Some(atom),
+                Some(self.positions.coordinates().len()),
+            )
+        })
+    }
     fn from_borrowed(field: ForceField<'static>, positions: cosmolkit_model::Conformer3D) -> Self {
         // RDKit✔️✔️: RDGeom::PointPtrVect &positions() { return d_positions; }
         // Native ownership: the source field's borrowed position handles are
@@ -164,6 +356,76 @@ impl PreparedForceField {
             error
         })
     }
+}
+
+fn constraint_error(source: ForceFieldKernelError) -> ForceFieldError {
+    use crate::kernel::ForceFieldIndexArgument;
+    let mut error = ForceFieldError::cause(MolecularForceFieldErrorKind::Kernel, source);
+    match source {
+        ForceFieldKernelError::IndexOutOfRange {
+            argument,
+            index,
+            upper_bound,
+        } => {
+            error.kind = MolecularForceFieldErrorKind::InvalidAtomIndex;
+            error.atom_index = Some(index as usize);
+            error.actual = Some(index as usize);
+            error.expected = Some(upper_bound as usize);
+            error.component = Some(match argument {
+                ForceFieldIndexArgument::I => 0,
+                ForceFieldIndexArgument::J => 1,
+            });
+        }
+        ForceFieldKernelError::BadBounds => {
+            error.kind = MolecularForceFieldErrorKind::InvalidConstraintBounds
+        }
+        ForceFieldKernelError::TorsionBoundsOrder => {
+            error.kind = MolecularForceFieldErrorKind::InvalidConstraintBounds
+        }
+        ForceFieldKernelError::TorsionIndexOutOfRange {
+            argument,
+            index,
+            upper_bound,
+        } => {
+            error.kind = MolecularForceFieldErrorKind::InvalidAtomIndex;
+            error.atom_index = Some(index as usize);
+            error.actual = Some(index as usize);
+            error.expected = Some(upper_bound);
+            error.component = Some(match argument {
+                crate::kernel::TorsionIndexArgument::First => 0,
+                crate::kernel::TorsionIndexArgument::Second => 1,
+                crate::kernel::TorsionIndexArgument::Third => 2,
+                crate::kernel::TorsionIndexArgument::Fourth => 3,
+            });
+        }
+        ForceFieldKernelError::AngleBoundsOrder => {
+            error.kind = MolecularForceFieldErrorKind::InvalidConstraintBounds
+        }
+        ForceFieldKernelError::AngleOutOfRange { bound } => {
+            error.kind = MolecularForceFieldErrorKind::InvalidConstraintRange;
+            error.component = Some(match bound {
+                crate::kernel::AngleRangeBound::Minimum => 0,
+                crate::kernel::AngleRangeBound::Maximum => 1,
+            });
+        }
+        ForceFieldKernelError::AngleIndexOutOfRange {
+            argument,
+            index,
+            upper_bound,
+        } => {
+            error.kind = MolecularForceFieldErrorKind::InvalidAtomIndex;
+            error.atom_index = Some(index as usize);
+            error.actual = Some(index as usize);
+            error.expected = Some(upper_bound);
+            error.component = Some(match argument {
+                crate::kernel::AngleIndexArgument::First => 0,
+                crate::kernel::AngleIndexArgument::Second => 1,
+                crate::kernel::AngleIndexArgument::Third => 2,
+            });
+        }
+        _ => {}
+    }
+    error
 }
 
 fn selected_index(
@@ -552,6 +814,312 @@ mod tests {
         Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer3D, CoordinateBlock,
         Element, Hybridization, MoleculeProperties, TopologyBlock,
     };
+    fn constraint_only(rows: Vec<[f64; 3]>) -> PreparedForceField {
+        let mut borrowed = rows.clone();
+        let mut field = ForceField::new(3);
+        field
+            .positions_mut()
+            .extend(borrowed.iter_mut().map(|row| row.as_mut_slice()));
+        field.initialize().unwrap();
+        PreparedForceField::from_borrowed(
+            field.release_position_borrows(),
+            Conformer3D::new(0, rows, true),
+        )
+    }
+    #[test]
+    fn persistent_position_constraint_keeps_original_anchor_and_source_numbers() {
+        let mut field = constraint_only(vec![[1., 2., 3.]]);
+        field.add_position_constraint(0, 1., 4.).unwrap();
+        for point in [[1., 2., 3.], [2., 2., 3.]] {
+            field.set_position(0, point).unwrap();
+            assert_eq!(field.energy().unwrap().to_bits(), 0.0f64.to_bits());
+            assert_eq!(field.gradient().unwrap(), [[0.; 3]]);
+        }
+        field.set_position(0, [3., 2., 3.]).unwrap();
+        assert_eq!(field.energy().unwrap().to_bits(), 2.0f64.to_bits());
+        assert_eq!(field.gradient().unwrap(), [[4., 0., 0.]]);
+        field.add_position_constraint(0, 0., 2.).unwrap();
+        field.set_position(0, [1., 2., 3.]).unwrap();
+        assert_eq!(field.energy().unwrap().to_bits(), 4.0f64.to_bits());
+        assert_eq!(field.gradient().unwrap(), [[-4., 0., 0.]]);
+        let before = field.energy().unwrap();
+        assert_eq!(
+            field.add_position_constraint(8, 0., 2.).unwrap_err().kind(),
+            MolecularForceFieldErrorKind::InvalidAtomIndex
+        );
+        assert_eq!(field.energy().unwrap().to_bits(), before.to_bits());
+        // Source permits negative displacement/force and NaN parameters.
+        let mut negative = constraint_only(vec![[0.; 3]]);
+        negative.add_position_constraint(0, -1., -4.).unwrap();
+        assert_eq!(negative.energy().unwrap().to_bits(), (-2.0f64).to_bits());
+        assert_eq!(negative.gradient().unwrap(), [[0.; 3]]);
+        negative.add_position_constraint(0, f64::NAN, 1.).unwrap();
+        assert!(negative.energy().unwrap().is_nan());
+    }
+    #[test]
+    fn persistent_mixed_constraints_append_order_tie_and_fixed_mask() {
+        let mut order = constraint_only(vec![[0.; 3], [3., 0., 0.]]);
+        for force in [2.0e16, -2.0e16, 2.] {
+            order
+                .add_distance_constraint(0, 1, false, 2., 2., force)
+                .unwrap();
+        }
+        assert_eq!(order.energy().unwrap().to_bits(), 1.0f64.to_bits());
+        order.set_fixed_atoms(&[0]).unwrap();
+        assert_eq!(order.gradient().unwrap()[0], [0.; 3]);
+        assert_eq!(order.gradient_unconstrained().unwrap()[0], [-2., 0., 0.]);
+        let rows = vec![[1., 0., 0.], [0.; 3], [0., 1., 0.], [1., 1., 0.]];
+        let mut tie = constraint_only(rows);
+        tie.add_torsion_constraint(0, 1, 2, 3, false, 170., 190., 2.)
+            .unwrap();
+        // Source chooses maximum on equal absolute endpoint distances.
+        assert_eq!(tie.energy().unwrap().to_bits(), 57800.0f64.to_bits());
+        assert_eq!(tie.gradient().unwrap()[0][2].to_bits(), 0x40e3062429863ecf);
+        tie.add_angle_constraint(0, 1, 2, false, f64::NAN, 100., 1.)
+            .unwrap();
+        tie.add_torsion_constraint(0, 1, 2, 3, false, f64::NAN, 0., 1.)
+            .unwrap();
+        assert_eq!(tie.energy().unwrap().to_bits(), 57800.0f64.to_bits());
+    }
+    #[test]
+    fn persistent_mixed_constraints_three_models_and_active_minimization() {
+        let (topology, coordinates) = pair(true, 2.5);
+        for (variant, expected_energy, expected_gradient, final_energy) in [
+            (
+                "UFF",
+                0x407c491f6ef37e79,
+                0x408a3e614ec623d7,
+                0x402b8181218a4b74,
+            ),
+            (
+                "MMFF94",
+                0x407fc2d63b90492d,
+                0x409b326feceb2652,
+                0x402af985a2348490,
+            ),
+            (
+                "MMFF94s",
+                0x407fc2d63b90492d,
+                0x409b326feceb2652,
+                0x402af985a2348490,
+            ),
+        ] {
+            let mut field = if variant == "UFF" {
+                uff(&topology, &coordinates, 10., true)
+            } else {
+                prepare_mmff_force_field(
+                    &topology,
+                    &coordinates,
+                    &MoleculeProperties::default(),
+                    &crate::MmffEvaluationParams {
+                        mmff_variant: variant.into(),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap()
+            };
+            field
+                .add_distance_constraint(0, 1, false, 1., 1., 100.)
+                .unwrap();
+            field.add_position_constraint(1, 0., 4.).unwrap();
+            field.set_fixed_atoms(&[0]).unwrap();
+            let (energy, gradient) = field.energy_gradient().unwrap();
+            assert_eq!(energy.to_bits(), expected_energy, "{variant}");
+            assert_eq!(gradient[1][0].to_bits(), expected_gradient, "{variant}");
+            assert_eq!(gradient[0], [0.; 3]);
+            let (converged, _, energy) = field.minimize(20, 1e-4, 1e-6).unwrap();
+            assert!(converged);
+            assert_eq!(energy.to_bits(), final_energy, "{variant}");
+            assert_eq!(field.position(0).unwrap(), [0.; 3]);
+            assert_eq!(coordinates.conformers_3d[0].coordinates()[1], [2.5, 0., 0.]);
+        }
+    }
+    #[test]
+    fn persistent_angle_constraint_active_capture_and_source_error_order() {
+        let initial = vec![[1., 0., 0.], [0.; 3], [0., 1., 0.]];
+        let mut field = constraint_only(initial.clone());
+        field
+            .add_angle_constraint(0, 1, 2, false, 100., 110., 2.)
+            .unwrap();
+        // Source's 90-degree angle: k*(90-100)^2 = 200.
+        assert_eq!(field.energy().unwrap().to_bits(), 200.0f64.to_bits());
+        let g = field.gradient().unwrap();
+        let derivative = 2.0 * (180.0 / std::f64::consts::PI) * 2.0 * -10.0;
+        assert_eq!(
+            g,
+            [
+                [0., -derivative, 0.],
+                [derivative, derivative, 0.],
+                [-derivative, 0., 0.]
+            ]
+        );
+        let mut relative = constraint_only(initial);
+        relative
+            .add_angle_constraint(0, 1, 2, true, -10., 0., 2.)
+            .unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 0.0f64.to_bits());
+        relative.set_position(2, [-1., 0., 0.]).unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 16200.0f64.to_bits());
+        let before = relative.energy().unwrap();
+        assert_eq!(
+            relative
+                .add_angle_constraint(9, 1, 2, false, 190., 180., 2.)
+                .unwrap_err()
+                .kind(),
+            MolecularForceFieldErrorKind::InvalidAtomIndex
+        );
+        assert_eq!(
+            relative
+                .add_angle_constraint(0, 1, 2, false, 190., 180., 2.)
+                .unwrap_err()
+                .kind(),
+            MolecularForceFieldErrorKind::InvalidConstraintBounds
+        );
+        let error = relative
+            .add_angle_constraint(0, 1, 2, true, 0., 1., 2.)
+            .unwrap_err();
+        assert_eq!(
+            (error.kind(), error.component()),
+            (
+                MolecularForceFieldErrorKind::InvalidConstraintRange,
+                Some(1)
+            )
+        );
+        assert_eq!(relative.energy().unwrap().to_bits(), before.to_bits());
+    }
+    #[test]
+    fn persistent_torsion_constraint_bitexact_wrapped_capture_and_error_order() {
+        let rows = vec![[1., 0., 0.], [0.; 3], [0., 1., 0.], [0., 1., 1.]];
+        let mut field = constraint_only(rows.clone());
+        field
+            .add_torsion_constraint(0, 1, 2, 3, false, 0., 0., 2.)
+            .unwrap();
+        // RDKit 2026.09.1, constraint-only UFF C.C.C.C, captured in ignored
+        // source receipt; exact signed dihedral is -90 degrees.
+        assert_eq!(field.energy().unwrap().to_bits(), 0x40cfa40000000000);
+        assert_eq!(
+            field
+                .gradient()
+                .unwrap()
+                .iter()
+                .flatten()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            [
+                0,
+                0,
+                0xc0d4249ec28e2462,
+                0,
+                0,
+                0x40d4249ec28e2462,
+                0x40d4249ec28e2462,
+                0,
+                0,
+                0xc0d4249ec28e2462,
+                0,
+                0
+            ]
+        );
+        let mut wrapped = constraint_only(rows.clone());
+        wrapped
+            .add_torsion_constraint(0, 1, 2, 3, false, 170., 190., 2.)
+            .unwrap();
+        assert_eq!(wrapped.energy().unwrap().to_bits(), 0x40c9000000000000);
+        assert_eq!(
+            wrapped.gradient().unwrap()[0][2].to_bits(),
+            0x40d1e7a9907e593b
+        );
+        let mut relative = constraint_only(rows);
+        relative
+            .add_torsion_constraint(0, 1, 2, 3, true, 0., 0., 2.)
+            .unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 0.0f64.to_bits());
+        relative.set_position(3, [1., 1., 0.]).unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 16200.0f64.to_bits());
+        let before = relative.energy().unwrap();
+        assert_eq!(
+            relative
+                .add_torsion_constraint(8, 1, 2, 3, false, 4., 2., 2.)
+                .unwrap_err()
+                .kind(),
+            MolecularForceFieldErrorKind::InvalidConstraintBounds
+        );
+        let error = relative
+            .add_torsion_constraint(0, 1, 2, 8, false, 0., 0., 2.)
+            .unwrap_err();
+        assert_eq!(
+            (error.kind(), error.atom_index(), error.component()),
+            (
+                MolecularForceFieldErrorKind::InvalidAtomIndex,
+                Some(8),
+                Some(3)
+            )
+        );
+        assert_eq!(relative.energy().unwrap().to_bits(), before.to_bits());
+    }
+    #[test]
+    fn persistent_distance_constraint_active_bounds_and_addition_capture() {
+        // DistanceConstraint.cpp: res=0.5*k*term*term, endpoint gradient +/-k*term.
+        let mut field = constraint_only(vec![[0.; 3], [3., 0., 0.]]);
+        field
+            .add_distance_constraint(0, 1, false, 1., 2., 4.)
+            .unwrap();
+        assert_eq!(field.energy().unwrap().to_bits(), 2.0f64.to_bits());
+        assert_eq!(field.gradient().unwrap(), [[-4., 0., 0.], [4., 0., 0.]]);
+        for distance in [1.0, 1.5, 2.0] {
+            field.set_position(1, [distance, 0., 0.]).unwrap();
+            assert_eq!(field.energy().unwrap().to_bits(), 0.0f64.to_bits());
+        }
+        field.set_position(1, [0., 0., 0.]).unwrap();
+        assert_eq!(field.energy().unwrap().to_bits(), 2.0f64.to_bits());
+        assert_eq!(field.gradient().unwrap(), [[0.; 3]; 2]);
+        let mut relative = constraint_only(vec![[0.; 3], [5., 0., 0.]]);
+        relative
+            .add_distance_constraint(0, 1, true, -2., -1., 4.)
+            .unwrap();
+        relative.set_position(1, [2., 0., 0.]).unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 2.0f64.to_bits());
+        assert_eq!(relative.gradient().unwrap(), [[4., 0., 0.], [-4., 0., 0.]]);
+        relative
+            .add_distance_constraint(0, 1, true, -5., -4., 2.)
+            .unwrap();
+        assert_eq!(relative.energy().unwrap().to_bits(), 6.0f64.to_bits());
+    }
+    #[test]
+    fn persistent_distance_constraint_failure_does_not_append_or_rebind() {
+        let mut field = constraint_only(vec![[0.; 3], [3., 0., 0.]]);
+        field
+            .add_distance_constraint(0, 1, false, 1., 2., -4.)
+            .unwrap();
+        let before = field.energy().unwrap();
+        let pointer = field.positions.coordinates().as_ptr();
+        let error = field
+            .add_distance_constraint(5, 1, false, 4., 2., 3.)
+            .unwrap_err();
+        assert_eq!(error.kind(), MolecularForceFieldErrorKind::InvalidAtomIndex);
+        assert_eq!(
+            (error.atom_index(), error.component(), error.expected()),
+            (Some(5), Some(0), Some(2))
+        );
+        assert!(error.source().is_some());
+        for bounds in [(4., 2.), (f64::NAN, 2.), (1., f64::NAN)] {
+            assert_eq!(
+                field
+                    .add_distance_constraint(0, 1, false, bounds.0, bounds.1, 3.)
+                    .unwrap_err()
+                    .kind(),
+                MolecularForceFieldErrorKind::InvalidConstraintBounds
+            );
+        }
+        assert!(field.field.as_ref().unwrap().positions().is_empty());
+        assert_eq!(field.positions.coordinates().as_ptr(), pointer);
+        assert_eq!(field.energy().unwrap().to_bits(), before.to_bits());
+        field
+            .add_distance_constraint(0, 1, false, 1., 2., 4.)
+            .unwrap();
+        assert_eq!(field.energy().unwrap().to_bits(), 0.0f64.to_bits());
+    }
     fn pair(bonded: bool, distance: f64) -> (TopologyBlock, CoordinateBlock) {
         let atoms = (0..2)
             .map(|i| {

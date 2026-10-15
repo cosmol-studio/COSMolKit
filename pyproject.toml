@@ -33,5 +33,5 @@ norecursedirs = [
     "target",
     "third_party",
     "tmp",
-    "python/docs/build",
+    "docs/build",
 ]

@@ -1,9 +1,10 @@
-import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("../.."))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+DOCS = Path(__file__).resolve().parents[1]
+ROOT = DOCS.parent
+sys.path.insert(0, str(ROOT / "python"))
+sys.path.insert(0, str(DOCS))
 
 project = "COSMolKit"
 version = "0.5.0"
@@ -27,7 +28,7 @@ api_class_order = ["Molecule", "BioStructure", "Protein"]
 
 js_language = "typescript"
 # Only the generated public entry point, never wasm-bindgen's raw ABI exports.
-js_source_path = str(Path(__file__).resolve().parents[3] / "target/docs-js-package/wasm_wasm.d.ts")
+js_source_path = str(ROOT / "target/docs-js-package/wasm_wasm.d.ts")
 if not Path(js_source_path).is_file():
     raise RuntimeError(
         "Generate the full WASM declarations first: python3 "
@@ -37,11 +38,11 @@ if not Path(js_source_path).is_file():
 root_for_relative_js_paths = str(Path(js_source_path).parent)
 jsdoc_tsconfig_path = "../tsconfig.json"
 jsdoc_config_path = "../typedoc.json"
-ts_sphinx_js_config = str(Path(__file__).resolve().parent.parent / "sphinx-js.config.ts")
+ts_sphinx_js_config = str(DOCS / "sphinx-js.config.ts")
 
 autosummary_generate = True
 autodoc_typehints = "signature"
-python_api_stub = str(Path(__file__).resolve().parents[2] / "cosmolkit.pyi")
+python_api_stub = str(ROOT / "python/cosmolkit.pyi")
 autoclass_content = "both"
 
 templates_path = ["_templates"]
@@ -71,7 +72,7 @@ sitemap_indent = 2
 html_theme_options = {
     "source_repository": "https://github.com/cosmol-studio/COSMolKit/",
     "source_branch": "main",
-    "source_directory": "python/docs/source/",
+    "source_directory": "docs/source/",
     "top_of_page_buttons": ["view"],
 }
 

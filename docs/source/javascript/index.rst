@@ -342,6 +342,70 @@ it is not a reason to label the returned coordinates converged. For multiple
 conformers use ``with3dConformersWithParams(count, params)`` and the corresponding
 ``withUffOptimizedConformers()`` or ``withMmffOptimizedConformers()`` operation.
 
+Persistent force fields and constraints
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Requires ``conformer``; use ``core-3d`` or ``full``. A persistent
+``MolecularForceField`` owns its coordinates independently of the source
+molecule. Create it with ``uffForceField()`` or
+``mmffForceField({ mmffVariant: "MMFF94" })``; ``"MMFF94s"`` selects that model.
+UFF, MMFF94 and MMFF94s support the same four soft constraints.
+
+Methods accept either a parameter instance or a plain options object. All
+constraint fields are required; the numerical values below are explicit example
+choices, not implicit defaults. Parameter fields are writable.
+
+.. code-block:: javascript
+
+   const input = ck.molFromSmiles("CCCC");
+   const hydrogenated = input.withHydrogens();
+   const mol = hydrogenated.with3dConformer({ randomSeed: 42 });
+   const field = mol.uffForceField();
+   const anchor = new ck.ForceFieldPositionConstraintParams(0.2, 100);
+   let outcome;
+   try {
+     field.addDistanceConstraint_(0, 1, {
+       relative: false, minDistance: 1.3, maxDistance: 1.6, forceConstant: 100,
+     });
+     field.addAngleConstraint_(0, 1, 2, {
+       relative: true, minAngleDeg: -5, maxAngleDeg: 5, forceConstant: 1,
+     });
+     field.addTorsionConstraint_(0, 1, 2, 3, {
+       relative: true, minDihedralDeg: -10, maxDihedralDeg: 10, forceConstant: 1,
+     });
+     anchor.forceConstant = 200;
+     field.addPositionConstraint_(0, anchor);
+     outcome = field.minimize_({ maxIterations: 20 });
+     console.log(outcome.energy(), outcome.converged());
+     console.log(field.positions()); // Owned coordinate snapshot, not a mutable view
+   } finally {
+     outcome?.free();
+     anchor.free();
+     field.free();
+     mol.free();
+     hydrogenated.free();
+     input.free();
+   }
+
+The four methods are ``addDistanceConstraint_``, ``addAngleConstraint_``,
+``addTorsionConstraint_`` and ``addPositionConstraint_``. Distances and
+displacements use angstroms; angle and torsion bounds use degrees. Force
+constants use the corresponding RDKit contribution's native convention,
+without unit conversion. Constraints add energy penalties rather than clamping
+coordinates; use ``setFixedAtoms_([atomIndex])`` to prevent an atom from moving.
+
+``relative: true`` captures the current distance, angle or signed dihedral when
+the constraint is added. Position anchors are captured at addition as well;
+later ``setPosition_()``, ``setPositions_()`` and ``minimize_()`` calls do not
+recapture either baseline. Torsion bounds preserve wrapped interval semantics.
+Invalid indices, bounds or angle ranges throw typed ``ForceFieldError`` values
+without appending a contribution. The source molecule remains unchanged;
+explicitly use ``mol.with3dCoordinates(field.positions())`` to create a new
+molecule with the resulting coordinates.
+
+The :download:`complete JavaScript example <../../../wasm/examples/vanilla/forcefield_optimization.js>`
+demonstrates all three models, fixed atoms and explicit coordinate installation.
+
 Run a reaction
 --------------
 
@@ -484,4 +548,4 @@ APIs compiled into their combination.
 .. toctree::
    :maxdepth: 1
 
-   javascript-api
+   api

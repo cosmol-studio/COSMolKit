@@ -23,3 +23,20 @@ params.forceTolerance = 'small';
 // @ts-expect-error pin indices are numeric
 handles[0].setFixedAtoms_(['0']);
 void [outcome, kind];
+import {ForceFieldDistanceConstraintParams, ForceFieldAngleConstraintParams, ForceFieldTorsionConstraintParams, ForceFieldPositionConstraintParams} from 'cosmolkit-generated';
+const distance = new ForceFieldDistanceConstraintParams(false, 1, 2, 10);
+distance.forceConstant = 20;
+handles[0].addDistanceConstraint_(0, 1, distance);
+handles[0].addDistanceConstraint_(0, 1, {relative: false, minDistance: 1, maxDistance: 2, forceConstant: 10});
+handles[0].addAngleConstraint_(0, 1, 2, new ForceFieldAngleConstraintParams(false, 80, 90, 10));
+handles[0].addAngleConstraint_(0, 1, 2, {relative: false, minAngleDeg: 80, maxAngleDeg: 90, forceConstant: 10});
+handles[0].addTorsionConstraint_(0, 1, 2, 3, new ForceFieldTorsionConstraintParams(false, -10, 10, 10));
+handles[0].addTorsionConstraint_(0, 1, 2, 3, {relative: false, minDihedralDeg: -10, maxDihedralDeg: 10, forceConstant: 10});
+handles[0].addPositionConstraint_(0, new ForceFieldPositionConstraintParams(0.1, 10));
+handles[0].addPositionConstraint_(0, {maxDisplacement: 0.1, forceConstant: 10});
+// @ts-expect-error required constructor fields cannot be omitted
+new ForceFieldDistanceConstraintParams();
+// @ts-expect-error forceConstant is required, not an invented default
+handles[0].addDistanceConstraint_(0, 1, {relative: false, minDistance: 1, maxDistance: 2});
+// @ts-expect-error unknown configuration fields are rejected
+handles[0].addPositionConstraint_(0, {maxDisplacement: 0.1, forceConstant: 10, unknown: true});

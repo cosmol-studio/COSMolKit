@@ -882,14 +882,10 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             if !matches!(
                 constructor.kind,
                 CallableKind::Static | CallableKind::Constructor
-            ) || constructor
-                .parameters
-                .iter()
-                .any(|parameter| matches!(parameter.default, ParameterDefault::Required))
-            {
+            ) {
                 return Err(syn::Error::new_spanned(
                     &projection.parameters,
-                    "keyword constructor must be static with explicit defaults",
+                    "keyword constructor must be static or a constructor",
                 ));
             }
             let target = entries

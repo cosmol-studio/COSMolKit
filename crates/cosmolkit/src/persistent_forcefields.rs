@@ -3,6 +3,130 @@ use crate::{AtomId, BINDING_CONTRACT, BindingDefault, Molecule};
 pub use cosmolkit_forcefields::{ForceFieldError, MolecularForceFieldErrorKind};
 use std::{error::Error, fmt, sync::Mutex};
 
+/// Required distance restraint inputs; no implicit numerical defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ForceFieldDistanceConstraintParams {
+    relative: bool,
+    min_distance: f64,
+    max_distance: f64,
+    force_constant: f64,
+}
+impl ForceFieldDistanceConstraintParams {
+    pub fn new(relative: bool, min_distance: f64, max_distance: f64, force_constant: f64) -> Self {
+        Self {
+            relative,
+            min_distance,
+            max_distance,
+            force_constant,
+        }
+    }
+    pub fn relative(&self) -> bool {
+        self.relative
+    }
+    pub fn min_distance(&self) -> f64 {
+        self.min_distance
+    }
+    pub fn max_distance(&self) -> f64 {
+        self.max_distance
+    }
+    pub fn force_constant(&self) -> f64 {
+        self.force_constant
+    }
+}
+
+/// Required angle restraint inputs; no implicit numerical defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ForceFieldAngleConstraintParams {
+    relative: bool,
+    min_angle_deg: f64,
+    max_angle_deg: f64,
+    force_constant: f64,
+}
+impl ForceFieldAngleConstraintParams {
+    pub fn new(
+        relative: bool,
+        min_angle_deg: f64,
+        max_angle_deg: f64,
+        force_constant: f64,
+    ) -> Self {
+        Self {
+            relative,
+            min_angle_deg,
+            max_angle_deg,
+            force_constant,
+        }
+    }
+    pub fn relative(&self) -> bool {
+        self.relative
+    }
+    pub fn min_angle_deg(&self) -> f64 {
+        self.min_angle_deg
+    }
+    pub fn max_angle_deg(&self) -> f64 {
+        self.max_angle_deg
+    }
+    pub fn force_constant(&self) -> f64 {
+        self.force_constant
+    }
+}
+
+/// Required torsion restraint inputs; no implicit numerical defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ForceFieldTorsionConstraintParams {
+    relative: bool,
+    min_dihedral_deg: f64,
+    max_dihedral_deg: f64,
+    force_constant: f64,
+}
+impl ForceFieldTorsionConstraintParams {
+    pub fn new(
+        relative: bool,
+        min_dihedral_deg: f64,
+        max_dihedral_deg: f64,
+        force_constant: f64,
+    ) -> Self {
+        Self {
+            relative,
+            min_dihedral_deg,
+            max_dihedral_deg,
+            force_constant,
+        }
+    }
+    pub fn relative(&self) -> bool {
+        self.relative
+    }
+    pub fn min_dihedral_deg(&self) -> f64 {
+        self.min_dihedral_deg
+    }
+    pub fn max_dihedral_deg(&self) -> f64 {
+        self.max_dihedral_deg
+    }
+    pub fn force_constant(&self) -> f64 {
+        self.force_constant
+    }
+}
+
+/// Required position restraint inputs; no implicit numerical defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ForceFieldPositionConstraintParams {
+    max_displacement: f64,
+    force_constant: f64,
+}
+impl ForceFieldPositionConstraintParams {
+    pub fn new(max_displacement: f64, force_constant: f64) -> Self {
+        Self {
+            max_displacement,
+            force_constant,
+        }
+    }
+    pub fn max_displacement(&self) -> f64 {
+        self.max_displacement
+    }
+    pub fn force_constant(&self) -> f64 {
+        self.force_constant
+    }
+}
+
 // Defaults have one declaration in the compiler-checked binding contract.
 fn contract_default(constructor: &str, name: &str) -> &'static str {
     let entry = BINDING_CONTRACT
@@ -294,6 +418,81 @@ pub struct MolecularForceField {
     inner: Mutex<cosmolkit_forcefields::PreparedForceField>,
 }
 impl MolecularForceField {
+    /// Append a distance restraint (Angstroms); relative limits capture current distance.
+    pub fn add_distance_constraint_(
+        &mut self,
+        atom1: AtomId,
+        atom2: AtomId,
+        params: &ForceFieldDistanceConstraintParams,
+    ) -> Result<(), ForceFieldError> {
+        self.inner
+            .get_mut()
+            .expect("force-field state lock")
+            .add_distance_constraint(
+                atom1.index(),
+                atom2.index(),
+                params.relative,
+                params.min_distance,
+                params.max_distance,
+                params.force_constant,
+            )
+    }
+    /// Append an angle restraint in degrees; relative limits capture the current angle.
+    pub fn add_angle_constraint_(
+        &mut self,
+        atom1: AtomId,
+        atom2: AtomId,
+        atom3: AtomId,
+        params: &ForceFieldAngleConstraintParams,
+    ) -> Result<(), ForceFieldError> {
+        self.inner
+            .get_mut()
+            .expect("force-field state lock")
+            .add_angle_constraint(
+                atom1.index(),
+                atom2.index(),
+                atom3.index(),
+                params.relative,
+                params.min_angle_deg,
+                params.max_angle_deg,
+                params.force_constant,
+            )
+    }
+    /// Append a periodic dihedral restraint in degrees, preserving source wrapped intervals.
+    pub fn add_torsion_constraint_(
+        &mut self,
+        atom1: AtomId,
+        atom2: AtomId,
+        atom3: AtomId,
+        atom4: AtomId,
+        params: &ForceFieldTorsionConstraintParams,
+    ) -> Result<(), ForceFieldError> {
+        self.inner
+            .get_mut()
+            .expect("force-field state lock")
+            .add_torsion_constraint(
+                atom1.index(),
+                atom2.index(),
+                atom3.index(),
+                atom4.index(),
+                params.relative,
+                params.min_dihedral_deg,
+                params.max_dihedral_deg,
+                params.force_constant,
+            )
+    }
+    /// Append a position restraint anchored at this atom's current owned coordinates.
+    /// Maximum displacement is in Angstroms. Subsequent setters do not move the anchor.
+    pub fn add_position_constraint_(
+        &mut self,
+        atom: AtomId,
+        params: &ForceFieldPositionConstraintParams,
+    ) -> Result<(), ForceFieldError> {
+        self.inner
+            .get_mut()
+            .expect("force-field state lock")
+            .add_position_constraint(atom.index(), params.max_displacement, params.force_constant)
+    }
     fn new(inner: cosmolkit_forcefields::PreparedForceField) -> Self {
         Self {
             inner: Mutex::new(inner),

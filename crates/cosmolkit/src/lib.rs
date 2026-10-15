@@ -544,7 +544,9 @@ pub use stereoisomers::{
 mod persistent_forcefields;
 #[cfg(feature = "cap-forcefields")]
 pub use persistent_forcefields::{
-    ForceFieldEnergyGradient, ForceFieldError, ForceFieldMinimizeOutcome, ForceFieldMinimizeParams,
-    MmffForceFieldError, MmffForceFieldParams, MolecularForceField, MolecularForceFieldErrorKind,
-    UffForceFieldError, UffForceFieldParams,
+    ForceFieldAngleConstraintParams, ForceFieldDistanceConstraintParams, ForceFieldEnergyGradient,
+    ForceFieldError, ForceFieldMinimizeOutcome, ForceFieldMinimizeParams,
+    ForceFieldPositionConstraintParams, ForceFieldTorsionConstraintParams, MmffForceFieldError,
+    MmffForceFieldParams, MolecularForceField, MolecularForceFieldErrorKind, UffForceFieldError,
+    UffForceFieldParams,
 };

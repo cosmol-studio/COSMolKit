@@ -7,5 +7,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["../../target/docs-js-package/wasm_wasm.d.ts"]
+  "include": ["../target/docs-js-package/wasm_wasm.d.ts"]
 }

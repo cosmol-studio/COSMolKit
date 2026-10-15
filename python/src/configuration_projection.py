@@ -500,7 +500,14 @@ def declarations(module, stub, document):
             for _, field in values.values():
                 keywords.args.kwonlyargs.append(ast.arg(arg=field["name"], annotation=ast.parse(field["type"], mode="eval").body))
                 keywords.args.kw_defaults.append(None if field["default"] is None else ast.parse(field["default"], mode="eval").body)
-        forms = [default, explicit, keywords]
+        # Do not invent a short form by dropping a required configuration
+        # argument. Keep existing native short APIs whose data inputs can
+        # supply required configuration fields (e.g. fragment atom indices).
+        required_configs = config_names - default_configs.keys()
+        source_inputs = {arg.arg for arg in source_args + source.args.kwonlyargs}
+        forms = [explicit, keywords]
+        if not (required_configs & (source_inputs - source_defaults.keys())):
+            forms.insert(0, default)
         # The configured native factory may be a staticmethod while the short
         # form is a classmethod. Its overload still needs the class receiver.
         if any(isinstance(node, ast.Name) and node.id == "classmethod" for node in source.decorator_list):

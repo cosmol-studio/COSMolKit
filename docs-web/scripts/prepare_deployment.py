@@ -1,10 +1,12 @@
 """Prepare the final static artifact using the documentation route contract."""
 
 from pathlib import Path
+from html import escape, unescape
+import re
 import shutil
 import struct
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from flatten_html_routes import flatten_html_routes
@@ -42,6 +44,27 @@ def write_route_assets(public):
         ), encoding="utf-8")
 
 
+def rewrite_module_navigation(html, docname):
+    """Keep Sphinx module-source navigation on the public documentation routes."""
+    routes = {p["docname"]: p["path"] for p in PAGES if "docname" in p}
+
+    def anchor(match):
+        def href(attribute):
+            value = unescape(attribute[1])
+            if value.startswith(("#", "?")) or urlsplit(value).scheme or urlsplit(value).netloc:
+                return attribute[0]
+            target = urlsplit(urljoin("https://sphinx.invalid/" + docname + ".html", value))
+            page = target.path.lstrip("/").removesuffix(".html")
+            if page not in routes:
+                return attribute[0]
+            destination = urlunsplit(("", "", routes[page], target.query, target.fragment))
+            return 'href="' + escape(destination, quote=True) + '"'
+
+        return re.sub(r'(?<![\w:-])href="([^"]*)"', href, match[0])
+
+    return re.sub(r"<a\b[^>]*>", anchor, html)
+
+
 def prepare(public, sphinx):
     docs_web = Path(__file__).resolve().parents[1]
     # Fetch before changing the SSG layout; failures stop artifact preparation.
@@ -59,6 +82,13 @@ def prepare(public, sphinx):
         for name in assets:
             if (sphinx / name).is_dir():
                 shutil.copytree(sphinx / name, namespace / name, dirs_exist_ok=True)
+        if binding == "python" and (sphinx / "_modules").is_dir():
+            for source in (sphinx / "_modules").rglob("*.html"):
+                relative = source.relative_to(sphinx)
+                html = source.read_text(encoding="utf-8")
+                (namespace / relative).write_text(
+                    rewrite_module_navigation(html, relative.with_suffix("").as_posix()),
+                    encoding="utf-8")
         shutil.copyfile(sphinx / "objects.inv", namespace / "objects.inv")
     for name in ("robots.txt", "283f8e40-25ad-4213-b83b-e5c6d3b3c5e0.txt"):
         shutil.copyfile(sphinx / name, public / name)

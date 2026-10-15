@@ -8,8 +8,8 @@
 
 use super::angle::RAD2DEG;
 use super::{
-    EvaluationContext, ForceField, ForceFieldContribution, ForceFieldKernelError,
-    TorsionIndexArgument,
+    ConstraintPositions, EvaluationContext, ForceField, ForceFieldContribution,
+    ForceFieldKernelError, TorsionIndexArgument,
 };
 use crate::geometry::{
     Point3, compute_dihedral_from_flat_radians, compute_dihedral_from_flat_with_vectors,
@@ -17,7 +17,7 @@ use crate::geometry::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct TorsionConstraintContrib {
+pub(crate) struct TorsionConstraintContrib {
     at1_idx: u32,
     at2_idx: u32,
     at3_idx: u32,
@@ -69,8 +69,8 @@ impl TorsionConstraintContrib {
         ))
     }
 
-    pub(super) fn new_relative(
-        owner: &ForceField<'_>,
+    pub(crate) fn new_relative(
+        owner: &(impl ConstraintPositions + ?Sized),
         idx1: u32,
         idx2: u32,
         idx3: u32,
@@ -109,12 +109,11 @@ impl TorsionConstraintContrib {
             max_dihedral_deg,
         )?;
         if relative {
-            let positions = owner.positions();
             let mut dihedral = compute_dihedral_from_position_slices_radians(
-                &positions[idx1 as usize][..],
-                &positions[idx2 as usize][..],
-                &positions[idx3 as usize][..],
-                &positions[idx4 as usize][..],
+                owner.point(idx1 as usize),
+                owner.point(idx2 as usize),
+                owner.point(idx3 as usize),
+                owner.point(idx4 as usize),
             );
             dihedral *= RAD2DEG;
             min_dihedral_deg += dihedral;
@@ -364,7 +363,7 @@ impl ForceFieldContribution for TorsionConstraintContrib {
 }
 
 fn validate_torsion_precondition(
-    owner: &ForceField<'_>,
+    owner: &(impl ConstraintPositions + ?Sized),
     idx1: u32,
     idx2: u32,
     idx3: u32,
@@ -391,7 +390,7 @@ fn validate_torsion_precondition(
     if min_dihedral_deg > max_dihedral_deg {
         return Err(ForceFieldKernelError::TorsionBoundsOrder);
     }
-    let point_count = owner.positions().len();
+    let point_count = owner.point_count();
     validate_torsion_index(idx1, point_count, TorsionIndexArgument::First)?;
     validate_torsion_index(idx2, point_count, TorsionIndexArgument::Second)?;
     validate_torsion_index(idx3, point_count, TorsionIndexArgument::Third)?;

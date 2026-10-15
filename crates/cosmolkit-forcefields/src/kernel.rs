@@ -465,8 +465,36 @@ mod position;
 #[path = "constraints/torsion.rs"]
 mod torsion;
 
+pub(super) use angle::AngleConstraintContrib;
 pub(crate) use angles::AngleConstraintContribs;
+pub(super) use distance::DistanceConstraintContrib;
 pub(crate) use distances::DistanceConstraintContribs;
+pub(super) use position::PositionConstraintContrib;
+pub(super) use torsion::TorsionConstraintContrib;
+
+/// Construction-only read access, without rebinding a complete coordinate vector.
+pub(super) trait ConstraintPositions {
+    fn point_count(&self) -> usize;
+    fn point(&self, index: usize) -> &[f64];
+}
+
+impl ConstraintPositions for [[f64; 3]] {
+    fn point_count(&self) -> usize {
+        self.len()
+    }
+    fn point(&self, index: usize) -> &[f64] {
+        &self[index]
+    }
+}
+
+impl ConstraintPositions for ForceField<'_> {
+    fn point_count(&self) -> usize {
+        self.positions.len()
+    }
+    fn point(&self, index: usize) -> &[f64] {
+        self.positions[index]
+    }
+}
 
 pub(super) struct EvaluationContext<'a> {
     coordinates: &'a [f64],

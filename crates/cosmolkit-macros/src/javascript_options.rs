@@ -111,21 +111,32 @@ pub(crate) fn expand_with_options(
             )?;
             for option in options {
                 if let Meta::NameValue(value) = option
-                    && value.path.is_ident("unchecked_optional_param_type")
+                    && (value.path.is_ident("unchecked_optional_param_type")
+                        || value.path.is_ident("unchecked_param_type"))
                     && let syn::Expr::Lit(literal) = value.value
                     && let syn::Lit::Str(text) = literal.lit
                 {
-                    ty = Some(text.value());
+                    if ty.is_some() {
+                        return Err(syn::Error::new_spanned(
+                            input,
+                            "constructor input has multiple JavaScript types",
+                        ));
+                    }
+                    ty = Some((
+                        text.value(),
+                        value.path.is_ident("unchecked_optional_param_type"),
+                    ));
                 }
             }
         }
-        let ty = ty.ok_or_else(|| {
+        let (ty, optional) = ty.ok_or_else(|| {
             syn::Error::new_spanned(
                 input,
-                "options require the constructor's explicit optional JavaScript type",
+                "options require the constructor's explicit JavaScript type",
             )
         })?;
-        declaration.push_str(&format!("  {name}?: {ty};\n"));
+        let marker = if optional { "?" } else { "" };
+        declaration.push_str(&format!("  {name}{marker}: {ty};\n"));
         inputs.push((binding.ident.clone(), name.clone(), ty));
         fields.push(name);
     }
@@ -324,5 +335,46 @@ mod tests {
         assert!(output.contains("JsValue :: from (self . count ())"));
         assert!(output.contains("let replacement = Self :: new"));
         assert!(output.contains("* self = replacement"));
+    }
+
+    #[test]
+    fn required_constructor_fields_remain_required_in_options() {
+        let output = expand(
+            syn::parse_quote! {
+                impl Params {
+                    fn new(
+                        #[wasm_bindgen(unchecked_param_type="number")] required: JsValue,
+                        #[wasm_bindgen(unchecked_optional_param_type="boolean")] optional: JsValue,
+                    ) -> Result<Self, JsValue> { unimplemented!() }
+                    fn required(&self) -> f64 { 1.0 }
+                    fn optional(&self) -> bool { false }
+                }
+            },
+            syn::parse_quote!("ParamsOptions"),
+        )
+        .unwrap()
+        .to_string();
+        assert!(output.contains("required: number"));
+        assert!(!output.contains("required?: number"));
+        assert!(output.contains("optional?: boolean"));
+        assert!(output.contains("set_required"));
+        assert!(output.contains("unknown configuration option"));
+        assert!(output.contains("let replacement = Self :: new"));
+    }
+
+    #[test]
+    fn constructor_fields_without_explicit_types_are_rejected() {
+        assert!(
+            expand(
+                syn::parse_quote! {
+                    impl Params {
+                        fn new(required: JsValue) -> Result<Self, JsValue> { unimplemented!() }
+                        fn required(&self) -> f64 { 1.0 }
+                    }
+                },
+                syn::parse_quote!("ParamsOptions")
+            )
+            .is_err()
+        );
     }
 }

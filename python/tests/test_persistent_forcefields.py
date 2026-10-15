@@ -7,6 +7,72 @@ import numpy as np
 import pytest
 
 
+def test_constraint_error_categories_do_not_renumber_existing_values():
+    assert ck.MolecularForceFieldErrorKind.Preparation == 9
+    assert ck.MolecularForceFieldErrorKind.Kernel == 13
+    assert ck.MolecularForceFieldErrorKind.InvalidConstraintBounds == 14
+    assert ck.MolecularForceFieldErrorKind.InvalidConstraintRange == 15
+
+
+@pytest.mark.parametrize("kind", ["uff", "mmff94", "mmff94s"])
+@pytest.mark.parametrize("name,indices,fields", [
+    ("Distance", (0, 1), {"relative": False, "min_distance": 1.0, "max_distance": 1.1, "force_constant": 10.0}),
+    ("Angle", (0, 1, 2), {"relative": True, "min_angle_deg": -1.0, "max_angle_deg": 1.0, "force_constant": 10.0}),
+    ("Torsion", (0, 1, 2, 3), {"relative": True, "min_dihedral_deg": -1.0, "max_dihedral_deg": 1.0, "force_constant": 10.0}),
+    ("Position", (0,), {"max_displacement": 0.0, "force_constant": 10.0}),
+])
+def test_constraint_configuration_forms_required_fields_and_owned_state(kind, name, indices, fields):
+    mol = molecule()
+
+    def field():
+        return mol.uff_force_field() if kind == "uff" else mol.mmff_force_field(mmff_variant="MMFF94s" if kind == "mmff94s" else "MMFF94")
+
+    cls = getattr(ck, f"ForceField{name}ConstraintParams")
+    method = f"add_{name.lower()}_constraint_"
+    params = cls(**fields)
+    a, b, original = field(), field(), field()
+    before = original.positions()
+    getattr(a, method)(*indices, params)
+    getattr(b, method)(*indices, **fields)
+    a.set_position_(0, [0.5, 0.3, 0.2])
+    b.set_position_(0, [0.5, 0.3, 0.2])
+    assert a.energy() == b.energy()
+    np.testing.assert_array_equal(a.gradient(), b.gradient())
+    params.force_constant = fields["force_constant"] * 2
+    updated = dict(fields, force_constant=params.force_constant)
+    c, d = field(), field()
+    getattr(c, method)(*indices, params)
+    getattr(d, method)(*indices, **updated)
+    c.set_position_(0, [0.5, 0.3, 0.2])
+    d.set_position_(0, [0.5, 0.3, 0.2])
+    assert c.energy() == d.energy()
+    assert c.energy() != a.energy()
+    for missing in fields:
+        incomplete = {key: value for key, value in fields.items() if key != missing}
+        with pytest.raises(TypeError):
+            cls(**incomplete)
+        with pytest.raises(TypeError):
+            getattr(a, method)(*indices, **incomplete)
+    with pytest.raises(TypeError, match="mutually exclusive"):
+        getattr(a, method)(*indices, params, force_constant=3.0)
+    with pytest.raises(TypeError):
+        getattr(a, method)(*indices, **dict(fields, unknown_option=1))
+    with pytest.raises(AttributeError):
+        params.unknown_option = 1
+    with pytest.raises(TypeError):
+        params.force_constant = object()
+    assert params.force_constant == updated["force_constant"]
+    previous = a.energy()
+    with pytest.raises(ck.ForceFieldError) as error:
+        getattr(a, method)(99, *indices[1:], **fields)
+    assert error.value.kind == ck.MolecularForceFieldErrorKind.InvalidAtomIndex
+    assert error.value.atom_index == 99
+    assert error.value.component == 0
+    assert a.energy() == previous
+    np.testing.assert_array_equal(original.positions(), before)
+    np.testing.assert_array_equal(field().positions(), before)
+
+
 def molecule():
     source = ck.Molecule.from_smiles("CC.CC")
     builder = source.to_builder()

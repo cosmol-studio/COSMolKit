@@ -6,12 +6,15 @@
 // which is included in the file license.txt, found at the root
 // of the RDKit source tree.
 
-use super::{AngleIndexArgument, AngleRangeBound, ForceField, ForceFieldKernelError};
+use super::{
+    AngleIndexArgument, AngleRangeBound, ConstraintPositions, EvaluationContext, ForceField,
+    ForceFieldContribution, ForceFieldKernelError,
+};
 
 pub(super) const RAD2DEG: f64 = 180.0 / std::f64::consts::PI;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct AngleConstraintContrib {
+pub(crate) struct AngleConstraintContrib {
     at1_idx: u32,
     at2_idx: u32,
     at3_idx: u32,
@@ -74,8 +77,8 @@ impl AngleConstraintContrib {
         })
     }
 
-    pub(super) fn new_relative(
-        owner: &ForceField<'_>,
+    pub(crate) fn new_relative(
+        owner: &(impl ConstraintPositions + ?Sized),
         idx1: u32,
         idx2: u32,
         idx3: u32,
@@ -119,8 +122,7 @@ impl AngleConstraintContrib {
         // RDKit❗✔️:   d_forceConstant = forceConst;
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION AngleConstraintContrib::AngleConstraintContrib
-        let positions = owner.positions();
-        let point_count = positions.len();
+        let point_count = owner.point_count();
         validate_angle_index(idx1, point_count, AngleIndexArgument::First)?;
         validate_angle_index(idx2, point_count, AngleIndexArgument::Second)?;
         validate_angle_index(idx3, point_count, AngleIndexArgument::Third)?;
@@ -128,9 +130,9 @@ impl AngleConstraintContrib {
             return Err(ForceFieldKernelError::AngleBoundsOrder);
         }
         if relative {
-            let p1 = &positions[idx1 as usize][..];
-            let p2 = &positions[idx2 as usize][..];
-            let p3 = &positions[idx3 as usize][..];
+            let p1 = owner.point(idx1 as usize);
+            let p2 = owner.point(idx2 as usize);
+            let p3 = owner.point(idx3 as usize);
             let angle = angle_degrees(p1, p2, p3);
             min_angle_deg += angle;
             max_angle_deg += angle;
@@ -302,6 +304,26 @@ impl AngleConstraintContrib {
             grad[start + 1] += delta[1];
             grad[start + 2] += delta[2];
         }
+    }
+}
+
+impl ForceFieldContribution for AngleConstraintContrib {
+    fn get_energy(
+        &self,
+        context: &mut EvaluationContext<'_>,
+    ) -> Result<f64, ForceFieldKernelError> {
+        Ok(self.get_energy(context.coordinates()))
+    }
+    fn get_grad(
+        &self,
+        context: &mut EvaluationContext<'_>,
+        gradient: &mut [f64],
+    ) -> Result<(), ForceFieldKernelError> {
+        self.get_grad(context.coordinates(), gradient);
+        Ok(())
+    }
+    fn copy(&self) -> Box<dyn ForceFieldContribution> {
+        Box::new(self.clone())
     }
 }
 

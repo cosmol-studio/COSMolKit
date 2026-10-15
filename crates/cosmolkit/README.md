@@ -430,6 +430,29 @@ println!("{initial_energy} {gradient:?} {outcome:?}");
 `set_positions_()` and `set_fixed_atoms_()` update the detached evaluator;
 they do not implicitly write coordinates back to the source molecule.
 
+The same UFF/MMFF handle supports distance, angle, torsion and position
+penalties. Constraint parameters are explicit and have no invented defaults:
+
+```rust
+use cosmolkit::{AtomId, ForceFieldDistanceConstraintParams};
+
+field.add_distance_constraint_(
+    AtomId::new(0), AtomId::new(1),
+    &ForceFieldDistanceConstraintParams::new(false, 1.3, 1.6, 100.0),
+)?;
+```
+
+The other methods are `add_angle_constraint_`, `add_torsion_constraint_`, and
+`add_position_constraint_`. Distances are angstroms and angular bounds are
+degrees. Relative bounds and position anchors capture the handle's coordinates
+at addition time, not later evaluations; failed additions leave it unchanged.
+
+Complete examples cover all four restraints with UFF, MMFF94 and MMFF94s,
+fixed atoms, interactive coordinate updates, and explicit installation in a new
+molecule: [Rust](examples/forcefield_optimization.rs),
+[Python](../../python/examples/forcefield_optimization.py), and
+[JavaScript](../../wasm/examples/vanilla/forcefield_optimization.js).
+
 ## Molecular Alignment And RMSD
 
 Ordinary molecular alignment uses the source-backed RDKit MolAlign boundary.

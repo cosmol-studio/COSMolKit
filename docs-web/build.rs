@@ -62,8 +62,8 @@ fn pages() -> Vec<&'static str> {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=../python/docs/source");
-    println!("cargo:rerun-if-changed=../python/docs/build/html");
+    println!("cargo:rerun-if-changed=../docs/source");
+    println!("cargo:rerun-if-changed=../docs/build/html");
     println!("cargo:rerun-if-changed=scripts/extract_sphinx_metadata.py");
     println!("cargo:rerun-if-changed=scripts/html_metadata.py");
     println!("cargo:rerun-if-changed=routes.toml");
@@ -78,8 +78,8 @@ fn main() {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
     let repository_root = manifest_dir.parent().expect("repository root");
-    let docs_source = repository_root.join("python/docs/source");
-    let docs_output = repository_root.join("python/docs/build/html");
+    let docs_source = repository_root.join("docs/source");
+    let docs_output = repository_root.join("docs/build/html");
 
     if !docs_output.join("index.html").is_file() {
         build_sphinx(&repository_root, &docs_source, &docs_output);
@@ -158,11 +158,11 @@ fn generate_document_module(output: &Path) -> String {
         module.push_str(&format!(
             "pub const {}: &str = {};\n",
             constant_name(page),
-            rust_literal(&rewrite_page_links(body))
+            rust_literal(&rewrite_page_links(body, page))
         ));
         toc.push_str(&format!(
             "        {page:?} => {},\n",
-            rust_literal(&rewrite_page_links(extract_toc(&html, &path)))
+            rust_literal(&rewrite_page_links(extract_toc(&html, &path), page))
         ));
     }
     toc.push_str("        _ => \"\",\n    }\n}\n");
@@ -183,15 +183,34 @@ fn generate_document_module(output: &Path) -> String {
     module
 }
 
-// Only rewrite known page destinations, never arbitrary .html resources.
-fn canonical_page_link(href: &str) -> Option<String> {
+fn source_link(href: &str, source: &str) -> Option<(String, String)> {
+    if href.starts_with(['#', '?']) || href.starts_with("//") || href.contains(':') {
+        return None;
+    }
     let suffix_start = href.find(['?', '#']).unwrap_or(href.len());
     let (path, suffix) = href.split_at(suffix_start);
-    let path = path
-        .strip_prefix("./")
-        .or_else(|| path.strip_prefix('/'))
-        .unwrap_or(path);
-    let page = path.strip_suffix(".html").unwrap_or(path);
+    let base = if path.starts_with('/') {
+        ""
+    } else {
+        source.rsplit_once('/').map_or("", |(parent, _)| parent)
+    };
+    let mut components: Vec<_> = base.split('/').filter(|part| !part.is_empty()).collect();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                components.pop()?;
+            }
+            _ => components.push(part),
+        }
+    }
+    Some((components.join("/"), suffix.to_owned()))
+}
+
+// Only rewrite known page destinations, never arbitrary .html resources.
+fn canonical_page_link(href: &str, source: &str) -> Option<String> {
+    let (path, suffix) = source_link(href, source)?;
+    let page = path.strip_suffix(".html").unwrap_or(&path);
     if page.is_empty() {
         return None;
     }
@@ -201,13 +220,34 @@ fn canonical_page_link(href: &str) -> Option<String> {
     Some(format!("{}{suffix}", route.route))
 }
 
-fn rewrite_anchor(tag: &str) -> String {
+fn canonical_asset_link(href: &str, source: &str) -> Option<String> {
+    let (path, suffix) = source_link(href, source)?;
+    let (folder, _) = path.split_once('/')?;
+    if !matches!(
+        folder,
+        "_static" | "_images" | "_downloads" | "_sources" | "_modules"
+    ) {
+        return None;
+    }
+    let (binding, _) = source.split_once('/')?;
+    if !matches!(binding, "python" | "javascript") {
+        return None;
+    }
+    let binding = if folder == "_modules" {
+        "python"
+    } else {
+        binding
+    };
+    Some(format!("/{binding}/{path}{suffix}"))
+}
+
+fn rewrite_tag(tag: &str, source: &str, is_anchor: bool) -> String {
     let bytes = tag.as_bytes();
     let mut cursor = 1;
     while cursor < bytes.len() && bytes[cursor].is_ascii_alphabetic() {
         cursor += 1;
     }
-    let mut href = None;
+    let mut attributes = Vec::new();
     let mut download = false;
     while cursor < bytes.len() {
         while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
@@ -251,25 +291,29 @@ fn rewrite_anchor(tag: &str) -> String {
         {
             cursor += 1;
         }
-        if name.eq_ignore_ascii_case("href") {
-            href = Some(value_start..cursor);
+        if name.eq_ignore_ascii_case("href") || name.eq_ignore_ascii_case("src") {
+            attributes.push((name.eq_ignore_ascii_case("href"), value_start..cursor));
         }
         if quote.is_some() && cursor < bytes.len() {
             cursor += 1;
         }
     }
     let mut result = tag.to_owned();
-    if !download {
-        if let Some(range) = href {
-            if let Some(canonical) = canonical_page_link(&tag[range.clone()]) {
-                result.replace_range(range, &canonical);
-            }
+    for (is_href, range) in attributes.into_iter().rev() {
+        let value = &tag[range.clone()];
+        let canonical = canonical_asset_link(value, source).or_else(|| {
+            (is_anchor && is_href && !download)
+                .then(|| canonical_page_link(value, source))
+                .flatten()
+        });
+        if let Some(canonical) = canonical {
+            result.replace_range(range, &canonical);
         }
     }
     result
 }
 
-fn rewrite_page_links(html: &str) -> String {
+fn rewrite_page_links(html: &str, source: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let lowercase = html.to_ascii_lowercase();
     let mut cursor = 0;
@@ -314,8 +358,8 @@ fn rewrite_page_links(html: &str) -> String {
             result.push_str(&html[start..close]);
             cursor = close;
         } else {
-            if name == "a" {
-                result.push_str(&rewrite_anchor(tag));
+            if matches!(name, "a" | "img" | "link" | "source") {
+                result.push_str(&rewrite_tag(tag, source, name == "a"));
             } else {
                 result.push_str(tag);
             }
@@ -421,7 +465,7 @@ mod tests {
                     );
                     let expected =
                         format!("<a href=\"/{route}?q=a&amp;b=2#section\">{page}.html</a>");
-                    assert_eq!(rewrite_page_links(&input), expected);
+                    assert_eq!(rewrite_page_links(&input, ""), expected);
                 }
             }
         }
@@ -445,7 +489,7 @@ mod tests {
             "/other/api.html",
         ] {
             let html = format!("<a href=\"{href}\">link</a>");
-            assert_eq!(rewrite_page_links(&html), html);
+            assert_eq!(rewrite_page_links(&html, "python/api"), html);
         }
         for html in [
             "<a href='api.html' download>API</a>",
@@ -453,7 +497,7 @@ mod tests {
             "<img src='api.html'><link href='api.html'>",
             "<a data-href='api.html' title=\"href='api.html'\">API</a>",
         ] {
-            assert_eq!(rewrite_page_links(html), html);
+            assert_eq!(rewrite_page_links(html, "python/api"), html);
         }
     }
 
@@ -470,7 +514,7 @@ mod tests {
         ] {
             let input = format!("{html}<a href='api.html'>API</a>");
             assert_eq!(
-                rewrite_page_links(&input),
+                rewrite_page_links(&input, "python/api"),
                 format!("{html}<a href='/python/api'>API</a>")
             );
         }
@@ -480,7 +524,7 @@ mod tests {
     fn handles_anchor_attribute_syntax_without_touching_other_attributes() {
         let html = "<A title='x > y' HREF = 'api.html#atom' data-href='api.html'>分子</A><a href=quickstart.html>Start</a>";
         assert_eq!(
-            rewrite_page_links(html),
+            rewrite_page_links(html, "python/api"),
             "<A title='x > y' HREF = '/python/api#atom' data-href='api.html'>分子</A><a href=/python/quickstart>Start</a>"
         );
     }
@@ -491,6 +535,54 @@ mod tests {
         let html =
             format!("<div class=\"toc-tree-container\"><div class=\"toc-tree\">{toc}</div></div>");
         assert_eq!(extract_toc(&html, Path::new("api.html")), toc);
+    }
+
+    #[test]
+    fn nested_sources_keep_public_routes_and_asset_namespaces() {
+        for (source, href, expected) in [
+            (
+                "python/molecule",
+                "api.html#cosmolkit.Molecule",
+                "/python/api#cosmolkit.Molecule",
+            ),
+            (
+                "javascript/index",
+                "api.html#Molecule",
+                "/javascript/api#Molecule",
+            ),
+            (
+                "javascript/api",
+                "../python/forcefields.html",
+                "/python/forcefields",
+            ),
+            ("python/api", "../javascript/index.html", "/javascript"),
+            ("python/api", "../index.html", "/"),
+            (
+                "python/api",
+                "../search.html?q=atom",
+                "/python/search?q=atom",
+            ),
+            (
+                "python/forcefields",
+                "../_downloads/hash/example.py",
+                "/python/_downloads/hash/example.py",
+            ),
+            (
+                "javascript/index",
+                "../_downloads/hash/example.js",
+                "/javascript/_downloads/hash/example.js",
+            ),
+        ] {
+            assert_eq!(
+                rewrite_page_links(&format!("<a href='{href}'>link</a>"), source),
+                format!("<a href='{expected}'>link</a>")
+            );
+        }
+        let html = "<a download href='../_downloads/hash/example.js'>example</a><img src='../_images/layout.svg'>";
+        assert_eq!(
+            rewrite_page_links(html, "javascript/index"),
+            "<a download href='/javascript/_downloads/hash/example.js'>example</a><img src='/javascript/_images/layout.svg'>"
+        );
     }
 
     #[test]
@@ -552,16 +644,18 @@ mod tests {
         for page in pages() {
             let mut html =
                 format!("<article role=\"main\" id=\"furo-main-content\">{article}</article>");
-            if page == "api" {
+            if page == "python/api" {
                 html.push_str(&format!("<div class=\"toc-tree\">{toc}</div>"));
             }
-            fs::write(directory.join(format!("{page}.html")), html).unwrap();
+            let path = directory.join(format!("{page}.html"));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, html).unwrap();
         }
         let module = generate_document_module(&directory);
         fs::remove_dir_all(&directory).unwrap();
         assert!(module.contains("pub fn sphinx_toc(page: &str) -> &'static str {"));
         for page in pages() {
-            let expected = if page == "api" {
+            let expected = if page == "python/api" {
                 "<ul><li><a href=\"/python/api#cosmolkit.Atom\">Atom</a></li></ul>"
             } else {
                 ""
@@ -570,7 +664,7 @@ mod tests {
         }
         assert!(module.contains("_ => \"\","));
         assert!(module.contains(&format!(
-            "pub const API: &str = {};",
+            "pub const PYTHON_API: &str = {};",
             rust_literal("<h1>Document</h1><a href=\"/python?from=api#top\">Home</a>")
         )));
     }

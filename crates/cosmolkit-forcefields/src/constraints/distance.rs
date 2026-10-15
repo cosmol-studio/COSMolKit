@@ -1,8 +1,11 @@
 use super::ForceFieldKernelError;
-use super::{EvaluationContext, ForceField, ForceFieldContribution, ForceFieldIndexArgument};
+use super::{
+    ConstraintPositions, EvaluationContext, ForceField, ForceFieldContribution,
+    ForceFieldIndexArgument,
+};
 
 #[derive(Clone, Debug)]
-pub(super) struct DistanceConstraintContrib {
+pub(crate) struct DistanceConstraintContrib {
     end1_idx: u32,
     end2_idx: u32,
     min_len: f64,
@@ -65,8 +68,8 @@ impl DistanceConstraintContrib {
         })
     }
 
-    pub(super) fn new_relative(
-        owner: &ForceField<'_>,
+    pub(crate) fn new_relative(
+        owner: &(impl ConstraintPositions + ?Sized),
         idx1: u32,
         idx2: u32,
         relative: bool,
@@ -109,8 +112,7 @@ impl DistanceConstraintContrib {
         // RDKit❗✔️:   double res = x * x + y * y + z * z;
         // RDKit❗✔️:   return sqrt(res);
         // RDKit❗✔️: }
-        let positions = owner.positions();
-        let point_count = positions.len() as u32;
+        let point_count = owner.point_count() as u32;
         if idx1 >= point_count {
             return Err(ForceFieldKernelError::IndexOutOfRange {
                 argument: ForceFieldIndexArgument::I,
@@ -129,8 +131,8 @@ impl DistanceConstraintContrib {
             return Err(ForceFieldKernelError::BadBounds);
         }
         if relative {
-            let p1 = &positions[idx1 as usize];
-            let p2 = &positions[idx2 as usize];
+            let p1 = owner.point(idx1 as usize);
+            let p2 = owner.point(idx2 as usize);
             let dx = p1[0] - p2[0];
             let dy = p1[1] - p2[1];
             let dz = p1[2] - p2[2];

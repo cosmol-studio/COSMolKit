@@ -11,7 +11,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 
 /// Stable categories shared by persistent evaluators and their factories.
 ///
-/// Declared values: ``MissingConformer``, ``Parameterization``, ``InvalidParameterization``, ``InvalidAtomIndex``, ``InvalidFixedAtom``, ``CoordinateCount``, ``CoordinateShape``, ``NonFiniteCoordinate``, ``InvalidTolerance``, ``Preparation``, ``Construction``, ``Initialization``, ``Rings``, ``Kernel``.
+/// Declared values include invalid atom indices, constraint bounds/ranges,
+/// coordinate shape/count, parameterization and concrete kernel failures.
 #[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
@@ -31,6 +32,8 @@ pub(crate) enum MolecularForceFieldErrorKind {
     Initialization,
     Rings,
     Kernel,
+    InvalidConstraintBounds,
+    InvalidConstraintRange,
 }
 impl From<ck::MolecularForceFieldErrorKind> for MolecularForceFieldErrorKind {
     fn from(kind: ck::MolecularForceFieldErrorKind) -> Self {
@@ -46,6 +49,12 @@ impl From<ck::MolecularForceFieldErrorKind> for MolecularForceFieldErrorKind {
             ck::MolecularForceFieldErrorKind::CoordinateShape => Self::CoordinateShape,
             ck::MolecularForceFieldErrorKind::NonFiniteCoordinate => Self::NonFiniteCoordinate,
             ck::MolecularForceFieldErrorKind::InvalidTolerance => Self::InvalidTolerance,
+            ck::MolecularForceFieldErrorKind::InvalidConstraintBounds => {
+                Self::InvalidConstraintBounds
+            }
+            ck::MolecularForceFieldErrorKind::InvalidConstraintRange => {
+                Self::InvalidConstraintRange
+            }
             ck::MolecularForceFieldErrorKind::Preparation => Self::Preparation,
             ck::MolecularForceFieldErrorKind::Construction => Self::Construction,
             ck::MolecularForceFieldErrorKind::Initialization => Self::Initialization,
@@ -302,6 +311,180 @@ fn default_force_tolerance() -> f64 {
     ck::ForceFieldMinimizeParams::default().force_tolerance()
 }
 
+/// Required distance restraint inputs; all fields support assignment.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
+#[derive(Clone)]
+pub(crate) struct ForceFieldDistanceConstraintParams {
+    pub(crate) inner: ck::ForceFieldDistanceConstraintParams,
+}
+#[cosmolkit_macros::python_configuration]
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+#[pymethods]
+impl ForceFieldDistanceConstraintParams {
+    #[new]
+    #[pyo3(signature=(*,relative,min_distance,max_distance,force_constant))]
+    fn new(relative: bool, min_distance: f64, max_distance: f64, force_constant: f64) -> Self {
+        Self {
+            inner: ck::ForceFieldDistanceConstraintParams::new(
+                relative,
+                min_distance,
+                max_distance,
+                force_constant,
+            ),
+        }
+    }
+    /// Interpret bounds as offsets from the geometry when the constraint is added.
+    #[getter]
+    fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    /// Lower distance bound or relative offset, in angstroms.
+    #[getter]
+    fn min_distance(&self) -> f64 {
+        self.inner.min_distance()
+    }
+    /// Upper distance bound or relative offset, in angstroms.
+    #[getter]
+    fn max_distance(&self) -> f64 {
+        self.inner.max_distance()
+    }
+    /// Penalty strength in the corresponding RDKit contribution's native convention.
+    #[getter]
+    fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+
+/// Required angle restraint inputs; all fields support assignment.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
+#[derive(Clone)]
+pub(crate) struct ForceFieldAngleConstraintParams {
+    pub(crate) inner: ck::ForceFieldAngleConstraintParams,
+}
+#[cosmolkit_macros::python_configuration]
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+#[pymethods]
+impl ForceFieldAngleConstraintParams {
+    #[new]
+    #[pyo3(signature=(*,relative,min_angle_deg,max_angle_deg,force_constant))]
+    fn new(relative: bool, min_angle_deg: f64, max_angle_deg: f64, force_constant: f64) -> Self {
+        Self {
+            inner: ck::ForceFieldAngleConstraintParams::new(
+                relative,
+                min_angle_deg,
+                max_angle_deg,
+                force_constant,
+            ),
+        }
+    }
+    /// Interpret bounds as offsets from the geometry when the constraint is added.
+    #[getter]
+    fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    /// Lower angle bound or relative offset, in degrees.
+    #[getter]
+    fn min_angle_deg(&self) -> f64 {
+        self.inner.min_angle_deg()
+    }
+    /// Upper angle bound or relative offset, in degrees.
+    #[getter]
+    fn max_angle_deg(&self) -> f64 {
+        self.inner.max_angle_deg()
+    }
+    /// Penalty strength in the corresponding RDKit contribution's native convention.
+    #[getter]
+    fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+
+/// Required torsion restraint inputs; all fields support assignment.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
+#[derive(Clone)]
+pub(crate) struct ForceFieldTorsionConstraintParams {
+    pub(crate) inner: ck::ForceFieldTorsionConstraintParams,
+}
+#[cosmolkit_macros::python_configuration]
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+#[pymethods]
+impl ForceFieldTorsionConstraintParams {
+    #[new]
+    #[pyo3(signature=(*,relative,min_dihedral_deg,max_dihedral_deg,force_constant))]
+    fn new(
+        relative: bool,
+        min_dihedral_deg: f64,
+        max_dihedral_deg: f64,
+        force_constant: f64,
+    ) -> Self {
+        Self {
+            inner: ck::ForceFieldTorsionConstraintParams::new(
+                relative,
+                min_dihedral_deg,
+                max_dihedral_deg,
+                force_constant,
+            ),
+        }
+    }
+    /// Interpret bounds as offsets from the geometry when the constraint is added.
+    #[getter]
+    fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    /// Lower signed dihedral bound or relative offset, in degrees.
+    #[getter]
+    fn min_dihedral_deg(&self) -> f64 {
+        self.inner.min_dihedral_deg()
+    }
+    /// Upper signed dihedral bound or relative offset, in degrees.
+    #[getter]
+    fn max_dihedral_deg(&self) -> f64 {
+        self.inner.max_dihedral_deg()
+    }
+    /// Penalty strength in the corresponding RDKit contribution's native convention.
+    #[getter]
+    fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+
+/// Required position restraint inputs; all fields support assignment.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", skip_from_py_object, dict, weakref)]
+#[derive(Clone)]
+pub(crate) struct ForceFieldPositionConstraintParams {
+    pub(crate) inner: ck::ForceFieldPositionConstraintParams,
+}
+#[cosmolkit_macros::python_configuration]
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+#[pymethods]
+impl ForceFieldPositionConstraintParams {
+    #[new]
+    #[pyo3(signature=(*,max_displacement,force_constant))]
+    fn new(max_displacement: f64, force_constant: f64) -> Self {
+        Self {
+            inner: ck::ForceFieldPositionConstraintParams::new(max_displacement, force_constant),
+        }
+    }
+    /// Allowed distance from the position captured when the constraint is added, in angstroms.
+    #[getter]
+    fn max_displacement(&self) -> f64 {
+        self.inner.max_displacement()
+    }
+    /// Penalty strength in the corresponding RDKit contribution's native convention.
+    #[getter]
+    fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+
 /// Writable configuration for persistent MMFF evaluator construction.
 ///
 /// Set fields in the constructor or assign them afterward. Omitted values use the
@@ -510,6 +693,105 @@ pub(crate) struct MolecularForceField {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MolecularForceField {
+    /// Append a distance restraint to this evaluator only; source molecule is unchanged.
+    fn add_distance_constraint_(
+        &mut self,
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom1: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom2: &Bound<'_, PyAny>,
+        params: &ForceFieldDistanceConstraintParams,
+    ) -> PyResult<()> {
+        let atom1 = parse_atom_id(
+            py,
+            atom1,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom2 = parse_atom_id(
+            py,
+            atom2,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        self.inner
+            .add_distance_constraint_(atom1, atom2, &params.inner)
+            .map_err(|error| force_pyerr(py, &error))
+    }
+
+    /// Append a angle restraint to this evaluator only; source molecule is unchanged.
+    fn add_angle_constraint_(
+        &mut self,
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom1: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom2: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom3: &Bound<'_, PyAny>,
+        params: &ForceFieldAngleConstraintParams,
+    ) -> PyResult<()> {
+        let atom1 = parse_atom_id(
+            py,
+            atom1,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom2 = parse_atom_id(
+            py,
+            atom2,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom3 = parse_atom_id(
+            py,
+            atom3,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        self.inner
+            .add_angle_constraint_(atom1, atom2, atom3, &params.inner)
+            .map_err(|error| force_pyerr(py, &error))
+    }
+
+    /// Append a torsion restraint to this evaluator only; source molecule is unchanged.
+    fn add_torsion_constraint_(
+        &mut self,
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom1: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom2: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom3: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom4: &Bound<'_, PyAny>,
+        params: &ForceFieldTorsionConstraintParams,
+    ) -> PyResult<()> {
+        let atom1 = parse_atom_id(
+            py,
+            atom1,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom2 = parse_atom_id(
+            py,
+            atom2,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom3 = parse_atom_id(
+            py,
+            atom3,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        let atom4 = parse_atom_id(
+            py,
+            atom4,
+            ck::MolecularForceFieldErrorKind::InvalidAtomIndex,
+        )?;
+        self.inner
+            .add_torsion_constraint_(atom1, atom2, atom3, atom4, &params.inner)
+            .map_err(|error| force_pyerr(py, &error))
+    }
+
+    /// Append a position restraint to this evaluator only; source molecule is unchanged.
+    fn add_position_constraint_(
+        &mut self,
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "builtins.int"))] atom: &Bound<'_, PyAny>,
+        params: &ForceFieldPositionConstraintParams,
+    ) -> PyResult<()> {
+        let atom = parse_atom_id(py, atom, ck::MolecularForceFieldErrorKind::InvalidAtomIndex)?;
+        self.inner
+            .add_position_constraint_(atom, &params.inner)
+            .map_err(|error| force_pyerr(py, &error))
+    }
     /// Return one atom position as an (x, y, z) tuple in angstroms; invalid indices raise ForceFieldError.
     fn position(
         &self,
@@ -664,6 +946,10 @@ impl MolecularForceField {
     }
 }
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<ForceFieldDistanceConstraintParams>()?;
+    module.add_class::<ForceFieldAngleConstraintParams>()?;
+    module.add_class::<ForceFieldTorsionConstraintParams>()?;
+    module.add_class::<ForceFieldPositionConstraintParams>()?;
     module.add_class::<MmffForceFieldParams>()?;
     module.add_class::<UffForceFieldParams>()?;
     module.add_class::<ForceFieldMinimizeParams>()?;

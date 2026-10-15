@@ -99,7 +99,7 @@ macro_rules! sphinx_page {
                             div { class: "docs-article-toolbar",
                                 Link { to: landing, "{language} documentation" }
                                 if !matches!($source, "search" | "genindex") {
-                                    a { href: concat!("https://github.com/cosmol-studio/COSMolKit/blob/main/python/docs/source/", $source, ".rst"), target: "_blank", rel: "noreferrer", "View source ↗" }
+                                    a { href: concat!("https://github.com/cosmol-studio/COSMolKit/blob/main/docs/source/", $source, ".rst"), target: "_blank", rel: "noreferrer", "View source ↗" }
                                 }
                             }
                             if !sphinx_toc($source).is_empty() {

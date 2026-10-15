@@ -50,24 +50,26 @@ From repo root:
 .venv/bin/maturin build --release --manifest-path python/Cargo.toml --features release-abi3-py39 --out python/dist
 ```
 
-## Build Python Documentation
+## Build Documentation
 
 From repo root:
 
 ```bash
 uv sync --group dev
 .venv/bin/maturin develop --manifest-path python/Cargo.toml
-rm -rf python/docs/build/html
-.venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+npm ci --prefix docs --no-audit --no-fund
+.venv/bin/python -m sphinx -W --keep-going -E -b html docs/source docs/build/html
 ```
 
 Generated HTML:
 
 ```text
-python/docs/build/html/index.html
+docs/build/html/python/index.html
 ```
 
-The strict build treats documentation warnings as failures. Sphinx output is
+Python and JavaScript share the root [`docs/`](../docs/README.md) project;
+prepare its checked stub and JavaScript declarations as described there before
+the first build. The strict build treats documentation warnings as failures. Sphinx output is
 an intermediate input to the Dioxus documentation site. SEO checks run on the
 prepared Dioxus deployment artifact, after metadata conversion and static-file
 copying; see [`docs-web/README.md`](../docs-web/README.md#seo-deployment-artifacts).

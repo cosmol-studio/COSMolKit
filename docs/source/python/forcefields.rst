@@ -230,11 +230,69 @@ Reusable configuration remains available through parameter objects:
        )
    )
 
-Rust retains default factories and explicit ``*_with_params`` methods with
-typed parameters. Python keyword calls must construct those same parameter
-values, with fields and defaults taken from the same binding contract. They
-must not implement a second force-field path or a separate default table.
-The registry defines the keyword projection and defaults.
+Python parameter-object and keyword calls use the same implementation, fields
+and defaults. The explicit ``*_with_params`` forms remain available as well.
+
+Distance, angle, torsion, and position constraints
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+All three parameterizations (UFF, MMFF94, MMFF94s) support the same four soft
+constraint contributions on a persistent handle. These operations require
+conformer support. Constraints add energy penalties; they do not clamp
+coordinates or replace the fixed-atom mask.
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   mol = ck.mol_from_smiles("CCCC").with_hydrogens().with_3d_conformer()
+   field = mol.uff_force_field()
+   field.add_distance_constraint_(
+       0, 1, relative=False,
+       min_distance=1.3, max_distance=1.6, force_constant=100.0,
+   )
+   anchor = ck.ForceFieldPositionConstraintParams(
+       max_displacement=0.2, force_constant=100.0,
+   )
+   anchor.force_constant = 200.0
+   field.add_position_constraint_(0, anchor)
+   outcome = field.minimize_(max_iterations=20)
+
+The methods and their parameter types are:
+
+* ``add_distance_constraint_(atom1, atom2, params)``:
+  ``ForceFieldDistanceConstraintParams(relative, min_distance, max_distance, force_constant)``.
+* ``add_angle_constraint_(atom1, atom2, atom3, params)``:
+  ``ForceFieldAngleConstraintParams(relative, min_angle_deg, max_angle_deg, force_constant)``;
+  ``atom2`` is the angle's vertex.
+* ``add_torsion_constraint_(atom1, atom2, atom3, atom4, params)``:
+  ``ForceFieldTorsionConstraintParams(relative, min_dihedral_deg, max_dihedral_deg, force_constant)``.
+* ``add_position_constraint_(atom, params)``:
+  ``ForceFieldPositionConstraintParams(max_displacement, force_constant)``.
+
+Every listed field is required; no range, relative mode, or force constant is
+guessed. Constructors use keyword-only fields. A method accepts either one
+parameter instance or its keyword fields, not both.
+
+Distances and displacements use angstroms; angle and torsion bounds use degrees.
+Force constants use the corresponding RDKit contribution's native convention,
+without unit conversion. ``relative=True`` adds each bound to the distance,
+angle, or signed dihedral measured from the handle's current coordinates when
+the constraint is added. A position constraint captures that atom's current
+position as its anchor at addition time. Later setters or minimization do not
+recapture either baseline. Torsion bounds retain RDKit's normalized wrapped
+interval semantics rather than being clipped to an ordinary ordered interval.
+
+Successful calls append contributions in call order. Invalid indices, bounds,
+or angle ranges return typed ``ForceFieldError`` values without adding a term;
+the original molecule and independently created handles remain unchanged.
+``InvalidAtomIndex`` reports the input slot in ``component`` and its value in
+``atom_index``. ``InvalidConstraintBounds`` and ``InvalidConstraintRange``
+retain the concrete source cause instead of silently repairing the input.
+
+The :download:`complete Python example <../../../python/examples/forcefield_optimization.py>`
+covers all four constraints, fixed atoms, and explicit installation of optimized
+coordinates in a new molecule.
 
 Handle and result API
 ~~~~~~~~~~~~~~~~~~~~~

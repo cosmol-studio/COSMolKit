@@ -7,6 +7,18 @@ use cosmolkit::{
 
 // Fixed public inventory of the owned force-field API, independent of generated metadata.
 const PERSISTENT_FORCEFIELD_IDS: &[&str] = &[
+    "types.ForceFieldDistanceConstraintParams",
+    "ForceFieldDistanceConstraintParams.new",
+    "MolecularForceField.add_distance_constraint_",
+    "types.ForceFieldAngleConstraintParams",
+    "ForceFieldAngleConstraintParams.new",
+    "MolecularForceField.add_angle_constraint_",
+    "types.ForceFieldTorsionConstraintParams",
+    "ForceFieldTorsionConstraintParams.new",
+    "MolecularForceField.add_torsion_constraint_",
+    "types.ForceFieldPositionConstraintParams",
+    "ForceFieldPositionConstraintParams.new",
+    "MolecularForceField.add_position_constraint_",
     "types.MolecularForceFieldErrorKind",
     "types.MmffForceFieldParams",
     "MmffForceFieldParams.new",

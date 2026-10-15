@@ -11,7 +11,7 @@ from sphinx.application import Sphinx
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCS = ROOT / "python/docs"
+DOCS = ROOT / "docs"
 sys.path.insert(0, str(DOCS))
 from api_types import read_stub, return_signature, type_text
 

@@ -11,6 +11,9 @@ test("Reaction.run needs no redundant molecule receiver",()=>{
  const carbon=molecule("C"),oxygen=molecule("O");
  const rxn=b.Reaction.fromSmirks("[C:1].[O:2]>>[C:1][O:2]");
  assert.deepEqual(rxn.run([carbon,oxygen],new b.ReactionRunParams()).map(s=>s.map(m=>m.toSmiles())),[["CO"]]);
+ assert.deepEqual(rxn.run([carbon,oxygen],{maxProducts: 10}).map(s=>s.map(m=>m.toSmiles())),[["CO"]]);
+ assert.throws(()=>rxn.run([carbon,oxygen],{unknown: true}),TypeError);
+ assert.throws(()=>rxn.run([carbon,oxygen]),TypeError);
  assert.equal(rxn.isInitialized(),true);
  assert.equal(carbon.toSmiles(),"C");assert.equal(oxygen.toSmiles(),"O");
  assert.throws(()=>rxn.run([carbon],new b.ReactionRunParams()),e=>e.kind==="ReactionRun"&&e.cause.kind==="ReactantArity");

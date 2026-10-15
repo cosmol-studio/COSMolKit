@@ -11,6 +11,131 @@ use cosmolkit::{
 use std::error::Error;
 
 #[test]
+fn persistent_constraints_are_owned_registered_and_failure_preserving() {
+    use cosmolkit::{
+        ForceFieldAngleConstraintParams, ForceFieldDistanceConstraintParams,
+        ForceFieldPositionConstraintParams, ForceFieldTorsionConstraintParams,
+    };
+    let mol = fixture();
+    let source_rows = mol.conformers_3d()[0].coordinates().to_vec();
+    let mut field = mol.uff_force_field().unwrap();
+    let other = mol.uff_force_field().unwrap();
+    let initial = other.energy().unwrap();
+    field
+        .add_distance_constraint_(
+            AtomId::new(0),
+            AtomId::new(1),
+            &ForceFieldDistanceConstraintParams::new(false, 1., 1., 100.),
+        )
+        .unwrap();
+    field
+        .add_angle_constraint_(
+            AtomId::new(0),
+            AtomId::new(1),
+            AtomId::new(2),
+            &ForceFieldAngleConstraintParams::new(true, -1., 1., 10.),
+        )
+        .unwrap();
+    field
+        .add_torsion_constraint_(
+            AtomId::new(0),
+            AtomId::new(1),
+            AtomId::new(2),
+            AtomId::new(3),
+            &ForceFieldTorsionConstraintParams::new(true, -1., 1., 10.),
+        )
+        .unwrap();
+    field
+        .add_position_constraint_(
+            AtomId::new(0),
+            &ForceFieldPositionConstraintParams::new(0.2, 100.),
+        )
+        .unwrap();
+    let before = field.energy().unwrap();
+    assert!(before > initial);
+    let error = field
+        .add_distance_constraint_(
+            AtomId::new(0),
+            AtomId::new(99),
+            &ForceFieldDistanceConstraintParams::new(false, 1., 2., 10.),
+        )
+        .unwrap_err();
+    assert_eq!(
+        (
+            error.kind(),
+            error.atom_index(),
+            error.component(),
+            error.expected()
+        ),
+        (
+            MolecularForceFieldErrorKind::InvalidAtomIndex,
+            Some(99),
+            Some(1),
+            Some(4)
+        )
+    );
+    assert!(error.source().is_some());
+    assert_eq!(field.energy().unwrap().to_bits(), before.to_bits());
+    let error = field
+        .add_position_constraint_(
+            AtomId::new(usize::MAX),
+            &ForceFieldPositionConstraintParams::new(0., 1.),
+        )
+        .unwrap_err();
+    assert_eq!(error.atom_index(), Some(usize::MAX));
+    assert_eq!(field.energy().unwrap().to_bits(), before.to_bits());
+    // Source validates the first representable out-of-range ID before a later
+    // native usize ID that cannot fit source u32. Torsion checks bounds first.
+    let invalid = AtomId::new(mol.num_atoms());
+    let huge = AtomId::new(usize::MAX);
+    let error = field
+        .add_distance_constraint_(
+            invalid,
+            huge,
+            &ForceFieldDistanceConstraintParams::new(false, 5., 1., 1.),
+        )
+        .unwrap_err();
+    assert_eq!((error.atom_index(), error.component()), (Some(4), Some(0)));
+    assert!(error.source().is_some());
+    let error = field
+        .add_angle_constraint_(
+            invalid,
+            huge,
+            AtomId::new(0),
+            &ForceFieldAngleConstraintParams::new(false, 190., 1., 1.),
+        )
+        .unwrap_err();
+    assert_eq!((error.atom_index(), error.component()), (Some(4), Some(0)));
+    let error = field
+        .add_torsion_constraint_(
+            invalid,
+            huge,
+            AtomId::new(0),
+            AtomId::new(1),
+            &ForceFieldTorsionConstraintParams::new(false, 5., 1., 1.),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.kind(),
+        MolecularForceFieldErrorKind::InvalidConstraintBounds
+    );
+    let error = field
+        .add_torsion_constraint_(
+            invalid,
+            huge,
+            AtomId::new(0),
+            AtomId::new(1),
+            &ForceFieldTorsionConstraintParams::new(false, 1., 5., 1.),
+        )
+        .unwrap_err();
+    assert_eq!((error.atom_index(), error.component()), (Some(4), Some(0)));
+    assert_eq!(field.energy().unwrap().to_bits(), before.to_bits());
+    field.set_position_(AtomId::new(0), [1., 0., 0.]).unwrap();
+    assert_eq!(mol.conformers_3d()[0].coordinates(), source_rows);
+    assert_eq!(other.energy().unwrap().to_bits(), initial.to_bits());
+}
+
+#[test]
 #[cfg(feature = "cap-hydrogens")]
 fn uff_optimizer_returns_the_energy_of_its_own_force_field() {
     use cosmolkit::UffOptimizationParams;

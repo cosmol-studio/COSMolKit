@@ -85,8 +85,12 @@ impl Reaction {
     pub fn run(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Molecule[]")] reactants: JsValue,
-        params: &ReactionRunParams,
+        #[wasm_bindgen(unchecked_param_type = "ReactionRunParams | ReactionRunParamsOptions")] params: JsValue,
     ) -> Result<Array, JsValue> {
+        if params.is_undefined() {
+            return Err(js_sys::TypeError::new("run requires reaction parameters or an options object").into());
+        }
+        let params = ReactionRunParams::from_js_configuration(&params)?;
         let inputs = molecules(&reactants)?;
         let inputs: Vec<_> = inputs.iter().map(|m| &**m).collect();
         cosmolkit_wasm::reaction_run(&mut self.inner.borrow_mut(), &inputs, &params.inner)

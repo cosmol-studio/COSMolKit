@@ -201,6 +201,154 @@ impl ForceFieldMinimizeParams {
     }
 }
 #[wasm_bindgen]
+pub struct ForceFieldDistanceConstraintParams {
+    inner: ck::ForceFieldDistanceConstraintParams,
+}
+#[cosmolkit_wasm::javascript_options("ForceFieldDistanceConstraintParamsOptions")]
+#[wasm_bindgen]
+impl ForceFieldDistanceConstraintParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "boolean")] relative: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] min_distance: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] max_distance: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] force_constant: JsValue,
+    ) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: ck::ForceFieldDistanceConstraintParams::new(
+                bool_value(&relative, "relative")?,
+                number(&min_distance, "minDistance")?,
+                number(&max_distance, "maxDistance")?,
+                number(&force_constant, "forceConstant")?,
+            ),
+        })
+    }
+    #[wasm_bindgen(getter, js_name = relative)]
+    pub fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    #[wasm_bindgen(getter, js_name = minDistance)]
+    pub fn min_distance(&self) -> f64 {
+        self.inner.min_distance()
+    }
+    #[wasm_bindgen(getter, js_name = maxDistance)]
+    pub fn max_distance(&self) -> f64 {
+        self.inner.max_distance()
+    }
+    #[wasm_bindgen(getter, js_name = forceConstant)]
+    pub fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+#[wasm_bindgen]
+pub struct ForceFieldAngleConstraintParams {
+    inner: ck::ForceFieldAngleConstraintParams,
+}
+#[cosmolkit_wasm::javascript_options("ForceFieldAngleConstraintParamsOptions")]
+#[wasm_bindgen]
+impl ForceFieldAngleConstraintParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "boolean")] relative: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] min_angle_deg: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] max_angle_deg: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] force_constant: JsValue,
+    ) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: ck::ForceFieldAngleConstraintParams::new(
+                bool_value(&relative, "relative")?,
+                number(&min_angle_deg, "minAngleDeg")?,
+                number(&max_angle_deg, "maxAngleDeg")?,
+                number(&force_constant, "forceConstant")?,
+            ),
+        })
+    }
+    #[wasm_bindgen(getter, js_name = relative)]
+    pub fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    #[wasm_bindgen(getter, js_name = minAngleDeg)]
+    pub fn min_angle_deg(&self) -> f64 {
+        self.inner.min_angle_deg()
+    }
+    #[wasm_bindgen(getter, js_name = maxAngleDeg)]
+    pub fn max_angle_deg(&self) -> f64 {
+        self.inner.max_angle_deg()
+    }
+    #[wasm_bindgen(getter, js_name = forceConstant)]
+    pub fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+#[wasm_bindgen]
+pub struct ForceFieldTorsionConstraintParams {
+    inner: ck::ForceFieldTorsionConstraintParams,
+}
+#[cosmolkit_wasm::javascript_options("ForceFieldTorsionConstraintParamsOptions")]
+#[wasm_bindgen]
+impl ForceFieldTorsionConstraintParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "boolean")] relative: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] min_dihedral_deg: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] max_dihedral_deg: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] force_constant: JsValue,
+    ) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: ck::ForceFieldTorsionConstraintParams::new(
+                bool_value(&relative, "relative")?,
+                number(&min_dihedral_deg, "minDihedralDeg")?,
+                number(&max_dihedral_deg, "maxDihedralDeg")?,
+                number(&force_constant, "forceConstant")?,
+            ),
+        })
+    }
+    #[wasm_bindgen(getter, js_name = relative)]
+    pub fn relative(&self) -> bool {
+        self.inner.relative()
+    }
+    #[wasm_bindgen(getter, js_name = minDihedralDeg)]
+    pub fn min_dihedral_deg(&self) -> f64 {
+        self.inner.min_dihedral_deg()
+    }
+    #[wasm_bindgen(getter, js_name = maxDihedralDeg)]
+    pub fn max_dihedral_deg(&self) -> f64 {
+        self.inner.max_dihedral_deg()
+    }
+    #[wasm_bindgen(getter, js_name = forceConstant)]
+    pub fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+#[wasm_bindgen]
+pub struct ForceFieldPositionConstraintParams {
+    inner: ck::ForceFieldPositionConstraintParams,
+}
+#[cosmolkit_wasm::javascript_options("ForceFieldPositionConstraintParamsOptions")]
+#[wasm_bindgen]
+impl ForceFieldPositionConstraintParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "number")] max_displacement: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] force_constant: JsValue,
+    ) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: ck::ForceFieldPositionConstraintParams::new(
+                number(&max_displacement, "maxDisplacement")?,
+                number(&force_constant, "forceConstant")?,
+            ),
+        })
+    }
+    #[wasm_bindgen(getter, js_name = maxDisplacement)]
+    pub fn max_displacement(&self) -> f64 {
+        self.inner.max_displacement()
+    }
+    #[wasm_bindgen(getter, js_name = forceConstant)]
+    pub fn force_constant(&self) -> f64 {
+        self.inner.force_constant()
+    }
+}
+#[wasm_bindgen]
 #[derive(Clone, Copy)]
 pub enum MolecularForceFieldErrorKind {
     MissingConformer = 0,
@@ -217,6 +365,8 @@ pub enum MolecularForceFieldErrorKind {
     Initialization = 11,
     Rings = 12,
     Kernel = 13,
+    InvalidConstraintBounds = 14,
+    InvalidConstraintRange = 15,
 }
 impl From<ck::MolecularForceFieldErrorKind> for MolecularForceFieldErrorKind {
     fn from(value: ck::MolecularForceFieldErrorKind) -> Self {
@@ -237,6 +387,8 @@ impl From<ck::MolecularForceFieldErrorKind> for MolecularForceFieldErrorKind {
             ck::MolecularForceFieldErrorKind::Initialization => Self::Initialization,
             ck::MolecularForceFieldErrorKind::Rings => Self::Rings,
             ck::MolecularForceFieldErrorKind::Kernel => Self::Kernel,
+            ck::MolecularForceFieldErrorKind::InvalidConstraintBounds => Self::InvalidConstraintBounds,
+            ck::MolecularForceFieldErrorKind::InvalidConstraintRange => Self::InvalidConstraintRange,
         }
     }
 }
@@ -497,6 +649,66 @@ pub struct MolecularForceField {
 }
 #[wasm_bindgen]
 impl MolecularForceField {
+    #[wasm_bindgen(js_name = addDistanceConstraint_)]
+    pub fn add_distance_constraint_(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom1: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom2: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ForceFieldDistanceConstraintParams | ForceFieldDistanceConstraintParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = ForceFieldDistanceConstraintParams::from_js_configuration(&params)?;
+        self.inner.add_distance_constraint_(
+            ck::AtomId::new(usize_value(&atom1, "atom1")?),
+            ck::AtomId::new(usize_value(&atom2, "atom2")?),
+            &params.inner,
+        ).map_err(|e| field_error(&e).unwrap_or_else(|e| e))
+    }
+    #[wasm_bindgen(js_name = addAngleConstraint_)]
+    pub fn add_angle_constraint_(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom1: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom2: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom3: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ForceFieldAngleConstraintParams | ForceFieldAngleConstraintParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = ForceFieldAngleConstraintParams::from_js_configuration(&params)?;
+        self.inner.add_angle_constraint_(
+            ck::AtomId::new(usize_value(&atom1, "atom1")?),
+            ck::AtomId::new(usize_value(&atom2, "atom2")?),
+            ck::AtomId::new(usize_value(&atom3, "atom3")?),
+            &params.inner,
+        ).map_err(|e| field_error(&e).unwrap_or_else(|e| e))
+    }
+    #[wasm_bindgen(js_name = addTorsionConstraint_)]
+    pub fn add_torsion_constraint_(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom1: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom2: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom3: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom4: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ForceFieldTorsionConstraintParams | ForceFieldTorsionConstraintParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = ForceFieldTorsionConstraintParams::from_js_configuration(&params)?;
+        self.inner.add_torsion_constraint_(
+            ck::AtomId::new(usize_value(&atom1, "atom1")?),
+            ck::AtomId::new(usize_value(&atom2, "atom2")?),
+            ck::AtomId::new(usize_value(&atom3, "atom3")?),
+            ck::AtomId::new(usize_value(&atom4, "atom4")?),
+            &params.inner,
+        ).map_err(|e| field_error(&e).unwrap_or_else(|e| e))
+    }
+    #[wasm_bindgen(js_name = addPositionConstraint_)]
+    pub fn add_position_constraint_(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] atom: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ForceFieldPositionConstraintParams | ForceFieldPositionConstraintParamsOptions")] params: JsValue,
+    ) -> Result<(), JsValue> {
+        let params = ForceFieldPositionConstraintParams::from_js_configuration(&params)?;
+        self.inner.add_position_constraint_(
+            ck::AtomId::new(usize_value(&atom, "atom")?),
+            &params.inner,
+        ).map_err(|e| field_error(&e).unwrap_or_else(|e| e))
+    }
     #[wasm_bindgen(unchecked_return_type = "number[]")]
     pub fn position(
         &self,

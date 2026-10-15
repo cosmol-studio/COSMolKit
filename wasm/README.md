@@ -118,6 +118,9 @@ More focused examples are in [`examples/vanilla`](./examples/vanilla/):
 - [`substructure.js`](./examples/vanilla/substructure.js): SMARTS matching and
   disconnected fragments.
 - [`stereo.js`](./examples/vanilla/stereo.js): stereochemistry and conformers.
+- [`forcefield_optimization.js`](./examples/vanilla/forcefield_optimization.js):
+  persistent UFF/MMFF evaluators, four restraint types, and explicit coordinate installation
+  in a new molecule; use the full or `cosmolkit-core-3d` package.
 
 ## React
 
@@ -241,5 +244,6 @@ The examples are intentionally small and use only the published package:
 - [`examples/vanilla/fingerprints.js`](./examples/vanilla/fingerprints.js)
 - [`examples/vanilla/substructure.js`](./examples/vanilla/substructure.js)
 - [`examples/vanilla/stereo.js`](./examples/vanilla/stereo.js)
+- [`examples/vanilla/forcefield_optimization.js`](./examples/vanilla/forcefield_optimization.js)
 - [`examples/react/MoleculePanel.jsx`](./examples/react/MoleculePanel.jsx)
 - [`examples/vue/MoleculePanel.vue`](./examples/vue/MoleculePanel.vue)

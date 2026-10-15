@@ -706,10 +706,33 @@ def _assignment_probes(previous, field):
     return []
 
 
-def check_effective_assignment(cls, row, field, schemas):
+def configuration_probe_arguments(row):
+    """Fixed type-level test inputs, never API defaults or domain policies.
+
+    Required fields must reach the same live constructor/setter checks as
+    defaulted records. Unsupported probe types fail explicitly; a constructor
+    rejecting these test inputs is an error, not a reason to skip validation.
+    """
+    fixtures = {"bool": False, "int": 1, "usize": 1, "u32": 1, "i32": 1, "float": 1.0, "f64": 1.0, "str": "ck_probe", "bytes": b"ck_probe"}
+    arguments = {}
+    for field in row["fields"]:
+        if field["default"] is not None:
+            continue
+        annotation = _annotation(ast.parse(field["type"], mode="eval").body)
+        if annotation in fixtures:
+            arguments[field["name"]] = fixtures[annotation]
+        elif annotation.startswith(("Sequence[", "list[", "List[")):
+            arguments[field["name"]] = []
+        else:
+            raise ValueError(f"required field {field['name']} needs an explicit supported configuration probe ({annotation})")
+    return arguments
+
+
+def check_effective_assignment(cls, row, field, schemas, inputs=None):
     errors = []
-    for probe in _assignment_probes(getattr(cls(), field["name"]), field):
-        value = cls()
+    inputs = configuration_probe_arguments(row) if inputs is None else inputs
+    for probe in _assignment_probes(getattr(cls(**inputs), field["name"]), field):
+        value = cls(**inputs)
         original = _configuration_snapshot(value, schemas)
         arguments = {item["name"]: getattr(value, item["name"]) for item in row["fields"]}
         try:
@@ -853,7 +876,8 @@ def check_configuration_repr(value, row, schemas):
 def check_runtime(module, document):
     """Check actual extension exports and setters, not a promised stub.
 
-    Default-constructible configuration values and an empty batch are used.
+    Configuration values use defaults or explicit required-field probe inputs;
+    batch probes use an empty batch.
     Filesystem smoke checks use disposable empty files; invalid/protocol probes
     stop before IO. Callback checks use a two-atom in-memory molecule; no
     external fixture or reference installation is used.
@@ -898,13 +922,24 @@ def check_runtime(module, document):
             descriptor = inspect.getattr_static(cls, field["name"], None)
             if descriptor is None or not hasattr(descriptor, "__set__") or isinstance(descriptor, property) and descriptor.fset is None:
                 errors.append(f"{row['python_name']}.{field['name']}: actual setter missing")
-        if any(field["default"] is None for field in row["fields"]):
-            continue
         try:
-            value = cls()
+            inputs = configuration_probe_arguments(row)
+            value = cls(**inputs)
         except Exception as error:
-            errors.append(f"{row['python_name']}: default construction failed: {error}")
+            errors.append(f"{row['python_name']}: configuration probe construction failed: {error}")
             continue
+        for field in row["fields"]:
+            if field["default"] is not None:
+                continue
+            missing = {name: item for name, item in inputs.items() if name != field["name"]}
+            try:
+                cls(**missing)
+            except TypeError:
+                pass
+            except Exception as error:
+                errors.append(f"{row['python_name']}.{field['name']}: missing required input raised the wrong error: {error}")
+            else:
+                errors.append(f"{row['python_name']}.{field['name']}: missing required input was accepted")
         try:
             setattr(value, "ck_unknown_configuration_field", object())
         except AttributeError:
@@ -925,7 +960,7 @@ def check_runtime(module, document):
                 setattr(value, field["name"], previous)
                 if _configuration_snapshot(value, schemas) != before:
                     errors.append(f"{row['python_name']}.{field['name']}: assignment did not preserve the value")
-                errors.extend(check_effective_assignment(cls, row, field, schemas))
+                errors.extend(check_effective_assignment(cls, row, field, schemas, inputs))
                 vocabulary = getattr(type(previous), "_enum_string_values", None)
                 if vocabulary is None and hasattr(type(previous), "__members__"):
                     vocabulary = [(name.lower(), member) for name, member in type(previous).__members__.items()]

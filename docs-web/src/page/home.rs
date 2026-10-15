@@ -15,7 +15,7 @@ pub fn Home() -> Element {
     rsx! {
         Seo {
             title: "COSMolKit documentation — Guides and API reference",
-            description: "Learn COSMolKit with installation instructions, Python guides, API reference, and source-backed validation evidence.",
+            description: "Learn COSMolKit with installation instructions, Python and JavaScript guides, API references, and source-backed validation evidence.",
 
         }
         document::Script { r#type: "application/ld+json", "{WEBSITE_JSON_LD}" }
@@ -25,14 +25,16 @@ pub fn Home() -> Element {
                     div {
                         p { class: "home-kicker", "THE COSMOLKIT HANDBOOK" }
                         h1 { "Documentation" }
-                        p { class: "docs-intro-description", "A practical guide to the Rust-native chemistry toolkit. Learn the Python API, build molecular workflows, and find the details you need." }
+                        p { class: "docs-intro-description", "A practical guide to the Rust-native chemistry toolkit. Use Python or JavaScript / TypeScript to build molecular workflows, and find the details you need." }
                         div { class: "docs-intro-actions",
-                            Link { class: "docs-primary-action", to: Route::Quickstart { fragment: String::new() }, "Start the quick guide", span { aria_hidden: "true", "→" } }
-                            Link { class: "docs-text-action", to: Route::Api { fragment: String::new() }, "Browse API reference", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-primary-action", to: Route::Quickstart { fragment: String::new() }, "Python quick start", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-primary-action", to: Route::JavaScript { fragment: String::new() }, "JavaScript quick start", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-text-action", to: Route::Api { fragment: String::new() }, "Python API reference", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-text-action", to: Route::JavaScriptApi { fragment: String::new() }, "JavaScript API reference", span { aria_hidden: "true", "→" } }
                         }
                     }
                     aside { class: "docs-reading-path", aria_label: "Getting started",
-                        p { class: "home-kicker", "NEW TO COSMOLKIT?" }
+                        p { class: "home-kicker", "GET STARTED WITH PYTHON" }
                         StartLink { number: "01", title: "Install the package", detail: "Set up your Python environment", to: Route::Quickstart { fragment: "installation".into() } }
                         StartLink { number: "02", title: "Create your first molecule", detail: "Follow the quick start", to: Route::Quickstart { fragment: String::new() } }
                         StartLink { number: "03", title: "Understand molecule values", detail: "Learn the core data model", to: Route::Molecule { fragment: String::new() } }
@@ -41,7 +43,10 @@ pub fn Home() -> Element {
                 section { class: "docs-guide-section", aria_label: "Explore the documentation",
                     div { class: "docs-section-heading",
                         div { p { class: "home-kicker", "GUIDES & REFERENCE" } h2 { "Find your next step" } }
-                        Link { class: "docs-text-action", to: Route::Python {}, "All Python documentation →" }
+                        div { class: "flex flex-wrap gap-x-5 gap-y-2",
+                            Link { class: "docs-text-action", to: Route::Python {}, "All Python documentation →" }
+                            Link { class: "docs-text-action", to: Route::JavaScript { fragment: String::new() }, "All JavaScript documentation →" }
+                        }
                     }
                     div { class: "docs-topic-grid",
                         TopicGroup { number: "01", title: "Molecules & data", description: "Build, inspect, and exchange molecular structures.",
@@ -58,14 +63,13 @@ pub fn Home() -> Element {
                         TopicGroup { number: "03", title: "Look up the details", description: "Check signatures, locate symbols, and review evidence.",
                             TopicLink { title: "Search documentation", to: Route::SearchPage { q: String::new(), fragment: String::new() } }
                             TopicLink { title: "Python API reference", to: Route::Api { fragment: String::new() } }
+                            TopicLink { title: "JavaScript API reference", to: Route::JavaScriptApi { fragment: String::new() } }
                             TopicLink { title: "General index", to: Route::Genindex { fragment: String::new() } }
                             TopicLink { title: "Validation evidence", to: Route::Validation {} }
                         }
                     }
                     div { class: "docs-availability",
                         span { class: "docs-status-label", "NOT YET AVAILABLE" }
-                        Link { to: Route::JavaScript { fragment: String::new() }, "JavaScript / WebAssembly documentation" }
-                        span { aria_hidden: "true", "·" }
                         Link { to: Route::Benchmarks {}, "Benchmark reports" }
                     }
                 }

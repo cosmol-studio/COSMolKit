@@ -80,3 +80,56 @@ test('persistent factories expose typed missing-conformer errors and checked opt
     }
     molecule.free();
 });
+
+const constraints = [
+    ['Distance', [0, 1], [false, 1, 1.1, 20], {relative: false, minDistance: 1, maxDistance: 1.1, forceConstant: 20}],
+    ['Angle', [0, 1, 2], [false, 80, 90, 20], {relative: false, minAngleDeg: 80, maxAngleDeg: 90, forceConstant: 20}],
+    ['Torsion', [0, 1, 2, 3], [false, -10, 10, 20], {relative: false, minDihedralDeg: -10, maxDihedralDeg: 10, forceConstant: 20}],
+    ['Position', [0], [0.01, 20], {maxDisplacement: 0.01, forceConstant: 20}],
+];
+for (const model of ['UFF', 'MMFF94', 'MMFF94s']) {
+    for (const [kind, atoms, values, options] of constraints) {
+        test(`${model} ${kind} constraint instances, required options, setters and failure atomicity`, () => {
+            const source = ck.Molecule.fromSmiles('CCCC').withHydrogens().with3dConformer({randomSeed: 42});
+            const factory = () => model === 'UFF' ? source.uffForceField() : source.mmffForceField({mmffVariant: model});
+            const field = factory();
+            const peer = factory();
+            const untouched = factory();
+            const original = Array.from(source.coordinates3d(0));
+            const Class = ck[`ForceField${kind}ConstraintParams`];
+            const params = new Class(...values);
+            const method = `add${kind}Constraint_`;
+            assert.throws(() => new Class(), TypeError);
+            for (const key of Object.keys(options)) {
+                const missing = {...options};
+                delete missing[key];
+                assert.throws(() => peer[method](...atoms, missing), TypeError);
+            }
+            assert.throws(() => peer[method](...atoms, {...options, unknown: 1}), TypeError);
+            assert.throws(() => { params.forceConstant = 'wrong'; }, TypeError);
+            assert.equal(params.forceConstant, 20);
+            params.forceConstant = 30;
+            field[method](...atoms, params);
+            peer[method](...atoms, {...options, forceConstant: 30});
+            const displaced = field.position(0);
+            displaced[0] += 0.2;
+            field.setPosition_(0, displaced);
+            peer.setPosition_(0, displaced);
+            assert.equal(field.energy(), peer.energy());
+            assert.deepEqual(field.gradient(), peer.gradient());
+            const before = field.energy();
+            const invalid = [...atoms];
+            invalid[0] = 999;
+            assert.throws(() => field[method](...invalid, params), error => {
+                assert.equal(error.kind, ck.MolecularForceFieldErrorKind.InvalidAtomIndex);
+                assert.equal(error.atomIndex, 999);
+                assert.ok(error.detail instanceof ck.ForceFieldError);
+                return true;
+            });
+            assert.equal(field.energy(), before);
+            assert.deepEqual(Array.from(source.coordinates3d(0)), original);
+            assert.deepEqual(untouched.position(0), Array.from(original.slice(0, 3)));
+            for (const value of [params, field, peer, untouched, source]) value.free();
+        });
+    }
+}

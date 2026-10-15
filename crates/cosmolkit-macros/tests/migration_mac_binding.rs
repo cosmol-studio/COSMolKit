@@ -1267,6 +1267,8 @@ fn persistent_keyword_projection_uses_registered_defaults_and_immutable_target()
     .to_string();
     assert!(expanded.contains("KEYWORDS_KEYWORDS"));
     assert!(expanded.contains("parameters_semantic_id : \"Params.new\""));
+    let compact: String = expanded.chars().filter(|ch| !ch.is_whitespace()).collect();
+    assert!(compact.contains("default:crate::BindingDefault::Value(stringify!(200))"));
     assert!(
         expand_binding_contract(persistent_keyword_entries(
             quote! {&mut crate::Params},
@@ -1285,14 +1287,27 @@ fn persistent_keyword_projection_uses_registered_defaults_and_immutable_target()
         .to_string()
         .contains("constructor output")
     );
-    assert!(
-        expand_binding_contract(persistent_keyword_entries(
-            quote! {&crate::Params},
-            quote! {required}
-        ))
-        .unwrap_err()
+    // Required is an explicit contract, not a missing default. The generated
+    // metadata must retain Required instead of inventing a default value.
+    let required = expand_binding_contract(persistent_keyword_entries(
+        quote! {&crate::Params},
+        quote! {required},
+    ))
+    .unwrap()
+    .to_string();
+    assert!(required.contains("BindingDefault :: Required"));
+    assert!(required.contains("KEYWORDS_KEYWORDS"));
+}
+#[test]
+fn keyword_projection_rejects_instance_constructor_with_required_fields() {
+    let tokens = persistent_keyword_entries(quote! {&crate::Params}, quote! {required})
         .to_string()
-        .contains("explicit defaults")
+        .replace("kind : constructor", "kind : instance");
+    let error = expand_binding_contract(tokens.parse().unwrap()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("keyword constructor must be static or a constructor")
     );
 }
 #[test]

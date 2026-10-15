@@ -542,6 +542,69 @@ def test_runtime_gate_rejects_unregistered_dynamic_attributes():
     assert any("unknown configuration field was silently accepted" in error for error in check_runtime(SimpleNamespace(SearchParams=SearchParams), document))
 
 
+def test_required_configuration_runs_actual_assignment_and_missing_input_checks():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        __slots__ = ("_limit",)
+
+        def __init__(self, limit):
+            self.limit = limit
+
+        @property
+        def limit(self):
+            return self._limit
+
+        @limit.setter
+        def limit(self, value):
+            if not isinstance(value, int):
+                raise TypeError("integer required")
+            self._limit = value
+
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    fields = cast(list[dict[str, object]], document["entries"][0]["fields"])
+    fields[0].update(type="builtins.int", default=None)
+    module = SimpleNamespace(SearchParams=SearchParams)
+    assert check_runtime(module, document) == []
+    original = SearchParams.limit.fset
+    assert original is not None
+
+    def ignored_setter(self, value):
+        if not isinstance(value, int):
+            raise TypeError("integer required")
+        if not hasattr(self, "_limit"):
+            self._limit = value
+
+    SearchParams.limit = SearchParams.limit.setter(ignored_setter)
+    assert any("effective assignment differs" in error for error in check_runtime(module, document))
+
+    def non_atomic_setter(self, value):
+        self._limit = -9
+        original(self, value)
+
+    SearchParams.limit = SearchParams.limit.setter(non_atomic_setter)
+    assert any("failed assignment changed" in error for error in check_runtime(module, document))
+    SearchParams.limit = SearchParams.limit.setter(original)
+    SearchParams.__init__ = lambda self, limit=1: original(self, limit)
+    assert any("missing required input was accepted" in error for error in check_runtime(module, document))
+
+
+def test_required_configuration_probe_rejects_unknown_attributes_without_skipping():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        def __init__(self, limit):
+            self.limit = limit
+
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    fields = cast(list[dict[str, object]], document["entries"][0]["fields"])
+    fields[0].update(type="builtins.int", default=None)
+    errors = check_runtime(SimpleNamespace(SearchParams=SearchParams), document)
+    assert any("unknown configuration field was silently accepted" in error for error in errors)
+
+
 def test_callable_configuration_requires_registered_behavior_not_just_a_typed_stub():
     document = _configuration_document()
     document["entries"] = document["entries"][:1]

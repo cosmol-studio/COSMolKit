@@ -1,11 +1,11 @@
 use super::{
-    EvaluationContext, ForceField, ForceFieldContribution, ForceFieldIndexArgument,
+    ConstraintPositions, EvaluationContext, ForceFieldContribution, ForceFieldIndexArgument,
     ForceFieldKernelError,
 };
 use crate::geometry::Point3;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct PositionConstraintContrib {
+pub(crate) struct PositionConstraintContrib {
     at_idx: u32,
     max_displ: f64,
     pos0: Point3,
@@ -13,8 +13,8 @@ pub(super) struct PositionConstraintContrib {
 }
 
 impl PositionConstraintContrib {
-    pub(super) fn new(
-        owner: &ForceField<'_>,
+    pub(crate) fn new(
+        owner: &(impl ConstraintPositions + ?Sized),
         idx: u32,
         max_displ: f64,
         force_constant: f64,
@@ -38,8 +38,7 @@ impl PositionConstraintContrib {
         // `owner` is a non-null borrow. Keep the source range check before
         // reading and copying the selected 3D reference point; the source owner
         // pointer is not retained because callbacks receive the live context.
-        let positions = owner.positions();
-        let point_count = positions.len() as u32;
+        let point_count = owner.point_count() as u32;
         if idx >= point_count {
             return Err(ForceFieldKernelError::IndexOutOfRange {
                 argument: ForceFieldIndexArgument::I,
@@ -47,7 +46,7 @@ impl PositionConstraintContrib {
                 upper_bound: point_count,
             });
         }
-        let point = &positions[idx as usize][..];
+        let point = owner.point(idx as usize);
         let pos0 = Point3 {
             x: point[0],
             y: point[1],

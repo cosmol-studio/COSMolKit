@@ -100,7 +100,7 @@ def typescript_probe(document: dict) -> str:
             # inventing values or relying on TS's assignability of readonly
             # object types. The runtime gate checks the actual descriptor.
             lines.append(f"p{index}.{key} = p{index}.{key};")
-    for index, (base, target, configurations) in enumerate(_shared.configuration_calls(entries)):
+    for index, (base, target, configurations) in enumerate(_shared.configuration_calls(entries, document.get("keywords", ()))):
         owner = "Molecule" if base["owner"] == "molecule" else types.get(base["semantic_id"].rsplit(".", 1)[0], base["semantic_id"].rsplit(".", 1)[0])
         if base["owner"] == "module":
             call = f"ck.{base['javascript_name']}"
@@ -109,7 +109,9 @@ def typescript_probe(document: dict) -> str:
         else:
             lines.append(f"declare const receiver{index}: ck.{owner};")
             call = f"receiver{index}.{base['javascript_name']}"
-        arguments = [f"null as unknown as Parameters<typeof {call}>[{position}]" for position, _ in enumerate(base.get("parameters") or [])]
+        configuration_names = {field["name"] for field, _ in configurations}
+        data_names = {field["name"] for field in base.get("parameters") or []} - configuration_names
+        arguments = [f"null as unknown as Parameters<typeof {call}>[{position}]" for position, field in enumerate(base.get("parameters") or []) if field["name"] not in configuration_names]
         prefix = ", ".join(arguments)
         prefix += ", " if prefix else ""
         instances, objects = [], []
@@ -121,5 +123,18 @@ def typescript_probe(document: dict) -> str:
             objects.append("{" + options + "}")
         lines.append(f"{call}({prefix}{', '.join(instances)});")
         lines.append(f"{call}({prefix}{', '.join(objects)});")
+        for position, (parameter, configuration) in enumerate(configurations):
+            for required in configuration["fields"]:
+                # A convenience call may take this field as its explicit data
+                # argument (e.g. fragment atoms), then fill the configuration
+                # itself. That call is not missing the required input.
+                if required["default"] is not None or required["name"] in data_names:
+                    continue
+                variable = f"configuration{index}_{position}"
+                incomplete = ", ".join(f"{camel(field['name'])}: {variable}.{camel(field['name'])}" for field in configuration["fields"] if field["name"] != required["name"])
+                rejected = list(objects)
+                rejected[position] = "{" + incomplete + "}"
+                lines.append(f"// @ts-expect-error required configuration field {camel(required['name'])}")
+                lines.append(f"{call}({prefix}{', '.join(rejected)});")
     lines.append(convenience_typescript_probe(document))
     return "\n".join(lines) + "\n"

@@ -57,7 +57,7 @@ jobs:
               run: uv sync --group dev
 
             - name: Install TypeDoc
-              run: npm ci --prefix python/docs --no-audit --no-fund
+              run: npm ci --prefix docs --no-audit --no-fund
 
             - name: Test deployment scripts
               run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
@@ -77,8 +77,8 @@ jobs:
             - name: Build Sphinx source
               run: |
                   .venv/bin/python -m unittest discover -s dev/tools -p 'test_python_docs.py' -v
-                  rm -rf python/docs/build/html
-                  .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+                  rm -rf docs/build/html
+                  .venv/bin/python -m sphinx -W --keep-going -E -b html docs/source docs/build/html
 
             - name: Install cargo-binstall
               uses: cargo-bins/cargo-binstall@main
@@ -104,7 +104,7 @@ jobs:
             - name: Prepare deployment files
               run: |
                   public_dir="docs-web/target/dx/cosmolkit-docs-web/release/web/public"
-                  .venv/bin/python docs-web/scripts/prepare_deployment.py "$public_dir" python/docs/build/html
+                  .venv/bin/python docs-web/scripts/prepare_deployment.py "$public_dir" docs/build/html
                   .venv/bin/python docs-web/scripts/check_ssg_output.py "$public_dir"
 
             - name: Upload Cloudflare Pages artifact

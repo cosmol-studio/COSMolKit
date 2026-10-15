@@ -15,7 +15,7 @@ class RouteContractTests(unittest.TestCase):
              and p["status"] == "ready"),
             key=lambda p: p["order"],
         )
-        names = [p["docname"] for p in navigation]
+        names = [p["docname"].removeprefix("python/") for p in navigation]
         self.assertEqual(names[:4], ["quickstart", "molecule", "io", "batch"])
         self.assertNotIn("installation", names)
         self.assertNotIn("py-modindex", names)
@@ -27,15 +27,15 @@ class RouteContractTests(unittest.TestCase):
             self.assertLess(names.index(guide), api)
         self.assertEqual(len({p["order"] for p in navigation}), len(navigation))
 
-        index = MANIFEST.parent.parent / "python/docs/source/index.rst"
+        index = MANIFEST.parent.parent / "docs/source/python/index.rst"
         guide_tree = index.read_text(encoding="utf-8").split(".. toctree::")[1]
         sphinx_order = [line.strip() for line in guide_tree.splitlines()
                         if line.startswith("   ") and not line.strip().startswith(":")]
-        sidebar_guides = [p["docname"] for p in navigation if p.get("summary")]
+        sidebar_guides = [p["docname"].removeprefix("python/") for p in navigation if p.get("summary")]
         self.assertEqual(sphinx_order, sidebar_guides)
 
     def test_installation_is_first_quickstart_section(self):
-        source = MANIFEST.parent.parent / "python/docs/source/quickstart.rst"
+        source = MANIFEST.parent.parent / "docs/source/python/quickstart.rst"
         text = source.read_text(encoding="utf-8")
         self.assertLess(text.index("Installation\n"), text.index("Value-Style Molecule Values\n"))
         self.assertIn("pip install cosmolkit", text)
@@ -43,9 +43,9 @@ class RouteContractTests(unittest.TestCase):
         self.assertEqual(rules["/python/installation"], ("/python/quickstart", "301"))
 
     def test_generated_api_definitions_only_live_in_api_pages(self):
-        source = MANIFEST.parent.parent / "python/docs/source"
+        source = MANIFEST.parent.parent / "docs/source"
         for page in source.rglob("*.rst"):
-            if page.name in {"api.rst", "javascript-api.rst"}:
+            if page.relative_to(source).as_posix() in {"python/api.rst", "javascript/api.rst"}:
                 continue
             with self.subTest(page=page.name):
                 self.assertNotRegex(page.read_text(encoding="utf-8"),
@@ -86,7 +86,7 @@ class RouteContractTests(unittest.TestCase):
             ('path = "/python/api"', 'path = "/python/molecule"'),
             ('component = "Api"', 'component = "Molecule"'),
             ('topic = "api"', 'topic = "molecule"'),
-            ('docname = "api"', 'docname = "molecule"'),
+            ('docname = "python/api"', 'docname = "python/molecule"'),
             ('path = "/python/api"', 'path = "/api"'),
             ('legacy_paths = ["/api"]', 'legacy_paths = ["/python"]'),
             ('legacy_paths = ["/api"]', 'legacy_paths = ["/molecule"]'),
@@ -101,3 +101,21 @@ class RouteContractTests(unittest.TestCase):
                     path.write_text(original.replace(old, new), encoding="utf-8")
                     with self.assertRaises(ValueError):
                         load_contract(path)
+
+    def test_language_sources_are_separate_with_unchanged_public_destinations(self):
+        source = MANIFEST.parent.parent / "docs/source"
+        self.assertFalse((MANIFEST.parent.parent / "python/docs/source").exists())
+        self.assertEqual(next(p for p in PAGES if p["path"] == "/")["docname"], "index")
+        for page in PAGES:
+            docname = page.get("docname")
+            if not docname or docname in {"search", "genindex", "index"}:
+                continue
+            with self.subTest(page=page["path"]):
+                self.assertTrue(docname.startswith(page["binding"] + "/"))
+                self.assertTrue((source / (docname + ".rst")).is_file())
+                public = "/" + docname.removesuffix("/index")
+                self.assertEqual(page["path"], public)
+        for language in ("python", "javascript"):
+            index = (source / language / "index.rst").read_text(encoding="utf-8")
+            self.assertIn(".. toctree::", index)
+            self.assertIn("   api", index)

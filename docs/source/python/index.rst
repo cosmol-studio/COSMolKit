@@ -29,9 +29,3 @@ directly.
    protein
    api
    confseq
-
-.. toctree::
-   :maxdepth: 1
-   :caption: JavaScript / TypeScript
-
-   javascript

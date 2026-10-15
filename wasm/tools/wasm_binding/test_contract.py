@@ -28,6 +28,27 @@ def _document():
 
 
 class ContractTests(unittest.TestCase):
+    def test_required_field_supplied_as_data_is_not_misdiagnosed_as_missing(self):
+        document = _document()
+        document["entries"][0]["fields"][0]["default"] = None
+        document["entries"].extend([
+            {"semantic_id": "Runner.run", "javascript_name": "run", "item": "callable", "owner": "type", "receiver": "Mutable", "parameters": [{"name": "max_matches", "type": "usize"}]},
+            {"semantic_id": "Runner.run_with_params", "javascript_name": "runWithParams", "item": "callable", "owner": "type", "receiver": "Mutable", "parameters": [{"name": "params", "type": "&crate::Configuration"}]},
+        ])
+        probe = _checker.typescript_probe(document)
+        self.assertIn("receiver0.run(null as unknown as Parameters<typeof receiver0.run>[0], {maxMatches: configuration0_0.maxMatches})", probe)
+        self.assertNotIn("@ts-expect-error required configuration field maxMatches", probe)
+
+    def test_required_standalone_configuration_keeps_data_and_rejects_missing_option(self):
+        document = _document()
+        document["entries"][0]["fields"][0]["default"] = None
+        document["entries"].append({"semantic_id": "Runner.run", "javascript_name": "run", "item": "callable", "owner": "type", "receiver": "Mutable", "parameters": [{"name": "atom", "type": "u32"}, {"name": "params", "type": "&crate::Configuration"}]})
+        document["keywords"] = [{"semantic_id": "Runner.run", "target": "Runner.run"}]
+        probe = _checker.typescript_probe(document)
+        self.assertIn("receiver0.run(null as unknown as Parameters<typeof receiver0.run>[0], configuration0_0)", probe)
+        self.assertNotIn("Parameters<typeof receiver0.run>[1]", probe)
+        self.assertIn("// @ts-expect-error required configuration field maxMatches", probe)
+        self.assertIn("receiver0.run(null as unknown as Parameters<typeof receiver0.run>[0], {})", probe)
     def test_compiled_conveniences_keep_canonical_platform_gates(self):
         document = {"entries": [], "javascript_aliases": [
             {"name": "mol_from_binary", "target": "Molecule.fromBinary", "platform": "native"},

@@ -51,7 +51,7 @@ export const config = {
           `   Value: \`\`${JSON.stringify(member.type.value)}\`\`.`, "");
       }
     }
-    const path = fileURLToPath(new URL("../../target/docs-js-package/enums.rst", import.meta.url));
+    const path = fileURLToPath(new URL("../target/docs-js-package/enums.rst", import.meta.url));
     const content = lines.join("\n");
     // Keep incremental guide edits from invalidating the complete API page.
     if (!existsSync(path) || readFileSync(path, "utf8") !== content) {

@@ -84,10 +84,10 @@ class DeploymentTests(unittest.TestCase):
         for name in ("404.html",):
             shutil.copyfile(docs_web / "deployment/public" / name, self.public / name)
         shutil.copyfile(
-            docs_web.parent / "python/docs/source/robots.txt", self.public / "robots.txt"
+            docs_web.parent / "docs/source/robots.txt", self.public / "robots.txt"
         )
         shutil.copyfile(
-            docs_web.parent / f"python/docs/source/{INDEXNOW_KEY}.txt", self.public / f"{INDEXNOW_KEY}.txt"
+            docs_web.parent / f"docs/source/{INDEXNOW_KEY}.txt", self.public / f"{INDEXNOW_KEY}.txt"
         )
         write_route_assets(self.public)
         for src in SEARCH_SCRIPTS:
@@ -109,12 +109,19 @@ class DeploymentTests(unittest.TestCase):
             sphinx = Path(temporary)
             for folder, filename in (("_static", "style.css"), ("_sources", "index.rst.txt"), ("_modules", "index.html")):
                 (sphinx / folder).mkdir()
-                (sphinx / folder / filename).write_text("fixture")
+                content = ('<a href="../python/api.html#cosmolkit.Molecule">Python</a>'
+                           '<a href="../javascript/index.html">JavaScript</a>'
+                           '<a href="../index.html">Home</a>'
+                           '<a href="builtins.html">Module</a>') if folder == "_modules" else "fixture"
+                (sphinx / folder / filename).write_text(content)
             for name in ("objects.inv", "robots.txt", INDEXNOW_KEY + ".txt"):
                 (sphinx / name).write_text("fixture")
             with patch("prepare_deployment.download_social_image"):
                 prepare(self.public, sphinx)
         self.assertTrue((self.public / "python/_modules/index.html").is_file())
+        module = (self.public / "python/_modules/index.html").read_text()
+        for href in ("/python/api#cosmolkit.Molecule", "/javascript", "/", "builtins.html"):
+            self.assertIn(f'href="{href}"', module)
         self.assertFalse((self.public / "javascript/_modules").exists())
         self.assertTrue((self.public / "javascript/_static/style.css").is_file())
         for route in ROUTES:

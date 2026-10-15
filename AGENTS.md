@@ -63,4 +63,4 @@
 - Put ordinary regressions in the owning crate's unit modules or `tests/`. The current corpus/special-regression runner is `parity-tests/`: inputs belong in its `testdata/`, generated references in `expected/`, with one prepare command and Cargo comparison. Repository `testdata/` retains shared ordinary-regression fixtures and historical provenance, not a second corpus workflow. Follow `dev/repository_organization_policy.md`; do not casually commit generated data or bulk corpora.
 - Manage Python from the repository root with `uv sync --group dev`. Build and test with `.venv/bin/maturin develop --manifest-path python/Cargo.toml` and `.venv/bin/pytest`.
 - Generate stubs with `cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen`; do not hand-edit `python/cosmolkit.pyi`.
-- Build docs with `.venv/bin/python -m sphinx -b html python/docs/source python/docs/build/html`; type-check with `.venv/bin/basedpyright python/tests python/examples`.
+- Build docs with `.venv/bin/python -m sphinx -b html docs/source docs/build/html`; type-check with `.venv/bin/basedpyright python/tests python/examples`.

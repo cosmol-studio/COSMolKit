@@ -4,7 +4,7 @@ from docutils import nodes
 from sphinx import addnodes
 
 
-API_PAGES = {"api", "javascript-api"}
+API_PAGES = {"python/api", "javascript/api"}
 CLASS_KINDS = {"class", "exception", "interface"}
 MEMBER_ANCHOR_SCRIPT = """<script>
 (() => {
