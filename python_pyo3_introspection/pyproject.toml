@@ -1,0 +1,11 @@
+[build-system]
+requires = ["maturin==1.15.0"]
+build-backend = "maturin"
+
+[project]
+name = "fixed-python-projection"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.maturin]
+module-name = "_native"

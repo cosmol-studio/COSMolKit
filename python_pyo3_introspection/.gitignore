@@ -1,0 +1,5 @@
+/artifacts/
+/vendor/
+/__pycache__/
+/framework/__pycache__/
+/tests/__pycache__/

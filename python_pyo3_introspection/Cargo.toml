@@ -1,0 +1,35 @@
+[package]
+name = "fixed-python-projection"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+name = "_native"
+path = "bindings/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+extension = []
+
+[[bin]]
+name = "registry_snapshot"
+path = "registry_snapshot.rs"
+
+[dependencies]
+cosmolkit = { path = "../crates/cosmolkit", default-features = false, features = ["core", "fingerprints", "op-contracts-strict"] }
+# Library and official extractor use this same upstream revision.
+pyo3 = { git = "https://github.com/PyO3/pyo3", rev = "4045f8d92045fbf55438eb6cae175b853c5835ce", features = ["extension-module", "experimental-inspect", "abi3-py312"] }
+numpy = "=0.30.0"
+serde_json = "1"
+paste = "1"
+
+# NumPy is unmodified. Its registry dependencies use our existing PyO3 source.
+[patch.crates-io]
+pyo3 = { git = "https://github.com/PyO3/pyo3", rev = "4045f8d92045fbf55438eb6cae175b853c5835ce" }
+pyo3-build-config = { git = "https://github.com/PyO3/pyo3", rev = "4045f8d92045fbf55438eb6cae175b853c5835ce" }
+
+[profile.dev]
+debug = 0
