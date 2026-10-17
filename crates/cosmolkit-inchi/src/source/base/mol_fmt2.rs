@@ -1,9 +1,11 @@
-use crate::source::base::ichi_io::inchi_fgetsLf;
+use crate::source::base::ichierr::add_error_message_bytes;
+use crate::source::base::ichi_io::{inchi_fgetsLf_bytes, source_decimal_i64};
 use crate::source::base::ichierr::AddErrorMessage;
-use crate::source::base::ichiprt2::{inchi_strtod, inchi_strtol};
+use crate::source::base::ichiprt2::{inchi_strtod, inchi_strtol, inchi_strtol_bytes};
+use crate::source::base::ichiparm::source_strtod_bytes_with_end;
 use crate::source::base::mol_fmt3::DeleteMolfileV3000Info;
 use crate::source::base::mol_fmt4::MolFmtSgroups_Free;
-use crate::source::base::util::{inchi_free, inchi_memicmp, lrtrim, mystrncpy};
+use crate::source::base::util::{inchi_free, inchi_memicmp, lrtrim_bytes, mystrncpy_within};
 use crate::source_types::{
     FILE, INCHI_IOS_TYPE_FILE, INCHI_IOSTREAM, MOL_FMT_CHAR_INT_DATA, MOL_FMT_DATA,
     MOL_FMT_DOUBLE_DATA, MOL_FMT_FLOAT_DATA, MOL_FMT_HEADER_BLOCK, MOL_FMT_INPLINELEN,
@@ -64,62 +66,151 @@ int MolfileStrnread(char *dest,
     // INCHI✔️❌: The selected C locale classifies only ASCII space, tab, LF, VT, FF, and CR.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolfileStrnread
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let requested = usize::try_from(len).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let (actual_length, first_space_offset) = heap.with_slice_mut_and_heap(
-        dest,
-        |destination, heap| {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if destination.len() <= requested {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
-
-            if requested > 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0171: suspected source divergence; see dev/audits/inchi/findings.md");
-                let source_bytes = heap.slice(source)?;
-                let mut terminated = false;
-                for (index, output) in destination[..requested].iter_mut().enumerate() {
-                    if terminated {
-                        *output = 0;
-                        continue;
-                    }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let byte = *source_bytes
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    *output = byte;
-                    terminated = byte == 0;
-                }
-            }
-            destination[requested] = 0;
-
-            let actual_length = if requested > 0 {
-                destination[..requested]
-                    .iter()
-                    .position(|byte| *byte == 0)
-                    .unwrap_or(requested)
-            } else {
-                0
-            };
-            let mut first_space_offset = actual_length;
-            while first_space_offset > 0
-                && matches!(
-                    destination[first_space_offset - 1] as u8,
-                    b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
-                )
-            {
-                first_space_offset -= 1;
-            }
-            Ok((actual_length, first_space_offset))
-        },
+    let (actual_length, first_space_offset) = molfile_strnread_destination(
+        heap, MolfileStringDestination::Stored(dest), MolfileFieldSource::Stored(source), len,
     )?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *first_space = dest.offset(
         i64::try_from(first_space_offset).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
     )?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     i32::try_from(actual_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)
+}
+
+#[derive(Clone, Copy)]
+enum MolfileFieldSource<'a> {
+    Stored(SourceConstPointer<i8>),
+    Borrowed(&'a [i8], usize),
+}
+
+impl MolfileFieldSource<'_> {
+    fn bytes<'a>(&'a self, heap: &'a SourceHeap) -> Result<&'a [i8], SourceHeapError> {
+        // INCHI✔️❗: Reached source view only, no copy/allocation/admission pass.
+        match self {
+            Self::Stored(pointer) => heap.slice(*pointer),
+            Self::Borrowed(bytes, start) => bytes.get(*start..)
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+
+    fn offset(self, amount: i64) -> Result<Self, SourceHeapError> {
+        // Only the source nonnegative field prefix is projected here.
+        match self {
+            Self::Stored(pointer) => Ok(Self::Stored(pointer.offset(amount)?)),
+            Self::Borrowed(bytes, start) => {
+                let amount = usize::try_from(amount).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+                Ok(Self::Borrowed(bytes, start.checked_add(amount)
+                    .ok_or(SourceHeapError::PointerOffsetOverflow)?))
+            }
+        }
+    }
+}
+
+enum MolfileStringDestination<'a> {
+    Stored(SourceMutPointer<i8>),
+    Borrowed(&'a mut [i8]),
+}
+
+impl MolfileStringDestination<'_> {
+    fn bytes_mut<'a>(&'a mut self, heap: &'a mut SourceHeap) -> Result<&'a mut [i8], SourceHeapError> {
+        // INCHI source mol_fmt2.c:79:
+        //     dest[len] = '\0';
+        // INCHI✔️❗: Checked concrete destination view, O(1), no allocation.
+        match self {
+            Self::Stored(pointer) => heap.slice_mut(*pointer),
+            Self::Borrowed(bytes) => Ok(bytes),
+        }
+    }
+}
+
+fn molfile_strnread_destination(
+    heap: &mut SourceHeap,
+    mut destination: MolfileStringDestination<'_>,
+    source: MolfileFieldSource<'_>,
+    len: i32,
+) -> Result<(usize, usize), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt2.c:65 MolfileStrnread
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap access is materially slower than raw pointers.
+    /*
+int MolfileStrnread(char *dest,
+                    char *source,
+                    int len,
+                    char **first_space)
+{
+    /* required len >= 0; dest must have at least len+1 bytes */
+
+    int i, c;
+
+    if (len > 0)
+    {
+        strncpy(dest, source, len);
+    }
+    dest[len] = '\0';
+
+    len = (len > 0) ? (int)strlen(dest) : 0;
+
+    for (i = ( len - 1 ); i >= 0 && 0 != ( c = source[i] ) && isspace( UCINT c ); i--);
+
+    *first_space = dest + ((long long)i + 1); /* first blank or zero terminating byte in dest */ /* djb-rwth: cast operator added */
+
+    return len; /* number of actually processed bytes excluding zero terminator */
+}
+    */
+    // END INCHI C FUNCTION: MolfileStrnread
+    // INCHI✔️❗: One complete bounded strncpy/padding/trim kernel for stored
+    // and borrowed destinations. Bounded first-NUL discovery supplies the same
+    // resulting strlen; bulk copy/padding need no snapshot or arena temporary.
+    // Re-read source after writes for native trailing-space/alias semantics.
+    // O(len + reached trim), O(1) scratch, no allocation; checked copy/arena
+    // constants remain OPEN INCHI-PERF-MOLFILE-STRING.
+    let requested = usize::try_from(len).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    if destination.bytes_mut(heap)?.len() <= requested {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    let actual_length = if requested > 0 {
+        let (available, nul) = {
+            let bytes = source.bytes(heap)?;
+            let available = requested.min(bytes.len());
+            (available, memchr::memchr(0, bytemuck::cast_slice(&bytes[..available])))
+        };
+        let copied = nul.map_or(available, |index| index + 1);
+        match &mut destination {
+            MolfileStringDestination::Stored(pointer) => {
+                match source {
+                    MolfileFieldSource::Stored(source) => {
+                        heap.copy_nonoverlapping_prefix(*pointer, source, copied, true)?;
+                    }
+                    MolfileFieldSource::Borrowed(bytes, start) => {
+                        heap.slice_mut(*pointer)?[..copied].copy_from_slice(&bytes[start..start + copied]);
+                    }
+                }
+            }
+            MolfileStringDestination::Borrowed(bytes) => {
+                bytes[..copied].copy_from_slice(&source.bytes(heap)?[..copied]);
+            }
+        }
+        // Preserve the previously written prefix on short unterminated input.
+        if nul.is_none() && available < requested {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let actual = nul.unwrap_or(requested);
+        destination.bytes_mut(heap)?[actual..=requested].fill(0);
+        actual
+    } else {
+        destination.bytes_mut(heap)?[0] = 0;
+        0
+    };
+    let mut first_space_offset = actual_length;
+    if first_space_offset > 0 {
+        let source_bytes = source.bytes(heap)?;
+        while first_space_offset > 0 {
+            let byte = *source_bytes.get(first_space_offset - 1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if byte == 0 || !matches!(byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+                break;
+            }
+            first_space_offset -= 1;
+        }
+    }
+    Ok((actual_length, first_space_offset))
 }
 
 #[rustfmt::skip]
@@ -364,43 +455,307 @@ int MolfileReadField(void *data,
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64 uses signed 8-bit S_CHAR, 16-bit S_SHORT, and 64-bit long.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolfileReadField
 
-    let p = *line_ptr;
+    // INCHI✔️❗: Stored cursor keeps its original publication/error points;
+    // one shared source kernel, no argument copy/allocation or parser duplicate.
+    let p = MolfileFieldSource::Stored(line_ptr.as_const());
+    molfile_read_field_source(heap, data, field_len, data_type, p, |amount| {
+        *line_ptr = line_ptr.offset(amount)?;
+        Ok(())
+    })
+}
+
+pub(crate) fn molfile_read_field_bytes(
+    heap: &mut SourceHeap,
+    data: MolfileFieldData<'_>,
+    field_len: i32,
+    data_type: i32,
+    bytes: &[i8],
+    position: &mut usize,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source mol_fmt1.c485..488 passes its local line cursor to this same
+    // source field algorithm. O(1) carrier/no arena registration or allocation;
+    // borrowed input admission occurs only at reached reads, checked cost OPEN.
+    let source = MolfileFieldSource::Borrowed(bytes, *position);
+    molfile_read_field_source(heap, data, field_len, data_type, source, |amount| {
+        let amount = usize::try_from(amount).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+        *position = position.checked_add(amount).ok_or(SourceHeapError::PointerOffsetOverflow)?;
+        Ok(())
+    })
+}
+
+fn molfile_read_field_source(
+    heap: &mut SourceHeap,
+    data: MolfileFieldData<'_>,
+    field_len: i32,
+    data_type: i32,
+    p: MolfileFieldSource<'_>,
+    mut advance: impl FnMut(i64) -> Result<(), SourceHeapError>,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt2.c:105..328 C393 shared field kernel
+    // int MolfileReadField(void *data,
+    //                      int field_len,
+    //                      int data_type,
+    //                      char **line_ptr)
+    // {
+    //     char *p = *line_ptr, *q, *p_end;
+    //     int  i, c, len, ret = 1;
+    //     long ldata;
+    //     double ddata;
+    // 
+    //     int DEFINITE_LENGTH_FIELD = 0;
+    //     int FIELD_ENDS_AT_FIRST_NON_DIGIT = 0;
+    //     int TOO_LONG_FIELD = 0;
+    // 
+    //     if (field_len > MOL_FMT_MAX_VALUE_LEN)
+    //     {
+    //         TOO_LONG_FIELD = 1;
+    //     }
+    //     else if (field_len <= 0)
+    //     {
+    //         FIELD_ENDS_AT_FIRST_NON_DIGIT = 1;
+    //     }
+    //     else
+    //     {
+    //         DEFINITE_LENGTH_FIELD = 1;
+    //     }
+    // 
+    //     switch (data_type)
+    //     {
+    //     case MOL_FMT_STRING_DATA:
+    //         /* pass by all leading spaces */
+    //         for (i = 0;
+    //              i < field_len && 0 != (c = p[i]) && isspace(UCINT c);
+    //              i++)
+    //         {
+    //             ;
+    //         }
+    // 
+    //         len = MolfileStrnread((char *)data, &p[i], field_len - i, &q);
+    // 
+    //             ret = ( q - (char*) data );/* actual data length */
+    //             *q = '\0'; /* add zero termination to data if it is not there yet*/
+    //             *line_ptr += ( (long long)len + (long long)i ); /* ptr to the 1st byte of the next input field or to zero termination */ /* djb-rwth: cast operators added */
+    //         break;
+    // 
+    //     case MOL_FMT_CHAR_INT_DATA:
+    //     case MOL_FMT_SHORT_INT_DATA:
+    //     case MOL_FMT_LONG_INT_DATA:
+    //     {
+    //         char str[MOL_FMT_MAX_VALUE_LEN + 1];
+    //         ldata = 0L;
+    //         if (TOO_LONG_FIELD)
+    //         {
+    //             ret = -1;
+    //         }
+    //         else if (DEFINITE_LENGTH_FIELD)
+    //         {
+    //             /* fixed length */
+    //             *line_ptr += (len = MolfileStrnread(str, p, field_len, &q));
+    // 
+    //             *q = '\0';
+    //             if (!len || !(q - str))
+    //             {
+    //                 ret = 0; /* empty string */
+    //             }
+    //             else
+    //             {
+    //                 if ((ldata = strtol(str, &p_end, 10), p_end != q))
+    //                 {
+    //                     ret = -1; /* wrong data: incompletely interpreted */
+    //                 }
+    //             }
+    //         }
+    //         else if (FIELD_ENDS_AT_FIRST_NON_DIGIT)
+    //         {
+    //             /* free format: field_len <= 0 */
+    //             ldata = strtol(p, &p_end, 10);
+    //             *line_ptr += (len = p_end - p);
+    //             if (len == 0)
+    //             {
+    //                 ret = 0;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             /* should not come here */
+    //             ret = -1;
+    //         }
+    // 
+    //         switch (data_type)
+    //         {
+    //         case MOL_FMT_CHAR_INT_DATA:
+    //             if (SCHAR_MIN <= ldata && ldata <= SCHAR_MAX)
+    //             {
+    //                 /* from || to &&: 11-19-96 */
+    //                 *(S_CHAR *)data = (S_CHAR)ldata;
+    //             }
+    //             else
+    //             {
+    //                 *(S_CHAR *)data = (S_CHAR)0;
+    //                 ret = -1;
+    //             }
+    //             break;
+    //         case MOL_FMT_SHORT_INT_DATA:
+    //             if (SHRT_MIN <= ldata && ldata <= SHRT_MAX)
+    //             {
+    //                 *(S_SHORT *)data = (S_SHORT)ldata;
+    //             }
+    //             else
+    //             {
+    //                 *(S_SHORT *)data = (S_SHORT)0;
+    //                 ret = -1;
+    //             }
+    //             break;
+    //         case MOL_FMT_LONG_INT_DATA:
+    //             if (LONG_MIN < ldata && ldata < LONG_MAX)
+    //             {
+    //                 *(long *)data = (long)ldata;
+    //             }
+    //             else
+    //             {
+    //                 *(long *)data = 0L;
+    //                 ret = -1;
+    //             }
+    //             break;
+    //         default:
+    //             ret = -1;
+    //         }
+    //     } /* MOL_FMT_CHAR_INT_DATA... */
+    //     break;
+    // 
+    //     case MOL_FMT_DOUBLE_DATA:
+    //     case MOL_FMT_FLOAT_DATA:
+    //     {
+    //         char str[MOL_FMT_MAX_VALUE_LEN + 1];
+    // 
+    //         if (TOO_LONG_FIELD)
+    //         {
+    //             ret = -1;
+    //             ddata = 0.0;
+    //         }
+    //         else if (DEFINITE_LENGTH_FIELD)
+    //         {
+    //             *line_ptr += (len = MolfileStrnread(str, p, field_len, &q));
+    //             *q = '\0';
+    //             if (!len || !(q - str))
+    //             {
+    //                 /* empty string */
+    //                 ddata = 0.0;
+    //                 ret = 0;
+    //             }
+    //             else if ((ddata = strtod(str, &p_end), p_end != q))
+    //             {
+    //                 /* wrong data */
+    //                 ret = -1;
+    //             }
+    //         }
+    //         else if (FIELD_ENDS_AT_FIRST_NON_DIGIT)
+    //         {
+    //             /* free format */
+    //             ddata = strtod(p, &p_end);
+    //             *line_ptr += (len = p_end - p);
+    //             if (len == 0)
+    //             {
+    //                 ret = 0;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             /* should not come here */
+    //             ret = -1; /* djb-rwth: addressing coverity ID #499478 -- see the original comment above */
+    //         }
+    // 
+    //         switch (data_type)
+    //         {
+    // 
+    //         case MOL_FMT_DOUBLE_DATA:
+    //             if (ddata != HUGE_VAL && /*ldata*/ ddata != -HUGE_VAL)
+    //             { /* replaced ldata with ddata 6-30-98 DCh */
+    //                 *(double *)data = ddata;
+    //             }
+    //             else
+    //             {
+    //                 *(double *)data = 0.0;
+    //                 ret = -1;
+    //             }
+    //             break;
+    // 
+    //         case MOL_FMT_FLOAT_DATA:
+    //             if (fabs(ddata) <= (double)FLT_MIN)
+    //             {
+    //                 *(float *)data = 0.0;
+    //             }
+    //             else if (fabs(ddata) >= (double)FLT_MAX)
+    //             {
+    //                 *(float *)data = 0.0;
+    //                 ret = -1;
+    //             }
+    //             else
+    //             {
+    //                 *(float *)data = (float)ddata;
+    //             }
+    //             break;
+    //         }
+    //     } /* MOL_FMT_DOUBLE_DATA... */
+    //     break;
+    // 
+    //     case MOL_FMT_JUMP_TO_RIGHT:
+    //     {
+    // 
+    //         for (i = 0; i < field_len && p[i]; i++)
+    //             ;
+    // 
+    //         *line_ptr += i;
+    //         ret = i;
+    //     }
+    //     break;
+    // 
+    //     default:
+    //         ret = -1;
+    //     }
+    // 
+    //     return ret;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C393 shared field kernel
+    // INCHI✔️❗: Sole native field/control/type/errno algorithm for canonical
+    // pointer and local borrowed source. Advance callback runs at the original
+    // publication point before conversion; partial effects survive Result errors.
+    // Stored copy alias and numeric wrappers unchanged, local bytes use their
+    // same canonical conversion cores. O(field)/fixed33-byte scratch, no new
+    // allocation/clone/preflight/algorithm; whole-call costs remain OPEN.
     let too_long = field_len > MOL_FMT_MAX_VALUE_LEN as i32;
     let definite = field_len > 0 && !too_long;
 
     if data_type == i32::from(MOL_FMT_STRING_DATA) {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let MolfileFieldData::String(output) = data else { return Err(SourceHeapError::UnsupportedSourceBehavior); };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let width = usize::try_from(field_len).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0356: suspected source divergence; see dev/audits/inchi/findings.md");
-        if output.len() <= width { return Err(SourceHeapError::PointerOutOfBounds); }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let input = heap.slice(p.as_const())?;
+        // INCHI source mol_fmt2.c:136..141:
+        //         for (i = 0;
+        //              i < field_len && 0 != (c = p[i]) && isspace(UCINT c);
+        //              i++)
+        //         {
+        //             ;
+        //         }
+        // INCHI✔️❗: Admit only reached leading bytes; destination capacity
+        // applies to field_len-i, as in the complete shared bounded reader.
+        // Borrow output directly, preserving its untouched tail/partial writes.
+        // No Vec, arena allocation or whole writeback; whole-call cost OPEN.
         let mut skipped = 0_usize;
-        while skipped < width {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let byte = *input.get(skipped).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if byte == 0 || !matches!(byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') { break; }
-            skipped += 1;
+        if width > 0 {
+            let input = p.bytes(heap)?;
+            while skipped < width {
+                let byte = *input.get(skipped).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if byte == 0 || !matches!(byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') { break; }
+                skipped += 1;
+            }
         }
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        let temporary = heap.allocate_model_storage(output.to_vec())?;
-        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut q = SourceMutPointer::null();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let read = MolfileStrnread(heap, temporary, p.offset(skipped as i64)?.as_const(), field_len - skipped as i32, &mut q)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let ret = q.difference(temporary)? as i32;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice_mut(q)?[0] = 0;
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        output.copy_from_slice(heap.slice(temporary.as_const())?);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.free(temporary)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        *line_ptr = line_ptr.offset(i64::from(read) + skipped as i64)?;
-        return Ok(ret);
+        let (read, q) = molfile_strnread_destination(
+            heap, MolfileStringDestination::Borrowed(&mut *output),
+            p.offset(skipped as i64)?, field_len - skipped as i32,
+        )?;
+        output[q] = 0;
+        advance(read as i64 + skipped as i64)?;
+        return i32::try_from(q).map_err(|_| SourceHeapError::SourceIntegerOverflow);
     }
 
     let integer = data_type == i32::from(MOL_FMT_CHAR_INT_DATA)
@@ -411,46 +766,48 @@ int MolfileReadField(void *data,
         let mut value = 0_i64;
         if too_long { ret = -1; }
         else if definite {
-            panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-            let temporary = heap.allocate_model_storage(vec![0_i8; MOL_FMT_MAX_VALUE_LEN as usize + 1])?;
-            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut q = SourceMutPointer::null();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let read = MolfileStrnread(heap, temporary, p.as_const(), field_len, &mut q)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *line_ptr = line_ptr.offset(i64::from(read))?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(q)?[0] = 0;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if read == 0 || q.difference(temporary)? == 0 { ret = 0; }
+            // INCHI source mol_fmt2.c:154..177: native fixed stack field.
+            // INCHI✔️❗: Native33byte local storage and borrowed canonical
+            // parser; cursor advances before conversion. No Vec, allocation,
+            // arena registration/free or extra failure. Parser guards remain.
+            let mut temporary = [0_i8; MOL_FMT_MAX_VALUE_LEN as usize + 1];
+            let (read, q) = molfile_strnread_destination(
+                heap, MolfileStringDestination::Borrowed(&mut temporary),
+                p, field_len,
+            )?;
+            advance(read as i64)?;
+            temporary[q] = 0;
+            if read == 0 || q == 0 { ret = 0; }
             else {
-                panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut end = SourceConstPointer::null();
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                value = inchi_strtol(heap, temporary.as_const(), Some(&mut end), 10)?;
-                if end != q.as_const() { ret = -1; }
+                let (parsed, end, overflowed) = inchi_strtol_bytes(&temporary, 10)?;
+                value = parsed;
+                if overflowed { heap.set_source_errno(34); }
+                if end != q { ret = -1; }
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.free(temporary)?;
         } else {
-            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut end = SourceConstPointer::null();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            value = inchi_strtol(heap, p.as_const(), Some(&mut end), 10)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let read = i64::try_from(
-                heap.slice(p.as_const())?
-                    .len()
-                    .checked_sub(heap.slice(end)?.len())
-                    .ok_or(SourceHeapError::PointerDifferenceOverflow)?,
-            )
-            .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *line_ptr = line_ptr.offset(read)?;
+            let read = match p {
+                MolfileFieldSource::Stored(pointer) => {
+                    let mut end = SourceConstPointer::null();
+                    value = inchi_strtol(heap, pointer, Some(&mut end), 10)?;
+                    let read = i64::try_from(
+                        heap.slice(pointer)?
+                            .len()
+                            .checked_sub(heap.slice(end)?.len())
+                            .ok_or(SourceHeapError::PointerDifferenceOverflow)?,
+                    )
+                    .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
+                    read
+                }
+                MolfileFieldSource::Borrowed(_, _) => {
+                    let (parsed, read, overflowed) = inchi_strtol_bytes(p.bytes(heap)?, 10)?;
+                    value = parsed;
+                    if overflowed { heap.set_source_errno(34); }
+                    i64::try_from(read).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?
+                }
+            };
+            advance(read)?;
             if read == 0 { ret = 0; }
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         return match (data_type, data) {
             (x, MolfileFieldData::Char(out)) if x == i32::from(MOL_FMT_CHAR_INT_DATA) => { if (-128..=127).contains(&value) { *out = value as i8; } else { *out = 0; ret = -1; } Ok(ret) }
             (x, MolfileFieldData::Short(out)) if x == i32::from(MOL_FMT_SHORT_INT_DATA) => { if (-32768..=32767).contains(&value) { *out = value as i16; } else { *out = 0; ret = -1; } Ok(ret) }
@@ -472,46 +829,50 @@ int MolfileReadField(void *data,
         let value;
         if too_long { ret = -1; value = 0.0; }
         else if definite {
-            panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-            let temporary = heap.allocate_model_storage(vec![0_i8; MOL_FMT_MAX_VALUE_LEN as usize + 1])?;
-            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut q = SourceMutPointer::null();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let read = MolfileStrnread(heap, temporary, p.as_const(), field_len, &mut q)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *line_ptr = line_ptr.offset(i64::from(read))?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(q)?[0] = 0;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if read == 0 || q.difference(temporary)? == 0 { value = 0.0; ret = 0; }
+            // INCHI source mol_fmt2.c:238..256: native fixed stack field.
+            // INCHI✔️❗: Native33byte local storage and borrowed canonical
+            // parser; cursor advances before conversion. No Vec, allocation,
+            // arena registration/free or extra failure. Parser guards remain.
+            let mut temporary = [0_i8; MOL_FMT_MAX_VALUE_LEN as usize + 1];
+            let (read, q) = molfile_strnread_destination(
+                heap, MolfileStringDestination::Borrowed(&mut temporary),
+                p, field_len,
+            )?;
+            advance(read as i64)?;
+            temporary[q] = 0;
+            if read == 0 || q == 0 { value = 0.0; ret = 0; }
             else {
-                panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut end = SourceConstPointer::null();
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                value = inchi_strtod(heap, temporary.as_const(), Some(&mut end))?;
-                if end != q.as_const() { ret = -1; }
+                let mut source_errno = heap.source_errno();
+                let (parsed, end) = source_strtod_bytes_with_end(&temporary, &mut source_errno)?;
+                heap.set_source_errno(source_errno);
+                value = parsed;
+                if end != q { ret = -1; }
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.free(temporary)?;
         } else {
-            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut end = SourceConstPointer::null();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            value = inchi_strtod(heap, p.as_const(), Some(&mut end))?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let read = i64::try_from(
-                heap.slice(p.as_const())?
-                    .len()
-                    .checked_sub(heap.slice(end)?.len())
-                    .ok_or(SourceHeapError::PointerDifferenceOverflow)?,
-            )
-            .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *line_ptr = line_ptr.offset(read)?;
+            let read = match p {
+                MolfileFieldSource::Stored(pointer) => {
+                    let mut end = SourceConstPointer::null();
+                    value = inchi_strtod(heap, pointer, Some(&mut end))?;
+                    let read = i64::try_from(
+                        heap.slice(pointer)?
+                            .len()
+                            .checked_sub(heap.slice(end)?.len())
+                            .ok_or(SourceHeapError::PointerDifferenceOverflow)?,
+                    )
+                    .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
+                    read
+                }
+                MolfileFieldSource::Borrowed(_, _) => {
+                    let mut source_errno = heap.source_errno();
+                    let (parsed, read) = source_strtod_bytes_with_end(p.bytes(heap)?, &mut source_errno)?;
+                    heap.set_source_errno(source_errno);
+                    value = parsed;
+                    i64::try_from(read).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?
+                }
+            };
+            advance(read)?;
             if read == 0 { ret = 0; }
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         return match (data_type, data) {
             (x, MolfileFieldData::Double(out)) if x == i32::from(MOL_FMT_DOUBLE_DATA) => { if value.is_infinite() { *out = 0.0; ret = -1; } else { *out = value; } Ok(ret) }
             (x, MolfileFieldData::Float(out)) if x == i32::from(MOL_FMT_FLOAT_DATA) => { let magnitude = value.abs(); if magnitude <= f64::from(f32::MIN_POSITIVE) { *out = 0.0; } else if magnitude >= f64::from(f32::MAX) { *out = 0.0; ret = -1; } else { *out = value as f32; } Ok(ret) }
@@ -520,16 +881,22 @@ int MolfileReadField(void *data,
     }
 
     if data_type == i32::from(MOL_FMT_JUMP_TO_RIGHT) {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let input = heap.slice(p.as_const())?;
+        // INCHI source mol_fmt2.c:315..318:
+        //         for (i = 0; i < field_len && p[i]; i++)
+        //             ;
+        //
+        //         *line_ptr += i;
+        // INCHI✔️❗: Nonpositive width does not admit unused source; only
+        // reached bytes are checked. O(reached)/O(1), no allocation.
         let mut count = 0;
-        while count < field_len {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if input[count as usize] == 0 { break; }
-            count += 1;
+        if field_len > 0 {
+            let input = p.bytes(heap)?;
+            while count < field_len {
+                if *input.get(count as usize).ok_or(SourceHeapError::PointerOutOfBounds)? == 0 { break; }
+                count += 1;
+            }
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        *line_ptr = line_ptr.offset(i64::from(count))?;
+        advance(i64::from(count))?;
         return Ok(count);
     }
     Ok(-1)
@@ -579,82 +946,70 @@ pub(crate) fn MolfileExtractStrucNum(
         return Ok(0);
     };
 
-    const MOLNAME_OFFSET: usize = 0;
-    const LINE2_OFFSET: usize = MOLNAME_OFFSET + 201;
-    const STRUCT_OFFSET: usize = LINE2_OFFSET + 201;
-    const INCHI_OFFSET: usize = STRUCT_OFFSET + 12;
-    const STRUCT_PREFIX_LENGTH: usize = 11;
-    const INCHI_PREFIX_LENGTH: usize = 5;
+    // INCHI source mol_fmt2.c:342..349:
+    //         if (!inchi_memicmp(pHdr->molname, sStruct, sizeof(sStruct) - 1))
+    //         {
+    //             p = pHdr->molname + sizeof(sStruct) - 1;
+    //             lMolfileNumber = strtol(p, &q, 10);
+    //             p = pHdr->line2;
+    //             if (!q || *q ||
+    //                 inchi_memicmp(p, sINCHI, sizeof(sINCHI) - 1) ||
+    //                 !strstr(p + sizeof(sINCHI) - 1, "SDfile Output"))
+    // INCHI✔️❗: Borrow the two independently terminated header fields;
+    // mol_fmt1.c485..488/534..537 and mol_fmt2.c145 insert their NULs.
+    // Never concatenate fields with artificial source-literal terminators.
+    // Malformed reached field ends retain MissingNulTerminator. No preflight
+    // for an unreached field. Conversion publishes errno before later gates.
+    // O(reached numeric token + reached search prefix), O(1) scratch, no
+    // allocation/clone/full-field copy. Checked/libc constants remain OPEN.
+    if crate::source::base::util::inchi_memicmp_bytes(
+        &header.molname, bytemuck::cast_slice(b"Structure #"), 11,
+    )? != 0 {
+        return Ok(0);
+    }
 
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut storage_bytes = Vec::with_capacity(INCHI_OFFSET + 6);
-    storage_bytes.extend_from_slice(&header.molname);
-    storage_bytes.extend_from_slice(&header.line2);
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    storage_bytes.extend(b"Structure #\0".iter().map(|byte| *byte as i8));
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    storage_bytes.extend(b"InChI\0".iter().map(|byte| *byte as i8));
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let storage = heap.allocate_model_storage(storage_bytes)?;
+    let numeric = &header.molname[11..];
+    let (molfile_number, end, overflowed) = inchi_strtol_bytes(numeric, 10)?;
+    if overflowed {
+        heap.set_source_errno(34);
+    }
+    if *numeric.get(end).ok_or(SourceHeapError::MissingNulTerminator)? != 0
+        || crate::source::base::util::inchi_memicmp_bytes(
+            &header.line2, bytemuck::cast_slice(b"InChI"), 5,
+        )? != 0
+    {
+        return Ok(0);
+    }
 
-    let result = (|| -> Result<i64, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let molname = storage.offset(MOLNAME_OFFSET as i64)?.as_const();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let line2 = storage.offset(LINE2_OFFSET as i64)?.as_const();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let struct_prefix = storage.offset(STRUCT_OFFSET as i64)?.as_const();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let inchi_prefix = storage.offset(INCHI_OFFSET as i64)?.as_const();
-
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        if inchi_memicmp(heap, molname, struct_prefix, STRUCT_PREFIX_LENGTH as u64)? != 0 {
-            return Ok(0);
-        }
-
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let parse_start = molname.offset(STRUCT_PREFIX_LENGTH as i64)?;
-        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut parse_end = SourceConstPointer::null();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let molfile_number = inchi_strtol(heap, parse_start, Some(&mut parse_end), 10)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        if parse_end.is_null()
-            || *heap
-                .slice(parse_end)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != 0
-            || inchi_memicmp(heap, line2, inchi_prefix, INCHI_PREFIX_LENGTH as u64)? != 0
-        {
-            return Ok(0);
-        }
-
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let line2_bytes = heap.slice(line2)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let line2_length = line2_bytes
-            .iter()
-            .position(|byte| *byte == 0)
+    // Native strstr stops at a match or the first NUL. The fixed13-byte
+    // needle bounds each candidate comparison; skip noncandidate bytes with
+    // the existing allocation-free memchr2 rather than a full strlen scan.
+    let bytes: &[u8] = bytemuck::cast_slice(&header.line2[5..]);
+    let needle = b"SDfile Output";
+    let mut position = 0_usize;
+    loop {
+        let offset = memchr::memchr2(0, needle[0], &bytes[position..])
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        let needle = b"SDfile Output";
-        let found = line2_bytes[INCHI_PREFIX_LENGTH..line2_length]
-            .windows(needle.len())
-            .any(|window| {
-                window
-                    .iter()
-                    .map(|byte| *byte as u8)
-                    .eq(needle.iter().copied())
-            });
-        Ok(if found { molfile_number } else { 0 })
-    })();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let cleanup = heap.free(storage);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    match (result, cleanup) {
-        (Err(error), _) => Err(error),
-        (Ok(_), Err(error)) => Err(error),
-        (Ok(value), Ok(())) => Ok(value),
+        position += offset;
+        if bytes[position] == 0 {
+            return Ok(0);
+        }
+        let mut matched = true;
+        for (index, expected) in needle.iter().enumerate().skip(1) {
+            let actual = *bytes.get(position + index)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            if actual == 0 {
+                return Ok(0);
+            }
+            if actual != *expected {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            return Ok(molfile_number);
+        }
+        position += 1;
     }
 }
 
@@ -938,10 +1293,8 @@ exit_function:;
     let mut num_dimensions = 0;
 
     if let Some(mfdata) = mfdata.filter(|data| MolfileHasNoChemStruc(Some(data)) == 0) {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_count = usize::try_from(mfdata.ctab.n_atoms)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap
             .slice(mfdata.ctab.atoms.as_const())?
             .get(..atom_count)
@@ -955,14 +1308,12 @@ exit_function:;
             min_z = source_min(atom.fz, min_z);
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source_bond_count = if mfdata.ctab.n_bonds > 0 {
             usize::try_from(mfdata.ctab.n_bonds)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         } else {
             0
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let bonds = if source_bond_count == 0 {
             &[][..]
         } else {
@@ -982,19 +1333,10 @@ exit_function:;
                 || a1 == a2
             {
                 *err |= 1;
-                panic!("INCHI-AUDIT-0345: suspected source divergence; see dev/audits/inchi/findings.md");
-                let message = "Bond to nonexistent atom"
-                    .bytes()
-                    .map(|byte| byte as i8)
-                    .chain([0])
-                    .collect::<Vec<_>>();
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                AddErrorMessage(p_str_err.as_deref_mut(), Some(&message))?;
+                add_error_message_bytes(p_str_err.as_deref_mut(), b"Bond to nonexistent atom")?;
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first = &atoms[a1 as usize];
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let second = &atoms[a2 as usize];
             let dx = first.fx - second.fx;
             let dy = first.fy - second.fy;
@@ -1140,38 +1482,28 @@ MOL_FMT_DATA *FreeMolfileData(MOL_FMT_DATA *mfdata)
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: FreeMolfileData
 
     if mfdata.is_null() {
-        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         return Ok(SourceMutPointer::null());
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = heap
         .slice(mfdata.as_const())?
         .first()
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if !value.ctab.atoms.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, value.ctab.atoms)?;
     }
     if !value.ctab.bonds.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, value.ctab.bonds)?;
     }
     if !value.ctab.coords.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, value.ctab.coords)?;
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sgroups = value.ctab.sgroups;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     MolFmtSgroups_Free(heap, Some(&mut sgroups))?;
     if !value.ctab.v3000.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = DeleteMolfileV3000Info(heap, value.ctab.v3000)?;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_free(heap, mfdata)?;
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(SourceMutPointer::null())
 }
 
@@ -1183,15 +1515,23 @@ fn source_fseek(
     if file.is_null() || position < 0 {
         return Ok(1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let file = heap
         .slice_mut(file)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0357: suspected source divergence; see dev/audits/inchi/findings.md");
-    if file.error {
-        return Ok(1);
-    }
+    // INCHI source mol_fmt2.c417: fseek(infile, fPtrStart, SEEK_SET)
+    // SUPPLEMENTAL SOURCE: musl/src/stdio/fseek.c25..31
+    // 	if (f->seek(f, off, whence) < 0) return -1;
+    // 
+    // 	/* If seek succeeded, file is seekable and we discard read buffer. */
+    // 	f->rpos = f->rend = 0;
+    // 	f->flags &= ~F_EOF;
+    // 	
+    // 	return 0;
+    // INCHI✔️❗: This owned-byte backend is seekable, with no pending native
+    // write buffer. Retain its error indicator; only EOF is cleared. Forced
+    // read/write errors remain in their respective IO operations. O(1), no
+    // allocation/clone/scan; INCHI-PERF-STICKY-ERROR-SEEK-TELL costs OPEN.
     file.position = position as u64;
     file.eof = false;
     Ok(0)
@@ -1201,16 +1541,22 @@ fn source_ftell(heap: &SourceHeap, file: SourceMutPointer<FILE>) -> Result<i64, 
     if file.is_null() {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let file = heap
         .slice(file.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0357: suspected source divergence; see dev/audits/inchi/findings.md");
-    if file.error {
-        return Ok(-1);
-    }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI source mol_fmt2.c422: ftell(infile)
+    // SUPPLEMENTAL SOURCE: musl/src/stdio/ftell.c12..17
+    // 	/* Adjust for data in buffer. */
+    // 	if (f->rend)
+    // 		pos += f->rpos - f->rend;
+    // 	else if (f->wbase)
+    // 		pos += f->wpos - f->wbase;
+    // 	return pos;
+    // INCHI✔️❗: Position belongs to the existing seekable owned-byte stream;
+    // its retained IO error indicator does not invalidate that position.
+    // O(1), no allocation/clone/scan; checked conversion and typed errors
+    // unchanged. INCHI-PERF-STICKY-ERROR-SEEK-TELL whole costs remain OPEN.
     i64::try_from(file.position).map_err(|_| SourceHeapError::SourceIntegerOverflow)
 }
 
@@ -1222,27 +1568,73 @@ fn source_fputs(
     if file.is_null() {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let input = heap.slice(string.as_const())?;
-    let length = input
-        .iter()
-        .position(|byte| *byte == 0)
+    let length = input.iter().position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    let input = input[..length]
-        .iter()
-        .map(|byte| *byte as u8)
-        .collect::<Vec<_>>();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let file = heap
-        .slice_mut(file)?
-        .first_mut()
+    // Preserve source-byte admission before FILE type/offset/extent errors.
+    // A valid byte input and FILE record cannot share one typed allocation.
+    let state = heap.slice_mut(file)?.first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0357: suspected source divergence; see dev/audits/inchi/findings.md");
-    if file.error {
+    if length == 0 { return Ok(0); }
+    if !source_fputs_can_write(state) {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    heap.with_slice_mut_and_heap(file, |file, heap| {
+        let input = &heap.slice(string.as_const())?[..length];
+        source_fputs_content(&mut file[0], input)
+    })
+}
+
+fn source_fputs_bytes(
+    heap: &mut SourceHeap,
+    string: &[i8],
+    file: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    if file.is_null() {
+        return Ok(-1);
+    }
+    let length = string.iter().position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    let file = heap.slice_mut(file)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if length == 0 { return Ok(0); }
+    if !source_fputs_can_write(file) {
+        return Ok(-1);
+    }
+    source_fputs_content(file, &string[..length])
+}
+
+fn source_fputs_can_write(file: &mut FILE) -> bool {
+    // INCHI source mol_fmt2.c449:             fputs(line, outfile);
+    // SUPPLEMENTAL SOURCE: musl/src/stdio/__stdio_write.c21..23
+    // 		if (cnt < 0) {
+    // 			f->wpos = f->wbase = f->wend = 0;
+    // 			f->flags |= F_ERR;
+    // INCHI✔️❗: A forced backend failure sets the independent sticky flag;
+    // earlier F_ERR alone never suppresses a subsequent successful write.
+    // Empty fputs returns0 before this backend attempt (fwrite count0).
+    // O(1), no allocation/scan/clone; FILE-ERROR-STATE costs remain OPEN.
+    if file.error {
+        file.error_indicator = true;
+    }
+    !file.error
+}
+
+fn source_fputs_content(file: &mut FILE, input: &[i8]) -> Result<i32, SourceHeapError> {
+    // INCHI source mol_fmt2.c444:             fputs(line, outfile);
+    // BEGIN INCHI SUPPLEMENTAL LIBC: third_party/musl/src/stdio/fputs.c
+    // int fputs(const char *restrict s, FILE *restrict f)
+    // {
+    // 	size_t l = strlen(s);
+    // 	return (fwrite(s, 1, l, f)==l) - 1;
+    // }
+    // END INCHI SUPPLEMENTAL LIBC: fputs
+    // INCHI✔️❗: Borrow bytes without a Vec snapshot; signed/u8 projection is
+    // bit-preserving. The caller distinguishes forced failure from the
+    // independent sticky indicator. O(length), O(1) scratch; output growth
+    // is unchanged. No configured-libc certification is claimed. Safe
+    // arena/whole-call costs remain OPEN INCHI-PERF-MOL-COPY-STACK.
+    let input = bytemuck::cast_slice::<i8, u8>(input);
     let position =
         usize::try_from(file.position).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if file.bytes.len() < position {
@@ -1251,7 +1643,6 @@ fn source_fputs(
     let overwrite = input.len().min(file.bytes.len().saturating_sub(position));
     file.bytes[position..position + overwrite].copy_from_slice(&input[..overwrite]);
     file.bytes.extend_from_slice(&input[overwrite..]);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     file.position = file
         .position
         .checked_add(
@@ -1347,85 +1738,64 @@ pub(crate) fn MolfileSaveCopy(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: MolfileSaveCopy
 
+    // INCHI✔️❗: Complete fixed-array path shares canonical gets/trim/strncpy
+    // kernels. Decimal prefix uses bounded stack bytes; overlap is memmove
+    // followed by source zero padding. No heap scratch or output snapshot.
+    // O(reached line bytes), fixed stack; whole-call safe costs remain OPEN
+    // INCHI-PERF-MOL-COPY-STACK. Independent FILE backends remain guarded.
     let input = input.ok_or(SourceHeapError::NullPointer)?;
     let mut result = 1;
     if input.type_ == INCHI_IOS_TYPE_FILE as i32 {
         if input.f.is_null() || output.is_null() || (start < 0 && end <= start) {
             return Ok(1);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if source_fseek(heap, input.f, start)? != 0 {
             return Ok(1);
         }
 
-        panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-        let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
+        // Native line[204]/szNumber[32] have stack lifetime. No scratch
+        // allocation/registration/failure; bounded safe zeroing cost OPEN.
+        let mut line = [0_i8; MOL_FMT_INPLINELEN as usize];
         loop {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let position = source_ftell(heap, input.f)?;
             if end <= position || position < 0 {
                 break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32 - 1, Some(input))?.is_null() {
+            if !inchi_fgetsLf_bytes(heap, &mut line, MOL_FMT_INPLINELEN as i32 - 1, Some(input))? {
                 break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(line)?[MOL_FMT_INPLINELEN as usize - 1] = 0;
+            line[MOL_FMT_INPLINELEN as usize - 1] = 0;
             if position == start && number != 0 {
-                let mut trimmed_length = 0;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                lrtrim(heap, line, Some(&mut trimmed_length))?;
-                panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-                let prefix = format!("#{number}{}", if trimmed_length != 0 { "/" } else { "" });
-                let prefix_length = prefix.len();
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let shifted = line.offset(
-                    i64::try_from(prefix_length)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                mystrncpy(
-                    heap,
-                    shifted,
-                    line.as_const(),
+                let trimmed_length = lrtrim_bytes(&mut line)?;
+                let mut digits = [0_u8; 21];
+                let number_bytes = source_decimal_i64(number, Some(b'#'), &mut digits);
+                let mut prefix = [0_i8; 32];
+                let mut prefix_length = number_bytes.len();
+                prefix[..prefix_length].copy_from_slice(bytemuck::cast_slice(number_bytes));
+                if trimmed_length != 0 {
+                    prefix[prefix_length] = b'/' as i8;
+                    prefix_length += 1;
+                }
+                mystrncpy_within(
+                    &mut line, prefix_length, 0,
                     u32::try_from(MOL_FMT_INPLINELEN as usize - prefix_length - 1)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                for (destination, source) in heap.slice_mut(line)?[..prefix_length]
-                    .iter_mut()
-                    .zip(prefix.bytes())
-                {
-                    *destination = source as i8;
-                }
+                line[..prefix_length].copy_from_slice(&prefix[..prefix_length]);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let bytes = heap.slice_mut(line)?;
-            panic!("INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md");
-            let length = bytes
-                .iter()
-                .position(|byte| *byte == 0)
+            // strchr determines LF/NUL once; strlen is reached only if no LF.
+            let length = line.iter().position(|byte| *byte == 0 || *byte == b'\n' as i8)
                 .ok_or(SourceHeapError::MissingNulTerminator)?;
-            if !bytes[..length].contains(&(b'\n' as i8)) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                if length + 1 >= bytes.len() {
-                    heap.free(line)?;
+            if line[length] != b'\n' as i8 {
+                if length + 1 >= line.len() {
                     return Err(SourceHeapError::PointerOutOfBounds);
                 }
-                bytes[length] = b'\n' as i8;
-                bytes[length + 1] = 0;
+                line[length] = b'\n' as i8;
+                line[length + 1] = 0;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            source_fputs(heap, line, output)?;
+            source_fputs_bytes(heap, &line, output)?;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         result = source_fseek(heap, input.f, end)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.free(line)?;
     }
     Ok(result)
 }

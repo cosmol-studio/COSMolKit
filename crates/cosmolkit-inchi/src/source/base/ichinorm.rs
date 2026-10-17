@@ -1,4 +1,5 @@
-use crate::source::base::ichi_bns::mark_alt_bonds_and_taut_groups;
+use crate::source::base::runichi::CanonicalTarget;
+use crate::source::base::ichi_bns::{SourceNormalizationFlags, mark_alt_bonds_with_flag_storage};
 use crate::source::base::mol2atom::CreateInpAtomData;
 use crate::source::base::runichi3::UnMarkRingSystemsInp;
 use crate::source::base::strutil::{
@@ -47,10 +48,10 @@ const EL_NUMBER_H: u8 = 1;
 pub(crate) fn mark_arom_bonds(
     heap: &mut SourceHeap,
     ic: SourceMutPointer<INCHI_CLOCK>,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     at: SourceMutPointer<inp_ATOM>,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:784 mark_arom_bonds
     // INCHI✔️❌: int mark_arom_bonds( struct tagINCHI_CLOCK *ic, struct tagCANON_GLOBALS *pCG, inp_ATOM *at, int num_atoms )
@@ -68,17 +69,11 @@ pub(crate) fn mark_arom_bonds(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: mark_arom_bonds
 
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    let taut_flags = heap.allocate_model_storage(vec![0_u64])?;
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    let taut_flags_done = match heap.allocate_model_storage(vec![0_u64]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            heap.free(taut_flags)?;
-            return Err(error);
-        }
-    };
-    let result = mark_alt_bonds_and_taut_groups(
+    // Native ichinorm.c786 uses two actual initialized local scalars.
+    // INCHI✔️❗: No flag roots/free/copyback; O(1), C529 cost OPEN.
+    let mut taut_flags = 0_u64;
+    let mut taut_flags_done = 0_u64;
+    let result = mark_alt_bonds_with_flag_storage(
         heap,
         ic,
         pCG,
@@ -87,16 +82,11 @@ pub(crate) fn mark_arom_bonds(
         num_atoms,
         SourceMutPointer::null(),
         SourceMutPointer::null(),
-        taut_flags,
-        taut_flags_done,
+        SourceNormalizationFlags::Borrowed { flags: &mut taut_flags, done: &mut taut_flags_done },
         0,
         SourceMutPointer::null(),
         clock_result,
     );
-    let free_flags = heap.free(taut_flags);
-    let free_flags_done = heap.free(taut_flags_done);
-    free_flags?;
-    free_flags_done?;
     result
 }
 
@@ -151,13 +141,11 @@ pub(crate) fn has_atom_pair_seq(
     // END INCHI C FUNCTION: has_atom_pair_seq
 
     let position = usize::from(atom1 > atom2);
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sought = [0_u16; 2];
     sought[position] = atom1;
     sought[1 - position] = atom2;
     let mut index = 0_i32;
     while index < num_atom_pairs {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pair = atom_pairs
             .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -207,7 +195,6 @@ pub(crate) fn mark_atoms_ap(
     // END INCHI C FUNCTION: mark_atoms_ap
 
     let start_index = usize::from(start);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_atom = atoms
         .get(start_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -219,7 +206,6 @@ pub(crate) fn mark_atoms_ap(
     let valence = i32::from(atoms[start_index].valence);
     let mut neighbor_index = 0_i32;
     while neighbor_index < valence {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = *atoms[start_index]
             .neighbor
             .get(usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -303,14 +289,12 @@ pub(crate) fn mark_deriv_agents(
     let mut atom_count = 0_i32;
     let mut pair_index = 0_i32;
     while pair_index < num_cuts_to_check {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pair = atom_pairs
             .get(usize::try_from(pair_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut marked_position = 0_usize;
         let mut marked_count = 0_i32;
         for position in 0..2_usize {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let derivative = derivatives
                 .get(usize::from(pair.at[position]))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -323,7 +307,6 @@ pub(crate) fn mark_deriv_agents(
             return Ok(-3);
         }
         let marked_atom = pair.at[marked_position];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let marked_derivative = derivatives
             .get(usize::from(marked_atom))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -333,7 +316,6 @@ pub(crate) fn mark_deriv_agents(
             } else {
                 marked_atom
             };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let precursor_atom = atoms
             .get(usize::from(precursor))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -419,9 +401,7 @@ pub(crate) fn replace_arom_bonds(
     let mut errors = 0_i32;
     let mut atom_index = 0_i32;
     while atom_index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence = i32::from(
             atoms
                 .get(index)
@@ -430,35 +410,29 @@ pub(crate) fn replace_arom_bonds(
         );
         let mut bond_index = 0_i32;
         while bond_index < valence {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let bond =
                 usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let bond_type = *atoms
                 .get(index)
                 .and_then(|atom| atom.bond_type.get(bond))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if i32::from(bond_type) > BOND_TRIPLE as i32 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = usize::from(
                     *atoms
                         .get(index)
                         .and_then(|atom| atom.neighbor.get(bond))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let first_number = atoms
                     .get(index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .orig_at_number;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second_number = atoms
                     .get(neighbor)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .orig_at_number;
                 let mut first_original = 0_i32;
                 while first_original < num_original_atoms {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let original = original_atoms
                         .get(
                             usize::try_from(first_original)
@@ -472,7 +446,6 @@ pub(crate) fn replace_arom_bonds(
                 }
                 let mut second_original = 0_i32;
                 while second_original < num_original_atoms {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let original = original_atoms
                         .get(
                             usize::try_from(second_original)
@@ -486,18 +459,15 @@ pub(crate) fn replace_arom_bonds(
                 }
                 let mut success = false;
                 if first_original < num_original_atoms && second_original < num_original_atoms {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first_original_index = usize::try_from(first_original)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let second_original_atom = second_original as u16;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_search_len = i32::from(
                         atoms
                             .get(first_original_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .valence,
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_bond = is_in_the_list(
                         Some(
                             &original_atoms
@@ -508,7 +478,6 @@ pub(crate) fn replace_arom_bonds(
                         second_original_atom,
                         source_search_len,
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let reverse_bond = is_in_the_list(
                         Some(
                             &atoms
@@ -525,7 +494,6 @@ pub(crate) fn replace_arom_bonds(
                         ),
                     )?;
                     if let (Some(source_bond), Some(reverse_bond)) = (source_bond, reverse_bond) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let replacement = *original_atoms[first_original_index]
                             .bond_type
                             .get(source_bond)
@@ -622,18 +590,15 @@ pub(crate) fn add_explicit_H(
     let temporary = inchi_calloc::<inp_ATOM>(heap, num_removed_h as u64, 176)
         .unwrap_or_else(|_| SourceMutPointer::null());
     let processing = (|| -> Result<i32, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let end = num_atoms
             .checked_add(num_removed_h)
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
         let mut removed_index = num_atoms;
         let mut added = 0_i32;
         while removed_index < end {
-            panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
             let removed = heap
                 .slice(input.at.as_const().offset(i64::from(removed_index))?)?
                 .first()
-                .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let heavy_index = i32::from(removed.neighbor[0]);
             let isotope = i32::from(removed.iso_atw_diff);
@@ -644,64 +609,52 @@ pub(crate) fn add_explicit_H(
                 && isotope <= 3
                 && !temporary.is_null()
             {
-                panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
                 let heavy = heap
                     .slice(input.at.as_const().offset(i64::from(heavy_index))?)?
                     .first()
-                    .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                let ordinary_h = i32::from(heavy.num_H)
-                    - heavy
-                        .num_iso_H
-                        .iter()
-                        .map(|&value| i32::from(value))
-                        .sum::<i32>();
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                let isotope_available = isotope != 0
-                    && *heavy
-                        .num_iso_H
-                        .get(
-                            usize::try_from(isotope - 1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        != 0;
-                if heavy.num_H > 0
-                    && ordinary_h >= 0
-                    && ((isotope == 0 && ordinary_h != 0) || isotope_available)
-                {
-                    let mut hydrogen = removed;
+                // INCHI source inpdef.h90:
+                // #define NUM_ISO_H(AT, N) (AT[N].num_iso_H[0] + AT[N].num_iso_H[1] + AT[N].num_iso_H[2])
+                // INCHI✔️❗: Native5885 gates isotope arithmetic by positive H,
+                // then gates isotope availability by nonnegative ordinary H.
+                // Borrow candidates/heavy records; copy a full atom only for
+                // the native accepted assignment. No new scan/allocation;
+                // checked arena/Result whole-call cost remains OPEN.
+                let available = heavy.num_H > 0 && {
+                    let ordinary_h = i32::from(heavy.num_H)
+                        - i32::from(heavy.num_iso_H[0])
+                        - i32::from(heavy.num_iso_H[1])
+                        - i32::from(heavy.num_iso_H[2]);
+                    ordinary_h >= 0
+                        && ((isotope == 0 && ordinary_h != 0)
+                            || (isotope != 0 && heavy.num_iso_H[(isotope - 1) as usize] != 0))
+                };
+                if available {
+                    let mut hydrogen = *removed;
                     hydrogen.neighbor[0] = heavy_index as u16;
                     hydrogen.valence = 1;
                     hydrogen.chem_bonds_valence = hydrogen.bond_type[0] as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     *heap
                         .slice_mut(temporary.offset(i64::from(added))?)?
                         .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = hydrogen.clone();
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = hydrogen;
 
                     let invalid_bond = {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let heavy_atom = heap
                             .slice_mut(input.at.offset(i64::from(heavy_index))?)?
                             .first_mut()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let valence = usize::try_from(i32::from(heavy_atom.valence))
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         *heavy_atom
                             .neighbor
                             .get_mut(valence)
                             .ok_or(SourceHeapError::PointerOutOfBounds)? =
                             num_atoms.wrapping_add(added) as u16;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         *heavy_atom
                             .bond_type
                             .get_mut(valence)
                             .ok_or(SourceHeapError::PointerOutOfBounds)? = hydrogen.bond_type[0];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         *heavy_atom
                             .bond_stereo
                             .get_mut(valence)
@@ -723,7 +676,6 @@ pub(crate) fn add_explicit_H(
                         invalid
                     };
                     if invalid_bond {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let temporary_h = heap
                             .slice_mut(temporary.offset(i64::from(added))?)?
                             .first_mut()
@@ -731,14 +683,12 @@ pub(crate) fn add_explicit_H(
                         temporary_h.bond_type[0] = BOND_SINGLE as u8;
                         temporary_h.chem_bonds_valence = BOND_SINGLE as i8;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let heavy_atom = heap
                         .slice_mut(input.at.offset(i64::from(heavy_index))?)?
                         .first_mut()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     heavy_atom.num_H = heavy_atom.num_H.wrapping_sub(1);
                     if isotope != 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let isotope_count = heavy_atom
                             .num_iso_H
                             .get_mut(
@@ -754,21 +704,21 @@ pub(crate) fn add_explicit_H(
             removed_index = removed_index.wrapping_add(1);
         }
         if added > 0 && added <= num_removed_h {
-            panic!("INCHI-AUDIT-0011: confirmed source allocation/copy divergence; see dev/audits/inchi/findings.md");
-            let temporary_atoms = heap
-                .slice(temporary.as_const())?
-                .get(..usize::try_from(added).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let destination = heap.slice_mut(input.at.offset(i64::from(num_atoms))?)?;
-            copy_inp_atom_gcc_lp64_byte_prefix(
-                destination,
-                &temporary_atoms,
-                usize::try_from(added)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                    .checked_mul(8)
-                    .ok_or(SourceHeapError::SourceIntegerOverflow)?,
+            let byte_count = usize::try_from(added)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                .checked_mul(8)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            // INCHI✔️❗: Native fresh at_H is distinct from input storage and
+            // has num_removed_H>=added rows. Borrow both live arrays without
+            // a full-prefix Vec; preserve the native sizeof(at) byte count.
+            // No allocation/extra scan; safe arena whole-call cost stays OPEN.
+            heap.with_two_slices_mut_and_optional_third(
+                input.at.offset(i64::from(num_atoms))?,
+                temporary,
+                None::<SourceMutPointer<i8>>,
+                |destination, source, _| {
+                    copy_inp_atom_gcc_lp64_byte_prefix(destination, source, byte_count)
+                },
             )?;
             input.num_removed_H = 0;
             num_atoms = num_atoms.wrapping_add(added);
@@ -905,10 +855,8 @@ pub(crate) fn fill_out_bond_cuts(
     let mut atom_index = 0_i32;
     let mut pair_count = 0_i32;
     while atom_index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let derivative_index =
             usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let derivative = derivatives
             .get(derivative_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -925,17 +873,19 @@ pub(crate) fn fill_out_bond_cuts(
             }
             for cut_index in 0..2_usize {
                 let first_atom = atom_index as u16;
-                panic!("INCHI-AUDIT-0242: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let order = usize::try_from(i32::from(derivative.ord[cut_index]))
+                // INCHI✔️❗: Native at1 narrows before BOTH array lookups.
+                // One reached borrowed descriptor, no snapshot/allocation;
+                // checked-index constants remain OPEN with derivative cuts.
+                let narrowed_derivative = derivatives
+                    .get(usize::from(first_atom))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let order = usize::try_from(i32::from(narrowed_derivative.ord[cut_index]))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second_atom = *atoms
                     .get(usize::from(first_atom))
                     .and_then(|atom| atom.neighbor.get(order))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let position = usize::from(first_atom > second_atom);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pair = atom_pairs
                     .get_mut(
                         usize::try_from(pair_count)
@@ -947,10 +897,8 @@ pub(crate) fn fill_out_bond_cuts(
                 pair.atno = atom_index as u16;
                 pair_count += 1;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_pair =
                 usize::try_from(pair_count - 2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let second_pair =
                 usize::try_from(pair_count - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if cmp_r2c_atpair(&atom_pairs[first_pair], &atom_pairs[second_pair]) > 0 {
@@ -961,10 +909,8 @@ pub(crate) fn fill_out_bond_cuts(
             if second_type != 0 || other_atom < 0 || atom_index == other_atom {
                 return Ok(-3);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let other_index =
                 usize::try_from(other_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let other_derivative = derivatives
                 .get(other_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -979,24 +925,19 @@ pub(crate) fn fill_out_bond_cuts(
                     return Ok(-2);
                 }
                 for source_atom in [atom_index, other_atom] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_index = usize::try_from(source_atom)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_derivative = derivatives
                         .get(source_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let order = usize::try_from(i32::from(source_derivative.ord[0]))
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let first_atom = source_atom as u16;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let second_atom = *atoms
                         .get(usize::from(first_atom))
                         .and_then(|atom| atom.neighbor.get(order))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let position = usize::from(first_atom > second_atom);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let pair = atom_pairs
                         .get_mut(
                             usize::try_from(pair_count)
@@ -1020,17 +961,14 @@ pub(crate) fn fill_out_bond_cuts(
                 {
                     return Ok(-2);
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let order = usize::try_from(i32::from(derivative.ord[cut_index]))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let first_atom = atom_index as u16;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second_atom = *atoms
                     .get(derivative_index)
                     .and_then(|atom| atom.neighbor.get(order))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let position = usize::from(first_atom > second_atom);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pair = atom_pairs
                     .get_mut(
                         usize::try_from(pair_count)
@@ -1069,7 +1007,6 @@ pub(crate) fn UnMarkOtherIndicators(
 
     let mut index = 0_i32;
     while index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1116,7 +1053,6 @@ pub(crate) fn UnMarkDisconnectedComponents(
 
     let mut index = 0_i32;
     while index < original.num_inp_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = heap
             .slice_mut(original.at.offset(i64::from(index))?)?
             .first_mut()
@@ -1158,7 +1094,6 @@ pub(crate) fn UnMarkOneComponent(
 
     let mut index = 0_i32;
     while index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1190,7 +1125,6 @@ pub(crate) fn subtract_DT_from_num_H(
 
     let mut atom_index = 0_i32;
     while atom_index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get_mut(usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1255,20 +1189,15 @@ pub(crate) fn add_inp_ATOM(
         return Ok(-1);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let destination_start =
         usize::try_from(len_cur).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let added_len = usize::try_from(len_add).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let destination_end = destination_start
         .checked_add(added_len)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let source = add
         .get(..added_len)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     atoms
         .get_mut(destination_start..destination_end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1276,15 +1205,12 @@ pub(crate) fn add_inp_ATOM(
 
     if len_cur != 0 {
         let offset = len_cur as u16;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for atom in atoms
             .get_mut(destination_start..destination_end)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
         {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let valence = usize::try_from(i32::from(atom.valence).max(0))
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             for neighbor in atom
                 .neighbor
                 .get_mut(..valence)
@@ -1378,10 +1304,8 @@ pub(crate) fn OAD_Edit_MergeComponentsAndRecreateOAD(
         *error_code = -999;
         return Ok(());
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let component_count =
         usize::try_from(num_components).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let components = current
         .get_mut(..component_count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1389,38 +1313,48 @@ pub(crate) fn OAD_Edit_MergeComponentsAndRecreateOAD(
     for component in components.iter() {
         num_atoms = num_atoms.wrapping_add(component.num_at);
     }
-    panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_count =
-        u64::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-    let merged = inchi_calloc::<inp_ATOM>(heap, atom_count, 176)?;
+    // INCHI✔️❗: native size_t conversion precedes calloc; represented size
+    // failure is NULL, not an early typed exit before component cleanup.
+    let merged = match inchi_calloc::<inp_ATOM>(heap, num_atoms as u64, 176) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            SourceMutPointer::null()
+        }
+        Err(error) => return Err(error),
+    };
     let merge_result = (|| -> Result<i32, SourceHeapError> {
         let mut current_count = 0_i32;
         for component in components.iter_mut() {
             UnMarkRingSystemsInp(heap, component.at, component.num_at)?;
-            {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            if component.num_at > 0 {
                 let atoms = heap.slice_mut(component.at)?;
                 UnMarkOtherIndicators(atoms, component.num_at)?;
                 UnMarkOneComponent(atoms, component.num_at)?;
                 subtract_DT_from_num_H(atoms, component.num_at)?;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let component_len = usize::try_from(component.num_at)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let component_atoms = heap
-                .slice(component.at.as_const())?
-                .get(..component_len)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            current_count = add_inp_ATOM(
-                heap.slice_mut(merged)?,
-                num_atoms,
-                current_count,
-                &component_atoms,
-                component.num_at,
-            )?;
+            // INCHI✔️❗: keep add_inp_ATOM's scalar early returns before
+            // admitting either array. Empty views are never read on these
+            // source branches; its one canonical body still owns the result.
+            if current_count < 0 || component.num_at < 0
+                || current_count.wrapping_add(component.num_at) > num_atoms
+            {
+                current_count = add_inp_ATOM(
+                    &mut [], num_atoms, current_count, &[], component.num_at,
+                )?;
+            } else {
+                // calloc's new allocation is disjoint from all live component
+                // inputs. Borrow it through the canonical arena operation;
+                // no atom snapshot/buffer/second copy or caller/API change.
+                current_count = heap.with_slice_mut_and_heap(merged, |atoms, heap| {
+                    add_inp_ATOM(
+                        atoms,
+                        num_atoms,
+                        current_count,
+                        heap.slice(component.at.as_const())?,
+                        component.num_at,
+                    )
+                })?;
+            }
         }
         Ok(current_count)
     })();
@@ -1454,17 +1388,30 @@ fn oad_allocate_atom_pairs(
     allocated: &mut i32,
     required: i32,
 ) -> Result<bool, SourceHeapError> {
+    // BEGIN INCHI C MACRO: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:5942 ALLOC_AP
+    // INCHI✔️❌: Caller maps false to source ret=-1 and cleanup; safe malloc
+    // scratch initialization remains a separately deferred cost.
+    // #define ALLOC_AP \
+    //         if ( 0 < num_cuts_to_check && (lenAllocated_ap < num_cuts_to_check || !ap) ) {\
+    //             if ( ap )\
+    //                 inchi_free( ap );\
+    //             ap = (R2C_ATPAIR *) inchi_malloc( num_cuts_to_check * sizeof(ap[0]) );\
+    //             if ( !ap ) {\
+    //                 ret = -1;\
+    //                 goto exit_function; /* malloc failure */\
+    //             }\
+    //             lenAllocated_ap = num_cuts_to_check;\
+    //         }
+    //
+    // END INCHI C MACRO: ALLOC_AP
     if required > 0 && (*allocated < required || pointer.is_null()) {
         if !pointer.is_null() {
             inchi_free(heap, *pointer)?;
             *pointer = SourceMutPointer::null();
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count = usize::try_from(required)
             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-        match heap.allocate(vec![R2C_ATPAIR::default(); count]) {
+        match inchi_calloc::<R2C_ATPAIR>(heap, count as u64, 6) {
             Ok(allocation) => {
                 *pointer = allocation;
                 *allocated = required;
@@ -1481,13 +1428,39 @@ fn oad_prepare_derivative_cuts(
     derivatives: &mut [DERIV_AT],
     num_atoms: i32,
 ) -> Result<Result<(i32, i32, i32), i32>, SourceHeapError> {
-    panic!("INCHI-AUDIT-0234: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    if atoms.len() < atom_count || derivatives.len() < atom_count {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
+    // BEGIN INCHI SOURCE FRAGMENTS: ichinorm.c derivative preparation
+    // INCHI✔️❗: ichinorm.c:6089..6097
+    //         num_ring_cuts = 0;
+    //         num_cuts = 0;
+    //         num_cut_pieces = 0;
+    //         if (da) /* djb-rwth: fixing a NULL pointer dereference */
+    //         {
+    //             for (i = num = 0; i < num_atoms; i++) /* djb-rwth: ignoring LLVM warning: variable used */
+    //             {
+    //                 /*for ( len = 0; len < MAX_AT_DERIV && da[i].typ[len]; len ++ ) -- bug fixed 2013-11-07 DCh */
+    //                 for (len = 0; len < DERIV_AT_LEN && da[i].typ[len]; len++)
+    // INCHI✔️❗: ichinorm.c:6111..6116
+    //                         if (!da[i].other_atom || (j = da[i].other_atom - 1) >= num_atoms ||
+    //                             (da[j].typ[0] ^ DERIV_RING_DMOX_DEOX) != da[i].typ[0] ||
+    //                             da[j].other_atom - 1 != i)
+    //                         {
+    //                             /* program error */
+    //                             da[i].num[0] = NOT_AT_DERIV;
+    // INCHI✔️❗: ichinorm.c:6207..6209
+    //                                     case -1:
+    //                                         memset(da + i, 0, sizeof(da[0])); /* djb-rwth: memset_s C11/Annex K variant? */
+    //                                         break; /* will produce error */
+    // INCHI✔️❗: ichinorm.c:6316..6317
+    //                     ret = -88;
+    //                     goto exit_function; /* unexpected */
+    // END INCHI SOURCE FRAGMENTS: derivative preparation
+    // INCHI✔️❗: Native signed loops skip nonpositive counts. Four selected
+    // width/error/loop closures below; no whole-helper acceptance follows.
+    // No new scan/allocation/clone; independent checked-access costs remain
+    // OPEN in INCHI-PERF-DERIVATIVE-CUT-STATE.
+    let atom_count = num_atoms.max(0) as usize;
+    // INCHI✔️❗: The source scans descriptors first; zero types do not read
+    // atoms. Reached indexed accesses retain native data requirements.
     let mut num_cuts = 0_i32;
     let mut num_ring_cuts = 0_i32;
     let mut num_cut_pieces = 0_i32;
@@ -1502,13 +1475,12 @@ fn oad_prepare_derivative_cuts(
             0 => continue,
             1 => {
                 if derivatives[atom_index].typ[0] & DERIV_RING_DMOX_DEOX as i16 != 0 {
-                    panic!("INCHI-AUDIT-0253: suspected source divergence; see dev/audits/inchi/findings.md");
                     let other = usize::from(derivatives[atom_index].other_atom.wrapping_sub(1));
                     if derivatives[atom_index].other_atom == 0
                         || other >= atom_count
                         || (derivatives[other].typ[0] ^ DERIV_RING_DMOX_DEOX as i16)
                             != derivatives[atom_index].typ[0]
-                        || usize::from(derivatives[other].other_atom.wrapping_sub(1)) != atom_index
+                        || i32::from(derivatives[other].other_atom) - 1 != atom_index as i32
                     {
                         derivatives[atom_index].num[0] = NOT_AT_DERIV as i8;
                     } else {
@@ -1565,12 +1537,10 @@ fn oad_prepare_derivative_cuts(
                         } else {
                             -1
                         };
-                        panic!("INCHI-AUDIT-0244: suspected source divergence; see dev/audits/inchi/findings.md");
                         match selected {
                             1 => {
                                 derivatives[atom_index].num[0] = second_num;
                                 derivatives[atom_index].ord[0] = derivatives[atom_index].ord[1];
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 derivatives[atom_index].typ[0] = second_type;
                                 derivatives[atom_index].typ[1] = 0;
                                 derivatives[atom_index].num[1] = 0;
@@ -1585,7 +1555,10 @@ fn oad_prepare_derivative_cuts(
                                 num_cuts += 1;
                                 num_cut_pieces += 1;
                             }
-                            _ => derivatives[atom_index] = DERIV_AT::default(),
+                            _ => {
+                                derivatives[atom_index] = DERIV_AT::default();
+                                return Ok(Err(-88));
+                            }
                         }
                     }
                 } else if first_type == second_type {
@@ -1606,7 +1579,6 @@ fn oad_prepare_derivative_cuts(
                         {
                             derivatives[atom_index].num[derivative_index] = NOT_AT_DERIV as i8;
                         } else {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let ordinal = i32::from(derivatives[atom_index].ord[derivative_index])
                                 - i32::from(b'0');
                             let neighbor = usize::from(
@@ -1679,7 +1651,6 @@ fn oad_prepare_derivative_cuts(
                     {
                         derivatives[atom_index].num[derivative_index] = NOT_AT_DERIV as i8;
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let ordinal = i32::from(derivatives[atom_index].ord[derivative_index])
                             - i32::from(b'0');
                         let neighbor = usize::from(
@@ -1826,7 +1797,6 @@ fn oad_prepare_derivative_cuts(
                 derivative_index += 1;
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let ordinal = usize::try_from(derivatives[atom_index].ord[derivative_index])
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neighbor = usize::from(atoms[atom_index].neighbor[ordinal]);
@@ -1840,7 +1810,6 @@ fn oad_prepare_derivative_cuts(
                     && derivatives[neighbor].typ[neighbor_derivative] != 0
                 {
                     if derivatives[neighbor].typ[neighbor_derivative] & DERIV_DUPLIC as i16 == 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor_ordinal =
                             usize::try_from(derivatives[neighbor].ord[neighbor_derivative])
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1868,7 +1837,6 @@ fn oad_prepare_derivative_cuts(
                                 return Ok(Err(second_result));
                             }
                             if first_result == 0 || (first_result != 0 && second_result != 0) {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let selected = usize::try_from(first_index)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 if derivatives[atom_index].typ[selected]
@@ -1889,7 +1857,6 @@ fn oad_prepare_derivative_cuts(
                                 found += 1;
                             }
                             if second_result == 0 || (first_result != 0 && second_result != 0) {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let selected = usize::try_from(second_index)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 if derivatives[neighbor].typ[selected]
@@ -1941,31 +1908,86 @@ fn oad_locate_cut_owner(
     pair: &R2C_ATPAIR,
     require_atom_bound: Option<usize>,
 ) -> Result<Result<(usize, usize, usize), i32>, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichinorm.c:6635..6663 oad_locate_cut_owner
+    // INCHI✔️❗:                 for (i = 0; i < num_cuts_to_check; i += j)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     for (j = n = 0; j < 2; j++)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         int atj = (int) ap[i].at[j];
+    // INCHI✔️❗:                         if (da[atj].typ[0] && at[atj].neighbor[(int) da[atj].ord[0]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             k = j;      /* ap[i].at[k] is precursor atom */
+    // INCHI✔️❗:                             n++;
+    // INCHI✔️❗:                             m_at = atj; /* precursor atom at[m_at], da[m_at] */
+    // INCHI✔️❗:                             m_ord = 0;  /* da[m_at].typ[m_ord] - type of the deriv.bond to break  */
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         else
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             if (da[atj].typ[1] && at[atj].neighbor[(int) da[atj].ord[1]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 k = j;
+    // INCHI✔️❗:                                 n++;
+    // INCHI✔️❗:                                 m_at = atj;
+    // INCHI✔️❗:                                 m_ord = 1;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                     if (n != 1)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         ret = -3;
+    // INCHI✔️❗:                         goto exit_r2c_num; /* wrong atom pair */
+    // INCHI✔️❗:                     }
+    // END VERBATIM SOURCE FRAGMENT: oad_locate_cut_owner:6635..6663
+    // VERBATIM SOURCE FRAGMENT: ichinorm.c:6872..6899 oad_locate_cut_owner
+    // INCHI✔️❗:             /* The following code was copied from above to mark removed */
+    // INCHI✔️❗:             for (i = 0; i < num_cuts_to_check; i += j)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 for (j = n = 0; j < 2; j++)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     int atj = (int) ap[i].at[j];
+    // INCHI✔️❗:                     if (atj < num_atoms && da[atj].typ[0] && at[atj].neighbor[(int) da[atj].ord[0]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         k = j;      /* ap[i].at[k] is precursor atom */
+    // INCHI✔️❗:                         n++;
+    // INCHI✔️❗:                         m_at = atj; /* precursor atom at[m_at], da[m_at] */
+    // INCHI✔️❗:                         m_ord = 0;  /* da[m_at].typ[m_ord] - type of the deriv.bond to break  */
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     else
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (atj < num_atoms && da[atj].typ[1] && at[atj].neighbor[(int) da[atj].ord[1]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             k = j;
+    // INCHI✔️❗:                             n++;
+    // INCHI✔️❗:                             m_at = atj;
+    // INCHI✔️❗:                             m_ord = 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (n != 1)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     ret = -3;
+    // INCHI✔️❗:                     goto exit_r2c_num2; /* wrong atom pair */
+    // END VERBATIM SOURCE FRAGMENT: oad_locate_cut_owner:6872..6899
+
     let mut found = 0_i32;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut pair_side = 0_usize;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut owner = 0_usize;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut derivative_index = 0_usize;
     for side in 0..2 {
         let candidate = usize::from(pair.at[side]);
         if require_atom_bound.is_some_and(|bound| candidate >= bound) {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let candidate_derivative = derivatives
             .get(candidate)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         for selected in 0..2 {
-            panic!("INCHI-AUDIT-0245: suspected source divergence; see dev/audits/inchi/findings.md");
             if candidate_derivative.typ[selected] == 0 {
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let ordinal = usize::try_from(candidate_derivative.ord[selected])
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if atoms
                 .get(candidate)
                 .and_then(|atom| atom.neighbor.get(ordinal))
@@ -1977,6 +1999,8 @@ fn oad_locate_cut_owner(
                 owner = candidate;
                 derivative_index = selected;
                 found += 1;
+                // INCHI✔️✔️: native first-slot match skips its else/slot1.
+                break;
             }
         }
     }
@@ -2008,14 +2032,244 @@ fn oad_validate_derivative_agents(
     num_cuts_to_check: &mut i32,
     current_num_atoms: &mut i32,
 ) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichinorm.c:6607..6835 oad_validate_derivative_agents
+    // INCHI✔️❗:             if (num_cuts_to_check >= 2)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 /* check */
+    // INCHI✔️❗:                 AT_NUMB    comp_num;
+    // INCHI✔️❗:                 int        /*n,*/ m_at, m_ord;
+    // INCHI✔️❗:                 /*AT_NUMB at1, at2;*/
+    // INCHI✔️❗: 
+    // INCHI✔️❗:             repeat_without_deriv_ring:
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                 ALLOC_AP
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                     comp_num = 0;
+    // INCHI✔️❗:                 /* fill out the array of bonds to be cut */
+    // INCHI✔️❗:                 j = fill_out_bond_cuts( at, da, num_atoms, ap, num_cuts_to_check );
+    // INCHI✔️❗:                 if (j < 0)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     ret = j;
+    // INCHI✔️❗:                     goto exit_r2c_num; /* wrong number of cuts = num */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (j != num_cuts_to_check)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     ret = -3;
+    // INCHI✔️❗:                     goto exit_r2c_num; /* wrong number of cuts = num */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 /* can't sort the bonds for subsequent searching by bisections in
+    // INCHI✔️❗:                 mark_atoms_ap() -> has_atom_pair() 2013-08-48 DCh */
+    // INCHI✔️❗:                 /* !!!!!!!! check that there are no derivatives inside a derivative */
+    // INCHI✔️❗:                 comp_num = 0; /* here it is the number of removed cuts */
+    // INCHI✔️❗:                 for (i = 0; i < num_cuts_to_check; i += j)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     for (j = n = 0; j < 2; j++)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         int atj = (int) ap[i].at[j];
+    // INCHI✔️❗:                         if (da[atj].typ[0] && at[atj].neighbor[(int) da[atj].ord[0]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             k = j;      /* ap[i].at[k] is precursor atom */
+    // INCHI✔️❗:                             n++;
+    // INCHI✔️❗:                             m_at = atj; /* precursor atom at[m_at], da[m_at] */
+    // INCHI✔️❗:                             m_ord = 0;  /* da[m_at].typ[m_ord] - type of the deriv.bond to break  */
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         else
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             if (da[atj].typ[1] && at[atj].neighbor[(int) da[atj].ord[1]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 k = j;
+    // INCHI✔️❗:                                 n++;
+    // INCHI✔️❗:                                 m_at = atj;
+    // INCHI✔️❗:                                 m_ord = 1;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                     if (n != 1)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         ret = -3;
+    // INCHI✔️❗:                         goto exit_r2c_num; /* wrong atom pair */
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                     if (( da[m_at].typ[m_ord] & DERIV_RING_OUTSIDE_PRECURSOR ))
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         n = (int) ap[i].at[k];   /* atom inside the derivation attachment */
+    // INCHI✔️❗:                         j = 2;             /* number of bonds to cut */
+    // INCHI✔️❗:                         if (i + j > num_cuts_to_check || ((int) ap[i + 1].at[0] != n && (int) ap[i + 1].at[1] != n)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             ret = -3;
+    // INCHI✔️❗:                             goto exit_r2c_num; /* wrong atom pair */
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     else
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         n = ap[i].at[1 - k]; /* atom inside the tentative derivation attachment */
+    // INCHI✔️❗:                         j = 1;             /* number of bonds to cut */
+    // INCHI✔️❗: #if( defined(DERIV_RING_DMOX_DEOX_N) && defined(DERIV_RING_DMOX_DEOX_O) )
+    // INCHI✔️❗:                                            /*j += (0 != (da[m_at].typ[m_ord] & DERIV_RING_DMOX_DEOX)); */
+    // INCHI✔️❗:                                            /* these 2 cuts are always adjacent */
+    // INCHI✔️❗:                         j += ( da[m_at].typ[m_ord] && da[m_at].typ[m_ord] == ( da[m_at].typ[m_ord] & DERIV_RING_DMOX_DEOX ) ); /* these 2 cuts are always adjacent */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗: #ifdef DERIV_RING2_OUTSIDE_PRECUR
+    // INCHI✔️❗:                         j += ( da[m_at].typ[m_ord] && da[m_at].typ[m_ord] == ( da[m_at].typ[m_ord] & DERIV_RING2_OUTSIDE_PRECUR ) ); /* these 2 cuts are always adjacent */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                     /* at[n] belongs to the derivation agent  */
+    // INCHI✔️❗:                     cur_num_at = mark_atoms_ap( at, n, ap + i, j, 0, 1 );
+    // INCHI✔️❗:                     for (k = 0; k < num_cuts_to_check; k++)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (k == i || k == i + j - 1) /* not more than 2 cuts per derivatization agent */
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             continue; /* skip current 1 or 2 cuts */
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         if (at[(int) ap[k].at[0]].at_type || at[(int) ap[k].at[1]].at_type)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             /*#ifdef DERIV_X_OXIME*/
+    // INCHI✔️❗:                             if (( da[m_at].typ[m_ord] & DERIV_UNEXPADABLE ) == da[m_at].typ[m_ord])
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 /* this derivatization agent cannot be inside another, larger deriv. agent */
+    // INCHI✔️❗:                                 /* disable cuts of the larger derivatization agent */
+    // INCHI✔️❗:                                 if (ap[k].atno != m_at)
+    // INCHI✔️❗:                                 {
+    // INCHI✔️❗:                                     for (j = 0; j < 2 && da[ap[k].atno].typ[j]; j++)
+    // INCHI✔️❗:                                     {
+    // INCHI✔️❗:                                         da[ap[k].atno].typ[j] |= DERIV_UNMARK;
+    // INCHI✔️❗:                                     }
+    // INCHI✔️❗:                                     num_cuts -= 1;
+    // INCHI✔️❗:                                     num_cut_pieces -= 1;
+    // INCHI✔️❗:                                     if (j == 2)
+    // INCHI✔️❗:                                     {
+    // INCHI✔️❗:                                         num_cuts -= 1;
+    // INCHI✔️❗:                                         num_ring_cuts -= 2;
+    // INCHI✔️❗:                                     }
+    // INCHI✔️❗:                                     comp_num++;
+    // INCHI✔️❗:                                 }
+    // INCHI✔️❗:                                 /* djb-rwth: removing redundant code */
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                             else
+    // INCHI✔️❗:                                 /* #endif */
+    // INCHI✔️❗:                                 /* unmark the cut: found a cut inside the derivatizing agent */
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 da[m_at].typ[m_ord] |= DERIV_UNMARK;
+    // INCHI✔️❗:                                 num_cuts -= 1;
+    // INCHI✔️❗:                                 num_cut_pieces -= 1;
+    // INCHI✔️❗:                                 if (j == 2)
+    // INCHI✔️❗:                                 {
+    // INCHI✔️❗:                                     da[m_at].typ[1 - m_ord] |= DERIV_UNMARK;
+    // INCHI✔️❗:                                     num_cuts -= 1;
+    // INCHI✔️❗:                                     num_ring_cuts -= 2;
+    // INCHI✔️❗:                                 }
+    // INCHI✔️❗:                                 comp_num++;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                             break;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     UnMarkOtherIndicators( at, num_atoms );
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                 if (comp_num)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     for (i = 0; i < num_atoms; i++)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (da[i].typ[0] & DERIV_UNMARK)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             da[i].num[0] = da[i].num[1];
+    // INCHI✔️❗:                             da[i].ord[0] = da[i].ord[1];
+    // INCHI✔️❗:                             da[i].typ[0] = da[i].typ[1];
+    // INCHI✔️❗:                             da[i].typ[1] = 0;
+    // INCHI✔️❗:                             j = 0;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         else
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             j = 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         if (da[i].typ[j] & DERIV_UNMARK)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             da[i].typ[j] = 0;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗: #if ( COUNT_ALL_NOT_DERIV == 1 )
+    // INCHI✔️❗:                     num_cuts_to_check = num_cuts;
+    // INCHI✔️❗: #else
+    // INCHI✔️❗:                     num_cuts_to_check = num_ring_cuts;
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:                     if (num_cuts < 0 || num_ring_cuts < 0 || num_cut_pieces < 0)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         ret = -3;
+    // INCHI✔️❗:                         goto exit_r2c_num; /* wrong number of cuts = num */
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗: #if( defined(DERIV_X_OXIME) || defined(DERIV_RO_COX) )
+    // INCHI✔️❗:                     if (num_cuts_to_check > 0)
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         goto repeat_without_deriv_ring;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                 /* Sort the bonds for subsequent searching by bisections
+    // INCHI✔️❗:                 -- disabled because DERIV_RING_DMOX_DEOX have to be adjacent in ap
+    // INCHI✔️❗:                 if ( num_cuts_to_check > 1 ) {
+    // INCHI✔️❗:                 qsort( ap, num_cuts_to_check, sizeof(ap[0]), cmp_r2c_atpair);
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 */
+    // INCHI✔️❗:                 if ((ret = mark_deriv_agents( at, da, num_atoms, ap, num_cuts_to_check, &comp_num, &cur_num_at ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     goto exit_r2c_num; /* wrong atom pair */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (comp_num > 1)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     /* eliminate offending DERIV_RING_OUTSIDE_PRECURSOR type derivatives */
+    // INCHI✔️❗:                     if (num_ring_cuts <= 2)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         ret = -99;
+    // INCHI✔️❗:                         goto exit_r2c_num;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     n = 0;
+    // INCHI✔️❗:                     for (i = j = 0; i < num_atoms; i++) /* djb-rwth: ignoring LLVM warning: variable used */
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (( da[i].typ[0] & DERIV_RING_OUTSIDE_PRECURSOR ) && ( da[i].typ[1] & DERIV_RING_OUTSIDE_PRECURSOR ))
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             int at1a = at[i].neighbor[(int) da[i].ord[0]];
+    // INCHI✔️❗:                             int at2a = at[i].neighbor[(int) da[i].ord[1]];
+    // INCHI✔️❗:                             if (at[at1a].at_type != at[at2a].at_type)
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 da[i].typ[0] = 0; /* eliminate this cut */
+    // INCHI✔️❗:                                 da[i].typ[1] = 0;
+    // INCHI✔️❗:                                 n++;
+    // INCHI✔️❗:                                 num_cuts_to_check -= 2;
+    // INCHI✔️❗:                                 num_cuts -= 2;
+    // INCHI✔️❗:                                 num_ring_cuts -= 2;
+    // INCHI✔️❗:                                 num_cut_pieces -= 1;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     if (n > 0 && num_cuts_to_check > 2)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         UnMarkOtherIndicators( at, num_atoms );
+    // INCHI✔️❗:                         goto repeat_without_deriv_ring;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 ret = 0;
+    // INCHI✔️❗: 
+    // INCHI✔️❗:             exit_r2c_num:
+    // INCHI✔️❗:                 /*inchi_free( ap );*/
+    // INCHI✔️❗:                 UnMarkOtherIndicators( at, num_atoms );
+    // INCHI✔️❗:                 /*if ( ret < 0 || num_cuts_to_check >= 2 && cur_num_at < MIN_AT_LEFT_DERIV ) */
+    // INCHI✔️❗:                 /* -- bug: cur_num_at may include later rejected deriv. agents 2013-11-08 DCh */
+    // INCHI✔️❗:                 if (ret < 0)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     goto exit_function; /* unexpected  error or nothing left */
+    // INCHI✔️❗:                 }
+    // END VERBATIM SOURCE FRAGMENT: oad_validate_derivative_agents:6607..6835
+
     if *num_cuts_to_check < 2 {
         return Ok(0);
     }
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let expected =
             usize::try_from(*num_cuts_to_check).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if atom_pairs.len() < expected {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -2047,18 +2301,18 @@ fn oad_validate_derivative_agents(
                     }
                 };
             let type_ = derivatives[owner].typ[derivative_index];
-            let span = oad_cut_span(type_);
+            let mut span = oad_cut_span(type_);
             let start = if type_ & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0 {
                 usize::from(atom_pairs[index].at[precursor_side])
             } else {
                 usize::from(atom_pairs[index].at[1 - precursor_side])
             };
-            if index + span > expected
-                || (span == 2
-                    && usize::from(atom_pairs[index + 1].at[0]) != start
-                    && usize::from(atom_pairs[index + 1].at[1]) != start)
+            // INCHI✔️✔️: only outside-precursor cuts require a shared endpoint.
+            if type_ & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0
+                && (index + span > expected
+                    || (usize::from(atom_pairs[index + 1].at[0]) != start
+                        && usize::from(atom_pairs[index + 1].at[1]) != start))
             {
-                panic!("INCHI-AUDIT-0247: suspected source divergence; see dev/audits/inchi/findings.md");
                 UnMarkOtherIndicators(atoms, num_atoms)?;
                 return Ok(-3);
             }
@@ -2081,12 +2335,14 @@ fn oad_validate_derivative_agents(
                     if type_ & DERIV_UNEXPADABLE as i16 == type_ {
                         let candidate_owner = usize::from(pair.atno);
                         if candidate_owner != owner {
-                            panic!("INCHI-AUDIT-0246: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut marked = 0_usize;
                             while marked < 2 && derivatives[candidate_owner].typ[marked] != 0 {
                                 derivatives[candidate_owner].typ[marked] |= DERIV_UNMARK as i16;
                                 marked += 1;
                             }
+                            // INCHI✔️✔️: native inner j also overwrites the
+                            // outer i+=j stride, including zero/one/two slots.
+                            span = marked;
                             *num_cuts -= 1;
                             *num_cut_pieces -= 1;
                             if marked == 2 {
@@ -2114,7 +2370,6 @@ fn oad_validate_derivative_agents(
         }
 
         if components != 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             for derivative in derivatives
                 .iter_mut()
                 .take(usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -2162,19 +2417,16 @@ fn oad_validate_derivative_agents(
                 return Ok(-99);
             }
             let mut eliminated = 0_i32;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             for atom_index in
                 0..usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
             {
                 if derivatives[atom_index].typ[0] & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0
                     && derivatives[atom_index].typ[1] & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first = usize::from(
                         atoms[atom_index].neighbor[usize::try_from(derivatives[atom_index].ord[0])
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let second = usize::from(
                         atoms[atom_index].neighbor[usize::try_from(derivatives[atom_index].ord[1])
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
@@ -2208,7 +2460,95 @@ fn oad_check_final_precursor(
     num_cuts_to_check: i32,
     current_num_atoms: &mut i32,
 ) -> Result<i32, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // VERBATIM SOURCE FRAGMENT: ichinorm.c:6854..6939 oad_check_final_precursor
+    // INCHI✔️❗:             AT_NUMB comp_num = 0; /* here it is the number of removed cuts */
+    // INCHI✔️❗:             int        /*n,*/ m_at, m_ord;
+    // INCHI✔️❗: 
+    // INCHI✔️❗:             ALLOC_AP
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                 /* Fill out the array of bonds to be cut */
+    // INCHI✔️❗:                 j = fill_out_bond_cuts( at, da, num_atoms, ap, num_cuts_to_check );
+    // INCHI✔️❗:             if (j < 0)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 ret = j;
+    // INCHI✔️❗:                 goto exit_r2c_num2; /* wrong number of cuts = num */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             if (j != num_cuts_to_check)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 ret = -3;
+    // INCHI✔️❗:                 goto exit_r2c_num2; /* wrong number of cuts = num */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:             /* The following code was copied from above to mark removed */
+    // INCHI✔️❗:             for (i = 0; i < num_cuts_to_check; i += j)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 for (j = n = 0; j < 2; j++)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     int atj = (int) ap[i].at[j];
+    // INCHI✔️❗:                     if (atj < num_atoms && da[atj].typ[0] && at[atj].neighbor[(int) da[atj].ord[0]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         k = j;      /* ap[i].at[k] is precursor atom */
+    // INCHI✔️❗:                         n++;
+    // INCHI✔️❗:                         m_at = atj; /* precursor atom at[m_at], da[m_at] */
+    // INCHI✔️❗:                         m_ord = 0;  /* da[m_at].typ[m_ord] - type of the deriv.bond to break  */
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     else
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (atj < num_atoms && da[atj].typ[1] && at[atj].neighbor[(int) da[atj].ord[1]] == ap[i].at[1 - j])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             k = j;
+    // INCHI✔️❗:                             n++;
+    // INCHI✔️❗:                             m_at = atj;
+    // INCHI✔️❗:                             m_ord = 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (n != 1)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     ret = -3;
+    // INCHI✔️❗:                     goto exit_r2c_num2; /* wrong atom pair */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (( da[m_at].typ[m_ord] & DERIV_RING_OUTSIDE_PRECURSOR ))
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     n = (int) ap[i].at[k];   /* atom inside the derivation attachment */
+    // INCHI✔️❗:                     j = 2;             /* number of bonds to cut */
+    // INCHI✔️❗:                     if (i + j > num_cuts_to_check || ((int) ap[i + 1].at[0] != n && (int) ap[i + 1].at[1] != n)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         ret = -3;
+    // INCHI✔️❗:                         goto exit_r2c_num2; /* wrong atom pair */
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 else
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     n = ap[i].at[1 - k];    /* atom inside the tentative derivation attachment */
+    // INCHI✔️❗:                     j = 1;                  /* number of bonds to cut */
+    // INCHI✔️❗: #if( defined(DERIV_RING_DMOX_DEOX_N) && defined(DERIV_RING_DMOX_DEOX_O) )
+    // INCHI✔️❗:                                             /*j += (0 != (da[m_at].typ[m_ord] & DERIV_RING_DMOX_DEOX));*/
+    // INCHI✔️❗:                                             /* these 2 cuts are always adjacent */
+    // INCHI✔️❗:                     j += ( da[m_at].typ[m_ord] && da[m_at].typ[m_ord] == ( da[m_at].typ[m_ord] & DERIV_RING_DMOX_DEOX ) ); /* these 2 cuts are always adjacent */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗: #ifdef DERIV_RING2_OUTSIDE_PRECUR
+    // INCHI✔️❗:                     j += ( da[m_at].typ[m_ord] && da[m_at].typ[m_ord] == ( da[m_at].typ[m_ord] & DERIV_RING2_OUTSIDE_PRECUR ) ); /* these 2 cuts are always adjacent */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:                 /* at[n] belongs to the derivation agent  */
+    // INCHI✔️❗:                 cur_num_at = mark_atoms_ap( at, n, ap + i, j, 0, 1 );
+    // INCHI✔️❗:                 UnMarkOtherIndicators( at, num_atoms );
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             ret = mark_deriv_agents( at, da, num_atoms, ap, num_cuts_to_check, &comp_num, &cur_num_at );
+    // INCHI✔️❗:             UnMarkOtherIndicators( at, num_atoms );
+    // INCHI✔️❗:             if (ap)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 inchi_free( ap );
+    // INCHI✔️❗:                 ap = NULL;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             if (ret)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 goto exit_r2c_num2; /* wrong atom pair */
+    // INCHI✔️❗:             }
+    // END VERBATIM SOURCE FRAGMENT: oad_check_final_precursor:6854..6939
+
     let expected =
         usize::try_from(num_cuts_to_check).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let filled = fill_out_bond_cuts(atoms, derivatives, num_atoms, atom_pairs, num_cuts_to_check)?;
@@ -2218,7 +2558,6 @@ fn oad_check_final_precursor(
     if filled != num_cuts_to_check {
         return Ok(-3);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut index = 0_usize;
     while index < expected {
@@ -2234,12 +2573,12 @@ fn oad_check_final_precursor(
         } else {
             usize::from(atom_pairs[index].at[1 - precursor_side])
         };
-        if index + span > expected
-            || (span == 2
-                && usize::from(atom_pairs[index + 1].at[0]) != start
-                && usize::from(atom_pairs[index + 1].at[1]) != start)
+        // INCHI✔️✔️: same outside-only check as native first validation pass.
+        if type_ & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0
+            && (index + span > expected
+                || (usize::from(atom_pairs[index + 1].at[0]) != start
+                    && usize::from(atom_pairs[index + 1].at[1]) != start))
         {
-            panic!("INCHI-AUDIT-0247: suspected source divergence; see dev/audits/inchi/findings.md");
             return Ok(-3);
         }
         *current_num_atoms = mark_atoms_ap(
@@ -2272,8 +2611,114 @@ fn oad_make_selected_cuts(
     derivatives: &mut [DERIV_AT],
     num_atoms: i32,
 ) -> Result<Result<i32, i32>, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichinorm.c:6960..7063 oad_make_selected_cuts
+    // INCHI✔️❗:             /*for ( len = 0; len < MAX_AT_DERIV && da[i].typ[len]; len ++ ) -- bug fixed 2013-11-07 DCh */
+    // INCHI✔️❗:             for (len = 0; len < DERIV_AT_LEN && da[i].typ[len]; len++)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 ;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             switch (len)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 case 0:
+    // INCHI✔️❗:                     continue;
+    // INCHI✔️❗:                 case 1:
+    // INCHI✔️❗:                     /* single cut: unconditional */
+    // INCHI✔️❗:                     make_single_cut( at, da, i, 0 );
+    // INCHI✔️❗:                     num_cuts += 1;
+    // INCHI✔️❗:                     continue;
+    // INCHI✔️❗:                 case 2:
+    // INCHI✔️❗:                     if (( (da[i].typ[0] & DERIV_RING_OUTSIDE_PRECURSOR ) && ( da[i].typ[1] & DERIV_RING_OUTSIDE_PRECURSOR )) ||
+    // INCHI✔️❗:                          (da[i].typ[0] == DERIV_AMINE_tN && da[i].typ[1] == DERIV_AMINE_tN)
+    // INCHI✔️❗: #ifdef DERIV_RING2_OUTSIDE_PRECUR
+    // INCHI✔️❗:                          || (da[i].typ[0] && da[i].typ[0] == ( da[i].typ[0] & DERIV_RING2_OUTSIDE_PRECUR ) &&
+    // INCHI✔️❗:                          da[i].typ[1] == da[i].typ[0])
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:                          ) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         /* double cut, unconditional */
+    // INCHI✔️❗:                         make_single_cut( at, da, i, 1 );
+    // INCHI✔️❗:                         make_single_cut( at, da, i, 0 );
+    // INCHI✔️❗:                         num_cuts += 1;
+    // INCHI✔️❗:                         continue;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     if (da[i].typ[0] == da[i].typ[1])
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         /* DERIV_BRIDGE_O or DERIV_BRIDGE_NH; cut off the smallest */
+    // INCHI✔️❗:                         if (da[i].num[0] > da[i].num[1])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             make_single_cut( at, da, i, 1 );
+    // INCHI✔️❗:                             num_cuts += 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         else
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             if (da[i].num[0] < da[i].num[1])
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 make_single_cut( at, da, i, 0 );
+    // INCHI✔️❗:                                 num_cuts += 1;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         continue;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     ret = -88;
+    // INCHI✔️❗:                     goto exit_function; /* unexpected */
+    // INCHI✔️❗:                 case 3:
+    // INCHI✔️❗:                     if (da[i].typ[0] == da[i].typ[1] &&
+    // INCHI✔️❗:                          da[i].typ[0] == da[i].typ[2] &&
+    // INCHI✔️❗:                          da[i].typ[0] == DERIV_AMINE_tN)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         int x, y, z;
+    // INCHI✔️❗:                         x = ( da[i].num[0] < da[i].num[1] ) ? 0 : 1;
+    // INCHI✔️❗:                         x = ( da[i].num[x] < da[i].num[2] ) ? x : 2; /* min */
+    // INCHI✔️❗:                         z = ( da[i].num[0] < da[i].num[1] ) ? 1 : 0;
+    // INCHI✔️❗:                         z = ( da[i].num[x] < da[i].num[2] ) ? 2 : z; /* max */
+    // INCHI✔️❗:                         y = ( ( x + 1 ) ^ ( z + 1 ) ) - 1;                      /* median */
+    // INCHI✔️❗:                         if (da[i].num[x] == da[i].num[z])
+    // INCHI✔️❗:                             continue; /* all deriv. agents have same size */
+    // INCHI✔️❗:                                       /* two smallest */
+    // INCHI✔️❗:                         if (da[i].num[x] == da[i].num[y] && x < y)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             int t = x; /* first cut x > y */
+    // INCHI✔️❗:                             x = y;
+    // INCHI✔️❗:                             y = t;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         make_single_cut( at, da, i, x );
+    // INCHI✔️❗:                         num_cuts += 1;
+    // INCHI✔️❗:                         if (da[i].num[x] == da[i].num[y])
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             /* equally small */
+    // INCHI✔️❗:                             make_single_cut( at, da, i, y );
+    // INCHI✔️❗:                             num_cuts += 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         continue;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     ret = -88;
+    // INCHI✔️❗:                     goto exit_function; /* unexpected */
+    // INCHI✔️❗:                 case 4:
+    // INCHI✔️❗:                     if (( da[i].typ[0] & DERIV_RING_OUTSIDE_PRECURSOR ) && ( da[i].typ[1] & DERIV_RING_OUTSIDE_PRECURSOR ) &&
+    // INCHI✔️❗:                         ( da[i].typ[2] & DERIV_RING_OUTSIDE_PRECURSOR ) && ( da[i].typ[3] & DERIV_RING_OUTSIDE_PRECURSOR ))
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         int n01 = inchi_max( da[i].num[0], da[i].num[1] );
+    // INCHI✔️❗:                         int n23 = inchi_max( da[i].num[2], da[i].num[3] );
+    // INCHI✔️❗:                         if (n01 < n23)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             make_single_cut( at, da, i, 1 );
+    // INCHI✔️❗:                             make_single_cut( at, da, i, 0 );
+    // INCHI✔️❗:                             num_cuts += 1;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         else
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             if (n01 > n23)
+    // INCHI✔️❗:                             {
+    // INCHI✔️❗:                                 make_single_cut( at, da, i, 3 );
+    // INCHI✔️❗:                                 make_single_cut( at, da, i, 2 );
+    // INCHI✔️❗:                                 num_cuts += 1;
+    // INCHI✔️❗:                             }
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         continue;
+    // INCHI✔️❗:                     }
+    // END VERBATIM SOURCE FRAGMENT: oad_make_selected_cuts:6960..7063
+
     let mut num_cuts = 0_i32;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for atom_index in
         0..usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
     {
@@ -2366,8 +2811,8 @@ fn oad_make_selected_cuts(
                     .iter()
                     .all(|type_| *type_ & DERIV_RING_OUTSIDE_PRECURSOR as i16 != 0)
                 {
-                    panic!("INCHI-AUDIT-0248: suspected source divergence; see dev/audits/inchi/findings.md");
-                    return Ok(Err(-88));
+                    // INCHI✔️✔️: native case4 falls through without a cut/error.
+                    continue;
                 }
                 let first = derivatives[atom_index].num[0].max(derivatives[atom_index].num[1]);
                 let second = derivatives[atom_index].num[2].max(derivatives[atom_index].num[3]);
@@ -2391,12 +2836,12 @@ fn oad_make_selected_cuts(
 pub(crate) fn OAD_Edit_Underivatize(
     heap: &mut SourceHeap,
     clock: SourceMutPointer<INCHI_CLOCK>,
-    canon_globals: &mut CANON_GLOBALS,
+    canon_globals: &mut impl CanonicalTarget,
     original: &mut ORIG_ATOM_DATA,
     output_sdf: i32,
     output_report: i32,
     sdf_value: SourceMutPointer<i8>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:5934 OAD_Edit_Underivatize
     // INCHI✔️❌: int OAD_Edit_Underivatize( struct tagINCHI_CLOCK *ic,
@@ -3612,62 +4057,46 @@ pub(crate) fn OAD_Edit_Underivatize(
     let processing = (|| -> Result<(), SourceHeapError> {
         UnMarkDisconnectedComponents(heap, original)?;
         num_components = MarkDisconnectedComponents(heap, original, 0)?;
-        panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-        current = inchi_calloc(
-            heap,
-            u64::try_from(num_components)
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-            std::mem::size_of::<INP_ATOM_DATA>() as u64,
-        )?;
+        // INCHI✔️❗: Match signed count conversion and native NULL failure.
+        current = match inchi_calloc(heap, num_components as u64, 96) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                SourceMutPointer::null()
+            }
+            Err(error) => return Err(error),
+        };
+        // Source goto exit_function skips the merge; a negative ret from the
+        // normally reached remove_cut_derivs tail does not skip it.
+        let mut reached_merge_tail = true;
 
         'components: for component_index in 0..num_components {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component_offset = current.offset(i64::from(component_index))?;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut component = INP_ATOM_DATA::default();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let component_length = i32::from(
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            let component_length = i32::from({
                 *heap
                     .slice(original.nCurAtLen.as_const())?
                     .get(component_index as usize)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            });
             CreateInpAtomData(heap, &mut component, component_length, 0)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(component_offset)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component.clone();
 
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let source_atoms = heap
-                .slice(original.at.as_const())?
-                .get(
-                    ..usize::try_from(original.num_inp_atoms)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut component_atoms = heap.slice(component.at.as_const())?.to_vec();
-            component.num_at = ExtractConnectedComponent(
-                heap,
-                &source_atoms,
-                original.num_inp_atoms,
-                component_index + 1,
-                &mut component_atoms,
+            // INCHI✔️❗: Native number-table allocation precedes admission
+            // of destination atoms; no whole-source/output staging arrays.
+            component.num_at = crate::source::base::strutil::extract_connected_component_stored(
+                heap, original.at.as_const(), original.num_inp_atoms,
+                component_index + 1, component.at,
             )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(component.at)?
-                .clone_from_slice(&component_atoms);
             if component.num_at <= 0 || component_length != component.num_at {
                 ret = -(component_index + 1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
 
@@ -3676,7 +4105,6 @@ pub(crate) fn OAD_Edit_Underivatize(
             component.num_at = num_atoms;
             let mut num_atoms = component.num_at;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atoms = heap.slice_mut(component.at)?;
                 add_DT_to_num_H(num_atoms, atoms)?;
                 UnMarkOtherIndicators(atoms, num_atoms)?;
@@ -3690,16 +4118,24 @@ pub(crate) fn OAD_Edit_Underivatize(
                     inchi_free(heap, original_bonds)?;
                     original_bonds = SourceMutPointer::null();
                 }
-                panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atoms = heap
-                    .slice(component.at.as_const())?
-                    .get(
-                        ..usize::try_from(num_atoms)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                original_bonds = match heap.allocate(atoms) {
+                // INCHI✔️❗: One fallible buffer and the source-required prefix copy.
+                // Allocation failure retains the native optional NULL fallback.
+                let original_bonds_allocation = (|| {
+                    let atoms = heap
+                        .slice(component.at.as_const())?
+                        .get(
+                            ..usize::try_from(num_atoms)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let mut snapshot = Vec::new();
+                    snapshot
+                        .try_reserve_exact(atoms.len())
+                        .map_err(|_| SourceHeapError::AllocationFailed)?;
+                    snapshot.extend_from_slice(atoms);
+                    heap.allocate(snapshot)
+                })();
+                original_bonds = match original_bonds_allocation {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
                     Err(error) => return Err(error),
@@ -3715,11 +4151,11 @@ pub(crate) fn OAD_Edit_Underivatize(
                 clock_result,
             )?;
             if ret < 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
             ret = 0;
@@ -3727,86 +4163,88 @@ pub(crate) fn OAD_Edit_Underivatize(
             if !derivatives.is_null() {
                 inchi_free(heap, derivatives)?;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0252: suspected source divergence; see dev/audits/inchi/findings.md");
-            derivatives = inchi_calloc(
-                heap,
-                u64::try_from(num_atoms)
-                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-                std::mem::size_of::<DERIV_AT>() as u64,
-            )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let atom_count =
-                usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut atoms = heap
-                .slice(component.at.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut derivative_values = heap
-                .slice(derivatives.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-
-            let mut found = 0_i32;
-            for atom_index in 0..atom_count {
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                let valence = usize::try_from(atoms[atom_index].valence)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if atoms[atom_index].bCutVertex != 0
-                    && derivative_values[atom_index].typ[valence.min(4) - 1] == 0
-                {
-                    for ordinal in 0..valence {
-                        let count = count_one_bond_atoms(
-                            &mut atoms,
-                            &mut derivative_values,
-                            atom_index as i32,
-                            ordinal as i32,
-                            CFLAG_MARK_BRANCH as i8,
-                            &mut found,
-                        )?;
-                        UnMarkOtherIndicators(&mut atoms, num_atoms)?;
-                        if count < 0 {
-                            ret = count;
-                            break;
-                        }
-                    }
-                    if ret < 0 {
-                        break;
+            // INCHI✔️❗: Native signed calloc size and NULL fallback. The fresh
+            // derivative array is disjoint from atoms and retained scratch.
+            derivatives = match inchi_calloc(heap, num_atoms as u64, 18) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                    SourceMutPointer::null()
+                }
+                Err(error) => return Err(error),
+            };
+            if derivatives.is_null() {
+                // Native bCutVertex short-circuits da access; preparation is
+                // guarded by if(da), so no cuts continue to the next component.
+                for atom_index in 0..num_atoms {
+                    if heap.element_signed(component.at.as_const(), atom_index)?.bCutVertex != 0 {
+                        return Err(SourceHeapError::NullPointer);
                     }
                 }
+                *heap.slice_mut(component_offset)?.first_mut()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                continue;
             }
+
+            // INCHI✔️❗: Each slice-only chemistry phase sees live native arrays;
+            // no atom/derivative shadows or error-path payload writebacks.
+            ret = heap.with_two_slices_mut_and_optional_third(
+                component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                |atoms, derivative_values, _| {
+                    let mut found = 0_i32;
+                    for atom_index in 0..num_atoms {
+                        let index = atom_index as usize;
+                        let atom = atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if atom.bCutVertex == 0 {
+                            continue;
+                        }
+                        let valence = i32::from(atom.valence);
+                        let slot = usize::try_from(valence.min(4) - 1)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        if derivative_values.get(index)
+                            .and_then(|value| value.typ.get(slot))
+                            .copied().ok_or(SourceHeapError::PointerOutOfBounds)? != 0 {
+                            continue;
+                        }
+                        let mut ordinal = 0;
+                        while ordinal < i32::from(atoms[index].valence) {
+                            let count = count_one_bond_atoms(
+                                atoms, derivative_values, atom_index, ordinal,
+                                CFLAG_MARK_BRANCH as i8, &mut found,
+                            )?;
+                            UnMarkOtherIndicators(atoms, num_atoms)?;
+                            if count < 0 {
+                                return Ok(count);
+                            }
+                            ordinal += 1;
+                        }
+                    }
+                    Ok(0)
+                },
+            )?;
             if ret < 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
 
             let (mut num_cuts, mut num_ring_cuts, mut num_cut_pieces) =
-                match oad_prepare_derivative_cuts(&atoms, &mut derivative_values, num_atoms)? {
+                match heap.with_two_slices_mut_and_optional_third(
+                    component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                    |atoms, values, _| oad_prepare_derivative_cuts(atoms, values, num_atoms),
+                )? {
                     Ok(values) => values,
                     Err(value) => {
                         ret = value;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(derivatives)?[..atom_count]
-                            .clone_from_slice(&derivative_values);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                         *heap
                             .slice_mut(component_offset)?
                             .first_mut()
                             .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                        reached_merge_tail = false;
                         break 'components;
                     }
                 };
@@ -3818,52 +4256,36 @@ pub(crate) fn OAD_Edit_Underivatize(
                 num_cuts_to_check,
             )? {
                 ret = -1;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
             if num_cuts_to_check >= 2 {
-                panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut pair_values = heap.slice(atom_pairs.as_const())?.to_vec();
-                ret = oad_validate_derivative_agents(
-                    &mut atoms,
-                    &mut derivative_values,
-                    num_atoms,
-                    &mut pair_values,
-                    &mut num_cuts,
-                    &mut num_ring_cuts,
-                    &mut num_cut_pieces,
-                    &mut num_cuts_to_check,
-                    &mut current_num_atoms,
+                ret = heap.with_two_slices_mut_and_optional_third(
+                    component.at, derivatives, Some(atom_pairs),
+                    |atoms, values, pairs| oad_validate_derivative_agents(
+                        atoms, values, num_atoms,
+                        pairs.ok_or(SourceHeapError::NullPointer)?,
+                        &mut num_cuts, &mut num_ring_cuts, &mut num_cut_pieces,
+                        &mut num_cuts_to_check, &mut current_num_atoms,
+                    ),
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(atom_pairs)?.clone_from_slice(&pair_values);
                 if ret < 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                     *heap
                         .slice_mut(component_offset)?
                         .first_mut()
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                    reached_merge_tail = false;
                     break 'components;
                 }
             }
             if num_cuts == 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
@@ -3871,27 +4293,22 @@ pub(crate) fn OAD_Edit_Underivatize(
                 continue;
             }
 
-            num_cuts = eliminate_deriv_not_in_list(
-                &atoms,
-                &mut derivative_values,
-                num_atoms,
-                Some(&mut underiv_list),
-                2048,
-                Some(&mut underiv_list2),
-                2048,
-                Some(&mut bit_underiv_list),
+            num_cuts = heap.with_two_slices_mut_and_optional_third(
+                component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                |atoms, values, _| eliminate_deriv_not_in_list(
+                    atoms, values, num_atoms,
+                    Some(&mut underiv_list), 2048, Some(&mut underiv_list2), 2048,
+                    Some(&mut bit_underiv_list),
+                ),
             )?;
             if num_cuts < 0 {
                 ret = num_cuts;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
 
@@ -3905,18 +4322,14 @@ pub(crate) fn OAD_Edit_Underivatize(
                 )? {
                     ret = -1;
                 } else {
-                    panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let mut pair_values = heap.slice(atom_pairs.as_const())?.to_vec();
-                    ret = oad_check_final_precursor(
-                        &mut atoms,
-                        &derivative_values,
-                        num_atoms,
-                        &mut pair_values,
-                        num_cuts_to_check,
-                        &mut current_num_atoms,
+                    ret = heap.with_two_slices_mut_and_optional_third(
+                        component.at, derivatives, Some(atom_pairs),
+                        |atoms, values, pairs| oad_check_final_precursor(
+                            atoms, values, num_atoms,
+                            pairs.ok_or(SourceHeapError::NullPointer)?,
+                            num_cuts_to_check, &mut current_num_atoms,
+                        ),
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(atom_pairs)?.clone_from_slice(&pair_values);
                 }
             }
             if !atom_pairs.is_null() {
@@ -3924,100 +4337,79 @@ pub(crate) fn OAD_Edit_Underivatize(
                 atom_pairs = SourceMutPointer::null();
             }
             if ret < 0 || (num_cuts_to_check >= 2 && current_num_atoms < MIN_AT_LEFT_DERIV as i32) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                 *heap
                     .slice_mut(component_offset)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                reached_merge_tail = false;
                 break 'components;
             }
 
-            num_cuts = match oad_make_selected_cuts(&mut atoms, &mut derivative_values, num_atoms)?
-            {
+            num_cuts = match heap.with_two_slices_mut_and_optional_third(
+                component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                |atoms, values, _| oad_make_selected_cuts(atoms, values, num_atoms),
+            )? {
                 Ok(value) => value,
                 Err(value) => {
                     ret = value;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
                     *heap
                         .slice_mut(component_offset)?
                         .first_mut()
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
+                    reached_merge_tail = false;
                     break 'components;
                 }
             };
             total_num_cuts = total_num_cuts.wrapping_add(num_cuts);
 
             if output_sdf != 0 && !original_bonds.is_null() {
-                panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                let original_atoms = heap.slice(original_bonds.as_const())?.to_vec();
-                replace_arom_bonds(&mut atoms, num_atoms, &original_atoms, num_atoms)?;
+                // INCHI✔️❗: The source-required saved bond array is already
+                // retained; lend it without a second snapshot.
+                heap.with_two_slices_mut_and_optional_third(
+                    component.at, original_bonds, None::<SourceMutPointer<R2C_ATPAIR>>,
+                    |atoms, originals, _| replace_arom_bonds(atoms, num_atoms, originals, num_atoms),
+                )?;
                 inchi_free(heap, original_bonds)?;
                 original_bonds = SourceMutPointer::null();
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(component.at)?[..atom_count].clone_from_slice(&atoms);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(derivatives)?[..atom_count].clone_from_slice(&derivative_values);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
             *heap
                 .slice_mut(component_offset)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component.clone();
 
             num_atoms = add_explicit_H(heap, &mut component)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(component_offset)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component.clone();
             if num_cuts != 0 {
-                panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut components = heap.slice(current.as_const())?.to_vec();
-                remove_cut_derivs(
-                    heap,
-                    num_atoms,
-                    component.at,
-                    &mut components,
-                    component_index,
-                    &mut ret,
-                )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(current)?.clone_from_slice(&components);
-                panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
+                // INCHI✔️❗: The component descriptor allocation is disjoint
+                // from all child atom/temporary allocations accessed by callee.
+                heap.with_slice_mut_and_heap_mut(current, |components, heap| {
+                    remove_cut_derivs(heap, num_atoms, component.at, components,
+                        component_index, &mut ret)
+                })?;
                 component = heap
                     .slice(component_offset.as_const())?
                     .first()
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(component_offset)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
         }
 
-        panic!("INCHI-AUDIT-0251: suspected source divergence; see dev/audits/inchi/findings.md");
-        if total_num_cuts != 0 && ret == 0 {
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut components = heap.slice(current.as_const())?.to_vec();
-            OAD_Edit_MergeComponentsAndRecreateOAD(
-                heap,
-                original,
-                &mut components,
-                num_components,
-                &mut ret,
-            )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(current)?.clone_from_slice(&components);
+        if total_num_cuts != 0 && reached_merge_tail {
+            // INCHI✔️❗: Source normal tail merges even when ret is negative.
+            heap.with_slice_mut_and_heap_mut(current, |components, heap| {
+                OAD_Edit_MergeComponentsAndRecreateOAD(heap, original,
+                    components, num_components, &mut ret)
+            })?;
         }
         Ok(())
     })();
@@ -4050,7 +4442,6 @@ pub(crate) fn OAD_Edit_Underivatize(
     }
 
     if ret == 0 && total_num_cuts != 0 && !sdf_value.is_null() && output_report != 0 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let target = heap.slice_mut(sdf_value)?;
         let _ = sort_merge_underiv(
             target,
@@ -4068,12 +4459,16 @@ pub(crate) fn OAD_Edit_Underivatize(
             &b"\tDeriv2=\0".map(|byte| byte as i8),
             &[0],
         )?;
-        panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-        let text = format!("0x{:08X}", bit_underiv_list as u32);
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+        // INCHI✔️❌: Exact unsigned sprintf 0x%.8X without String allocation.
+        // Safe 16-byte initialization adds fixed writes; cost remains deferred.
         let mut bit_list = [0_i8; 16];
-        for (target, source) in bit_list.iter_mut().zip(text.bytes()) {
-            *target = source as i8;
+        bit_list[0] = b'0' as i8;
+        bit_list[1] = b'x' as i8;
+        let bits = bit_underiv_list as u32;
+        for index in 0..8 {
+            bit_list[index + 2] = b"0123456789ABCDEF"[
+                ((bits >> ((7 - index) * 4)) & 15) as usize
+            ] as i8;
         }
         let _ = sort_merge_underiv(
             target,
@@ -4235,7 +4630,6 @@ pub(crate) fn detect_r2c_Zatom(
     // INCHI✔️❌: #define EL_NUMBER_O  ((U_CHAR)8)
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: detect_r2c_Zatom
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center_index = usize::try_from(iZ).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let center = atoms
         .get(center_index)
@@ -4261,7 +4655,6 @@ pub(crate) fn detect_r2c_Zatom(
     let mut index = 0_i32;
     let mut num_found = 0_i32;
     while index < i32::from(center.valence) {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let ordinal = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let neighbor_index = usize::from(
             *center
@@ -4269,7 +4662,6 @@ pub(crate) fn detect_r2c_Zatom(
                 .get(ordinal)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4300,7 +4692,6 @@ pub(crate) fn detect_r2c_Zatom(
             }
             let opposite_ordinal = usize::from(i32::from(neighbor.neighbor[0]) == iZ);
             let opposite_index = usize::from(neighbor.neighbor[opposite_ordinal]);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let opposite = atoms
                 .get(opposite_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4321,12 +4712,10 @@ pub(crate) fn detect_r2c_Zatom(
         {
             let mut neighbor_ordinal = 0_i32;
             while neighbor_ordinal < i32::from(neighbor.valence) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let hydroxyl_index = usize::from(
                     neighbor.neighbor[usize::try_from(neighbor_ordinal)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                 );
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let hydroxyl = atoms
                     .get(hydroxyl_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4366,7 +4755,6 @@ pub(crate) fn detect_r2c_Zatom(
 
     if num_found == 3 {
         candidate.type_ = 1;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *derivatives
             .get_mut(center_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = candidate;
@@ -4452,9 +4840,7 @@ pub(crate) fn cut_ring_to_chain(
     // INCHI✔️❌: #define BOND_TYPE_SINGLE    1
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: cut_ring_to_chain
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center_index = usize::try_from(iZ).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let derivative = derivatives
         .get(center_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4464,7 +4850,6 @@ pub(crate) fn cut_ring_to_chain(
     let order_w = i32::from(derivative.ordW);
     let order_y = i32::from(derivative.ordY);
     let order_c = i32::from(derivative.ordC);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center_valence = i32::from(
         atoms
             .get(center_index)
@@ -4480,15 +4865,12 @@ pub(crate) fn cut_ring_to_chain(
     {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order_w_index =
         usize::try_from(order_w).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order_y_index =
         usize::try_from(order_y).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let neighbor_w = usize::from(atoms[center_index].neighbor[order_w_index]);
     let neighbor_y = usize::from(atoms[center_index].neighbor[order_y_index]);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if atoms
         .get(neighbor_y)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -4539,9 +4921,9 @@ pub(crate) fn cut_ring_to_chain(
 pub(crate) fn Ring2Chain(
     heap: &mut SourceHeap,
     clock: SourceMutPointer<INCHI_CLOCK>,
-    canon_globals: &mut CANON_GLOBALS,
+    canon_globals: &mut impl CanonicalTarget,
     original: &mut ORIG_ATOM_DATA,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:7362 Ring2Chain
     // INCHI✔️❌: int Ring2Chain( struct tagINCHI_CLOCK *ic,
@@ -4755,61 +5137,42 @@ pub(crate) fn Ring2Chain(
         original.num_inp_atoms = num_atoms;
         UnMarkDisconnectedComponents(heap, original)?;
         num_components = MarkDisconnectedComponents(heap, original, 0)?;
-        panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-        current = inchi_calloc(
-            heap,
-            u64::try_from(num_components)
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-            std::mem::size_of::<INP_ATOM_DATA>() as u64,
-        )?;
+        // INCHI✔️❗: Native size_t conversion and calloc NULL; negative
+        // component loops skip, while reached pointer errors remain structural.
+        current = match inchi_calloc(heap, num_components as u64, 96) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                SourceMutPointer::null()
+            }
+            Err(error) => return Err(error),
+        };
 
-        'components: for component_index in 0..num_components {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        let mut component_index = 0_i32;
+        'components: while component_index < num_components {
             let component_pointer = current.offset(i64::from(component_index))?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let component_length = i32::from(
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            let component_length = i32::from({
                 *heap
                     .slice(original.nCurAtLen.as_const())?
                     .get(component_index as usize)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut component = INP_ATOM_DATA::default();
-            if CreateInpAtomData(heap, &mut component, component_length, 0)? == 0
-                || component.at.is_null()
-            {
-                panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-                return Err(SourceHeapError::AllocationFailed);
-            }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            });
+            // Native revisits of component3 free that row before reallocating.
+            let mut component = heap.element_signed(component_pointer.as_const(), 0)?.clone();
+            let _ = CreateInpAtomData(heap, &mut component, component_length, 0)?;
             *heap
                 .slice_mut(component_pointer)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component.clone();
 
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let source_atoms = heap
-                .slice(original.at.as_const())?
-                .get(
-                    ..usize::try_from(original.num_inp_atoms)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut component_atoms = heap.slice(component.at.as_const())?.to_vec();
-            component.num_at = ExtractConnectedComponent(
+            // INCHI✔️❗: The canonical live extractor performs its native
+            // number-table allocation before admitting any destination atom.
+            component.num_at = crate::source::base::strutil::extract_connected_component_stored(
                 heap,
-                &source_atoms,
+                original.at.as_const(),
                 original.num_inp_atoms,
                 component_index + 1,
-                &mut component_atoms,
+                component.at,
             )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(component.at)?
-                .clone_from_slice(&component_atoms);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(component_pointer)?
                 .first_mut()
@@ -4819,11 +5182,9 @@ pub(crate) fn Ring2Chain(
                 break 'components;
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component_atom_count = usize::try_from(component.num_at)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atoms = heap.slice_mut(component.at)?;
                 add_DT_to_num_H(component.num_at, atoms)?;
                 UnMarkOtherIndicators(atoms, component.num_at)?;
@@ -4848,74 +5209,70 @@ pub(crate) fn Ring2Chain(
                 inchi_free(heap, derivatives)?;
                 derivatives = SourceMutPointer::null();
             }
-            panic!("INCHI-AUDIT-0252: suspected source divergence; see dev/audits/inchi/findings.md");
-            derivatives = inchi_calloc(
-                heap,
-                u64::try_from(component.num_at)
-                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-                std::mem::size_of::<R2C_AT>() as u64,
-            )?;
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut atoms = heap
-                .slice(component.at.as_const())?
-                .get(..component_atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut derivative_values = heap
-                .slice(derivatives.as_const())?
-                .get(..component_atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            let mut num = 0_i32;
-            let mut center = -1_i32;
-            for atom_index in 0..component_atom_count {
-                if atoms[atom_index].bCutVertex != 0 && derivative_values[atom_index].type_ == 0 {
-                    let found =
-                        detect_r2c_Zatom(&atoms, &mut derivative_values, atom_index as i32)?;
-                    num = num.wrapping_add(found);
-                    if found == 1 {
-                        center = atom_index as i32;
-                    }
-                    UnMarkOtherIndicators(&mut atoms, component.num_at)?;
+            // INCHI✔️❗: Source calloc NULL is harmless while bCutVertex
+            // short-circuits every derivative access in the detection loop.
+            derivatives = match inchi_calloc(heap, component.num_at as u64, 5) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                    SourceMutPointer::null()
                 }
+                Err(error) => return Err(error),
+            };
+            if derivatives.is_null() {
+                for atom_index in 0..component_atom_count {
+                    if heap.element_signed(component.at.as_const(), atom_index as i32)?.bCutVertex != 0 {
+                        return Err(SourceHeapError::NullPointer);
+                    }
+                }
+                component_index += 1;
+                continue 'components;
             }
+            // INCHI✔️❗: Both arrays are fresh disjoint live allocations.
+            let (num, center) = heap.with_two_slices_mut_and_optional_third(
+                component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                |atoms, derivative_values, _| {
+                    let mut num = 0_i32;
+                    let mut center = -1_i32;
+                    for atom_index in 0..component_atom_count {
+                        if atoms[atom_index].bCutVertex != 0 && derivative_values[atom_index].type_ == 0 {
+                            let found = detect_r2c_Zatom(atoms, derivative_values, atom_index as i32)?;
+                            num = num.wrapping_add(found);
+                            if found == 1 {
+                                center = atom_index as i32;
+                            }
+                            UnMarkOtherIndicators(atoms, component.num_at)?;
+                        }
+                    }
+                    Ok((num, center))
+                },
+            )?;
 
             if num == 1 {
-                ret = cut_ring_to_chain(&mut atoms, &derivative_values, center)?;
+                ret = heap.with_two_slices_mut_and_optional_third(
+                    component.at, derivatives, None::<SourceMutPointer<R2C_ATPAIR>>,
+                    |atoms, derivative_values, _| cut_ring_to_chain(atoms, derivative_values, center),
+                )?;
                 if ret < 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(component.at)?[..component_atom_count].clone_from_slice(&atoms);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(derivatives)?[..component_atom_count]
-                        .clone_from_slice(&derivative_values);
                     break 'components;
                 }
                 num_cuts = num_cuts.wrapping_add(i32::from(ret == 1));
             } else if num != 0 {
-                panic!("INCHI-AUDIT-0256: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pair_count = usize::try_from(num)
                     .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-                panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom_pairs = match heap.allocate(vec![R2C_ATPAIR::default(); pair_count]) {
+                // INCHI✔️❌: Native malloc failure ret=-1; safe zero-fill
+                // remains a documented source-absent cost, not equivalence.
+                let atom_pairs = match inchi_calloc::<R2C_ATPAIR>(heap, pair_count as u64, 6) {
                     Ok(pointer) => pointer,
-                    Err(SourceHeapError::AllocationFailed) => {
+                    Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
                         ret = -1;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(component.at)?[..component_atom_count]
-                            .clone_from_slice(&atoms);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(derivatives)?[..component_atom_count]
-                            .clone_from_slice(&derivative_values);
                         break 'components;
                     }
                     Err(error) => return Err(error),
                 };
-                let pair_processing = (|| -> Result<(), SourceHeapError> {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let pairs = heap.slice_mut(atom_pairs)?;
+                let pair_processing = heap.with_two_slices_mut_and_optional_third(
+                    component.at, derivatives, Some(atom_pairs),
+                    |atoms, derivative_values, pairs| {
+                    let pairs = pairs.ok_or(SourceHeapError::NullPointer)?;
                     let mut pair_index = 0_usize;
                     for atom_index in 0..component_atom_count {
                         if derivative_values[atom_index].type_ == 1 {
@@ -4923,7 +5280,6 @@ pub(crate) fn Ring2Chain(
                                 ret = -2;
                                 return Ok(());
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let ordinal =
                                 usize::try_from(i32::from(derivative_values[atom_index].ordW))
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4940,13 +5296,13 @@ pub(crate) fn Ring2Chain(
                         return Ok(());
                     }
                     pairs.sort_unstable_by(|left, right| cmp_r2c_atpair(left, right).cmp(&0));
-                    panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let pair_values = pairs.to_vec();
+                    // INCHI✔️❗: Sort and consume the original pair array;
+                    // no additional allocation or pair writeback.
+                    let pair_values = &*pairs;
                     let mut component_number = 0_u16;
-                    for pair in &pair_values {
+                    for pair in pair_values {
                         for side in 0..2 {
                             let endpoint = usize::from(pair.at[side]);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if atoms
                                 .get(endpoint)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -4955,9 +5311,9 @@ pub(crate) fn Ring2Chain(
                             {
                                 component_number = component_number.wrapping_add(1);
                                 mark_atoms_ap(
-                                    &mut atoms,
+                                    atoms,
                                     pair.at[side],
-                                    &pair_values,
+                                    pair_values,
                                     num,
                                     0,
                                     component_number,
@@ -4965,14 +5321,16 @@ pub(crate) fn Ring2Chain(
                             }
                         }
                     }
-                    for pair in &pair_values {
+                    // Native inner j finishes at2, overwriting outer j.
+                    // Preserve skips/revisits exactly; no progress heuristic.
+                    component_index = 2;
+                    for pair in pair_values {
                         let first = usize::from(pair.at[0]);
                         let second = usize::from(pair.at[1]);
                         if atoms[first].at_type != atoms[second].at_type {
                             continue;
                         }
                         let selected = if derivative_values[first].type_ == 1 {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let ordinal = usize::try_from(i32::from(derivative_values[first].ordW))
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             (atoms[first].neighbor[ordinal] == pair.at[1]).then_some(first)
@@ -4983,7 +5341,6 @@ pub(crate) fn Ring2Chain(
                             if derivative_values[second].type_ != 1 {
                                 return None;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let ordinal =
                                 usize::try_from(i32::from(derivative_values[second].ordW)).ok()?;
                             (atoms[second].neighbor[ordinal] == pair.at[0]).then_some(second)
@@ -4992,7 +5349,7 @@ pub(crate) fn Ring2Chain(
                             ret = -3;
                             return Ok(());
                         };
-                        ret = cut_ring_to_chain(&mut atoms, &derivative_values, selected as i32)?;
+                        ret = cut_ring_to_chain(atoms, derivative_values, selected as i32)?;
                         if ret < 0 {
                             return Ok(());
                         }
@@ -5000,46 +5357,24 @@ pub(crate) fn Ring2Chain(
                     }
                     ret = 0;
                     Ok(())
-                })();
+                    },
+                );
                 inchi_free(heap, atom_pairs)?;
                 pair_processing?;
-                UnMarkOtherIndicators(&mut atoms, component.num_at)?;
+                UnMarkOtherIndicators(heap.slice_mut(component.at)?, component.num_at)?;
                 if ret < 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(component.at)?[..component_atom_count].clone_from_slice(&atoms);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(derivatives)?[..component_atom_count]
-                        .clone_from_slice(&derivative_values);
                     break 'components;
                 }
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(component.at)?[..component_atom_count].clone_from_slice(&atoms);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(derivatives)?[..component_atom_count]
-                .clone_from_slice(&derivative_values);
+            component_index += 1;
         }
 
-        if num_cuts != 0 {
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0257: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut current_values = heap
-                .slice(current.as_const())?
-                .get(
-                    ..usize::try_from(num_components)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            OAD_Edit_MergeComponentsAndRecreateOAD(
-                heap,
-                original,
-                &mut current_values,
-                num_components,
-                &mut ret,
-            )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(current)?[..current_values.len()].clone_from_slice(&current_values);
+        // INCHI✔️❗: Every source negative-status goto skips merge.
+        if num_cuts != 0 && ret >= 0 {
+            heap.with_slice_mut_and_heap_mut(current, |components, heap| {
+                OAD_Edit_MergeComponentsAndRecreateOAD(heap, original, components,
+                    num_components, &mut ret)
+            })?;
         }
         Ok(())
     })();
@@ -5051,16 +5386,13 @@ pub(crate) fn Ring2Chain(
         }
         if !current.is_null() {
             for component_index in 0..num_components {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pointer = current.offset(i64::from(component_index))?;
-                panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut component = heap
                     .slice(pointer.as_const())?
                     .first()
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 FreeInpAtomData(heap, &mut component)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 *heap
                     .slice_mut(pointer)?
                     .first_mut()
@@ -5108,18 +5440,13 @@ pub(crate) fn FreeInpAtomData(
     // END INCHI C HELPER FRAME: FreeInpAtom
 
     if !input.at.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, input.at)?;
-        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         input.at = SourceMutPointer::null();
     }
     if !input.at_fixed_bonds.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, input.at_fixed_bonds)?;
-        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         input.at_fixed_bonds = SourceMutPointer::null();
     }
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *input = INP_ATOM_DATA::default();
     Ok(())
 }
@@ -5177,16 +5504,13 @@ pub(crate) fn free_underiv_temp_data(
     }
     let mut component_index = 0_i32;
     while component_index < num_components {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let component_pointer = current.offset(i64::from(component_index))?;
-        panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut component = heap
             .slice(component_pointer.as_const())?
             .first()
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         FreeInpAtomData(heap, &mut component)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(component_pointer)?
             .first_mut()
@@ -5303,7 +5627,6 @@ pub(crate) fn remove_cut_derivs(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: remove_cut_derivs
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let component_index =
         usize::try_from(component_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if component_index >= current.len() {
@@ -5317,7 +5640,6 @@ pub(crate) fn remove_cut_derivs(
     };
     UnMarkRingSystemsInp(heap, atoms, num_atoms)?;
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source = heap.slice_mut(atoms)?;
         UnMarkOtherIndicators(source, num_atoms)?;
         UnMarkOneComponent(source, num_atoms)?;
@@ -5349,9 +5671,7 @@ pub(crate) fn remove_cut_derivs(
     if !component_data.is_null() && num_components > 0 {
         let mut component_index1 = 0_i32;
         while component_index1 < num_components {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component_data_pointer = component_data.offset(i64::from(component_index1))?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component_len = heap
                 .slice(original.nCurAtLen.as_const())?
                 .get(
@@ -5360,52 +5680,30 @@ pub(crate) fn remove_cut_derivs(
                 )
                 .copied()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut component = heap
                 .slice(component_data_pointer.as_const())?
                 .first()
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let _ = CreateInpAtomData(heap, &mut component, i32::from(component_len), 0)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(component_data_pointer)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = component;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let output_pointer = heap
                 .slice(component_data_pointer.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .at;
-            panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-            if output_pointer.is_null() {
-                return Err(SourceHeapError::AllocationFailed);
-            }
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            let source_atoms = heap
-                .slice(original.at.as_const())?
-                .get(
-                    ..usize::try_from(num_atoms)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let output_len = heap.slice(output_pointer.as_const())?.len();
-            panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut output_atoms = vec![inp_ATOM::default(); output_len];
-            let extracted = ExtractConnectedComponent(
+            // INCHI✔️❗: Preserve the extractor's allocation-failure return
+            // before destination admission, including a NULL child buffer.
+            let extracted = crate::source::base::strutil::extract_connected_component_stored(
                 heap,
-                &source_atoms,
+                original.at.as_const(),
                 num_atoms,
                 component_index1 + 1,
-                &mut output_atoms,
+                output_pointer,
             )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(output_pointer)?[..output_len].clone_from_slice(&output_atoms);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(component_data_pointer)?
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -5416,7 +5714,6 @@ pub(crate) fn remove_cut_derivs(
             }
             let mut atom_index = 0_i32;
             while atom_index < extracted {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(output_pointer.as_const())?
                     .get(
@@ -5425,14 +5722,12 @@ pub(crate) fn remove_cut_derivs(
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if atom.num_iso_H[2] != 0 {
-                    panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut discarded = heap
                         .slice_mut(component_data_pointer)?
                         .first_mut()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .clone();
                     FreeInpAtomData(heap, &mut discarded)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     *heap
                         .slice_mut(component_data_pointer)?
                         .first_mut()
@@ -5446,7 +5741,6 @@ pub(crate) fn remove_cut_derivs(
 
         num_atoms = 0;
         for component_index1 in 0..num_components {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component = heap
                 .slice(
                     component_data
@@ -5471,40 +5765,27 @@ pub(crate) fn remove_cut_derivs(
         };
         let mut component_index1 = 0_i32;
         while component_index1 < num_components {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let component_data_pointer = component_data.offset(i64::from(component_index1))?;
-            panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
             let component = heap
                 .slice(component_data_pointer.as_const())?
                 .first()
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if component.num_at != 0 {
-                panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-                if merged_atoms.is_null() {
-                    return Err(SourceHeapError::AllocationFailed);
-                }
-                panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-                let component_atoms = heap
-                    .slice(component.at.as_const())?
-                    .get(
-                        ..usize::try_from(component.num_at)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                merged_count = add_inp_ATOM(
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(merged_atoms)?,
-                    num_atoms,
-                    merged_count,
-                    &component_atoms,
-                    component.num_at,
-                )?;
-                panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
+                // INCHI✔️❗: Scalar failures precede pointer admission.
+                // Fresh result storage is disjoint from every live component.
+                merged_count = if merged_count < 0 || component.num_at < 0
+                    || merged_count.wrapping_add(component.num_at) > num_atoms
+                {
+                    add_inp_ATOM(&mut [], num_atoms, merged_count, &[], component.num_at)?
+                } else {
+                    heap.with_slice_mut_and_heap(merged_atoms, |destination, heap| {
+                        add_inp_ATOM(destination, num_atoms, merged_count,
+                            heap.slice(component.at.as_const())?, component.num_at)
+                    })?
+                };
                 let mut component_copy = component.clone();
                 FreeInpAtomData(heap, &mut component_copy)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 *heap
                     .slice_mut(component_data_pointer)?
                     .first_mut()
@@ -5515,7 +5796,6 @@ pub(crate) fn remove_cut_derivs(
     }
 
     UnMarkDisconnectedComponents(heap, &mut original)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let input = current
         .get_mut(component_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -5530,13 +5810,11 @@ pub(crate) fn remove_cut_derivs(
 
 #[inline(always)]
 fn ring_work_index(index: i32) -> Result<usize, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     usize::try_from(index).map_err(|_| SourceHeapError::PointerOffsetOverflow)
 }
 
 #[inline(always)]
 fn ring_work_get<T: Copy>(values: &StableSourceSlice<T>, index: i32) -> Result<T, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     values.get(ring_work_index(index)?).copied()
 }
 
@@ -5546,7 +5824,6 @@ fn ring_work_set<T>(
     index: i32,
     value: T,
 ) -> Result<(), SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *values.get_mut(ring_work_index(index)?)? = value;
     Ok(())
 }
@@ -6108,89 +6385,70 @@ pub(crate) fn MarkRingSystemsInp(
     // INCHI❌❌: #define FIND_RINS_SYSTEMS_DISTANCES 0  /* 1 => find ring system and atom distance from terminal */
     // END INCHI ACTIVE MACRO CONFIGURATION: MarkRingSystemsInp
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let count = match usize::try_from(num_atoms) {
         Ok(count) => count,
         Err(_) => return Ok(CT_OUT_OF_RAM),
     };
-    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-    let stack = match heap.allocate(vec![0_u16; count]) {
-        Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => return Ok(CT_OUT_OF_RAM),
-        Err(error) => return Err(error),
-    };
-    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-    let ring_stack = match heap.allocate(vec![0_u16; count]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            inchi_free(heap, stack)?;
-            return match error {
-                SourceHeapError::AllocationFailed => Ok(CT_OUT_OF_RAM),
-                _ => Err(error),
-            };
-        }
-    };
-    panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-    let dfs_number = match heap.allocate(vec![0_u16; count]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            inchi_free(heap, stack)?;
-            inchi_free(heap, ring_stack)?;
-            return match error {
-                SourceHeapError::AllocationFailed => Ok(CT_OUT_OF_RAM),
-                _ => Err(error),
-            };
-        }
-    };
-    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-    let low_number = match heap.allocate(vec![0_u16; count]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            inchi_free(heap, stack)?;
-            inchi_free(heap, ring_stack)?;
-            inchi_free(heap, dfs_number)?;
-            return match error {
-                SourceHeapError::AllocationFailed => Ok(CT_OUT_OF_RAM),
-                _ => Err(error),
-            };
-        }
-    };
-    panic!("INCHI-AUDIT-0243: suspected source divergence; see dev/audits/inchi/findings.md");
-    let neighbor_number = match heap.allocate(vec![0_i8; count]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            inchi_free(heap, stack)?;
-            inchi_free(heap, ring_stack)?;
-            inchi_free(heap, dfs_number)?;
-            inchi_free(heap, low_number)?;
-            return match error {
-                SourceHeapError::AllocationFailed => Ok(CT_OUT_OF_RAM),
-                _ => Err(error),
-            };
-        }
-    };
+    // INCHI✔️❌: Scratch lifecycle matches the source allocation/check/cleanup order.
+    // All required attempts precede the combined failure check; a one-shot
+    // allocation failure must not suppress subsequent attempts. Existing typed
+    // calloc storage handles real buffer failure without infallible Vec creation.
+    // Safe zero initialization beyond source memset remains a recorded O(n)
+    // write cost versus malloc; no performance equivalence is claimed.
+    let stack_allocation = inchi_calloc::<u16>(heap, count as u64, 2);
+    let ring_stack_allocation = inchi_calloc::<u16>(heap, count as u64, 2);
+    let dfs_number_allocation = inchi_calloc::<u16>(heap, count as u64, 2);
+    let low_number_allocation = inchi_calloc::<u16>(heap, count as u64, 2);
+    let neighbor_number_allocation = inchi_calloc::<i8>(heap, count as u64, 1);
+    let stack = stack_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let ring_stack = ring_stack_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let dfs_number = dfs_number_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let low_number = low_number_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let neighbor_number = neighbor_number_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
 
     let result = (|| -> Result<i32, SourceHeapError> {
+        for allocation in [
+            stack_allocation.map(|_| ()),
+            ring_stack_allocation.map(|_| ()),
+            dfs_number_allocation.map(|_| ()),
+            low_number_allocation.map(|_| ()),
+            neighbor_number_allocation.map(|_| ()),
+        ] {
+            match allocation {
+                Ok(()) => {}
+                Err(
+                    SourceHeapError::AllocationFailed
+                    | SourceHeapError::AllocationSizeOverflow
+                    | SourceHeapError::AllocationElementCountOutOfRange,
+                ) => return Ok(CT_OUT_OF_RAM),
+                Err(error) => return Err(error),
+            }
+        }
+
         // SAFETY: every work array above is a distinct allocation created by
         // this function. `atoms` predates them, so it cannot alias any work
         // array. All allocations remain live and retain their buffers until
         // the views leave scope immediately before the matching frees.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut stack_view = unsafe { heap.stable_slice_mut(stack)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut ring_stack_view = unsafe { heap.stable_slice_mut(ring_stack)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut dfs_number_view = unsafe { heap.stable_slice_mut(dfs_number)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut low_number_view = unsafe { heap.stable_slice_mut(low_number)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut neighbor_number_view = unsafe { heap.stable_slice_mut(neighbor_number)? };
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut atoms_view = unsafe { heap.stable_slice_mut(atoms)? };
-
         let mut ring_systems = 0_i32;
         let mut u = start;
         let mut dfs = 0_u16;
@@ -6209,13 +6467,21 @@ pub(crate) fn MarkRingSystemsInp(
         }
         let mut start_children = 0_i32;
 
+        // INCHI✔️❗: The native start gate/seed precedes any atom access;
+        // rejected starts return CT_OVERFLOW through unchanged cleanup even
+        // for NULL atoms. No input admission, new scan/allocation or view on
+        // that path. Existing checked-view/zeroing costs remain OPEN in
+        // INCHI-PERF-RING-ATOM-ADMISSION, not native performance equivalence.
+        // SAFETY: same existing stable view and disjoint/live-buffer proof
+        // above; only construction order moved after the source start gate.
+        let mut atoms_view = unsafe { heap.stable_slice_mut(atoms)? };
+
         loop {
             let i = i32::from(ring_work_get(&stack_view, stack_top)?);
             let j = i32::from(ring_work_get(&neighbor_number_view, i)?);
             let atom = atoms_view.get(ring_work_index(i)?)?;
             if i32::from(atom.valence) > j {
                 ring_work_set(&mut neighbor_number_view, i, (j as i8).wrapping_add(1))?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor_index =
                     usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 u = i32::from(
@@ -6297,7 +6563,6 @@ pub(crate) fn MarkRingSystemsInp(
             let atom = atoms_view.get(ring_work_index(i)?)?;
             if i32::from(atom.valence) > j {
                 ring_work_set(&mut neighbor_number_view, i, (j as i8).wrapping_add(1))?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor_index =
                     usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 u = i32::from(
@@ -6397,19 +6662,18 @@ pub(crate) fn mark_atoms_cFlags(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: mark_atoms_cFlags
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom.cFlags & flags == 0 {
-        panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(i32::from(atom.valence))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = i32::from(atom.valence);
         atoms[start].cFlags |= flags;
         num = num.wrapping_add(1);
+        // INCHI✔️❗: Native signed degree skips negative neighbor loops.
+        // Flag/count stores still precede traversal; no new allocation.
         for neighbor_order in 0..valence {
+            let neighbor_order = neighbor_order as usize;
             let neighbor = i32::from(atoms[start].neighbor[neighbor_order]);
             num = mark_atoms_cFlags(atoms, neighbor, num, flags)?;
         }
@@ -6447,19 +6711,18 @@ pub(crate) fn unmark_atoms_cFlags(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: unmark_atoms_cFlags
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom.cFlags & flags != 0 {
-        panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(i32::from(atom.valence))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = i32::from(atom.valence);
         atoms[start].cFlags &= inverse_flags;
         num = num.wrapping_add(1);
+        // INCHI✔️❗: Native signed degree skips negative neighbor loops.
+        // Flag/count stores still precede traversal; no new allocation.
         for neighbor_order in 0..valence {
+            let neighbor_order = neighbor_order as usize;
             let neighbor = i32::from(atoms[start].neighbor[neighbor_order]);
             num = unmark_atoms_cFlags(atoms, neighbor, num, flags, inverse_flags)?;
         }
@@ -6498,10 +6761,8 @@ pub(crate) fn is_C_or_S_DB_O(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32,
     // INCHI✔️❌: #define EL_NUMBER_S  ((U_CHAR)16)
     // END ACTIVE INCHI HEADER MACROS: EL_NUMBER_*
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6511,12 +6772,11 @@ pub(crate) fn is_C_or_S_DB_O(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32,
     {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let valence = usize::try_from(i32::from(atom.valence))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let valence = i32::from(atom.valence);
+    // INCHI✔️❗: Native signed degree skips negative neighbor loops.
+    // O(degree)/O(1) scratch; checked whole-call cost remains OPEN.
     for neighbor_order in 0..valence {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        let neighbor_order = neighbor_order as usize;
         let neighbor = atoms
             .get(atom.neighbor[neighbor_order] as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6560,10 +6820,8 @@ pub(crate) fn is_C_DB_O(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, Sour
     // INCHI✔️❌: #define EL_NUMBER_O  ((U_CHAR)8)
     // END ACTIVE INCHI HEADER MACROS: EL_NUMBER_C, EL_NUMBER_O
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6575,11 +6833,9 @@ pub(crate) fn is_C_DB_O(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, Sour
     {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(atom.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for neighbor_order in 0..valence {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(atom.neighbor[neighbor_order] as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6588,7 +6844,6 @@ pub(crate) fn is_C_DB_O(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, Sour
             && neighbor.valence == 1
             && neighbor.chem_bonds_valence == 2
         {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             return Ok(i32::try_from(neighbor_order).unwrap() + 1);
         }
     }
@@ -6629,10 +6884,8 @@ pub(crate) fn is_C_unsat_not_arom(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_C_unsat_not_arom
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6649,9 +6902,10 @@ pub(crate) fn is_C_unsat_not_arom(
     }
     let mut aromatic = 0_i32;
     let mut double_bonds = 0_i32;
-    panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-    for order in 0..usize::try_from(valence).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Signed source loop skips negative degrees, O(degree),
+    // O(1) scratch/no allocation; checked-access whole-call cost OPEN.
+    for order in 0..valence {
+        let order = order as usize;
         let neighbor = atoms
             .get(usize::from(atom.neighbor[order]))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6720,16 +6974,8 @@ pub(crate) fn is_Phenyl(
     // INCHI✔️❌: #define EL_NUMBER_C  ((U_CHAR)6)
     // END ACTIVE INCHI HEADER MACRO: EL_NUMBER_C
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let outside_point =
-        usize::try_from(outside_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let attachment_point =
         usize::try_from(attachment_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let outside = atoms
-        .get(outside_point)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let attachment = atoms
         .get(attachment_point)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6739,14 +6985,21 @@ pub(crate) fn is_Phenyl(
         || attachment.num_H != 0
         || attachment.charge != 0
         || attachment.radical != 0
-        || attachment.nRingSystem == outside.nRingSystem
+    {
+        return Ok(0);
+    }
+    // INCHI✔️❗: Source reaches the outside atom only after these five gates.
+    // Fixed six-member walk/O(1), no allocation; safe access cost OPEN.
+    let outside_point = usize::try_from(outside_point)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let outside = atoms.get(outside_point).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if attachment.nRingSystem == outside.nRingSystem
         || attachment.bCutVertex == 0
         || attachment.nNumAtInRingSystem != 6
     {
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(attachment.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let Some(first_order) =
@@ -6757,7 +7010,6 @@ pub(crate) fn is_Phenyl(
     let mut current = attachment_point;
     let mut next = usize::from(attachment.neighbor[first_order]);
     for _ in 0..5 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom.el_number != EL_NUMBER_C
             || atom.valence != 2
@@ -6849,16 +7101,11 @@ pub(crate) fn is_PentaFluoroPhenyl(
     // INCHI✔️❌: #define EL_NUMBER_F  ((U_CHAR)9)
     // END ACTIVE INCHI HEADER MACROS: EL_NUMBER_C, EL_NUMBER_F
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let outside_point =
-        usize::try_from(outside_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Attachment carbon gates precede outside-ring atom admission.
+    // Five-ring scan/O(1) scratch/no allocation unchanged; checked whole-call
+    // cost OPEN (performance_pending.md).
     let attachment_point =
         usize::try_from(attachment_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let outside = atoms
-        .get(outside_point)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let attachment = atoms
         .get(attachment_point)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6867,14 +7114,21 @@ pub(crate) fn is_PentaFluoroPhenyl(
         || attachment.num_H != 0
         || attachment.charge != 0
         || attachment.radical != 0
-        || attachment.nRingSystem == outside.nRingSystem
+    {
+        return Ok(0);
+    }
+    let outside_point =
+        usize::try_from(outside_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let outside = atoms
+        .get(outside_point)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if attachment.nRingSystem == outside.nRingSystem
         || attachment.bCutVertex == 0
         || attachment.nNumAtInRingSystem != 6
     {
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(attachment.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let Some(first_order) =
@@ -6885,7 +7139,6 @@ pub(crate) fn is_PentaFluoroPhenyl(
     let mut current = attachment_point;
     let mut next = usize::from(attachment.neighbor[first_order]);
     for _ in 0..5 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom.el_number != EL_NUMBER_C
             || atom.valence != 3
@@ -6895,7 +7148,6 @@ pub(crate) fn is_PentaFluoroPhenyl(
         {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence = usize::try_from(i32::from(atom.valence))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut fluorines = 0_i32;
@@ -6905,7 +7157,6 @@ pub(crate) fn is_PentaFluoroPhenyl(
             if neighbor_index == current {
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6954,10 +7205,8 @@ pub(crate) fn is_Methyl(atoms: &[inp_ATOM], attachment_point: i32) -> Result<i32
     // INCHI✔️❌: #define EL_NUMBER_C  ((U_CHAR)6)
     // END ACTIVE INCHI HEADER MACRO: EL_NUMBER_C
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let attachment_point =
         usize::try_from(attachment_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(attachment_point)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -6996,13 +7245,10 @@ pub(crate) fn is_Ethyl(
     // INCHI✔️❌: #define EL_NUMBER_C  ((U_CHAR)6)
     // END ACTIVE INCHI HEADER MACRO: EL_NUMBER_C
 
-    panic!("INCHI-AUDIT-0259: suspected source divergence; see dev/audits/inchi/findings.md");
-    let outside_point =
-        usize::try_from(outside_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: outside_point is a signed comparator, never dereferenced.
+    // O(1), no allocation/copy; checked slice/Result cost remains OPEN.
     let attachment_point =
         usize::try_from(attachment_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let attachment = atoms
         .get(attachment_point)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7015,7 +7261,7 @@ pub(crate) fn is_Ethyl(
     {
         return Ok(0);
     }
-    let methyl_order = usize::from(attachment.neighbor[0] as usize == outside_point);
+    let methyl_order = usize::from(i32::from(attachment.neighbor[0]) == outside_point);
     let methyl = i32::from(attachment.neighbor[methyl_order]);
     is_Methyl(atoms, methyl)
 }
@@ -7069,10 +7315,8 @@ pub(crate) fn is_Si_IV(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, Sourc
     // INCHI✔️❌: #define EL_NUMBER_SI ((U_CHAR)14)
     // END ACTIVE INCHI HEADER MACRO: EL_NUMBER_SI
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7272,11 +7516,7 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
         EL_NUMBER_C,
     ];
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cur_atom = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let from_ord = usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = atoms
         .get(cur_atom)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7284,8 +7524,13 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
         return Ok(0);
     }
 
-    let mut current = cur_atom;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Source admits the ordinal only after the center gate,
+    // then narrows curr to AT_NUMB before its first neighbor/ring read.
+    let from_ord = usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let mut current = usize::from(cur_atom as crate::source_types::AT_NUMB);
+    let start = atoms
+        .get(current)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut from = usize::from(
         *start
             .neighbor
@@ -7293,27 +7538,28 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
     let ring_system = start.nRingSystem;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0401: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut atom_numbers = [0_usize; OX_RING_SIZE];
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Native five AT_NUMB slots: 10 bytes, not 40 usize bytes.
+    // O(1) safe initialized scratch/no allocation; zeroing/check costs OPEN.
+    let mut atom_numbers = [0 as crate::source_types::AT_NUMB; OX_RING_SIZE];
     let mut bond_numbers = [0_i8; OX_RING_SIZE];
     let mut count = 0_usize;
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get(current)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(i32::from(atom.valence))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = i32::from(atom.valence);
         let mut selected = None;
+        // INCHI✔️❗: Native signed degree skips negative neighbor loops.
+        // O(degree)/O(1) scratch; checked whole-call cost remains OPEN.
         for order in 0..valence {
+            let order = order as usize;
             let next = usize::from(atom.neighbor[order]);
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+            // Native predecessor equality short-circuits the neighbor read.
+            if from == next {
+                continue;
+            }
             let next_atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if from != next && ring_system == next_atom.nRingSystem {
+            if ring_system == next_atom.nRingSystem {
                 selected = Some((order, next));
                 break;
             }
@@ -7332,8 +7578,7 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
         {
             return Ok(0);
         }
-        atom_numbers[count] = current;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        atom_numbers[count] = current as crate::source_types::AT_NUMB;
         bond_numbers[count] = i8::try_from(order).unwrap();
         from = current;
         current = next;
@@ -7346,18 +7591,15 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
         return Ok(0);
     }
 
-    let carbon_r = atom_numbers[4];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let carbon_r = usize::from(atom_numbers[4]);
     let atom = atoms
         .get(carbon_r)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(atom.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for order in 0..valence {
         let neighbor = usize::from(atom.neighbor[order]);
-        if neighbor != atom_numbers[0] && neighbor != atom_numbers[3] {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        if neighbor != usize::from(atom_numbers[0]) && neighbor != usize::from(atom_numbers[3]) {
             if atoms
                 .get(neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7370,19 +7612,17 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
         }
     }
 
-    let central = atom_numbers[2];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let central = usize::from(atom_numbers[2]);
     let atom = atoms
         .get(central)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(atom.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut attach1 = 0_i32;
     let mut attach2 = 0_i32;
     for order in 0..valence {
         let neighbor = usize::from(atom.neighbor[order]);
-        if neighbor != atom_numbers[1] && neighbor != atom_numbers[3] {
+        if neighbor != usize::from(atom_numbers[1]) && neighbor != usize::from(atom_numbers[3]) {
             if attach1 == 0 {
                 attach1 = is_Methyl_or_Etyl(atoms, central as i32, neighbor as i32)?;
             } else if attach2 == 0 {
@@ -7399,9 +7639,8 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_O(
     if let Some(output) = da1 {
         output.typ[0] = DERIV_RING_DMOX_DEOX_O as i16;
         output.ord[0] = bond_numbers[0];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output.num[0] = i8::try_from(2 + attach1 + attach2).unwrap();
-        output.other_atom = (atom_numbers[3] as u16).wrapping_add(1);
+        output.other_atom = atom_numbers[3].wrapping_add(1);
     }
     Ok(DERIV_RING_DMOX_DEOX_O as i32)
 }
@@ -7597,11 +7836,7 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
         EL_NUMBER_C,
     ];
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cur_atom = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let from_ord = usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = atoms
         .get(cur_atom)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7613,8 +7848,13 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
         return Ok(0);
     }
 
-    let mut current = cur_atom;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Source admits the ordinal only after the center gate,
+    // then narrows curr to AT_NUMB before its first neighbor/ring read.
+    let from_ord = usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let mut current = usize::from(cur_atom as crate::source_types::AT_NUMB);
+    let start = atoms
+        .get(current)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut from = usize::from(
         *start
             .neighbor
@@ -7622,27 +7862,28 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
     let ring_system = start.nRingSystem;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0401: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut atom_numbers = [0_usize; OX_RING_SIZE];
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Native five AT_NUMB slots: 10 bytes, not 40 usize bytes.
+    // O(1) safe initialized scratch/no allocation; zeroing/check costs OPEN.
+    let mut atom_numbers = [0 as crate::source_types::AT_NUMB; OX_RING_SIZE];
     let mut bond_numbers = [0_i8; OX_RING_SIZE];
     let mut count = 0_usize;
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get(current)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(i32::from(atom.valence))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = i32::from(atom.valence);
         let mut selected = None;
+        // INCHI✔️❗: Native signed degree skips negative neighbor loops.
+        // O(degree)/O(1) scratch; checked whole-call cost remains OPEN.
         for order in 0..valence {
+            let order = order as usize;
             let next = usize::from(atom.neighbor[order]);
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+            // Native predecessor equality short-circuits the neighbor read.
+            if from == next {
+                continue;
+            }
             let next_atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if from != next && ring_system == next_atom.nRingSystem {
+            if ring_system == next_atom.nRingSystem {
                 selected = Some((order, next));
                 break;
             }
@@ -7661,8 +7902,7 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
         {
             return Ok(0);
         }
-        atom_numbers[count] = current;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        atom_numbers[count] = current as crate::source_types::AT_NUMB;
         bond_numbers[count] = i8::try_from(order).unwrap();
         from = current;
         current = next;
@@ -7675,18 +7915,15 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
         return Ok(0);
     }
 
-    let carbon_r = atom_numbers[4];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let carbon_r = usize::from(atom_numbers[4]);
     let atom = atoms
         .get(carbon_r)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(atom.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for order in 0..valence {
         let neighbor = usize::from(atom.neighbor[order]);
-        if neighbor != atom_numbers[0] && neighbor != atom_numbers[3] {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        if neighbor != usize::from(atom_numbers[0]) && neighbor != usize::from(atom_numbers[3]) {
             if atoms
                 .get(neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7699,19 +7936,17 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
         }
     }
 
-    let central = atom_numbers[1];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let central = usize::from(atom_numbers[1]);
     let atom = atoms
         .get(central)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(atom.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut attach1 = 0_i32;
     let mut attach2 = 0_i32;
     for order in 0..valence {
         let neighbor = usize::from(atom.neighbor[order]);
-        if neighbor != atom_numbers[0] && neighbor != atom_numbers[2] {
+        if neighbor != usize::from(atom_numbers[0]) && neighbor != usize::from(atom_numbers[2]) {
             if attach1 == 0 {
                 attach1 = is_Methyl_or_Etyl(atoms, central as i32, neighbor as i32)?;
             } else if attach2 == 0 {
@@ -7728,9 +7963,8 @@ pub(crate) fn is_DERIV_RING_DMOX_DEOX_N(
     if let Some(output) = da1 {
         output.typ[0] = DERIV_RING_DMOX_DEOX_N as i16;
         output.ord[0] = bond_numbers[0];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output.num[0] = i8::try_from(2 + attach1 + attach2).unwrap();
-        output.other_atom = (atom_numbers[3] as u16).wrapping_add(1);
+        output.other_atom = atom_numbers[3].wrapping_add(1);
     }
     Ok(DERIV_RING_DMOX_DEOX_N as i32)
 }
@@ -7873,27 +8107,14 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_DERIV_RING2_PRRLDD_PPRDN
 
+    // INCHI✔️❗: Center predicates gate ordinal/from reads; bond branches gate
+    // neighbor reads. Bounded ring scan, O(1) scratch, no allocation or clones;
+    // checked-access/Result hot-path cost remains OPEN (performance_pending.md).
     const MIN_RING_SIZE: i32 = 5;
     const MAX_RING_SIZE: i32 = 6;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cur_atom = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let from_ord_usize =
-        usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let current = atoms
         .get(cur_atom)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let from_atom = usize::from(
-        *current
-            .neighbor
-            .get(from_ord_usize)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let from = atoms
-        .get(from_atom)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if current.el_number != EL_NUMBER_N
         || i32::from(current.nNumAtInRingSystem) < MIN_RING_SIZE
@@ -7903,7 +8124,21 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
         || current.charge != 0
         || current.radical != 0
         || current.num_H != 0
-        || from.el_number != EL_NUMBER_C
+    {
+        return Ok(0);
+    }
+    let from_ord_usize =
+        usize::try_from(from_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let from_atom = usize::from(
+        *current
+            .neighbor
+            .get(from_ord_usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+    );
+    let from = atoms
+        .get(from_atom)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if from.el_number != EL_NUMBER_C
         || from.nNumAtInRingSystem != 1
         || from.valence != 3
         || from.chem_bonds_valence != 4
@@ -7914,7 +8149,6 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let from_valence = usize::try_from(i32::from(from.valence))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for order in 0..from_valence {
@@ -7922,16 +8156,17 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
         if neighbor_index == cur_atom {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let neighbor = atoms
-            .get(neighbor_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if from.bond_type[order] == BOND_SINGLE as u8 {
+            let neighbor = atoms
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor.el_number != EL_NUMBER_C {
                 return Ok(0);
             }
         } else if from.bond_type[order] == BOND_DOUBLE as u8 {
+            let neighbor = atoms
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor.el_number != EL_NUMBER_O
                 || neighbor.valence != 1
                 || neighbor.chem_bonds_valence != 2
@@ -7949,7 +8184,6 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
     let not_from_order = usize::from(from_ord == 0);
     let mut previous = cur_atom;
     let mut neighbor_index = usize::from(current.neighbor[not_from_order]);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_ring_atom = atoms
         .get(neighbor_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7958,7 +8192,6 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
         return Ok(0);
     }
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7998,7 +8231,6 @@ pub(crate) fn is_DERIV_RING2_PRRLDD_PPRDN(
         let orders = [ord0, ord1];
         output.ord[0] = orders[smaller_is_second as usize];
         output.ord[1] = orders[usize::from(smaller_is_second == 0)];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output.num[0] = i8::try_from(ring_size - 1).unwrap();
     }
     Ok(ring_size)
@@ -8053,16 +8285,13 @@ pub(crate) fn check_arom_chain(
     // INCHI✔️❌: #define BOND_ALTERN BOND_TYPE_ALTERN  /* 4 single/double                    */
     // END ACTIVE INCHI HEADER MACRO: BOND_ALTERN
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut cur = usize::try_from(cur).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0259: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut from = usize::try_from(from).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0259: suspected source divergence; see dev/audits/inchi/findings.md");
-    let last = usize::try_from(last).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: from/last remain source int comparators; only cur is read.
+    // O(reached chain), O(1), no allocation; safe access/Result cost OPEN.
+    let mut cur = cur;
+    let mut from = from;
     let mut num = 0_i32;
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atom = atoms.get(cur).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms.get(cur as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom.el_number != EL_NUMBER_C
             || atom.valence != 2
             || atom.chem_bonds_valence != 3
@@ -8070,13 +8299,13 @@ pub(crate) fn check_arom_chain(
         {
             return Ok(0);
         }
-        let next_order = usize::from(usize::from(atom.neighbor[0]) == from);
+        let next_order = usize::from(i32::from(atom.neighbor[0]) == from);
         if atom.bond_type[next_order] != BOND_TYPE_ALTERN as u8 {
             return Ok(0);
         }
         num = num.wrapping_add(1);
         from = cur;
-        cur = usize::from(atom.neighbor[next_order]);
+        cur = i32::from(atom.neighbor[next_order]);
         if cur == last || num >= len {
             break;
         }
@@ -8367,11 +8596,10 @@ pub(crate) fn is_Dansyl(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_Dansyl
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Center shape gates sulfur admission; S bond and a==-1 gate
+    // neighbor admission. Fixed bounded traversal, O(1) scratch, no allocation
+    // or clones; checked-access/Result cost OPEN (performance_pending.md).
     let cur_atom = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let to_ord_index = usize::try_from(to_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let current = atoms
         .get(cur_atom)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8381,20 +8609,20 @@ pub(crate) fn is_Dansyl(
         && current.nNumAtInRingSystem == 1;
     let second_shape =
         current.el_number == EL_NUMBER_N && current.valence == 3 && current.num_H == 0;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    if !(first_shape || second_shape) || current.valence != current.chem_bonds_valence {
+        return Ok(0);
+    }
+    let to_ord_index = usize::try_from(to_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let sulfur_index = usize::from(
         *current
             .neighbor
             .get(to_ord_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let sulfur = atoms
         .get(sulfur_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if !(first_shape || second_shape)
-        || current.valence != current.chem_bonds_valence
-        || sulfur.el_number != EL_NUMBER_S
+    if sulfur.el_number != EL_NUMBER_S
         || sulfur.valence != 4
         || sulfur.chem_bonds_valence != 6
     {
@@ -8402,18 +8630,15 @@ pub(crate) fn is_Dansyl(
     }
 
     let mut a = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(sulfur.valence)).unwrap() {
         let neighbor_index = usize::from(sulfur.neighbor[order]);
         if neighbor_index == cur_atom {
             continue;
         }
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let neighbor = atoms
-            .get(neighbor_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if sulfur.bond_type[order] == BOND_DOUBLE as u8 {
+            let neighbor = atoms
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor.el_number != EL_NUMBER_O
                 || neighbor.valence != 1
                 || neighbor.chem_bonds_valence != 2
@@ -8424,7 +8649,9 @@ pub(crate) fn is_Dansyl(
                 return Ok(0);
             }
         } else if sulfur.bond_type[order] == BOND_SINGLE as u8 && a.is_none() {
-            let aromatic_order = usize::from(usize::from(neighbor.neighbor[0]) == sulfur_index);
+            let neighbor = atoms
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor.el_number != EL_NUMBER_C
                 || neighbor.nNumAtInRingSystem != 10
                 || neighbor.valence != 3
@@ -8432,7 +8659,9 @@ pub(crate) fn is_Dansyl(
                 || neighbor.num_H != 0
                 || neighbor.charge != 0
                 || neighbor.radical != 0
-                || neighbor.bond_type[aromatic_order] != BOND_TYPE_ALTERN as u8
+                || neighbor.bond_type
+                    [usize::from(usize::from(neighbor.neighbor[0]) == sulfur_index)]
+                    != BOND_TYPE_ALTERN as u8
             {
                 return Ok(0);
             }
@@ -8443,11 +8672,9 @@ pub(crate) fn is_Dansyl(
     }
     let Some(a) = a else { return Ok(0) };
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_a = atoms.get(a).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut k = 0_i32;
     let mut b = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom_a.valence)).unwrap() {
         let neighbor_index = usize::from(atom_a.neighbor[order]);
         if neighbor_index == sulfur_index {
@@ -8456,7 +8683,6 @@ pub(crate) fn is_Dansyl(
             if atom_a.bond_type[order] != BOND_TYPE_ALTERN as u8 {
                 return Ok(0);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8473,9 +8699,7 @@ pub(crate) fn is_Dansyl(
     if k != 111 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b = b.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_b = atoms.get(b).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom_b.el_number != EL_NUMBER_C
         || atom_b.valence != 3
@@ -8489,7 +8713,6 @@ pub(crate) fn is_Dansyl(
 
     k = 0;
     let mut c = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom_b.valence)).unwrap() {
         if atom_b.bond_type[order] != BOND_TYPE_ALTERN as u8 {
             return Ok(0);
@@ -8498,7 +8721,6 @@ pub(crate) fn is_Dansyl(
         if neighbor_index == a {
             k += 1;
         } else {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8515,9 +8737,7 @@ pub(crate) fn is_Dansyl(
     if k != 111 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let c = c.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_c = atoms.get(c).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom_c.el_number != EL_NUMBER_C
         || atom_c.valence != 3
@@ -8532,7 +8752,6 @@ pub(crate) fn is_Dansyl(
     k = 0;
     let mut d = None;
     let mut cj = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom_c.valence)).unwrap() {
         if atom_c.bond_type[order] != BOND_TYPE_ALTERN as u8 {
             return Ok(0);
@@ -8541,7 +8760,6 @@ pub(crate) fn is_Dansyl(
         if neighbor_index == b {
             k += 1;
         } else {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8559,11 +8777,8 @@ pub(crate) fn is_Dansyl(
     if k != 111 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let d = d.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cj = cj.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_d = atoms.get(d).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom_d.el_number != EL_NUMBER_C
         || atom_d.valence != 3
@@ -8578,13 +8793,11 @@ pub(crate) fn is_Dansyl(
     k = 0;
     let mut nitrogen = None;
     let mut dj = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom_d.valence)).unwrap() {
         let neighbor_index = usize::from(atom_d.neighbor[order]);
         if neighbor_index == c {
             k += 1;
         } else {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8605,11 +8818,8 @@ pub(crate) fn is_Dansyl(
     if k != 111 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let nitrogen = nitrogen.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let dj = dj.unwrap();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_n = atoms
         .get(nitrogen)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8622,7 +8832,6 @@ pub(crate) fn is_Dansyl(
     {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom_n.valence)).unwrap() {
         let neighbor = usize::from(atom_n.neighbor[order]);
         if neighbor != d && is_Methyl(atoms, neighbor as i32)? == 0 {
@@ -8742,9 +8951,7 @@ pub(crate) fn is_silyl2(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: is_silyl2
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8759,13 +8966,11 @@ pub(crate) fn is_silyl2(
 
     let mut methyls = 0_i32;
     let mut carbon_iv = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom.valence)).unwrap_or(0) {
         let neighbor_index = usize::from(atom.neighbor[order]);
         if neighbor_index as i32 == from_atom {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8802,17 +9007,14 @@ pub(crate) fn is_silyl2(
     };
 
     methyls = 0;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let carbon = atoms
         .get(carbon_iv)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(carbon.valence)).unwrap_or(0) {
         let neighbor_index = usize::from(carbon.neighbor[order]);
         if neighbor_index == start {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8945,9 +9147,7 @@ pub(crate) fn is_silyl(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_silyl
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8962,13 +9162,11 @@ pub(crate) fn is_silyl(
     let mut methyls = 0_i32;
     let mut carbon_iv = None;
     let mut silicon_iv = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom.valence)).unwrap() {
         if order as i32 == previous_order {
             continue;
         }
         let neighbor_index = usize::from(atom.neighbor[order]);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9009,17 +9207,14 @@ pub(crate) fn is_silyl(
         return Ok(0);
     }
     methyls = 0;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let carbon = atoms
         .get(carbon_iv)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(carbon.valence)).unwrap() {
         let neighbor_index = usize::from(carbon.neighbor[order]);
         if neighbor_index == start {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9065,13 +9260,10 @@ pub(crate) fn is_CF3_or_linC3F7a(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_CF3_or_linC3F7a
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_index = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom.valence)).unwrap_or(0) {
         if i32::from(atom.neighbor[order]) == previous_atom {
             return is_CF3_or_linC3F7(atoms, start, order as i32);
@@ -9172,12 +9364,10 @@ pub(crate) fn is_CF3_or_linC3F7(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_CF3_or_linC3F7
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut previous_order = previous_order;
     let mut carbon_count = 0_i32;
     while carbon_count < 4 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get(start)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9193,13 +9383,11 @@ pub(crate) fn is_CF3_or_linC3F7(
         let mut next_carbon = 0_usize;
         let mut fluorines = 0_i32;
         let mut carbon_neighbors = 0_i32;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for order in 0..usize::try_from(i32::from(atom.valence)).unwrap() {
             if order as i32 == previous_order {
                 continue;
             }
             let neighbor_index = usize::from(atom.neighbor[order]);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9235,7 +9423,6 @@ pub(crate) fn is_CF3_or_linC3F7(
         if carbon_neighbors == 0 {
             break;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let next = atoms
             .get(next_carbon)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9266,7 +9453,6 @@ pub(crate) fn underiv_buf_clear(buffer: Option<&mut [i8]>) -> Result<(), SourceH
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: underiv_buf_clear
     if let Some(buffer) = buffer {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *buffer
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
@@ -9303,54 +9489,88 @@ pub(crate) fn underiv_list_add(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: underiv_list_add
 
+    underiv_list_add_bytes::<i8, false>(list, list_capacity, added, delimiter)
+}
+
+fn underiv_list_add_bytes<Byte: Copy + Into<i32>, const IMPLICIT_NUL: bool>(
+    list: Option<&mut [i8]>,
+    list_capacity: i32,
+    added: Option<&[Byte]>,
+    delimiter: i8,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:5156 underiv_list_add
+    // INCHI✔️❌: int underiv_list_add( char *szUnderivList, int lenUnderivList, const char *szUnderiv, char cDelimiter )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     if (NULL != szUnderivList && lenUnderivList > 0 && NULL != szUnderiv && *szUnderiv)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int lenList = strlen( szUnderivList );
+    // INCHI✔️❌:         int lenAdd = strlen( szUnderiv );
+    // INCHI✔️❌:         int bDelimiter = cDelimiter ? 1 : 0;
+    // INCHI✔️❌:         if (lenList + lenAdd + bDelimiter < lenUnderivList)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (lenList && bDelimiter)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 szUnderivList[lenList++] = cDelimiter;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             memcpy(szUnderivList + lenList, szUnderiv, (long long)lenAdd + 1); /* +1 adds zero termination */ /* djb-rwth: cast operator added */
+    // INCHI✔️❌:             return lenList + lenAdd;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return 0;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: underiv_list_add
+    // INCHI✔️❗: Sole append kernel, borrowed signed C bytes or Rust UTF8 bytes.
+    // Rust text has an implicit trailing NUL; an embedded first NUL still wins.
+    // Null/capacity/empty gates and list-before-source strlen order stay intact.
+    // O(list+added), O(1) scratch, no allocation/clone. Const source admission
+    // folds per caller; copy-loop/codegen/whole-call costs OPEN.
     let Some(list) = list else { return Ok(0) };
     if list_capacity <= 0 {
         return Ok(0);
     }
     let Some(added) = added else { return Ok(0) };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    if added.first().copied().unwrap_or(0) == 0 {
+    if added.first().copied().map(Into::<i32>::into).unwrap_or(0) == 0 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let list_length = list
         .iter()
         .position(|&byte| byte == 0)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let added_length = added
-        .iter()
-        .position(|&byte| byte == 0)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let added_length = match added.iter().position(|&byte| Into::<i32>::into(byte) == 0) {
+        Some(length) => length,
+        None if IMPLICIT_NUL => added.len(),
+        None => return Err(SourceHeapError::PointerOutOfBounds),
+    };
     let delimiter_length = usize::from(delimiter != 0);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let required = list_length
         .checked_add(added_length)
         .and_then(|value| value.checked_add(delimiter_length))
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if i32::try_from(required).map_err(|_| SourceHeapError::SourceIntegerOverflow)? >= list_capacity
     {
         return Ok(0);
     }
     let mut write_at = list_length;
     if list_length != 0 && delimiter != 0 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *list
             .get_mut(write_at)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = delimiter;
         write_at += 1;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let write_end = write_at
         .checked_add(added_length + 1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let destination = list
         .get_mut(write_at..write_end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    destination.copy_from_slice(&added[..=added_length]);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    for (target, &source) in destination[..added_length]
+        .iter_mut()
+        .zip(&added[..added_length])
+    {
+        *target = Into::<i32>::into(source) as i8;
+    }
+    destination[added_length] = 0;
     i32::try_from(write_at + added_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)
 }
 
@@ -9380,12 +9600,10 @@ pub(crate) fn underiv_list_get_last(
     if delimiter == 0 {
         return Ok(None);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let length = list
         .iter()
         .position(|&byte| byte == 0)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(Some(
         list[..length]
             .iter()
@@ -9606,10 +9824,7 @@ pub(crate) fn mark_atoms_deriv(
     // INCHI✔️❌:     return num; /* number of atoms traversed forward from at[start] */
     // END INCHI C FUNCTION: mark_atoms_deriv
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_index = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let current = atoms
         .get(start_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -9618,12 +9833,10 @@ pub(crate) fn mark_atoms_deriv(
         return Ok(num);
     }
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut da1 = DERIV_AT::default();
     let derivative_type = get_traversed_deriv_type(atoms, derivatives, start, &mut da1, flags)?;
     let mut found_here = i32::from(derivative_type == DERIV_NOT as i32);
     num = num.wrapping_add(1);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     atoms[start_index].cFlags |= flags;
     let mut da2 = DERIV_AT::default();
     if da1.typ[0] != 0 {
@@ -9637,7 +9850,6 @@ pub(crate) fn mark_atoms_deriv(
                 if value == DERIV_RING_DMOX_DEOX_N as i32
                     || value == DERIV_RING_DMOX_DEOX_O as i32 =>
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let other = usize::from(da1.other_atom)
                     .checked_sub(1)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9662,10 +9874,8 @@ pub(crate) fn mark_atoms_deriv(
                 found_here = found_here.wrapping_add(1);
             }
             value if value == DERIV_BRIDGE_O as i32 || value == DERIV_BRIDGE_NH as i32 => {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let order = usize::try_from(i32::from(da1.ord[0]))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = current
                     .neighbor
                     .get(order)
@@ -9687,10 +9897,8 @@ pub(crate) fn mark_atoms_deriv(
                 }
             }
             value if value == DERIV_AMINE_tN as i32 => {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let first_order = usize::try_from(i32::from(da1.ord[0]))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let first_neighbor = current
                     .neighbor
                     .get(first_order)
@@ -9705,10 +9913,8 @@ pub(crate) fn mark_atoms_deriv(
                     &mut found_first,
                 )?;
                 if da1.typ[1] != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let second_order = usize::try_from(i32::from(da1.ord[1]))
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let second_neighbor = current
                         .neighbor
                         .get(second_order)
@@ -9723,7 +9929,6 @@ pub(crate) fn mark_atoms_deriv(
                         &mut found_second,
                     )?;
                 }
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut slot = 0_usize;
                 if first_count > 0 && first_count <= MAX_AT_DERIV as i32 && found_first == 0 {
                     da1.num[0] = first_count as i8;
@@ -9736,11 +9941,9 @@ pub(crate) fn mark_atoms_deriv(
                     da1.typ[1] = 0;
                 }
                 if second_count > 0 && second_count <= MAX_AT_DERIV as i32 && found_second == 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     da1.num[slot] = second_count as i8;
                     found_here = found_here.wrapping_add(1);
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     da1.typ[slot] = 0;
                 }
             }
@@ -9748,7 +9951,6 @@ pub(crate) fn mark_atoms_deriv(
                 if value == DERIV_RING_O_OUTSIDE_PRECURSOR as i32
                     || value == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32 =>
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for order in 0..usize::try_from(i32::from(current.valence)).unwrap_or(0) {
                     if order != usize::try_from(i32::from(da1.ord[0])).unwrap_or(usize::MAX)
                         && order != usize::try_from(i32::from(da1.ord[1])).unwrap_or(usize::MAX)
@@ -9803,12 +10005,10 @@ pub(crate) fn mark_atoms_deriv(
                 return Ok(second_count);
             }
             if da1.other_atom != 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let other = usize::from(da1.other_atom)
                     .checked_sub(1)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if da2.other_atom == (start_index as u16).wrapping_add(1) {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let error = add_to_da(
                         derivatives
                             .get_mut(other)
@@ -9822,7 +10022,6 @@ pub(crate) fn mark_atoms_deriv(
                     return Ok(-4);
                 }
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let error = add_to_da(
                 derivatives
                     .get_mut(start_index)
@@ -9842,7 +10041,6 @@ pub(crate) fn mark_atoms_deriv(
         *found = found.wrapping_add(found_here);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = usize::try_from(i32::from(current.valence)).unwrap_or(0);
     for order in 0..valence {
         num = mark_atoms_deriv(
@@ -9888,18 +10086,14 @@ pub(crate) fn count_one_bond_atoms(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: count_one_bond_atoms
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order = usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor = usize::from(
         *atoms
             .get(start)
             .and_then(|atom| atom.neighbor.get(order))
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_atom = atoms
         .get_mut(neighbor)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9947,12 +10141,12 @@ pub(crate) fn is_nButyl(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_nButyl
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Signed-byte chem/H operands promote to int before addition.
+    // Fixed bounded traversal, O(1) scratch, no allocation/clones; checked
+    // access and whole-call code cost OPEN (performance_pending.md).
     let mut current = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let previous_order =
         usize::try_from(previous_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut previous = usize::from(
         *atoms
             .get(current)
@@ -9960,22 +10154,19 @@ pub(crate) fn is_nButyl(
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
     for index in 0..4 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get(current)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md");
         if atom.el_number != EL_NUMBER_C
             || atom.valence > 2
             || atom.valence != atom.chem_bonds_valence
-            || atom.chem_bonds_valence.wrapping_add(atom.num_H) != 4
+            || i32::from(atom.chem_bonds_valence) + i32::from(atom.num_H) != 4
             || atom.charge != 0
             || atom.radical != 0
         {
             return Ok(0);
         }
         if atom.valence == 2 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let next_order = usize::from(previous == usize::from(atom.neighbor[0]));
             let next = usize::from(atom.neighbor[next_order]);
             previous = current;
@@ -10027,24 +10218,23 @@ pub(crate) fn is_Me_or_Et(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_Me_or_Et
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Signed-byte chem/H operands promote to int before addition.
+    // Fixed bounded traversal, O(1) scratch, no allocation/clones; checked
+    // access and whole-call code cost OPEN (performance_pending.md).
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md");
     if atom.el_number != EL_NUMBER_C
         || atom.valence > 2
         || atom.valence != atom.chem_bonds_valence
-        || atom.chem_bonds_valence.wrapping_add(atom.num_H) != 4
+        || i32::from(atom.chem_bonds_valence) + i32::from(atom.num_H) != 4
         || atom.charge != 0
         || atom.radical != 0
     {
         return Ok(0);
     }
     let mut neighbor = None;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for order in 0..usize::try_from(i32::from(atom.valence)).unwrap_or(0) {
         if order as i32 == previous_order {
             continue;
@@ -10052,16 +10242,14 @@ pub(crate) fn is_Me_or_Et(
         if neighbor.is_some() {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let candidate = atoms
             .get(usize::from(atom.neighbor[order]))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         neighbor = Some(candidate);
-        panic!("INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md");
         if candidate.el_number != EL_NUMBER_C
             || candidate.valence > 1
             || candidate.valence != candidate.chem_bonds_valence
-            || candidate.chem_bonds_valence.wrapping_add(candidate.num_H) != 4
+            || i32::from(candidate.chem_bonds_valence) + i32::from(candidate.num_H) != 4
             || candidate.charge != 0
             || candidate.radical != 0
         {
@@ -10110,9 +10298,7 @@ pub(crate) fn is_phenyl(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_phenyl
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -10126,22 +10312,18 @@ pub(crate) fn is_phenyl(
         return Ok(0);
     }
     let direction = (previous_order + 1) % 3;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut order = usize::try_from(direction).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut current = start;
     for _ in 0..5 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let current_atom = atoms
             .get(current)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = usize::from(
             *current_atom
                 .neighbor
                 .get(order)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor_atom = atoms
             .get(neighbor)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -10154,11 +10336,9 @@ pub(crate) fn is_phenyl(
         {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         order = usize::from(neighbor_atom.neighbor[0] == current as u16);
         current = neighbor;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(i32::from(
         atoms
             .get(current)
@@ -10177,9 +10357,9 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
     derivative_index: i32,
     mut underiv: Option<&mut [i8]>,
     len_underiv: i32,
-    _underiv2: Option<&mut [i8]>,
-    _len_underiv2: i32,
-    _bit_underiv: Option<&mut BIT_UNDERIV>,
+    mut underiv2: Option<&mut [i8]>,
+    len_underiv2: i32,
+    mut bit_underiv: Option<&mut BIT_UNDERIV>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichinorm.c:4136 is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR
     // INCHI✔️❌: int is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR( inp_ATOM *at,
@@ -10530,35 +10710,29 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let derivative_index =
         usize::try_from(derivative_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_type = i32::from(
         *derivative
             .typ
             .get(derivative_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    if first_type == 0 || first_type & DERIV_RING_OUTSIDE_PRECURSOR as i32 != first_type {
+        return Ok(0);
+    }
     let second_type = i32::from(
         *derivative
             .typ
             .get(derivative_index + 1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    if first_type == 0
-        || first_type & DERIV_RING_OUTSIDE_PRECURSOR as i32 != first_type
-        || second_type == 0
+    if second_type == 0
         || second_type & DERIV_RING_OUTSIDE_PRECURSOR as i32 != second_type
     {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let start = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let start_atom = atoms
         .get(start)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -10569,20 +10743,16 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_order = usize::try_from(i32::from(derivative.ord[0]) - i32::from(b'0'))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_order = usize::try_from(i32::from(derivative.ord[1]) - i32::from(b'0'))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let n0 = usize::from(
         *start_atom
             .neighbor
             .get(first_order)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let n3 = usize::from(
         *start_atom
             .neighbor
@@ -10590,28 +10760,20 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
     let mut found = 0_i32;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut ring = [0_usize; 4];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut ring = [0_i32; 4];
     let n0_atom = atoms.get(n0).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let n3_atom = atoms.get(n3).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for first_neighbor_order in 0..usize::try_from(i32::from(n0_atom.valence)).unwrap_or(0) {
-        let n1 = usize::from(n0_atom.neighbor[first_neighbor_order]);
-        if n1 == start || n0_atom.bond_type[first_neighbor_order] != BOND_SINGLE as u8 {
+        let n1 = usize::from(*n0_atom.neighbor.get(first_neighbor_order).ok_or(SourceHeapError::PointerOutOfBounds)?);
+        if n1 == start || *n0_atom.bond_type.get(first_neighbor_order).ok_or(SourceHeapError::PointerOutOfBounds)? != BOND_SINGLE as u8 {
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let n1_atom = atoms.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for second_neighbor_order in 0..usize::try_from(i32::from(n1_atom.valence)).unwrap_or(0) {
-            let n2 = usize::from(n1_atom.neighbor[second_neighbor_order]);
+            let n2 = usize::from(*n1_atom.neighbor.get(second_neighbor_order).ok_or(SourceHeapError::PointerOutOfBounds)?);
             if n2 == n0 {
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            let n3_atom = atoms.get(n3).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let Some(n3_order) = is_in_the_list(
                 Some(&n3_atom.neighbor),
                 n2 as u16,
@@ -10620,26 +10782,25 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
             else {
                 continue;
             };
-            if (n1_atom.bond_type[second_neighbor_order] == BOND_SINGLE as u8
-                || n1_atom.bond_type[second_neighbor_order] == BOND_TYPE_ALTERN as u8)
-                && n3_atom.bond_type[n3_order] == BOND_SINGLE as u8
+            if (*n1_atom.bond_type.get(second_neighbor_order).ok_or(SourceHeapError::PointerOutOfBounds)? == BOND_SINGLE as u8
+                || *n1_atom.bond_type.get(second_neighbor_order).ok_or(SourceHeapError::PointerOutOfBounds)? == BOND_TYPE_ALTERN as u8)
+                && *n3_atom.bond_type.get(n3_order).ok_or(SourceHeapError::PointerOutOfBounds)? == BOND_SINGLE as u8
             {
                 if found == 0 {
-                    ring = [n0, n1, n2, n3];
+                    ring = [n0 as i32, n1 as i32, n2 as i32, n3 as i32];
                 }
                 found = found.wrapping_add(1);
             }
         }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if found != 1
         || atoms
-            .get(ring[1])
+            .get(ring[1] as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .el_number
             != EL_NUMBER_C
         || atoms
-            .get(ring[2])
+            .get(ring[2] as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .el_number
             != EL_NUMBER_C
@@ -10647,17 +10808,15 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
         return Ok(0);
     }
     for &ring_index in &ring[1..=2] {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let ring_atom = atoms
-            .get(ring_index)
+            .get(ring_index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if ring_atom.valence > 3 {
             let mut heteroatoms = 0_i32;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             for order in 0..usize::try_from(i32::from(ring_atom.valence)).unwrap_or(0) {
                 heteroatoms += i32::from(
                     atoms
-                        .get(usize::from(ring_atom.neighbor[order]))
+                        .get(usize::from(*ring_atom.neighbor.get(order).ok_or(SourceHeapError::PointerOutOfBounds)?))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .el_number
                         != EL_NUMBER_C,
@@ -10669,105 +10828,203 @@ pub(crate) fn is_DERIV_RING_O_or_NH_OUTSIDE_PRECURSOR(
         }
     }
 
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut oxygen = String::new();
-    let mut nitrogen = String::new();
+    // INCHI✔️❗: Full source classification; raw ord[0..2] ASCII decoding and
+    // raw ord[idrv..] bond exclusions deliberately remain distinct.
+    // Native-sized stack reports/ring/substitution indices, no String/Vec.
+    // O(d^3 + reached report lengths), O(1) scratch; safe checks and generic
+    // append lowering leave whole-call cost OPEN in performance_pending.md.
+    fn append<const IMPLICIT_NUL: bool, Byte: Copy + Into<i32>>(
+        target: &mut [i8],
+        source: &[Byte],
+    ) -> Result<(), SourceHeapError> {
+        let capacity = target.len() as i32;
+        let added = underiv_list_add_bytes::<Byte, IMPLICIT_NUL>(
+            Some(target), capacity, Some(source), 0,
+        )?;
+        if added == 0 && source.first().copied().map(Into::<i32>::into).unwrap_or(0) != 0 {
+            // Native strcat overflow is undefined; never truncate a report.
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        Ok(())
+    }
+    let mut oxygen = [0_i8; 8];
+    let mut nitrogen = [0_i8; 8];
+    let mut prefix = [0_i8; 16];
     if underiv.is_some() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let first_atom = atoms.get(n0).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let second_atom = atoms.get(n3).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if first_type == DERIV_RING_O_OUTSIDE_PRECURSOR as i32
             && second_type == DERIV_RING_O_OUTSIDE_PRECURSOR as i32
         {
-            let first_name = atom_element_name(first_atom)?;
-            let second_name = atom_element_name(second_atom)?;
             if first_atom.el_number <= second_atom.el_number {
-                oxygen.push_str(&first_name);
-                oxygen.push_str(&second_name);
+                append::<false, _>(&mut oxygen, &first_atom.elname)?;
+                append::<false, _>(&mut oxygen, &second_atom.elname)?;
             } else {
-                oxygen.push_str(&second_name);
-                oxygen.push_str(&first_name);
+                append::<false, _>(&mut oxygen, &second_atom.elname)?;
+                append::<false, _>(&mut oxygen, &first_atom.elname)?;
             }
         } else if first_type == DERIV_RING_O_OUTSIDE_PRECURSOR as i32 {
-            oxygen.push_str(&atom_element_name(first_atom)?);
+            append::<false, _>(&mut oxygen, &first_atom.elname)?;
         } else if second_type == DERIV_RING_O_OUTSIDE_PRECURSOR as i32 {
-            oxygen.push_str(&atom_element_name(second_atom)?);
+            append::<false, _>(&mut oxygen, &second_atom.elname)?;
         }
         if first_type == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32
             && second_type == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32
         {
-            nitrogen.push_str(match (first_atom.num_H == 1, second_atom.num_H == 1) {
+            let text = match (first_atom.num_H == 1, second_atom.num_H == 1) {
                 (true, true) => "(NH)2",
                 (true, false) | (false, true) => "(NH)N",
                 (false, false) => "NN",
-            });
+            };
+            append::<true, _>(&mut nitrogen, text.as_bytes())?;
         } else if first_type == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32 {
-            nitrogen.push_str(if first_atom.num_H == 1 { "(NH)" } else { "N" });
+            let text = if first_atom.num_H == 1 { "(NH)" } else { "N" };
+            append::<true, _>(&mut nitrogen, text.as_bytes())?;
         } else if second_type == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32 {
-            nitrogen.push_str(if second_atom.num_H == 1 { "(NH)" } else { "N" });
+            let text = if second_atom.num_H == 1 { "(NH)" } else { "N" };
+            append::<true, _>(&mut nitrogen, text.as_bytes())?;
         }
+        match first_type | second_type {
+            value if value == (DERIV_RING_O_OUTSIDE_PRECURSOR | DERIV_RING_NH_OUTSIDE_PRECURSOR) as i32 => {
+                append::<false, _>(&mut prefix, &nitrogen)?;
+                append::<false, _>(&mut prefix, &oxygen)?;
+            }
+            value if value == DERIV_RING_O_OUTSIDE_PRECURSOR as i32 => {
+                append::<false, _>(&mut prefix, &oxygen)?;
+            }
+            value if value == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32 => {
+                append::<false, _>(&mut prefix, &nitrogen)?;
+            }
+            _ => append::<true, _>(&mut prefix, b"???")?,
+        }
+        append::<true, _>(&mut prefix, b"-")?;
     }
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut prefix = match first_type | second_type {
-        value
-            if value
-                == (DERIV_RING_O_OUTSIDE_PRECURSOR | DERIV_RING_NH_OUTSIDE_PRECURSOR) as i32 =>
-        {
-            format!("{nitrogen}{oxygen}")
-        }
-        value if value == DERIV_RING_O_OUTSIDE_PRECURSOR as i32 => oxygen,
-        value if value == DERIV_RING_NH_OUTSIDE_PRECURSOR as i32 => nitrogen,
-        _ => "???".to_owned(),
-    };
-    prefix.push('-');
-    underiv_add_text(&mut underiv, len_underiv, &prefix, 0)?;
+    underiv_add_c_string(&mut underiv, len_underiv, &prefix, 0)?;
 
+    let mut is_b = false;
+    let mut is_c = false;
     if start_atom.el_number == EL_NUMBER_B && start_atom.valence == 3 {
+        is_b = true;
         underiv_add_text(&mut underiv, len_underiv, "B", 0)?;
     } else if start_atom.el_number == EL_NUMBER_C
         && (start_atom.valence == 3 || start_atom.valence == 4)
         && start_atom.chem_bonds_valence == start_atom.valence
-        && start_atom.num_H.wrapping_add(start_atom.chem_bonds_valence) == 4
+        && i32::from(start_atom.num_H) + i32::from(start_atom.chem_bonds_valence) == 4
     {
+        is_c = true;
         underiv_add_text(
-            &mut underiv,
-            len_underiv,
-            if start_atom.valence == 3 { "CH" } else { "C" },
-            0,
+            &mut underiv, len_underiv,
+            if start_atom.valence == 3 { "CH" } else { "C" }, 0,
         )?;
     } else {
         return Ok(0);
     }
 
     let mut connected = 0_usize;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut neighbors = [0_i32; 2];
+    let mut previous_orders = [0_i32; 2];
     for order in 0..usize::try_from(i32::from(start_atom.valence)).unwrap_or(0) {
-        if order as i8 != derivative.ord[derivative_index]
-            && order as i8 != derivative.ord[derivative_index + 1]
+        if order as i32 != i32::from(derivative.ord[derivative_index])
+            && order as i32 != i32::from(derivative.ord[derivative_index + 1])
         {
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let neighbor = atoms
-                .get(usize::from(start_atom.neighbor[order]))
+            let neighbor_index = *start_atom.neighbor.get(order)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let back = is_in_the_list(
-                Some(&neighbor.neighbor),
-                start as u16,
-                i32::from(neighbor.valence),
-            )?;
-            if connected < 2 && back.is_some() {
-                connected += 1;
-            } else {
+            if connected >= 2 {
                 return Ok(-1);
             }
+            let neighbor = atoms.get(usize::from(neighbor_index))
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let Some(back) = is_in_the_list(
+                Some(&neighbor.neighbor), start as u16, i32::from(neighbor.valence),
+            )? else {
+                return Ok(-1);
+            };
+            neighbors[connected] = i32::from(neighbor_index);
+            previous_orders[connected] = back as i32;
+            connected += 1;
         }
     }
 
-    // Numeric ord values enter C undefined behavior at the subtraction above; ASCII ord values
-    // make every start bond enter this loop and therefore cannot reach the remaining success cases.
-    panic!("INCHI-AUDIT-0263: suspected source divergence; see dev/audits/inchi/findings.md");
+    use crate::source_types::local_ichinorm::{
+        tagDerivBit_DERIV_BIT_Acentonate, tagDerivBit_DERIV_BIT_Benzlidene,
+        tagDerivBit_DERIV_BIT_BuBorate, tagDerivBit_DERIV_BIT_EtBorate,
+        tagDerivBit_DERIV_BIT_MeBorate, tagDerivBit_DERIV_BIT_Unknown,
+    };
+    // BEGIN INCHI C SHARED DEFINITIONS: ichinorm.c:1091..1110 pszDerivName
+    // INCHI✔️❗:     "Acentonate",      /*  DERIV_ID_Acentonate, 00 */
+    // INCHI✔️❗:     "Benzlidene",      /*  DERIV_ID_Benzlidene, 01 */
+    // INCHI✔️❗:     "BuBorate",        /*  DERIV_ID_BuBorate,   03 */
+    // INCHI✔️❗:     "EtBorate",        /*  DERIV_ID_EtBorate,   07 */
+    // INCHI✔️❗:     "MeBorate",        /*  DERIV_ID_MeBorate,   10 */
+    // INCHI✔️❗:     "???",             /*  DERIV_ID_Unknown,    19 */
+    // END INCHI C SHARED DEFINITIONS: pszDerivName used entries
+    if is_b && connected == 1 && first_type == DERIV_RING_O_OUTSIDE_PRECURSOR as i32 {
+        let n1 = is_Me_or_Et(atoms, neighbors[0], previous_orders[0])?;
+        let n2 = if n1 > 0 { 0 } else {
+            is_nButyl(atoms, neighbors[0], previous_orders[0])?
+        };
+        if n1 > 0 || n2 > 0 {
+            let (text, name, bit) = if n1 == 1 {
+                ("Me", "MeBorate", tagDerivBit_DERIV_BIT_MeBorate)
+            } else if n1 == 2 {
+                ("Et", "EtBorate", tagDerivBit_DERIV_BIT_EtBorate)
+            } else if n2 != 0 {
+                ("nButyl", "BuBorate", tagDerivBit_DERIV_BIT_BuBorate)
+            } else {
+                ("???", "???", tagDerivBit_DERIV_BIT_Unknown)
+            };
+            underiv_add_text(&mut underiv, len_underiv, text, 0)?;
+            underiv_add_text(&mut underiv2, len_underiv2, name, b' ' as i8)?;
+            underiv_or_bit(&mut bit_underiv, bit)?;
+            return Ok(1);
+        }
+    } else if is_c {
+        if connected == 1 && start_atom.num_H == 1
+            && is_phenyl(atoms, neighbors[0], previous_orders[0])? != 0
+        {
+            underiv_add_text(&mut underiv, len_underiv, "Phe", 0)?;
+            if nitrogen[0] != 0 {
+                if let Some(offset) = underiv_list_get_last(underiv.as_deref(), b' ' as i8)? {
+                    let source = &underiv.as_deref().ok_or(SourceHeapError::PointerOutOfBounds)?[offset..];
+                    underiv_add_c_string(&mut underiv2, len_underiv2, source, b' ' as i8)?;
+                    underiv_or_bit(&mut bit_underiv, tagDerivBit_DERIV_BIT_Unknown)?;
+                }
+            } else {
+                underiv_add_text(&mut underiv2, len_underiv2, "Benzlidene", b' ' as i8)?;
+                underiv_or_bit(&mut bit_underiv, tagDerivBit_DERIV_BIT_Benzlidene)?;
+            }
+            return Ok(1);
+        }
+        if connected == 2 {
+            let n1 = is_Me_or_Et(atoms, neighbors[0], previous_orders[0])?;
+            if n1 > 0 {
+                let n2 = is_Me_or_Et(atoms, neighbors[1], previous_orders[1])?;
+                if n2 > 0 {
+                    if n1 != n2 {
+                        underiv_add_text(&mut underiv, len_underiv, "MeEt", 0)?;
+                        if let Some(offset) = underiv_list_get_last(underiv.as_deref(), b' ' as i8)? {
+                            let source = &underiv.as_deref().ok_or(SourceHeapError::PointerOutOfBounds)?[offset..];
+                            underiv_add_c_string(&mut underiv2, len_underiv2, source, b' ' as i8)?;
+                            underiv_or_bit(&mut bit_underiv, tagDerivBit_DERIV_BIT_Unknown)?;
+                        }
+                    } else if n1 == 1 || n1 == 2 {
+                        underiv_add_text(&mut underiv, len_underiv, if n1 == 1 { "Me2" } else { "Et2" }, 0)?;
+                        if nitrogen[0] != 0 || n1 != 1 {
+                            if let Some(offset) = underiv_list_get_last(underiv.as_deref(), b' ' as i8)? {
+                                let source = &underiv.as_deref().ok_or(SourceHeapError::PointerOutOfBounds)?[offset..];
+                                underiv_add_c_string(&mut underiv2, len_underiv2, source, b' ' as i8)?;
+                                underiv_or_bit(&mut bit_underiv, tagDerivBit_DERIV_BIT_Unknown)?;
+                            }
+                        } else {
+                            underiv_add_text(&mut underiv2, len_underiv2, "Acentonate", b' ' as i8)?;
+                            underiv_or_bit(&mut bit_underiv, tagDerivBit_DERIV_BIT_Acentonate)?;
+                        }
+                    }
+                    return Ok(1);
+                }
+            }
+        }
+    }
     Ok(0)
 }
 
@@ -10928,35 +11185,59 @@ fn classify_ring_back_connector(
     center_index: usize,
     connector_index: usize,
 ) -> Result<Option<(i16, u16)>, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let connector = atoms
-        .get(connector_index)
+    // BEGIN INCHI C REGION: ichinorm.c:3137..3157 classify_ring_back_connector
+    // INCHI✔️❗:         if (( at[j].el_number == EL_NUMBER_O || at[j].el_number == EL_NUMBER_S ) && at[j].valence == 2 &&
+    // INCHI✔️❗:              at[j].chem_bonds_valence == at[j].valence &&
+    // INCHI✔️❗:              at[j].nNumAtInRingSystem >= 5 &&
+    // INCHI✔️❗:              at[n1 = at[j].neighbor[at[j].neighbor[0] == k]].el_number == EL_NUMBER_C && /* X is C */ 
+    // INCHI✔️❗:              !at[j].num_H && !at[j].charge && !at[j].radical) /* djb-rwth: ignoring LLVM warning: variable used */
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             nBackType1 = DERIV_RING_O_OUTSIDE_PRECURSOR;
+    // INCHI✔️❗:             nBlockSystemFrom = at[j].nBlockSystem;
+    // INCHI✔️❗:             nOrdBack1 = m; /* predecessor */
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         else
+    // INCHI✔️❗:             if (at[j].el_number == EL_NUMBER_N && at[j].valence == 2 &&
+    // INCHI✔️❗:                  at[j].chem_bonds_valence == at[j].valence &&
+    // INCHI✔️❗:                  at[j].nNumAtInRingSystem >= 5 &&
+    // INCHI✔️❗:                  at[n1 = at[j].neighbor[at[j].neighbor[0] == k]].el_number == EL_NUMBER_C && /* X is C */ 
+    // INCHI✔️❗:                  1 == at[j].num_H && !at[j].charge && !at[j].radical) /* djb-rwth: ignoring LLVM warning: variable used */
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 nBackType1 = DERIV_RING_NH_OUTSIDE_PRECURSOR;
+    // INCHI✔️❗:                 nBlockSystemFrom = at[j].nBlockSystem;
+    // INCHI✔️❗:                 nOrdBack1 = m; /* predecessor */
+    // INCHI✔️❗:             }
+    // END INCHI C REGION: classify_ring_back_connector
+    // INCHI✔️❗: Element, degree and ring-size gates precede the outside
+    // atom dereference; H/charge/radical gates follow it. The O/S and N
+    // elements are disjoint, so select the source branch once without writes.
+    // O(1), no allocation/clone; checked access cost remains independently open.
+    let connector = atoms.get(connector_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let outside_order = usize::from(connector.neighbor[0] as usize == center_index);
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let outside = atoms
-        .get(usize::from(connector.neighbor[outside_order]))
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let common = connector.valence == 2
-        && connector.chem_bonds_valence == connector.valence
-        && connector.nNumAtInRingSystem >= 5
-        && outside.el_number == EL_NUMBER_C
-        && connector.charge == 0
-        && connector.radical == 0;
-    if common
-        && (connector.el_number == EL_NUMBER_O || connector.el_number == EL_NUMBER_S)
-        && connector.num_H == 0
+    let (type_, hydrogens) = if connector.el_number == EL_NUMBER_O
+        || connector.el_number == EL_NUMBER_S
     {
-        Ok(Some((
-            crate::source_types::local_ichinorm::DERIV_RING_O_OUTSIDE_PRECURSOR as i16,
-            connector.nBlockSystem,
-        )))
-    } else if common && connector.el_number == EL_NUMBER_N && connector.num_H == 1 {
-        Ok(Some((
-            crate::source_types::local_ichinorm::DERIV_RING_NH_OUTSIDE_PRECURSOR as i16,
-            connector.nBlockSystem,
-        )))
+        (crate::source_types::local_ichinorm::DERIV_RING_O_OUTSIDE_PRECURSOR as i16, 0)
+    } else if connector.el_number == EL_NUMBER_N {
+        (crate::source_types::local_ichinorm::DERIV_RING_NH_OUTSIDE_PRECURSOR as i16, 1)
+    } else {
+        return Ok(None);
+    };
+    if connector.valence != 2
+        || connector.chem_bonds_valence != connector.valence
+        || connector.nNumAtInRingSystem < 5
+    {
+        return Ok(None);
+    }
+    let outside_order = usize::from(usize::from(connector.neighbor[0]) == center_index);
+    let outside = atoms.get(usize::from(connector.neighbor[outside_order]))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if outside.el_number == EL_NUMBER_C
+        && connector.num_H == hydrogens
+        && connector.charge == 0
+        && connector.radical == 0
+    {
+        Ok(Some((type_, connector.nBlockSystem)))
     } else {
         Ok(None)
     }
@@ -11540,11 +11821,8 @@ pub(crate) fn get_traversed_deriv_type(
     // END INCHI C FUNCTION: get_traversed_deriv_type
 
     *output = DERIV_AT::default();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -11552,23 +11830,24 @@ pub(crate) fn get_traversed_deriv_type(
     if atom.cFlags & flags != 0 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let valence = usize::try_from(i32::from(atom.valence)).unwrap_or(0);
-    let mut from_order = None;
-    for order in 0..valence {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let neighbor = atoms
-            .get(usize::from(atom.neighbor[order]))
+    // INCHI✔️❗: Native m remains zero for negative degree; only equality
+    // with the signed degree denotes an exhausted scan and returns -1.
+    let mut from_order = 0_i32;
+    while from_order < i32::from(atom.valence) {
+        let neighbor_index = *atom.neighbor.get(from_order as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let neighbor = atoms.get(usize::from(neighbor_index))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if neighbor.cFlags & flags != 0 {
-            from_order = Some(order);
             break;
         }
+        from_order += 1;
     }
-    panic!("INCHI-AUDIT-0261: suspected source divergence; see dev/audits/inchi/findings.md");
-    let Some(from_order) = from_order else {
+    if from_order == i32::from(atom.valence) {
         return Ok(-1);
-    };
+    }
+    let from_order = from_order as usize;
+    let valence = i32::from(atom.valence).max(0) as usize;
     if atom.valence == 1
         && atom.num_H != 0
         && matches!(
@@ -11581,7 +11860,6 @@ pub(crate) fn get_traversed_deriv_type(
     if is_el_a_metal(i32::from(atom.el_number))? != 0 {
         return Ok(DERIV_NOT as i32);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let derivative = derivatives
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -11600,165 +11878,155 @@ pub(crate) fn get_traversed_deriv_type(
         && atom.charge == 0
         && atom.radical == 0
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let precursor_index = usize::from(atom.neighbor[from_order]);
         let oxygen_index = usize::from(atom.neighbor[other_order]);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let precursor = atoms
             .get(precursor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let oxygen = atoms
-            .get(oxygen_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0260: suspected source divergence; see dev/audits/inchi/findings.md");
-        if precursor.el_number == EL_NUMBER_C
-            && oxygen.el_number == EL_NUMBER_O
-            && atom.bond_type[from_order] == BOND_DOUBLE as u8
-            && atom.bond_type[other_order] == BOND_SINGLE as u8
-            && precursor.valence == 3_i8.wrapping_sub(precursor.num_H)
-            && precursor.chem_bonds_valence == 4_i8.wrapping_sub(precursor.num_H)
-            && precursor.charge == 0
-            && precursor.radical == 0
-            && oxygen.valence == 2
-            && oxygen.chem_bonds_valence == 2
-            && oxygen.charge == 0
-            && oxygen.radical == 0
-        {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let precursor_neighbors_are_carbon =
-                (0..usize::try_from(i32::from(precursor.valence)).unwrap_or(0)).all(|order| {
-                    let candidate = usize::from(precursor.neighbor[order]);
-                    candidate == atom_index
-                        || atoms
-                            .get(candidate)
-                            .is_some_and(|value| value.el_number == EL_NUMBER_C)
-                });
-            if precursor_neighbors_are_carbon {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let substituent_order = usize::from(oxygen.neighbor[0] as usize == atom_index);
-                let substituent_index = usize::from(oxygen.neighbor[substituent_order]);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let substituent = atoms
-                    .get(substituent_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if is_Si_IV(atoms, substituent_index as i32)? != 0 {
-                    let mut carbon_iv = None;
-                    let mut valid = true;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    for order in 0..usize::try_from(i32::from(substituent.valence)).unwrap_or(0) {
-                        let candidate_index = usize::from(substituent.neighbor[order]);
-                        if candidate_index == oxygen_index {
-                            continue;
-                        }
-                        let candidate = atoms
-                            .get(candidate_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        if candidate.el_number != EL_NUMBER_C
-                            || candidate.charge != 0
-                            || candidate.radical != 0
-                            || candidate.chem_bonds_valence != candidate.valence
-                        {
-                            valid = false;
-                            break;
-                        }
-                        if carbon_iv.is_none() && candidate.valence == 4 && candidate.num_H == 0 {
-                            carbon_iv = Some(candidate_index);
-                        } else if candidate.chem_bonds_valence != 1 || candidate.num_H != 3 {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    if valid {
-                        if let Some(carbon_iv) = carbon_iv {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            let carbon = atoms
-                                .get(carbon_iv)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            for order in 0..usize::try_from(i32::from(carbon.valence)).unwrap_or(0)
-                            {
-                                let candidate_index = usize::from(carbon.neighbor[order]);
-                                if candidate_index == substituent_index {
-                                    continue;
-                                }
-                                let candidate = atoms
-                                    .get(candidate_index)
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                if candidate.el_number != EL_NUMBER_C
-                                    || candidate.charge != 0
-                                    || candidate.radical != 0
-                                    || candidate.chem_bonds_valence != candidate.valence
-                                    || candidate.chem_bonds_valence != 1
-                                    || candidate.num_H != 3
-                                {
-                                    valid = false;
-                                    break;
-                                }
+        // INCHI✔️❗: Native carbon gate precedes oxygen admission; signed
+        // char operands are promoted to int before subtraction/comparison.
+        if precursor.el_number == EL_NUMBER_C {
+            let oxygen = atoms
+                .get(oxygen_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if oxygen.el_number == EL_NUMBER_O
+                && atom.bond_type[from_order] == BOND_DOUBLE as u8
+                && atom.bond_type[other_order] == BOND_SINGLE as u8
+                && i32::from(precursor.valence) == 3 - i32::from(precursor.num_H)
+                && i32::from(precursor.chem_bonds_valence) == 4 - i32::from(precursor.num_H)
+                && precursor.charge == 0
+                && precursor.radical == 0
+                && oxygen.valence == 2
+                && oxygen.chem_bonds_valence == 2
+                && oxygen.charge == 0
+                && oxygen.radical == 0
+            {
+                let precursor_neighbors_are_carbon =
+                    (0..usize::try_from(i32::from(precursor.valence)).unwrap_or(0)).all(|order| {
+                        let candidate = usize::from(precursor.neighbor[order]);
+                        candidate == atom_index
+                            || atoms
+                                .get(candidate)
+                                .is_some_and(|value| value.el_number == EL_NUMBER_C)
+                    });
+                if precursor_neighbors_are_carbon {
+                    let substituent_order = usize::from(oxygen.neighbor[0] as usize == atom_index);
+                    let substituent_index = usize::from(oxygen.neighbor[substituent_order]);
+                    let substituent = atoms
+                        .get(substituent_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if is_Si_IV(atoms, substituent_index as i32)? != 0 {
+                        let mut carbon_iv = None;
+                        let mut valid = true;
+                        for order in 0..usize::try_from(i32::from(substituent.valence)).unwrap_or(0) {
+                            let candidate_index = usize::from(substituent.neighbor[order]);
+                            if candidate_index == oxygen_index {
+                                continue;
                             }
-                            if valid {
+                            let candidate = atoms
+                                .get(candidate_index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            if candidate.el_number != EL_NUMBER_C
+                                || candidate.charge != 0
+                                || candidate.radical != 0
+                                || candidate.chem_bonds_valence != candidate.valence
+                            {
+                                valid = false;
+                                break;
+                            }
+                            if carbon_iv.is_none() && candidate.valence == 4 && candidate.num_H == 0 {
+                                carbon_iv = Some(candidate_index);
+                            } else if candidate.chem_bonds_valence != 1 || candidate.num_H != 3 {
+                                valid = false;
+                                break;
+                            }
+                        }
+                        if valid {
+                            if let Some(carbon_iv) = carbon_iv {
+                                let carbon = atoms
+                                    .get(carbon_iv)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                for order in 0..usize::try_from(i32::from(carbon.valence)).unwrap_or(0)
+                                {
+                                    let candidate_index = usize::from(carbon.neighbor[order]);
+                                    if candidate_index == substituent_index {
+                                        continue;
+                                    }
+                                    let candidate = atoms
+                                        .get(candidate_index)
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    if candidate.el_number != EL_NUMBER_C
+                                        || candidate.charge != 0
+                                        || candidate.radical != 0
+                                        || candidate.chem_bonds_valence != candidate.valence
+                                        || candidate.chem_bonds_valence != 1
+                                        || candidate.num_H != 3
+                                    {
+                                        valid = false;
+                                        break;
+                                    }
+                                }
+                                if valid {
+                                    output.ord[0] = other_order as i8;
+                                    output.typ[0] = DERIV_X_OXIME as i16;
+                                    output.num[0] = 8;
+                                    return Ok(DERIV_X_OXIME as i32);
+                                }
+                            } else {
+                                output.ord[0] = other_order as i8;
+                                output.typ[0] = DERIV_X_OXIME as i16;
+                                output.num[0] = 5;
+                                return Ok(DERIV_X_OXIME as i32);
+                            }
+                        }
+                    } else if substituent.el_number == EL_NUMBER_C {
+                        if substituent.chem_bonds_valence == 1
+                            && substituent.num_H == 3
+                            && substituent.charge == 0
+                            && substituent.radical == 0
+                        {
+                            output.ord[0] = other_order as i8;
+                            output.typ[0] = DERIV_X_OXIME as i16;
+                            output.num[0] = 2;
+                            return Ok(DERIV_X_OXIME as i32);
+                        }
+                        if substituent.valence == 2
+                            && substituent.chem_bonds_valence == 2
+                            && substituent.num_H == 2
+                            && substituent.charge == 0
+                            && substituent.radical == 0
+                        {
+                            let next_order =
+                                usize::from(substituent.neighbor[0] as usize == oxygen_index);
+                            let next_index = usize::from(substituent.neighbor[next_order]);
+                            let next = atoms
+                                .get(next_index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            if next.chem_bonds_valence == 1
+                                && next.num_H == 3
+                                && next.charge == 0
+                                && next.radical == 0
+                            {
+                                output.ord[0] = other_order as i8;
+                                output.typ[0] = DERIV_X_OXIME as i16;
+                                output.num[0] = 3;
+                                return Ok(DERIV_X_OXIME as i32);
+                            }
+                            if next.valence == 3
+                                && next.chem_bonds_valence == 4
+                                && next.num_H == 0
+                                && next.charge == 0
+                                && next.radical == 0
+                                && next.nRingSystem != substituent.nRingSystem
+                                && next.bCutVertex != 0
+                                && next.nNumAtInRingSystem == 6
+                                && is_Phenyl(atoms, substituent_index as i32, next_index as i32)? != 0
+                            {
                                 output.ord[0] = other_order as i8;
                                 output.typ[0] = DERIV_X_OXIME as i16;
                                 output.num[0] = 8;
                                 return Ok(DERIV_X_OXIME as i32);
                             }
-                        } else {
-                            output.ord[0] = other_order as i8;
-                            output.typ[0] = DERIV_X_OXIME as i16;
-                            output.num[0] = 5;
-                            return Ok(DERIV_X_OXIME as i32);
-                        }
-                    }
-                } else if substituent.el_number == EL_NUMBER_C {
-                    if substituent.chem_bonds_valence == 1
-                        && substituent.num_H == 3
-                        && substituent.charge == 0
-                        && substituent.radical == 0
-                    {
-                        output.ord[0] = other_order as i8;
-                        output.typ[0] = DERIV_X_OXIME as i16;
-                        output.num[0] = 2;
-                        return Ok(DERIV_X_OXIME as i32);
-                    }
-                    if substituent.valence == 2
-                        && substituent.chem_bonds_valence == 2
-                        && substituent.num_H == 2
-                        && substituent.charge == 0
-                        && substituent.radical == 0
-                    {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let next_order =
-                            usize::from(substituent.neighbor[0] as usize == oxygen_index);
-                        let next_index = usize::from(substituent.neighbor[next_order]);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let next = atoms
-                            .get(next_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        if next.chem_bonds_valence == 1
-                            && next.num_H == 3
-                            && next.charge == 0
-                            && next.radical == 0
-                        {
-                            output.ord[0] = other_order as i8;
-                            output.typ[0] = DERIV_X_OXIME as i16;
-                            output.num[0] = 3;
-                            return Ok(DERIV_X_OXIME as i32);
-                        }
-                        if next.valence == 3
-                            && next.chem_bonds_valence == 4
-                            && next.num_H == 0
-                            && next.charge == 0
-                            && next.radical == 0
-                            && next.nRingSystem != substituent.nRingSystem
-                            && next.bCutVertex != 0
-                            && next.nNumAtInRingSystem == 6
-                            && is_Phenyl(atoms, substituent_index as i32, next_index as i32)? != 0
-                        {
-                            output.ord[0] = other_order as i8;
-                            output.typ[0] = DERIV_X_OXIME as i16;
-                            output.num[0] = 8;
-                            return Ok(DERIV_X_OXIME as i32);
                         }
                     }
                 }
@@ -11773,13 +12041,11 @@ pub(crate) fn get_traversed_deriv_type(
     {
         let mut found = 0_i32;
         let mut dansyl = DERIV_AT::default();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for order in 0..valence {
             if order == from_order {
                 continue;
             }
             let sulfur_index = usize::from(atom.neighbor[order]);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let sulfur = atoms
                 .get(sulfur_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -11787,11 +12053,9 @@ pub(crate) fn get_traversed_deriv_type(
                 && sulfur.valence == 4
                 && sulfur.chem_bonds_valence == 6
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let current_derivative = derivatives
                     .get_mut(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut candidate = DERIV_AT::default();
                 if is_Dansyl(
                     atoms,
@@ -11802,7 +12066,6 @@ pub(crate) fn get_traversed_deriv_type(
                 )? != 0
                 {
                     found += 1;
-                    panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
                     dansyl = candidate;
                 }
             }
@@ -11821,12 +12084,10 @@ pub(crate) fn get_traversed_deriv_type(
         && atom.charge == 0
         && atom.radical == 0
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let agent_index = usize::from(atom.neighbor[other_order]);
         let precursor_index = usize::from(atom.neighbor[from_order]);
         let has_agent_carbonyl = is_C_or_S_DB_O(atoms, agent_index as i32)? != 0;
         let precursor_is_silicon = is_Si_IV(atoms, precursor_index as i32)? != 0;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if has_agent_carbonyl
             && is_C_DB_O(atoms, agent_index as i32)? != 0
             && is_silyl2(atoms, precursor_index as i32, atom_index as i32)? == 0
@@ -11837,11 +12098,9 @@ pub(crate) fn get_traversed_deriv_type(
                     .el_number,
             ))? == 0
         {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let agent = atoms
                 .get(agent_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             for order in 0..usize::try_from(i32::from(agent.valence)).unwrap_or(0) {
                 let substituent_index = usize::from(agent.neighbor[order]);
                 if substituent_index == atom_index || agent.bond_type[order] != BOND_SINGLE as u8 {
@@ -11896,7 +12155,6 @@ pub(crate) fn get_traversed_deriv_type(
         }
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if atom.el_number == EL_NUMBER_O
         && atom.nNumAtInRingSystem == 5
         && is_DERIV_RING_DMOX_DEOX_O(
@@ -11909,7 +12167,6 @@ pub(crate) fn get_traversed_deriv_type(
     {
         return Ok(DERIV_RING_DMOX_DEOX_O as i32);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if atom.el_number == EL_NUMBER_N
         && atom.nNumAtInRingSystem == 5
         && atom.valence == 2
@@ -11946,9 +12203,7 @@ pub(crate) fn get_traversed_deriv_type(
         && atom.charge == 0
         && atom.radical == 0
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let from_index = usize::from(atom.neighbor[from_order]);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let from = atoms
             .get(from_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -11966,7 +12221,6 @@ pub(crate) fn get_traversed_deriv_type(
         }
 
         let neighbor_ring = |order: usize| -> Result<u16, SourceHeapError> {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             Ok(atoms
                 .get(usize::from(atom.neighbor[order]))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -11981,7 +12235,6 @@ pub(crate) fn get_traversed_deriv_type(
         let mut count = 0_usize;
         match i32::from(rm1) + i32::from(rm2) + i32::from(r12) {
             0 => {
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 for order in [order1, order2] {
                     if is_possibly_deriv_neigh(
                         atoms,
@@ -11991,7 +12244,6 @@ pub(crate) fn get_traversed_deriv_type(
                         flags,
                     )? != 0
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         orders[count] = order as i32;
                         count += 1;
                     }
@@ -12023,7 +12275,6 @@ pub(crate) fn get_traversed_deriv_type(
             }
             _ => {}
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for index in 0..count {
             output.ord[index] = orders[index] as i8;
             output.typ[index] = DERIV_AMINE_tN as i16;
@@ -12043,18 +12294,14 @@ pub(crate) fn get_traversed_deriv_type(
             || (atom.el_number == EL_NUMBER_SI && atom.valence == 4)
             || (atom.el_number == EL_NUMBER_B && atom.valence == 3))
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let first_connector = usize::from(atom.neighbor[from_order]);
         if let Some((first_type, block_system)) =
             classify_ring_back_connector(atoms, atom_index, first_connector)?
             && block_system != 0
         {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             atoms[atom_index].cFlags |= CFLAG_MARK_BLOCK as i8;
             let first_neighbor = i32::from(atom.neighbor[from_order]);
             let marked = mark_atoms_cFlags(atoms, first_neighbor, 1, CFLAG_MARK_BLOCK as i8)?;
-            panic!("INCHI-AUDIT-0231: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let current = atoms
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -12065,7 +12312,6 @@ pub(crate) fn get_traversed_deriv_type(
                 if order == from_order {
                     continue;
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let connector = atoms
                     .get(usize::from(current.neighbor[order]))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12100,7 +12346,6 @@ pub(crate) fn get_traversed_deriv_type(
             if let Some((second_order, second_type)) = second
                 && !third
             {
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut entries = [(from_order, first_type), (second_order, second_type)];
                 entries.sort_by_key(|entry| entry.0);
                 output.ord[0] = entries[0].0 as i8;
@@ -12190,23 +12435,18 @@ pub(crate) fn is_possibly_deriv_neigh(
     // INCHI✔️❌: /****************************************************************************
     // END INCHI C FUNCTION: is_possibly_deriv_neigh
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index =
         usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order_index = usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_index = usize::from(
         *atom
             .neighbor
             .get(order_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor = atoms
         .get(neighbor_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12243,7 +12483,6 @@ pub(crate) fn is_possibly_deriv_neigh(
         }
         value if value == DERIV_RO_COX as i32 => {
             let previous_index = usize::from(atom.neighbor[usize::from(order == 0)]);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let previous = atoms
                 .get(previous_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12289,10 +12528,14 @@ fn underiv_add_text(
     text: &str,
     delimiter: i8,
 ) -> Result<(), SourceHeapError> {
-    panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut source: Vec<i8> = text.bytes().map(|byte| byte as i8).collect();
-    source.push(0);
-    underiv_list_add(target.as_deref_mut(), capacity, Some(&source), delimiter)?;
+    // INCHI✔️❗: Borrow text bytes into the sole append kernel, no Vec/NUL staging.
+    // O(reached list+text), O(1) scratch; whole-call cost remains OPEN.
+    underiv_list_add_bytes::<u8, true>(
+        target.as_deref_mut(),
+        capacity,
+        Some(text.as_bytes()),
+        delimiter,
+    )?;
     Ok(())
 }
 
@@ -12306,27 +12549,10 @@ fn underiv_add_c_string(
     Ok(())
 }
 
-fn atom_element_name(atom: &inp_ATOM) -> Result<String, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let length = atom
-        .elname
-        .iter()
-        .position(|&byte| byte == 0)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0264: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    Ok(atom.elname[..length]
-        .iter()
-        .map(|&byte| byte as u8 as char)
-        .collect())
-}
-
 fn underiv_or_bit(
     bit_underiv: &mut Option<&mut BIT_UNDERIV>,
     value: u32,
 ) -> Result<(), SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let output = bit_underiv
         .as_deref_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12846,17 +13072,17 @@ pub(crate) fn is_deriv_chain2(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: is_deriv_chain2
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let start_index = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let start_atom = atoms
-        .get(start_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: Type gates all atom admission; successful silyl and degree2
+    // gate the opposite atom read. Reached invalid Rust indices propagate Err.
+    // No new allocation/scan/clones; bounded reports are stack bytes below,
+    // checked-access and text whole-call costs OPEN (performance_pending.md).
     if type_ == 0 || type_ & DERIV_RING_OUTSIDE_PRECURSOR as i32 != 0 {
         return Ok(0);
     }
+    let start_index = usize::try_from(start).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let start_atom = atoms
+        .get(start_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if start_atom.charge != 0
         || start_atom.radical != 0
         || (start_atom.valence != start_atom.chem_bonds_valence
@@ -12867,20 +13093,16 @@ pub(crate) fn is_deriv_chain2(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order = usize::try_from(ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_index = usize::from(
         *start_atom
             .neighbor
             .get(order)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor = atoms
         .get(neighbor_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let Some(mut previous_order) = is_in_the_list(
         Some(&neighbor.neighbor),
         start as u16,
@@ -12896,34 +13118,46 @@ pub(crate) fn is_deriv_chain2(
     {
         let silyl = is_silyl(atoms, neighbor_index as i32, previous_order as i32)?;
         if silyl != 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let opposite_order = usize::from(ord == 0);
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            let opposite_is_silicon = start_atom
-                .neighbor
-                .get(opposite_order)
-                .and_then(|&index| atoms.get(usize::from(index)))
-                .is_some_and(|atom| atom.el_number == EL_NUMBER_SI);
-            if start_atom.valence != 2 || !opposite_is_silicon {
+            let allowed = if start_atom.valence != 2 {
+                true
+            } else {
+                let opposite_order = usize::from(ord == 0);
+                let opposite = atoms
+                    .get(usize::from(start_atom.neighbor[opposite_order]))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                opposite.el_number != EL_NUMBER_SI
+            };
+            if allowed {
                 if underiv.is_some() && len_underiv > 0 {
-                    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let precursor = format!(
-                        "R{}-{}",
-                        match type_ {
-                            value if value == DERIV_BRIDGE_O as i32 => {
-                                atom_element_name(start_atom)?
-                            }
-                            value if value == DERIV_BRIDGE_NH as i32 => "NH".to_owned(),
-                            value if value == DERIV_AMINE_tN as i32 => "N".to_owned(),
-                            _ => "??".to_owned(),
-                        },
-                        match silyl {
-                            1 => "TMS",
-                            2 => "TBDMS",
-                            _ => "???",
+                    // INCHI✔️❗: Native szPrecur[16]; elname contributes <=5
+                    // bytes, so R/name/-/TBDMS/NUL fits without heap text.
+                    // Raw bytes preserve non-ASCII C char values. Cost OPEN.
+                    let mut precursor = [0_i8; 16];
+                    precursor[0] = b'R' as i8;
+                    let middle: &[i8] = match type_ {
+                        value if value == DERIV_BRIDGE_O as i32 => {
+                            let length = start_atom
+                                .elname
+                                .iter()
+                                .position(|&byte| byte == 0)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            &start_atom.elname[..length]
                         }
-                    );
-                    underiv_add_text(&mut underiv, len_underiv, &precursor, b' ' as i8)?;
+                        value if value == DERIV_BRIDGE_NH as i32 => &[b'N' as i8, b'H' as i8],
+                        value if value == DERIV_AMINE_tN as i32 => &[b'N' as i8],
+                        _ => &[b'?' as i8, b'?' as i8],
+                    };
+                    precursor[1..1 + middle.len()].copy_from_slice(middle);
+                    let suffix: &[u8] = match silyl {
+                        1 => b"-TMS",
+                        2 => b"-TBDMS",
+                        _ => b"-???",
+                    };
+                    let offset = 1 + middle.len();
+                    for (target, &source) in precursor[offset..].iter_mut().zip(suffix) {
+                        *target = source as i8;
+                    }
+                    underiv_add_c_string(&mut underiv, len_underiv, &precursor, b' ' as i8)?;
                     let (name, bit) = match silyl {
                         1 => ("TMS", DERIV_BIT_TMS),
                         2 => ("TBDMS", DERIV_BIT_TBDMS),
@@ -12944,7 +13178,6 @@ pub(crate) fn is_deriv_chain2(
 
     if type_ == DERIV_BRIDGE_NH as i32 || type_ == DERIV_AMINE_tN as i32 {
         let carbon_index = neighbor_index;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let carbon = atoms
             .get(carbon_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12959,10 +13192,8 @@ pub(crate) fn is_deriv_chain2(
         }
         let mut next = None;
         let mut oxygens = 0_i32;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for carbon_order in 0..usize::try_from(i32::from(carbon.valence)).unwrap_or(0) {
             let candidate_index = usize::from(carbon.neighbor[carbon_order]);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let candidate = atoms
                 .get(candidate_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -12986,11 +13217,9 @@ pub(crate) fn is_deriv_chain2(
         if oxygens != 1 {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let next_atom = atoms
             .get(next_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let Some(found_order) = is_in_the_list(
             Some(&next_atom.neighbor),
             carbon_index as u16,
@@ -13041,12 +13270,10 @@ pub(crate) fn is_deriv_chain2(
                 3 => ("EtOX", "EtOX", DERIV_BIT_ETOX),
                 _ => {
                     let silicon = if num == 8 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let oxime_neighbor = atoms
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let next_order = usize::from(start as u16 == oxime_neighbor.neighbor[0]);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let carbon = atoms
                             .get(usize::from(oxime_neighbor.neighbor[next_order]))
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13099,14 +13326,11 @@ pub(crate) fn is_deriv_chain2(
                 0,
             )?;
             if num == 13 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let primary = underiv
                     .as_deref()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let offset = underiv_list_get_last(Some(primary), b' ' as i8)?
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 underiv_add_c_string(
                     &mut underiv2,
                     len_underiv2,
@@ -13152,14 +13376,11 @@ pub(crate) fn is_deriv_chain2(
                 underiv_add_text(&mut underiv2, len_underiv2, name, b' ' as i8)?;
                 underiv_or_bit(&mut bit_underiv, bit)?;
             } else {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let primary = underiv
                     .as_deref()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let offset = underiv_list_get_last(Some(primary), b' ' as i8)?
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 underiv_add_c_string(
                     &mut underiv2,
                     len_underiv2,
@@ -13191,13 +13412,25 @@ pub(crate) fn is_deriv_chain2(
 
     if idrv == 0 && type_ != 0 && type_ & DERIV_DANSYL as i32 == type_ {
         if underiv.is_some() {
-            panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut primary = format!("R{}", atom_element_name(start_atom)?);
+            // INCHI✔️❗: Native szRO[16], <=5 raw elname bytes plus R/H/-Dansyl.
+            // Exact fixed storage, no String/encoding expansion; cost OPEN.
+            let mut primary = [0_i8; 16];
+            primary[0] = b'R' as i8;
+            let length = start_atom
+                .elname
+                .iter()
+                .position(|&byte| byte == 0)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            primary[1..1 + length].copy_from_slice(&start_atom.elname[..length]);
+            let mut offset = 1 + length;
             if start_atom.num_H == 1 {
-                primary.push('H');
+                primary[offset] = b'H' as i8;
+                offset += 1;
             }
-            primary.push_str("-Dansyl");
-            underiv_add_text(&mut underiv, len_underiv, &primary, b' ' as i8)?;
+            for (target, &source) in primary[offset..].iter_mut().zip(b"-Dansyl") {
+                *target = source as i8;
+            }
+            underiv_add_c_string(&mut underiv, len_underiv, &primary, b' ' as i8)?;
             underiv_add_text(&mut underiv2, len_underiv2, "Dansyl", b' ' as i8)?;
             underiv_or_bit(&mut bit_underiv, DERIV_BIT_DANSYL)?;
         }
@@ -13235,10 +13468,8 @@ pub(crate) fn is_deriv_chain(
     // INCHI✔️❌:     return is_deriv_chain2( at, start, da1->typ[idrv], da1->num[idrv], da1->ord[idrv], idrv, szUnderiv, lenUnderiv, szUnderiv2, lenUnderiv2, bitUnderiv );
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_deriv_chain
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let index =
         usize::try_from(derivative_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     is_deriv_chain2(
         atoms,
         start,
@@ -13322,10 +13553,8 @@ pub(crate) fn is_deriv_chain_or_ring(
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: is_deriv_chain_or_ring
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested =
         usize::try_from(*derivative_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested_type = *derivative
         .typ
         .get(requested)
@@ -13448,10 +13677,8 @@ pub(crate) fn remove_deriv(
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: remove_deriv
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested =
         usize::try_from(derivative_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested_type = *derivative
         .typ
         .get(requested)
@@ -13550,10 +13777,8 @@ pub(crate) fn remove_deriv_mark(
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: remove_deriv_mark
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested =
         usize::try_from(derivative_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let requested_type = *derivative
         .typ
         .get(requested)
@@ -13597,11 +13822,9 @@ pub(crate) fn underiv_compare(first: &[i8], second: &[i8]) -> Result<i32, Source
     // END INCHI C FUNCTION: underiv_compare
     let mut index = 0_usize;
     loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let left = *first
             .get(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let right = *second
             .get(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
@@ -13701,7 +13924,6 @@ pub(crate) fn underiv_list_add_two_cuts(
     ) -> Result<Option<(usize, usize)>, SourceHeapError> {
         if delimiter != 0 {
             loop {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let byte = *input
                     .get(*cursor)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13715,7 +13937,6 @@ pub(crate) fn underiv_list_add_two_cuts(
             }
         }
         let start = *cursor;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if *input
             .get(start)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -13724,7 +13945,6 @@ pub(crate) fn underiv_list_add_two_cuts(
             return Ok(None);
         }
         loop {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let byte = *input
                 .get(*cursor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13756,12 +13976,10 @@ pub(crate) fn underiv_list_add_two_cuts(
         return Ok(0);
     };
     let second = next_token(underiv, &mut cursor, delimiter)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_hyphen = underiv[first_start..first_end]
         .iter()
         .position(|&byte| byte == b'-' as i8)
         .map(|offset| first_start + offset);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_hyphen = second.and_then(|(start, end)| {
         underiv[start..end]
             .iter()
@@ -13774,7 +13992,6 @@ pub(crate) fn underiv_list_add_two_cuts(
     {
         let first_prefix_length = first_minus - first_start;
         let second_prefix_length = second_minus - second_start;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if first_prefix_length == second_prefix_length
             && underiv[first_start..first_minus] == underiv[second_start..second_minus]
         {
@@ -13788,7 +14005,6 @@ pub(crate) fn underiv_list_add_two_cuts(
             )?;
             const HYPHEN: [i8; 2] = [b'-' as i8, 0];
             add(&mut list, list_capacity, &HYPHEN, 0)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_suffix = &underiv[first_minus + 1..=first_end];
             let second_suffix = &underiv[second_minus + 1..=second_end];
             let diff = underiv_compare(first_suffix, second_suffix)?;
@@ -13925,8 +14141,14 @@ pub(crate) fn sort_merge_underiv(
     // INCHI✔️❌:
     // INCHI✔️❌:
     // END INCHI C FUNCTION: sort_merge_underiv
+    // INCHI✔️❗: Preserve strtok's in-place delimiter writes and store offsets
+    // in the source-sized512-word stack table, borrowing token bytes in place.
+    // Coefficients use the sole decimal kernel only when num>1; overflow breaks
+    // before the source's postfix gate. No token/String/sort heap allocation.
+    // O(list + comparisons + appended bytes), fixed stack space; safe-index,
+    // table initialization, sorting and decimal constants remain OPEN in
+    // INCHI-PERF-DERIVATIVE-MERGE-STORAGE, not performance acceptance.
     fn c_len(value: &[i8]) -> Result<usize, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         value
             .iter()
             .position(|&byte| byte == 0)
@@ -13938,7 +14160,6 @@ pub(crate) fn sort_merge_underiv(
     let postfix_length = c_len(postfix)?;
     let list_length = c_len(underiv_list)?;
     let mut reused_num = initial_length as i32;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let initial_n = initial_length
         .checked_add(prefix_length)
         .and_then(|value| value.checked_add(1))
@@ -13947,15 +14168,13 @@ pub(crate) fn sort_merge_underiv(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut tokens = Vec::<Vec<i8>>::new();
+    let mut tokens = [0_usize; 512];
+    let mut token_count = 0_usize;
     let mut cursor = 0_usize;
-    while tokens.len() < 512 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    while token_count < tokens.len() {
         while cursor < underiv_list.len() && underiv_list[cursor] == b' ' as i8 {
             cursor += 1;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let byte = *underiv_list
             .get(cursor)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13969,14 +14188,11 @@ pub(crate) fn sort_merge_underiv(
         {
             cursor += 1;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let end_byte = *underiv_list
             .get(cursor)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0208: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut token = underiv_list[start..cursor].to_vec();
-        token.push(0);
-        tokens.push(token);
+        tokens[token_count] = start;
+        token_count += 1;
         if end_byte == 0 {
             break;
         }
@@ -13985,38 +14201,43 @@ pub(crate) fn sort_merge_underiv(
     }
 
     let mut n = underiv_list_add(Some(sdf_value), MAX_SDF_VALUE as i32, Some(prefix), 0)?;
-    tokens.sort_by(|left, right| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let result = underiv_compare(left, right).expect("owned tokens are NUL-terminated");
+    let tokens = &mut tokens[..token_count];
+    tokens.sort_unstable_by(|&left, &right| {
+        let result = underiv_compare(&underiv_list[left..], &underiv_list[right..])
+            .expect("tokenization established NUL-terminated borrowed tokens");
         result.cmp(&0)
     });
-    let token_count = tokens.len() as i32;
+    let mut result_count = token_count as i32;
     let mut index = 0_usize;
     while index < tokens.len() {
         let mut next = index + 1;
-        while next < tokens.len() && underiv_compare(&tokens[index], &tokens[next])? == 0 {
+        while next < tokens.len()
+            && underiv_compare(&underiv_list[tokens[index]..], &underiv_list[tokens[next]..])? == 0
+        {
             next += 1;
         }
         reused_num = (next - index) as i32;
-        panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let coefficient = reused_num.to_string();
-        let item_length = if reused_num > 1 {
-            coefficient.len()
+        let mut item_length = c_len(&underiv_list[tokens[index]..])?;
+        let mut coefficient_buffer;
+        let coefficient = if reused_num > 1 {
+            coefficient_buffer = [0_u8; 21];
+            let digits = crate::source::base::ichi_io::source_decimal_i64(
+                i64::from(reused_num),
+                None,
+                &mut coefficient_buffer,
+            );
+            item_length = digits.len();
+            Some(digits)
         } else {
-            c_len(&tokens[index])?
+            None
         };
         if i64::from(n) + item_length as i64 + 8 < i64::from(MAX_SDF_VALUE) {
             let mut delimiter = if index != 0 { derivative_separator } else { 0 };
-            if reused_num > 1 {
-                panic!("INCHI-AUDIT-0230: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut coefficient_c: Vec<i8> =
-                    coefficient.bytes().map(|byte| byte as i8).collect();
-                coefficient_c.push(0);
-                underiv_list_add(
+            if let Some(coefficient) = coefficient {
+                underiv_list_add_bytes::<u8, true>(
                     Some(sdf_value),
                     MAX_SDF_VALUE as i32,
-                    Some(&coefficient_c),
+                    Some(coefficient),
                     delimiter,
                 )?;
                 delimiter = 0;
@@ -14024,7 +14245,7 @@ pub(crate) fn sort_merge_underiv(
             n = underiv_list_add(
                 Some(sdf_value),
                 MAX_SDF_VALUE as i32,
-                Some(&tokens[index]),
+                Some(&underiv_list[tokens[index]..]),
                 delimiter,
             )?;
         } else {
@@ -14034,15 +14255,15 @@ pub(crate) fn sort_merge_underiv(
                 Some(&[b'!' as i8, 0]),
                 0,
             )?;
-            panic!("INCHI-AUDIT-0254: suspected source divergence; see dev/audits/inchi/findings.md");
-            return Ok(-(1 + token_count));
+            result_count = -(1 + result_count);
+            break;
         }
         index = next;
     }
     if output_sdf == 0 || reused_num != 0 {
         underiv_list_add(Some(sdf_value), MAX_SDF_VALUE as i32, Some(postfix), 0)?;
     }
-    Ok(token_count)
+    Ok(result_count)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -14201,22 +14422,24 @@ pub(crate) fn eliminate_deriv_not_in_list(
     // END INCHI C FUNCTION: eliminate_deriv_not_in_list
 
     fn is_da_num_le(derivative: &DERIV_AT, index: usize) -> Result<bool, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let type_ = i32::from(
             *derivative
                 .typ
                 .get(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        // INCHI✔️❗: IS_DA_NUM_LE short-circuits before num[index].
+        // O(1), no allocation; checked-access whole-call cost OPEN.
+        if type_ != 0 && (type_ & DERIV_UNEXPADABLE) == type_ {
+            return Ok(true);
+        }
         let number = i32::from(
             *derivative
                 .num
                 .get(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        Ok((type_ != 0 && (type_ & DERIV_UNEXPADABLE) == type_) || number <= MAX_AT_DERIV as i32)
+        Ok(number <= MAX_AT_DERIV as i32)
     }
 
     fn add(
@@ -14232,7 +14455,6 @@ pub(crate) fn eliminate_deriv_not_in_list(
         target: &mut Option<&mut BIT_UNDERIV>,
         value: BIT_UNDERIV,
     ) -> Result<(), SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let target = target
             .as_deref_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -14243,9 +14465,7 @@ pub(crate) fn eliminate_deriv_not_in_list(
     let mut num_cuts = 0_i32;
     let mut atom_index = 0_i32;
     while atom_index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let derivative = derivatives
             .get(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -14262,7 +14482,6 @@ pub(crate) fn eliminate_deriv_not_in_list(
             return Ok(-1);
         }
         if num_da == 2 && derivative.typ[0] != derivative.typ[1] {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let derivative = derivatives
                 .get_mut(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -14272,9 +14491,7 @@ pub(crate) fn eliminate_deriv_not_in_list(
             continue;
         }
 
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut underiv = [0_i8; 128];
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut underiv2 = [0_i8; 128];
         underiv_buf_clear(Some(&mut underiv))?;
         underiv_buf_clear(Some(&mut underiv2))?;
@@ -14526,22 +14743,17 @@ pub(crate) fn make_single_cut(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: make_single_cut
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cut = usize::try_from(cut_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let derivative = derivatives
         .get(iat)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order = i32::from(
         *derivative
             .ord
             .get(cut)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let type_ = i32::from(
         *derivative
             .typ
@@ -14554,20 +14766,16 @@ pub(crate) fn make_single_cut(
     if order < 0 {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let order_index = usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let opposite = usize::from(
         *atoms
             .get(iat)
             .and_then(|atom| atom.neighbor.get(order_index))
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let opposite_atom = atoms
         .get(opposite)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let reverse = is_in_the_list(
         Some(&opposite_atom.neighbor),
         atom_index as u16,
@@ -14615,7 +14823,6 @@ pub(crate) fn make_single_cut(
             derivatives[iat].ord[index] = derivatives[iat].ord[index].wrapping_sub(1);
         }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for index in 0..derivatives[opposite].typ.len() {
         if derivatives[opposite].typ[index] == 0 {
             break;
@@ -20641,5 +20848,4863 @@ mod tests {
         let mut second_with_other = entry(DERIV_BRIDGE_NH as i16, 2, 1);
         second_with_other.other_atom = 9;
         assert_eq!(add_to_da(&mut one, &second_with_other), -3);
+    }
+}
+
+#[cfg(test)]
+mod methyl_ethyl_regressions {
+    use super::{inp_ATOM, is_Ethyl, is_Methyl, SourceHeapError};
+
+    #[test]
+    fn complete_source_and_structural_error_controls() {
+        let inputs = include_str!("../../../../../testdata/inchi/expected/official/methyl_ethyl/inputs.txt");
+        let answers = include_str!("../../../../../testdata/inchi/expected/official/methyl_ethyl/expected.txt");
+        assert_eq!(inputs.lines().count(), 97958);
+        assert_eq!(answers.lines().count(), 97952);
+        let mut expected = answers.lines();
+        let mut calls = 0usize;
+        let mut ok = 0usize;
+        let mut errors = 0usize;
+        let mut guard159 = 0usize;
+        let mut guard259 = 0usize;
+        let mut unexpected = 0usize;
+        let mut differences = 0usize;
+        let mut changes = 0usize;
+        for (id, line) in inputs.lines().enumerate() {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            assert_eq!(fields.len(), 25);
+            assert_eq!(fields[0].parse::<usize>().unwrap(), id);
+            let values: Vec<i32> = fields[2..].iter().map(|s| s.parse().unwrap()).collect();
+            let (outside, attachment, length) = (values[0], values[1], values[2] as usize);
+            let mut atoms = [inp_ATOM::default(); 3];
+            for (a, atom) in atoms.iter_mut().enumerate() {
+                let f = &values[5 + 6 * a..11 + 6 * a];
+                atom.valence = f[0] as i8;
+                atom.chem_bonds_valence = f[1] as i8;
+                atom.el_number = f[2] as u8;
+                atom.num_H = f[3] as i8;
+                atom.charge = f[4] as i8;
+                atom.radical = f[5] as i8;
+                atom.orig_at_number = (a + 1) as u16;
+                atom.neighbor[19] = 43210;
+            }
+            atoms[0].neighbor[0] = values[3] as u16;
+            atoms[0].neighbor[1] = values[4] as u16;
+            let before = atoms;
+            let wanted = if fields[1] == "N" {
+                let fixed: Vec<usize> = expected.next().unwrap().split_whitespace()
+                    .map(|s| s.parse().unwrap()).collect();
+                assert_eq!(fixed.len(), 3);
+                assert_eq!(fixed[0], id);
+                [Ok(fixed[1] as i32), Ok(fixed[2] as i32)]
+            } else {
+                assert_eq!(fields[1], "R");
+                let bound = Err(SourceHeapError::PointerOutOfBounds);
+                match id - 73456 {
+                    0..=2 => [bound, bound],
+                    3 | 5 => [Ok(0), bound],
+                    4 => [Ok(0), Ok(0)],
+                    other => panic!("invalid frozen Rust-only id {other}"),
+                }
+            };
+            for _ in 0..2 {
+                for (owner, answer) in wanted.iter().enumerate() {
+                    let view = &atoms[..length];
+                    let result = std::panic::catch_unwind(|| if owner == 0 {
+                        is_Methyl(view, attachment)
+                    } else {
+                        is_Ethyl(view, outside, attachment)
+                    });
+                    calls += 1;
+                    changes += usize::from(atoms != before);
+                    match result {
+                        Ok(actual) => {
+                            ok += usize::from(actual.is_ok());
+                            errors += usize::from(actual.is_err());
+                            differences += usize::from(actual != *answer);
+                        }
+                        Err(payload) => {
+                            let message = payload.downcast_ref::<&str>().copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            match message {
+                                Some("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md") => guard159 += 1,
+                                Some("INCHI-AUDIT-0259: suspected source divergence; see dev/audits/inchi/findings.md") => guard259 += 1,
+                                _ => unexpected += 1,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        println!("METHYL_ETHYL calls={calls} ok={ok} bounds={errors} guard0159={guard159} guard0259={guard259} unexpected={unexpected} differences={differences} changes={changes}");
+        assert_eq!(calls, 391832);
+        assert_eq!((ok, errors, guard159, guard259, unexpected, differences, changes), (391816, 16, 0, 0, 0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod subtract_dt_regressions {
+    use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn fixture(length:usize,h:i8,iso:[i8;3])->Vec<inp_ATOM>{
+        (0..length+2).map(|i|inp_ATOM{
+            elname:[37;6],el_number:37,neighbor:[351;20],
+            orig_at_number:65535,orig_compt_at_numb:231,
+            bond_stereo:[-3;20],bond_type:[7;20],valence:127,chem_bonds_valence:-128,
+            num_H:if i==0{h}else{((i*17%256)as i16-128)as i8},
+            num_iso_H:if i==0{iso}else{[1,-2,3]},iso_atw_diff:-17,
+            charge:-27,radical:3,bAmbiguousStereo:13,cFlags:7,
+            at_type:321,component:i as u16+123,endpoint:12,c_point:27,
+            x:i as f64+0.25,y:-1.5,z:2.75,bUsed0DParity:2,p_parity:1,
+            p_orig_at_num:[127;4],sb_ord:[-7;3],sn_ord:[17;3],sb_parity:[3;3],
+            sn_orig_at_num:[251;3],bCutVertex:1,nRingSystem:65534,
+            nNumAtInRingSystem:100,nBlockSystem:255,
+        }).collect()
+    }
+    
+    #[test]
+    fn subtract_dt_fixed_source_and_partial_error_states() {
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/subtract_dt");
+        let input=std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected=std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let identity=std::fs::read_to_string(root.join("manifest.json")).unwrap();
+        assert!(identity.contains("inchi-subtract-dt-source-first-v1"));
+        assert!(identity.contains("ccb65c2bc13c7b5e3656d00ff3dc70f2046076ffde70d85f21fa2cfd9a497122"));
+        let controls:Vec<Vec<&str>>=input.lines().map(|l|l.split_whitespace().collect()).collect();
+        let outcomes:Vec<Vec<&str>>=expected.lines().map(|l|l.split_whitespace().collect()).collect();
+        assert_eq!(controls.len(),199061);assert_eq!(outcomes.len(),controls.len());
+        let(mut calls,mut ok,mut bounds,mut guards,mut unexpected,mut differences,mut changes)=(0,0,0,0,0,0,0);
+        for _repeat in 0..2 {
+            for (v,e) in controls.iter().zip(&outcomes) {
+                assert_eq!(v.len(),8);assert_eq!(v[0],e[0]);
+                let count:i32=v[2].parse().unwrap();
+                let len:usize=v[3].parse().unwrap();
+                let h:i8=v[4].parse().unwrap();
+                let iso=[v[5].parse().unwrap(),v[6].parse().unwrap(),v[7].parse().unwrap()];
+                let mut atoms=fixture(len,h,iso);let before=atoms.clone();
+                let result=catch_unwind(AssertUnwindSafe(||subtract_DT_from_num_H(&mut atoms[..len],count)));
+                calls+=1;
+                let actual=match result {
+                    Ok(result)=>{match result{Ok(_)=>ok+=1,Err(SourceHeapError::PointerOutOfBounds)=>bounds+=1,_=>unexpected+=1};Some(result)}
+                    Err(payload)=>{
+                        let message=payload.downcast_ref::<&str>().copied()
+                            .or_else(||payload.downcast_ref::<String>().map(String::as_str));
+                        if message==Some("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md"){guards+=1;}else{unexpected+=1;}
+                        if atoms!=before{changes+=1;}None
+                    }
+                };
+                if let Some(actual)=actual {
+                    let wanted=match e[1]{"Ok"=>Ok(0),"PointerOutOfBounds"=>Err(SourceHeapError::PointerOutOfBounds),_=>panic!("invalid fixed result")};
+                    if actual!=wanted{differences+=1;}
+                    assert_eq!(e.len(),len+2);
+                    for i in 0..len{if atoms[i].num_H!=e[i+2].parse::<i8>().unwrap(){differences+=1;}}
+                    let mut restored=atoms.clone();
+                    for i in 0..len{restored[i].num_H=before[i].num_H;}
+                    if restored!=before{changes+=1;}
+                }
+            }
+        }
+        eprintln!("SUBTRACT_DT calls={calls} ok={ok} bounds={bounds} guards={guards} unexpected={unexpected} differences={differences} changes={changes}");
+        assert_eq!((calls,ok,bounds,guards,unexpected,differences,changes),(398122,398086,36,0,0,0,0));
+    }
+}
+
+
+#[cfg(test)]
+mod silicon_iv_regressions {
+    use super::{inp_ATOM, is_Si_IV, SourceHeapError};
+    fn fixture(length:usize,h:i8,iso:[i8;3])->Vec<inp_ATOM>{
+        (0..length+2).map(|i|inp_ATOM{
+            elname:[37;6],el_number:37,neighbor:[351;20],
+            orig_at_number:65535,orig_compt_at_numb:231,
+            bond_stereo:[-3;20],bond_type:[7;20],valence:127,chem_bonds_valence:-128,
+            num_H:if i==0{h}else{((i*17%256)as i16-128)as i8},
+            num_iso_H:if i==0{iso}else{[1,-2,3]},iso_atw_diff:-17,
+            charge:-27,radical:3,bAmbiguousStereo:13,cFlags:7,
+            at_type:321,component:i as u16+123,endpoint:12,c_point:27,
+            x:i as f64+0.25,y:-1.5,z:2.75,bUsed0DParity:2,p_parity:1,
+            p_orig_at_num:[127;4],sb_ord:[-7;3],sn_ord:[17;3],sb_parity:[3;3],
+            sn_orig_at_num:[251;3],bCutVertex:1,nRingSystem:65534,
+            nNumAtInRingSystem:100,nBlockSystem:255,
+        }).collect()
+    }
+
+    #[test]
+    fn complete_source_and_typed_index_errors() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/silicon_iv");
+        let input = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let identity = std::fs::read_to_string(root.join("manifest.json")).unwrap();
+        assert!(identity.contains("inchi-silicon-iv-source-first-v1"));
+        assert!(identity.contains("6e670a85e91c7477c9e57bf666eca744858c832a434b5aec5c9e4e24ee90840d"));
+        let controls: Vec<Vec<&str>> = input.lines().map(|l| l.split_whitespace().collect()).collect();
+        let outcomes: Vec<Vec<&str>> = expected.lines().map(|l| l.split_whitespace().collect()).collect();
+        assert_eq!(controls.len(), 4946);
+        assert_eq!(outcomes.len(), controls.len());
+        let (mut calls, mut ok, mut bounds, mut guards, mut unexpected, mut differences, mut changes) =
+            (0, 0, 0, 0, 0, 0, 0);
+        for _repeat in 0..2 {
+            for (id, (v, e)) in controls.iter().zip(&outcomes).enumerate() {
+                assert_eq!(v.len(), 9);
+                assert_eq!(v[0].parse::<usize>().unwrap(), id);
+                assert_eq!(v[0], e[0]);
+                let index: i32 = v[2].parse().unwrap();
+                let len: usize = v[3].parse().unwrap();
+                let mut atoms = fixture(len, 17, [1, -2, 3]);
+                if v[1] == "N" {
+                    assert!(index >= 0 && (index as usize) < len);
+                    let a = &mut atoms[index as usize];
+                    a.el_number = v[4].parse().unwrap();
+                    a.charge = v[5].parse().unwrap();
+                    a.radical = v[6].parse().unwrap();
+                    a.valence = v[7].parse().unwrap();
+                    a.chem_bonds_valence = v[8].parse().unwrap();
+                } else {
+                    assert_eq!(v[1], "R");
+                    assert!(index < 0 || (index as usize) >= len);
+                }
+                let before = atoms.clone();
+                let wanted = match e[1] {
+                    "Ok" => { assert_eq!(e.len(), 3); Ok(e[2].parse::<i32>().unwrap()) }
+                    "PointerOutOfBounds" => { assert_eq!(e.len(), 2); Err(SourceHeapError::PointerOutOfBounds) }
+                    _ => panic!("invalid frozen result"),
+                };
+                let result = std::panic::catch_unwind(|| is_Si_IV(&atoms[..len], index));
+                calls += 1;
+                changes += usize::from(atoms != before);
+                match result {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            _ => unexpected += 1,
+                        }
+                        differences += usize::from(actual != wanted);
+                    }
+                    Err(payload) => {
+                        let message = payload.downcast_ref::<&str>().copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message == Some("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md") {
+                            guards += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("SILICON_IV calls={calls} ok={ok} bounds={bounds} guards={guards} unexpected={unexpected} differences={differences} changes={changes}");
+        assert_eq!((calls, ok, bounds, guards, unexpected, differences, changes), (9892, 9800, 92, 0, 0, 0, 0));
+    }
+}
+
+
+#[cfg(test)]
+mod atom_pair_seq_regressions {
+    use super::{has_atom_pair_seq, R2C_ATPAIR, SourceHeapError};
+    fn fixture(a:u16,b:u16,mode:usize,len:usize)->Vec<R2C_ATPAIR>{
+        let (lo,hi)=(a.min(b),a.max(b));
+        let mut rows:Vec<_>=(0..len+2).map(|i|R2C_ATPAIR{at:[lo^1,hi],atno:((i*977+123)&65535)as u16}).collect();
+        for (i,row) in rows[..len].iter_mut().enumerate(){
+            if (mode==0&&i==0)||(mode==1&&i==1)||(mode==2&&i==3)||(mode==5&&(i==1||i==2)){row.at=[lo,hi];}
+            if mode==4{row.at=[hi,lo];}
+            if mode==7{row.at=[lo,hi^1];}
+        }
+        rows
+    }
+
+    #[test]
+    fn complete_source_first_match_and_reached_error_states() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/atom_pair_seq");
+        let input = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let manifest = std::fs::read_to_string(root.join("manifest.json")).unwrap();
+        assert!(manifest.contains("inchi-atom-pair-seq-source-first-v1"));
+        assert!(manifest.contains("28886cee8260247e3ffd5430c5b74e90e9185559709aa209bcd8cfda47d10ade"));
+        let controls: Vec<Vec<&str>> = input.lines().map(|l| l.split_whitespace().collect()).collect();
+        let outcomes: Vec<Vec<&str>> = expected.lines().map(|l| l.split_whitespace().collect()).collect();
+        assert_eq!(controls.len(), 263840);
+        assert_eq!(outcomes.len(), controls.len());
+        let (mut calls, mut ok, mut bounds, mut guard46, mut guard159, mut unexpected, mut differences, mut changes) =
+            (0, 0, 0, 0, 0, 0, 0, 0);
+        for _repeat in 0..2 {
+            for (id, (v, e)) in controls.iter().zip(&outcomes).enumerate() {
+                assert_eq!(v.len(), 7);
+                assert_eq!(v[0].parse::<usize>().unwrap(), id);
+                assert_eq!(v[0], e[0]);
+                let count: i32 = v[2].parse().unwrap();
+                let len: usize = v[3].parse().unwrap();
+                let a: u16 = v[4].parse().unwrap();
+                let b: u16 = v[5].parse().unwrap();
+                let mode: usize = v[6].parse().unwrap();
+                let pairs = fixture(a, b, mode, len);
+                let before = pairs.clone();
+                let wanted = match e[1] {
+                    "Ok" => { assert_eq!(e.len(), 3); Ok(e[2].parse::<i32>().unwrap()) }
+                    "PointerOutOfBounds" => { assert_eq!(e.len(), 2); Err(SourceHeapError::PointerOutOfBounds) }
+                    _ => panic!("invalid frozen result"),
+                };
+                let result = std::panic::catch_unwind(|| has_atom_pair_seq(&pairs[..len], count, a, b));
+                calls += 1;
+                changes += usize::from(pairs != before);
+                match result {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            _ => unexpected += 1,
+                        }
+                        differences += usize::from(actual != wanted);
+                    }
+                    Err(payload) => {
+                        let message = payload.downcast_ref::<&str>().copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md") => guard46 += 1,
+                            Some("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md") => guard159 += 1,
+                            _ => unexpected += 1,
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("ATOM_PAIR_SEQ calls={calls} ok={ok} bounds={bounds} guard0046={guard46} guard0159={guard159} unexpected={unexpected} differences={differences} changes={changes}");
+        assert_eq!((calls, ok, bounds, guard46, guard159, unexpected, differences, changes),
+            (527680, 527568, 112, 0, 0, 0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod unmark_indicators_regressions {
+    use super::{UnMarkOtherIndicators, inp_ATOM, SourceHeapError};
+
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u8) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6], el_number: byte, neighbor: [word; 20],
+            orig_at_number: word, orig_compt_at_numb: !word,
+            bond_stereo: [byte as i8; 20], bond_type: [byte; 20],
+            valence: byte as i8, chem_bonds_valence: !byte as i8,
+            num_H: byte as i8, num_iso_H: [byte as i8; 3], iso_atw_diff: !byte as i8,
+            charge: byte as i8, radical: !byte as i8, bAmbiguousStereo: byte as i8,
+            cFlags: flags.wrapping_add((index as u8).wrapping_mul(37)) as i8,
+            at_type: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            component: word, endpoint: !word, c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8, p_parity: !byte as i8,
+            p_orig_at_num: [word; 4], sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3], sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3], bCutVertex: byte as i8,
+            nRingSystem: word, nNumAtInRingSystem: !word, nBlockSystem: word,
+        }
+    }
+    
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0; a.y = 0.0; a.z = 0.0;
+        b.x = 0.0; b.y = 0.0; b.z = 0.0;
+        floats && a == b
+    }
+
+    fn run_fixed_references(fixed8: bool) {
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../testdata/inchi/expected/official/unmark_indicators/manifest.json"
+        )).unwrap();
+        assert_eq!(manifest["schema"], "inchi-unmark-indicators-v1");
+        assert_eq!(manifest["version"], "1.07.5");
+        assert_eq!(manifest["unique_cases"], 71850);
+        assert_eq!(manifest["repeats"], 2);
+        assert_eq!(manifest["rust_calls"], 143700);
+        assert_eq!(manifest["rust_fixed8_calls"], 132188);
+        let inputs: Vec<_> = include_str!(
+            "../../../../../testdata/inchi/expected/official/unmark_indicators/inputs.txt"
+        ).lines().collect();
+        let expected: Vec<_> = include_str!(
+            "../../../../../testdata/inchi/expected/official/unmark_indicators/expected.txt"
+        ).lines().collect();
+        assert_eq!(inputs.len(), 71850);
+        assert_eq!(expected.len(), inputs.len());
+        let (mut calls, mut ok, mut bounds, mut audit159) = (0, 0, 0, 0);
+        let (mut unexpected, mut differences, mut changed) = (0, 0, 0);
+        for (ident, (input, expected)) in inputs.iter().zip(&expected).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 7);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let n: usize = cells[1].parse().unwrap();
+            let count: i32 = cells[2].parse().unwrap();
+            let typ: u16 = cells[3].parse().unwrap();
+            let flags: u8 = cells[4].parse().unwrap();
+            let seed: u8 = cells[5].parse().unwrap();
+            assert!(n <= 8);
+            assert_eq!(cells[6] == "N", count <= 0 || count as usize <= n);
+            let wanted: Vec<_> = expected.split_whitespace().collect();
+            assert_eq!(wanted.len(), 11);
+            let wanted_result = if wanted[0] == "E" {
+                assert_eq!(cells[6], "E");
+                Err(SourceHeapError::PointerOutOfBounds)
+            } else {
+                assert_eq!(cells[6], "N");
+                assert_eq!(wanted[0], "0");
+                Ok(0)
+            };
+            let wanted_fields: [u32; 10] = std::array::from_fn(|i| {
+                assert_eq!(wanted[i + 1].len(), 6);
+                u32::from_str_radix(wanted[i + 1], 16).unwrap()
+            });
+            if fixed8 && !(n == 8 && count == 8) { continue; }
+            let before: [inp_ATOM; 10] = std::array::from_fn(|i| dirty_atom(seed, i, typ, flags));
+            for repeat in 0..2 {
+                let mut atoms = before;
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    UnMarkOtherIndicators(&mut atoms[..n], count)
+                }));
+                calls += 1;
+                match result {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(0) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            _ => unexpected += 1,
+                        }
+                        if actual != wanted_result {
+                            differences += 1;
+                            if differences <= 8 { eprintln!("UNMARK DIFFERENCE fixed8={fixed8} id={ident} repeat={repeat} actual={actual:?} wanted={wanted_result:?}"); }
+                        }
+                        for i in 0..10 {
+                            let mut wanted_atom = before[i];
+                            wanted_atom.at_type = (wanted_fields[i] >> 8) as u16;
+                            wanted_atom.cFlags = wanted_fields[i] as u8 as i8;
+                            if !same_bits(atoms[i], wanted_atom) {
+                                changed += 1;
+                                if changed <= 8 { eprintln!("UNMARK STATE fixed8={fixed8} id={ident} repeat={repeat} atom={i}"); }
+                            }
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload.downcast_ref::<&str>().copied().or_else(|| {
+                            payload.downcast_ref::<String>().map(String::as_str)
+                        });
+                        if text == Some("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md") {
+                            audit159 += 1;
+                        } else {
+                            unexpected += 1;
+                            if unexpected <= 8 { eprintln!("UNMARK PANIC fixed8={fixed8} id={ident} repeat={repeat} text={text:?}"); }
+                        }
+                        // Existing first-iteration guard must leave even the
+                        // reachable prefix untouched. Panics are counted and
+                        // ALWAYS fail the final full-behavior assertion.
+                        for i in 0..10 {
+                            changed += usize::from(!same_bits(atoms[i], before[i]));
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("UNMARK COUNTS fixed8={fixed8} calls={calls} ok={ok} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changed={changed}");
+        let wanted = if fixed8 { (132188, 132188, 0) } else { (143700, 139936, 3764) };
+        assert_eq!((calls, ok, bounds), wanted);
+        assert_eq!((audit159, unexpected, differences, changed), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn complete_atom_field_prefix_and_partial_error_state() {
+        run_fixed_references(false);
+    }
+
+    #[test]
+    fn complete_fixed8_atom_consumer() {
+        run_fixed_references(true);
+    }
+}
+
+#[cfg(test)]
+mod n_butyl_regressions {
+    use super::is_nButyl;
+    use crate::source_types::SourceHeapError;
+    use crate::source_types::inp_ATOM;
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/n_butyl/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/n_butyl/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/n_butyl/manifest.json"
+    ));
+    fn dirty_atom(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM::default();
+        let word = u64::from(seed).wrapping_add((index as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        a.elname = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(0) as _
+        });
+        a.el_number = word.rotate_left(1) as _;
+        a.neighbor = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(2) as _
+        });
+        a.orig_at_number = word.rotate_left(3) as _;
+        a.orig_compt_at_numb = word.rotate_left(4) as _;
+        a.bond_stereo = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(5) as _
+        });
+        a.bond_type = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(6) as _
+        });
+        a.valence = word.rotate_left(7) as _;
+        a.chem_bonds_valence = word.rotate_left(8) as _;
+        a.num_H = word.rotate_left(9) as _;
+        a.num_iso_H = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(10) as _
+        });
+        a.iso_atw_diff = word.rotate_left(11) as _;
+        a.charge = word.rotate_left(12) as _;
+        a.radical = word.rotate_left(13) as _;
+        a.bAmbiguousStereo = word.rotate_left(14) as _;
+        a.cFlags = word.rotate_left(15) as _;
+        a.at_type = word.rotate_left(16) as _;
+        a.component = word.rotate_left(17) as _;
+        a.endpoint = word.rotate_left(18) as _;
+        a.c_point = word.rotate_left(19) as _;
+        a.x = f64::from_bits(word.rotate_left(20) ^ 0x7ff8000000000001);
+        a.y = f64::from_bits(word.rotate_left(21) ^ 0x7ff8000000000001);
+        a.z = f64::from_bits(word.rotate_left(22) ^ 0x7ff8000000000001);
+        a.bUsed0DParity = word.rotate_left(23) as _;
+        a.p_parity = word.rotate_left(24) as _;
+        a.p_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(25) as _
+        });
+        a.sb_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(26) as _
+        });
+        a.sn_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(27) as _
+        });
+        a.sb_parity = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(28) as _
+        });
+        a.sn_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(29) as _
+        });
+        a.bCutVertex = word.rotate_left(30) as _;
+        a.nRingSystem = word.rotate_left(31) as _;
+        a.nNumAtInRingSystem = word.rotate_left(32) as _;
+        a.nBlockSystem = word.rotate_left(33) as _;
+        a.charge = 0;
+        a
+    }
+
+    fn unchanged(a: &[inp_ATOM], b: &[inp_ATOM]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(a, b)| {
+                let bits_equal = a.x.to_bits() == b.x.to_bits()
+                    && a.y.to_bits() == b.y.to_bits()
+                    && a.z.to_bits() == b.z.to_bits();
+                let (mut a, mut b) = (*a, *b);
+                a.x = 0.0;
+                a.y = 0.0;
+                a.z = 0.0;
+                b.x = 0.0;
+                b.y = 0.0;
+                b.z = 0.0;
+                bits_equal && a == b
+            })
+    }
+
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    #[inline(never)]
+    fn full_consumer(at: &[inp_ATOM], start: i32, order: i32) -> Result<i32, SourceHeapError> {
+        is_nButyl(at, start, order)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0x70857999badbafa2);
+        assert_eq!(fingerprint(EXPECTED), 0xc92baaf382b93369);
+        assert_eq!(fingerprint(MANIFEST), 0x8e0dbc670a64e061);
+
+        assert_eq!(INPUTS.lines().count(), 267346);
+        assert_eq!(EXPECTED.lines().count(), 267346);
+        let (mut calls, mut errors, mut ok, mut guard159, mut guard262) = (0, 0, 0, 0, 0);
+        for (id, (line, reference)) in INPUTS.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            let e: Vec<_> = reference.split_whitespace().collect();
+            assert_eq!(w.len(), 8);
+            assert_eq!(e.len(), 4);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(e[3], "0");
+            let n = w[2].parse::<usize>().unwrap();
+            let off = w[3].parse::<usize>().unwrap();
+            let start = w[4].parse::<i32>().unwrap();
+            let order = w[5].parse::<i32>().unwrap();
+            let seed = w[6].parse::<u8>().unwrap();
+            assert!(off <= n && n <= 8);
+            let mut at: Vec<_> = (0..n).map(|j| dirty_atom(seed, j)).collect();
+            if n > 0 {
+                let records: Vec<_> = w[7].split(';').collect();
+                assert_eq!(records.len(), n);
+                for (a, record) in at.iter_mut().zip(records) {
+                    let (fields, neighbors) = record.split_once(':').unwrap();
+                    let f: Vec<i32> = fields.split(',').map(|s| s.parse().unwrap()).collect();
+                    assert_eq!(f.len(), 6);
+                    a.el_number = f[0].try_into().unwrap();
+                    a.valence = f[1].try_into().unwrap();
+                    a.chem_bonds_valence = f[2].try_into().unwrap();
+                    a.num_H = f[3].try_into().unwrap();
+                    a.charge = f[4].try_into().unwrap();
+                    a.radical = f[5].try_into().unwrap();
+                    let v: Vec<u16> = neighbors.split(',').map(|s| s.parse().unwrap()).collect();
+                    a.neighbor.copy_from_slice(&v);
+                }
+            } else {
+                assert_eq!(w[7], "-");
+            }
+            let original = at.clone();
+            let wanted = if e[1] == "O" {
+                assert_eq!(w[1], "1");
+                Ok(e[2].parse::<i32>().unwrap())
+            } else {
+                assert_eq!(w[1], "0");
+                assert_eq!(e[2], "PointerOutOfBounds");
+                Err(SourceHeapError::PointerOutOfBounds)
+            };
+            for _ in 0..2 {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if full {
+                        full_consumer(&at[off..], start, order)
+                    } else {
+                        is_nButyl(&at[off..], start, order)
+                    }
+                }));
+                match result {
+                    Ok(actual) => {
+                        assert_eq!(actual, wanted, "ID{id}");
+                        if actual.is_err() {
+                            errors += 1;
+                        } else {
+                            ok += 1;
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| payload.downcast_ref::<&str>().copied());
+                        match text {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard262 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                assert!(
+                    unchanged(&at, &original),
+                    "full34fields/coordinate bits ID{id}"
+                );
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 534692);
+        println!(
+            "n_butyl full={full} calls={calls} returned_ok={ok} bounds={errors} exact0159panics={guard159} exact0262panics={guard262} returned_value_differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, errors, guard159, guard262), (534596, 96, 0, 0));
+    }
+    #[test]
+    fn complete_promoted_sum_four_hops_and_reached_errors() {
+        check(false);
+    }
+    #[test]
+    fn complete_full_consumer_and_all_storage_bits() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod me_or_et_regressions {
+    use super::is_Me_or_Et;
+    use crate::source_types::SourceHeapError;
+    use crate::source_types::inp_ATOM;
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/me_or_et/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/me_or_et/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/me_or_et/manifest.json"
+    ));
+    fn dirty_atom(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM::default();
+        let word = u64::from(seed).wrapping_add((index as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        a.elname = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(0) as _
+        });
+        a.el_number = word.rotate_left(1) as _;
+        a.neighbor = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(2) as _
+        });
+        a.orig_at_number = word.rotate_left(3) as _;
+        a.orig_compt_at_numb = word.rotate_left(4) as _;
+        a.bond_stereo = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(5) as _
+        });
+        a.bond_type = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(6) as _
+        });
+        a.valence = word.rotate_left(7) as _;
+        a.chem_bonds_valence = word.rotate_left(8) as _;
+        a.num_H = word.rotate_left(9) as _;
+        a.num_iso_H = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(10) as _
+        });
+        a.iso_atw_diff = word.rotate_left(11) as _;
+        a.charge = word.rotate_left(12) as _;
+        a.radical = word.rotate_left(13) as _;
+        a.bAmbiguousStereo = word.rotate_left(14) as _;
+        a.cFlags = word.rotate_left(15) as _;
+        a.at_type = word.rotate_left(16) as _;
+        a.component = word.rotate_left(17) as _;
+        a.endpoint = word.rotate_left(18) as _;
+        a.c_point = word.rotate_left(19) as _;
+        a.x = f64::from_bits(word.rotate_left(20) ^ 0x7ff8000000000001);
+        a.y = f64::from_bits(word.rotate_left(21) ^ 0x7ff8000000000001);
+        a.z = f64::from_bits(word.rotate_left(22) ^ 0x7ff8000000000001);
+        a.bUsed0DParity = word.rotate_left(23) as _;
+        a.p_parity = word.rotate_left(24) as _;
+        a.p_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(25) as _
+        });
+        a.sb_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(26) as _
+        });
+        a.sn_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(27) as _
+        });
+        a.sb_parity = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(28) as _
+        });
+        a.sn_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(29) as _
+        });
+        a.bCutVertex = word.rotate_left(30) as _;
+        a.nRingSystem = word.rotate_left(31) as _;
+        a.nNumAtInRingSystem = word.rotate_left(32) as _;
+        a.nBlockSystem = word.rotate_left(33) as _;
+        a.charge = 0;
+        a
+    }
+
+    fn unchanged(a: &[inp_ATOM], b: &[inp_ATOM]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(a, b)| {
+                let bits_equal = a.x.to_bits() == b.x.to_bits()
+                    && a.y.to_bits() == b.y.to_bits()
+                    && a.z.to_bits() == b.z.to_bits();
+                let (mut a, mut b) = (*a, *b);
+                a.x = 0.0;
+                a.y = 0.0;
+                a.z = 0.0;
+                b.x = 0.0;
+                b.y = 0.0;
+                b.z = 0.0;
+                bits_equal && a == b
+            })
+    }
+
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    #[inline(never)]
+    fn full_consumer(at: &[inp_ATOM], start: i32, order: i32) -> Result<i32, SourceHeapError> {
+        is_Me_or_Et(at, start, order)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0x984c4e7c6eb19730);
+        assert_eq!(fingerprint(EXPECTED), 0x20133907137bbe78);
+        assert_eq!(fingerprint(MANIFEST), 0xf11a564302818f92);
+
+        assert_eq!(INPUTS.lines().count(), 133819);
+        assert_eq!(EXPECTED.lines().count(), 133819);
+        let (mut calls, mut errors, mut ok, mut guard159, mut guard262) = (0, 0, 0, 0, 0);
+        for (id, (line, reference)) in INPUTS.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            let e: Vec<_> = reference.split_whitespace().collect();
+            assert_eq!(w.len(), 8);
+            assert_eq!(e.len(), 4);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(e[3], "0");
+            let n = w[2].parse::<usize>().unwrap();
+            let off = w[3].parse::<usize>().unwrap();
+            let start = w[4].parse::<i32>().unwrap();
+            let order = w[5].parse::<i32>().unwrap();
+            let seed = w[6].parse::<u8>().unwrap();
+            assert!(off <= n && n <= 8);
+            let mut at: Vec<_> = (0..n).map(|j| dirty_atom(seed, j)).collect();
+            if n > 0 {
+                let records: Vec<_> = w[7].split(';').collect();
+                assert_eq!(records.len(), n);
+                for (a, record) in at.iter_mut().zip(records) {
+                    let (fields, neighbors) = record.split_once(':').unwrap();
+                    let f: Vec<i32> = fields.split(',').map(|s| s.parse().unwrap()).collect();
+                    assert_eq!(f.len(), 6);
+                    a.el_number = f[0].try_into().unwrap();
+                    a.valence = f[1].try_into().unwrap();
+                    a.chem_bonds_valence = f[2].try_into().unwrap();
+                    a.num_H = f[3].try_into().unwrap();
+                    a.charge = f[4].try_into().unwrap();
+                    a.radical = f[5].try_into().unwrap();
+                    let v: Vec<u16> = neighbors.split(',').map(|s| s.parse().unwrap()).collect();
+                    a.neighbor.copy_from_slice(&v);
+                }
+            } else {
+                assert_eq!(w[7], "-");
+            }
+            let original = at.clone();
+            let wanted = if e[1] == "O" {
+                assert_eq!(w[1], "1");
+                Ok(e[2].parse::<i32>().unwrap())
+            } else {
+                assert_eq!(w[1], "0");
+                assert_eq!(e[2], "PointerOutOfBounds");
+                Err(SourceHeapError::PointerOutOfBounds)
+            };
+            for _ in 0..2 {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if full {
+                        full_consumer(&at[off..], start, order)
+                    } else {
+                        is_Me_or_Et(&at[off..], start, order)
+                    }
+                }));
+                match result {
+                    Ok(actual) => {
+                        assert_eq!(actual, wanted, "ID{id}");
+                        if actual.is_err() {
+                            errors += 1;
+                        } else {
+                            ok += 1;
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| payload.downcast_ref::<&str>().copied());
+                        match text {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard262 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                assert!(
+                    unchanged(&at, &original),
+                    "full34fields/coordinate bits ID{id}"
+                );
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 267638);
+        println!(
+            "me_or_et full={full} calls={calls} returned_ok={ok} bounds={errors} exact0159panics={guard159} exact0262panics={guard262} returned_value_differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, errors, guard159, guard262), (267492, 146, 0, 0));
+    }
+    #[test]
+    fn complete_promoted_sums_short_circuits_and_reached_errors() {
+        check(false);
+    }
+    #[test]
+    fn complete_full_consumer_and_all_storage_bits() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod phenyl_regressions {
+    use super::is_phenyl;
+    use crate::source_types::SourceHeapError;
+    use crate::source_types::inp_ATOM;
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/phenyl/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/phenyl/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/phenyl/manifest.json"
+    ));
+    fn dirty_atom(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM::default();
+        let word = u64::from(seed).wrapping_add((index as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        a.elname = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(0) as _
+        });
+        a.el_number = word.rotate_left(1) as _;
+        a.neighbor = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(2) as _
+        });
+        a.orig_at_number = word.rotate_left(3) as _;
+        a.orig_compt_at_numb = word.rotate_left(4) as _;
+        a.bond_stereo = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(5) as _
+        });
+        a.bond_type = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(6) as _
+        });
+        a.valence = word.rotate_left(7) as _;
+        a.chem_bonds_valence = word.rotate_left(8) as _;
+        a.num_H = word.rotate_left(9) as _;
+        a.num_iso_H = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(10) as _
+        });
+        a.iso_atw_diff = word.rotate_left(11) as _;
+        a.charge = word.rotate_left(12) as _;
+        a.radical = word.rotate_left(13) as _;
+        a.bAmbiguousStereo = word.rotate_left(14) as _;
+        a.cFlags = word.rotate_left(15) as _;
+        a.at_type = word.rotate_left(16) as _;
+        a.component = word.rotate_left(17) as _;
+        a.endpoint = word.rotate_left(18) as _;
+        a.c_point = word.rotate_left(19) as _;
+        a.x = f64::from_bits(word.rotate_left(20) ^ 0x7ff8000000000001);
+        a.y = f64::from_bits(word.rotate_left(21) ^ 0x7ff8000000000001);
+        a.z = f64::from_bits(word.rotate_left(22) ^ 0x7ff8000000000001);
+        a.bUsed0DParity = word.rotate_left(23) as _;
+        a.p_parity = word.rotate_left(24) as _;
+        a.p_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(25) as _
+        });
+        a.sb_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(26) as _
+        });
+        a.sn_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(27) as _
+        });
+        a.sb_parity = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(28) as _
+        });
+        a.sn_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(29) as _
+        });
+        a.bCutVertex = word.rotate_left(30) as _;
+        a.nRingSystem = word.rotate_left(31) as _;
+        a.nNumAtInRingSystem = word.rotate_left(32) as _;
+        a.nBlockSystem = word.rotate_left(33) as _;
+        a.charge = 0;
+        a
+    }
+
+    fn unchanged(a: &[inp_ATOM], b: &[inp_ATOM]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(a, b)| {
+                let bits_equal = a.x.to_bits() == b.x.to_bits()
+                    && a.y.to_bits() == b.y.to_bits()
+                    && a.z.to_bits() == b.z.to_bits();
+                let (mut a, mut b) = (*a, *b);
+                a.x = 0.0;
+                a.y = 0.0;
+                a.z = 0.0;
+                b.x = 0.0;
+                b.y = 0.0;
+                b.z = 0.0;
+                bits_equal && a == b
+            })
+    }
+
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    #[inline(never)]
+    fn full_consumer(at: &[inp_ATOM], start: i32, order: i32) -> Result<i32, SourceHeapError> {
+        is_phenyl(at, start, order)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0xb8e30738d4eedaf0);
+        assert_eq!(fingerprint(EXPECTED), 0x6fd09de6593aeb89);
+        assert_eq!(fingerprint(MANIFEST), 0x4282f6c9c7771d74);
+
+        assert_eq!(INPUTS.lines().count(), 399539);
+        assert_eq!(EXPECTED.lines().count(), 399539);
+        let (mut calls, mut errors, mut ok, mut guard159, mut guard262) = (0, 0, 0, 0, 0);
+        for (id, (line, reference)) in INPUTS.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            let e: Vec<_> = reference.split_whitespace().collect();
+            assert_eq!(w.len(), 8);
+            assert_eq!(e.len(), 4);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(e[3], "0");
+            let n = w[2].parse::<usize>().unwrap();
+            let off = w[3].parse::<usize>().unwrap();
+            let start = w[4].parse::<i32>().unwrap();
+            let order = w[5].parse::<i32>().unwrap();
+            let seed = w[6].parse::<u8>().unwrap();
+            assert!(off <= n && n <= 16);
+            let mut at: Vec<_> = (0..n).map(|j| dirty_atom(seed, j)).collect();
+            if n > 0 {
+                let records: Vec<_> = w[7].split(';').collect();
+                assert_eq!(records.len(), n);
+                for (a, record) in at.iter_mut().zip(records) {
+                    let (fields, neighbors) = record.split_once(':').unwrap();
+                    let f: Vec<i32> = fields.split(',').map(|s| s.parse().unwrap()).collect();
+                    assert_eq!(f.len(), 6);
+                    a.el_number = f[0].try_into().unwrap();
+                    a.valence = f[1].try_into().unwrap();
+                    a.chem_bonds_valence = f[2].try_into().unwrap();
+                    a.num_H = f[3].try_into().unwrap();
+                    a.charge = f[4].try_into().unwrap();
+                    a.radical = f[5].try_into().unwrap();
+                    let v: Vec<u16> = neighbors.split(',').map(|s| s.parse().unwrap()).collect();
+                    a.neighbor.copy_from_slice(&v);
+                }
+            } else {
+                assert_eq!(w[7], "-");
+            }
+            let original = at.clone();
+            let wanted = if e[1] == "O" {
+                assert_eq!(w[1], "1");
+                Ok(e[2].parse::<i32>().unwrap())
+            } else {
+                assert_eq!(w[1], "0");
+                assert_eq!(e[2], "PointerOutOfBounds");
+                Err(SourceHeapError::PointerOutOfBounds)
+            };
+            for _ in 0..2 {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if full {
+                        full_consumer(&at[off..], start, order)
+                    } else {
+                        is_phenyl(&at[off..], start, order)
+                    }
+                }));
+                match result {
+                    Ok(actual) => {
+                        assert_eq!(actual, wanted, "ID{id}");
+                        if actual.is_err() {
+                            errors += 1;
+                        } else {
+                            ok += 1;
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| payload.downcast_ref::<&str>().copied());
+                        match text {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0262: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard262 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                assert!(
+                    unchanged(&at, &original),
+                    "full34fields/coordinate bits ID{id}"
+                );
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 799078);
+        println!(
+            "phenyl full={full} calls={calls} returned_ok={ok} bounds={errors} exact0159panics={guard159} exact0262panics={guard262} returned_value_differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, errors, guard159, guard262), (798988, 90, 0, 0));
+    }
+    #[test]
+    fn complete_five_hops_closure_short_circuits_and_reached_errors() {
+        check(false);
+    }
+    #[test]
+    fn complete_full_consumer_and_all_storage_bits() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod underiv_bit_regressions {
+    use super::underiv_or_bit;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_bit/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_bit/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_bit/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    #[test]
+    fn preserves_all_bits_repeated_stores_and_nullable_output_state() {
+        assert_eq!(fnv(INPUT), 0x14b5e9d7c7c54b7b);
+        assert_eq!(fnv(EXPECTED), 0x6b30177dc7933e4d);
+        assert_eq!(fnv(MANIFEST), 0xb7c6e19af8c8fd8c);
+        assert_eq!(INPUT.lines().count(), 9549);
+        assert_eq!(EXPECTED.lines().count(), 9549);
+        let (mut ok, mut bounds, mut guards, mut differences) = (0, 0, 0, 0);
+        for (id, (input, expected)) in INPUT.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<u32> = input
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            let e: Vec<_> = expected.split_whitespace().collect();
+            assert_eq!(w.len(), 7);
+            assert_eq!(e.len(), 4);
+            assert_eq!(w[0] as usize, id);
+            assert_eq!(e[0].parse::<usize>().unwrap(), id);
+            for _ in 0..2 {
+                let mut storage = [0x13579bdf, w[3] as i32, 0xfedcba98u32 as i32];
+                let mut current = w[3] as i32;
+                let mut output = if w[2] != 0 {
+                    Some(&mut storage[1])
+                } else {
+                    None
+                };
+                let identity = output.as_deref().map(|v| v as *const i32);
+                for step in 0..3 {
+                    let before = output.as_deref().copied();
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        underiv_or_bit(&mut output, w[4 + step])
+                    }));
+                    assert_eq!(identity, output.as_deref().map(|v| v as *const i32));
+                    match result {
+                        Ok(actual) => {
+                            let wanted = if e[step + 1] == "E" {
+                                Err(SourceHeapError::PointerOutOfBounds)
+                            } else {
+                                Ok(())
+                            };
+                            differences += usize::from(actual != wanted);
+                            match actual {
+                                Ok(()) => ok += 1,
+                                Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                                Err(other) => panic!("unexpected error {other:?} at {id}"),
+                            }
+                            if e[step + 1] != "E" {
+                                current = e[step + 1].parse::<u32>().unwrap() as i32;
+                                differences +=
+                                    usize::from(output.as_deref().copied() != Some(current));
+                            } else {
+                                assert_eq!(before, output.as_deref().copied());
+                            }
+                        }
+                        Err(payload) => {
+                            let message = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            if message
+                                == Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                )
+                            {
+                                guards += 1;
+                                assert_eq!(before, output.as_deref().copied());
+                            } else {
+                                resume_unwind(payload);
+                            }
+                        }
+                    }
+                }
+                drop(output);
+                assert_eq!(storage, [0x13579bdf, current, 0xfedcba98u32 as i32]);
+            }
+        }
+        eprintln!(
+            "underiv_bit actual Ok={ok} Bounds={bounds} exact0159={guards} differences={differences}; expected50928Ok6366Bounds0guards0differences"
+        );
+        assert_eq!((ok, bounds, guards, differences), (50928, 6366, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod derivative_mark_regressions {
+    use super::{DERIV_AT, remove_deriv_mark};
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/derivative_mark/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/derivative_mark/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/derivative_mark/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    #[test]
+    fn complete_signed_types_ring_pairs_repeated_mutations_and_checked_indexes() {
+        assert_eq!(fnv(INPUT), 0xebeb08befccf4ee9);
+        assert_eq!(fnv(EXPECTED), 0x4e07c5d6296cfddd);
+        assert_eq!(fnv(MANIFEST), 0xd663f959948e22b2);
+        assert_eq!(INPUT.lines().count(), 1136656);
+        assert_eq!(EXPECTED.lines().count(), 2262872);
+        let mut expected = EXPECTED.lines();
+        let (mut ok, mut bounds, mut guards, mut differences) = (0, 0, 0, 0);
+        for (id, line) in INPUT.lines().enumerate() {
+            let w: Vec<i64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(w.len(), 9);
+            assert_eq!(w[0] as usize, id);
+            let sentinel = DERIV_AT {
+                typ: [-23131; 4],
+                ord: [-91; 4],
+                num: [-91; 4],
+                other_atom: 42405,
+            };
+            let mut middle = DERIV_AT::default();
+            for j in 0..4 {
+                middle.typ[j] = w[5 + j] as i16;
+                middle.ord[j] = (w[3] + 17 * j as i64) as i8;
+                middle.num[j] = (w[3] + 29 * j as i64 + 7) as i8;
+            }
+            middle.other_atom = w[4] as u16;
+            let mut storage = [sentinel.clone(), middle.clone(), sentinel.clone()];
+            for _ in 0..2 {
+                let wanted = if w[1] != 0 {
+                    let row: Vec<i64> = expected
+                        .next()
+                        .unwrap()
+                        .split_whitespace()
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+                    assert_eq!(row.len(), 6);
+                    assert_eq!(row[0], w[0]);
+                    Some((
+                        row[1] as i32,
+                        [row[2] as i16, row[3] as i16, row[4] as i16, row[5] as i16],
+                    ))
+                } else {
+                    None
+                };
+                let before = storage[1].clone();
+                match catch_unwind(AssertUnwindSafe(|| {
+                    remove_deriv_mark(&mut storage[1], w[2] as i32)
+                })) {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(other) => panic!("unexpected error {other:?} at ID{id}"),
+                        }
+                        match wanted {
+                            Some((value, typ)) => {
+                                differences += usize::from(actual != Ok(value));
+                                differences += usize::from(storage[1].typ != typ);
+                            }
+                            None => {
+                                differences +=
+                                    usize::from(actual != Err(SourceHeapError::PointerOutOfBounds));
+                                assert_eq!(storage[1], before);
+                            }
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1;
+                            assert_eq!(storage[1], before);
+                        } else {
+                            resume_unwind(payload);
+                        }
+                    }
+                }
+                assert_eq!(storage[0], sentinel);
+                assert_eq!(storage[2], sentinel);
+                assert_eq!(storage[1].ord, middle.ord);
+                assert_eq!(storage[1].num, middle.num);
+                assert_eq!(storage[1].other_atom, middle.other_atom);
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "derivative_mark actual Ok={ok} Bounds={bounds} exact0159={guards} differences={differences}; expected2262872Ok10440Bounds0guards0differences; full state protected after each call"
+        );
+        assert_eq!((ok, bounds, guards, differences), (2262872, 10440, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod remove_deriv_regressions {
+    use super::{DERIV_AT, remove_deriv};
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/remove_deriv/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/remove_deriv/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/remove_deriv/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    #[test]
+    fn complete_signed_types_ring_pairs_repeated_mutations_and_checked_indexes() {
+        assert_eq!(fnv(INPUT), 0xebeb08befccf4ee9);
+        assert_eq!(fnv(EXPECTED), 0xa390c0a4ed055eb9);
+        assert_eq!(fnv(MANIFEST), 0x3b6994f566eb6f59);
+        assert_eq!(INPUT.lines().count(), 1136656);
+        assert_eq!(EXPECTED.lines().count(), 2262872);
+        let mut expected = EXPECTED.lines();
+        let (mut ok, mut bounds, mut guards, mut differences) = (0, 0, 0, 0);
+        for (id, line) in INPUT.lines().enumerate() {
+            let w: Vec<i64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(w.len(), 9);
+            assert_eq!(w[0] as usize, id);
+            let sentinel = DERIV_AT {
+                typ: [-23131; 4],
+                ord: [-91; 4],
+                num: [-91; 4],
+                other_atom: 42405,
+            };
+            let mut middle = DERIV_AT::default();
+            for j in 0..4 {
+                middle.typ[j] = w[5 + j] as i16;
+                middle.ord[j] = (w[3] + 17 * j as i64) as i8;
+                middle.num[j] = (w[3] + 29 * j as i64 + 7) as i8;
+            }
+            middle.other_atom = w[4] as u16;
+            let mut storage = [sentinel.clone(), middle.clone(), sentinel.clone()];
+            for _ in 0..2 {
+                let wanted = if w[1] != 0 {
+                    let row: Vec<i64> = expected
+                        .next()
+                        .unwrap()
+                        .split_whitespace()
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+                    assert_eq!(row.len(), 15);
+                    assert_eq!(row[0], w[0]);
+                    let mut value = DERIV_AT::default();
+                    for j in 0..4 {
+                        value.typ[j] = row[j + 2] as i16;
+                        value.ord[j] = row[j + 6] as i8;
+                        value.num[j] = row[j + 10] as i8;
+                    }
+                    value.other_atom = row[14] as u16;
+                    Some((row[1] as i32, value))
+                } else {
+                    None
+                };
+                let before = storage[1].clone();
+                match catch_unwind(AssertUnwindSafe(|| {
+                    remove_deriv(&mut storage[1], w[2] as i32)
+                })) {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(other) => panic!("unexpected error {other:?} at ID{id}"),
+                        }
+                        match wanted {
+                            Some((value, state)) => {
+                                differences += usize::from(actual != Ok(value));
+                                differences += usize::from(storage[1] != state);
+                            }
+                            None => {
+                                differences +=
+                                    usize::from(actual != Err(SourceHeapError::PointerOutOfBounds));
+                                assert_eq!(storage[1], before);
+                            }
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1;
+                            assert_eq!(storage[1], before);
+                        } else {
+                            resume_unwind(payload);
+                        }
+                    }
+                }
+                assert_eq!(storage[0], sentinel);
+                assert_eq!(storage[2], sentinel);
+                assert_eq!(storage[1].other_atom, middle.other_atom);
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "remove_deriv actual Ok={ok} Bounds={bounds} exact0159={guards} differences={differences}; expected2262872Ok10440Bounds0guards0differences; full state protected after each call"
+        );
+        assert_eq!((ok, bounds, guards, differences), (2262872, 10440, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod underiv_compare_regressions {
+    use super::underiv_compare;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_compare/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_compare/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_compare/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn decode(s: &str) -> Vec<i8> {
+        if s == "-" {
+            return Vec::new();
+        }
+        assert_eq!(s.len() % 2, 0);
+        (0..s.len())
+            .step_by(2)
+            .map(|j| u8::from_str_radix(&s[j..j + 2], 16).unwrap() as i8)
+            .collect()
+    }
+    #[test]
+    fn unsigned_first_mismatch_nul_trailing_bytes_reached_errors_and_alignment() {
+        assert_eq!(fnv(INPUT), 0xd1ff80cddb706efd);
+        assert_eq!(fnv(EXPECTED), 0xdc39dca5f259346b);
+        assert_eq!(fnv(MANIFEST), 0xffa370132e7af3ad);
+        assert_eq!(INPUT.lines().count(), 420514);
+        assert_eq!(EXPECTED.lines().count(), 840538);
+        let mut expected = EXPECTED.lines();
+        let (mut calls, mut ok, mut bounds, mut guards, mut differences) = (0, 0, 0, 0, 0);
+        for (id, line) in INPUT.lines().enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(w.len(), 7);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            let a = decode(w[5]);
+            let b = decode(w[6]);
+            let lo: usize = w[2].parse().unwrap();
+            let ro: usize = w[3].parse().unwrap();
+            let mut left = [-91_i8; 2048];
+            let mut right = [90_i8; 2048];
+            left[lo..lo + a.len()].copy_from_slice(&a);
+            right[ro..ro + b.len()].copy_from_slice(&b);
+            let before_left = left;
+            let before_right = right;
+            for _ in 0..2 {
+                let wanted = if w[1] == "1" {
+                    let row: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+                    assert_eq!(row.len(), 2);
+                    assert_eq!(row[0], w[0]);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else if w[4] == "B" {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                } else {
+                    Ok(w[4].parse::<i32>().unwrap())
+                };
+                match catch_unwind(AssertUnwindSafe(|| {
+                    underiv_compare(&left[lo..lo + a.len()], &right[ro..ro + b.len()])
+                })) {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(other) => panic!("unexpected error {other:?} at ID{id}"),
+                        }
+                        differences += usize::from(actual != wanted);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1;
+                        } else {
+                            resume_unwind(payload);
+                        }
+                    }
+                }
+                assert_eq!(left, before_left);
+                assert_eq!(right, before_right);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 841028);
+        eprintln!(
+            "underiv_compare actual calls={calls} Ok={ok} Bounds={bounds} exact0159={guards} differences={differences}; expected840734Ok294Bounds0guards0differences; full backing unchanged after each call"
+        );
+        assert_eq!((ok, bounds, guards, differences), (840734, 294, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod underiv_last_regressions {
+    use super::underiv_list_get_last;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_last/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_last/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_last/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn decode(s: &str) -> Vec<i8> {
+        if s == "-" {
+            return Vec::new();
+        }
+        assert_eq!(s.len() % 2, 0);
+        (0..s.len())
+            .step_by(2)
+            .map(|j| u8::from_str_radix(&s[j..j + 2], 16).unwrap() as i8)
+            .collect()
+    }
+    #[test]
+    fn last_unsigned_delimiter_first_nul_null_zero_and_reached_errors() {
+        assert_eq!(fnv(INPUT), 0xf6a15c3d78304498);
+        assert_eq!(fnv(EXPECTED), 0x895b4a243d411599);
+        assert_eq!(fnv(MANIFEST), 0xe8db243136acf5d1);
+        assert_eq!(INPUT.lines().count(), 299594);
+        assert_eq!(EXPECTED.lines().count(), 574198);
+        let mut expected = EXPECTED.lines();
+        let (mut calls, mut some, mut none, mut bounds, mut guards, mut differences) =
+            (0, 0, 0, 0, 0, 0);
+        for (id, line) in INPUT.lines().enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(w.len(), 7);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            let data = decode(w[6]);
+            let offset: usize = w[4].parse().unwrap();
+            let delimiter = w[3].parse::<u8>().unwrap() as i8;
+            let mut backing = [-91_i8; 2048];
+            backing[offset..offset + data.len()].copy_from_slice(&data);
+            let before = backing;
+            for _ in 0..2 {
+                let wanted = if w[1] == "1" {
+                    let row: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+                    assert_eq!(row.len(), 2);
+                    assert_eq!(row[0], w[0]);
+                    Ok(if row[1] == "N" {
+                        None
+                    } else {
+                        Some(row[1].parse::<usize>().unwrap())
+                    })
+                } else {
+                    assert_eq!(w[5], "B");
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let input = if w[2] == "1" {
+                    Some(&backing[offset..offset + data.len()])
+                } else {
+                    None
+                };
+                match catch_unwind(AssertUnwindSafe(|| underiv_list_get_last(input, delimiter))) {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(Some(_)) => some += 1,
+                            Ok(None) => none += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(other) => panic!("unexpected {other:?} at ID{id}"),
+                        };
+                        differences += usize::from(actual != wanted);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1
+                        } else {
+                            resume_unwind(payload)
+                        }
+                    }
+                }
+                assert_eq!(backing, before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 599188);
+        eprintln!(
+            "underiv_list_get_last actual calls={calls} Some={some} None={none} Bounds={bounds} exact0159={guards} differences={differences}; expected543900Some30298None24990Bounds0guards0differences; full backing unchanged after each call"
+        );
+        assert_eq!(
+            (some, none, bounds, guards, differences),
+            (543900, 30298, 24990, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod underiv_buf_clear_regressions {
+    use super::underiv_buf_clear;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_buf_clear/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_buf_clear/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/underiv_buf_clear/manifest.json"
+    ));
+    fn fnv(s: &str) -> u64 {
+        s.bytes().fold(0xcbf29ce484222325, |n, b| {
+            (n ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    #[test]
+    fn first_byte_only_null_empty_signed_bytes_and_repeated_updates() {
+        assert_eq!(fnv(INPUT), 0xe60701bfcbffa81b);
+        assert_eq!(fnv(EXPECTED), 0xd004a15dce32ca65);
+        assert_eq!(fnv(MANIFEST), 0xb36fbbaca330a01c);
+        assert_eq!(INPUT.lines().count(), 49164);
+        assert_eq!(EXPECTED.lines().count(), 98316);
+        let mut expected = EXPECTED.lines();
+        let (mut calls, mut ok, mut bounds, mut guards, mut differences) = (0, 0, 0, 0, 0);
+        for (id, line) in INPUT.lines().enumerate() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 6);
+            assert_eq!(v[0].parse::<usize>().unwrap(), id);
+            let offset: usize = v[3].parse().unwrap();
+            let present = v[2] == "1";
+            let data: Vec<i8> = if v[5] == "-" {
+                vec![]
+            } else {
+                assert_eq!(v[5].len() % 2, 0);
+                (0..v[5].len())
+                    .step_by(2)
+                    .map(|j| u8::from_str_radix(&v[5][j..j + 2], 16).unwrap() as i8)
+                    .collect()
+            };
+            let mut backing = [-91_i8; 2048];
+            backing[offset..offset + data.len()].copy_from_slice(&data);
+            for _ in 0..2 {
+                let wanted = if v[1] == "1" {
+                    let row: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+                    assert_eq!(row, [v[0], "O"]);
+                    Ok(())
+                } else {
+                    assert_eq!(v[4], "B");
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let mut wanted_backing = backing;
+                match catch_unwind(AssertUnwindSafe(|| {
+                    underiv_buf_clear(if present {
+                        Some(&mut backing[offset..offset + data.len()])
+                    } else {
+                        None
+                    })
+                })) {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(()) => {
+                                ok += 1;
+                                if present && !data.is_empty() {
+                                    wanted_backing[offset] = 0;
+                                }
+                            }
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(other) => panic!("unexpected {other:?} at ID{id}"),
+                        };
+                        differences += usize::from(actual != wanted);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1;
+                        } else {
+                            resume_unwind(payload)
+                        }
+                    }
+                }
+                assert_eq!(backing, wanted_backing, "full backing ID{id}");
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 98328);
+        eprintln!(
+            "underiv_buf_clear actual calls={calls} Ok={ok} Bounds={bounds} exact0159={guards} differences={differences}; expected98316Ok12Bounds0guards0differences; full backing exact after EACH repeat"
+        );
+        assert_eq!((ok, bounds, guards, differences), (98316, 12, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod ring_back_connector_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> [inp_ATOM; 8] {
+        let mut storage = std::array::from_fn(|a| initialized(seed.wrapping_add(a as u8)));
+        if n == 0 {
+            assert_eq!(encoded, "-");
+            return storage;
+        }
+        let rows: Vec<_> = encoded.split(';').collect();
+        assert_eq!(rows.len(), n);
+        for (a, row) in rows.iter().enumerate() {
+            let f: Vec<i32> = row.split(',').map(|s| s.parse().unwrap()).collect();
+            assert_eq!(f.len(), 10);
+            let at = &mut storage[a];
+            at.el_number = f[0] as u8;
+            at.valence = f[1] as i8;
+            at.chem_bonds_valence = f[2] as i8;
+            at.num_H = f[3] as i8;
+            at.charge = f[4] as i8;
+            at.radical = f[5] as i8;
+            at.nNumAtInRingSystem = f[6] as u16;
+            at.nBlockSystem = f[7] as u16;
+            at.neighbor[0] = f[8] as u16;
+            at.neighbor[1] = f[9] as u16;
+        }
+        storage
+    }
+
+    #[test]
+    fn source_order_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/ring_back_connector");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (9887546, 0x8f9f73b21ef8f848));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (1443000, 0x352e3c1d16445355)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (3053, 0x32deb51b8e99fc7d));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1751, 0x1a6587003cf7e5bd)
+        );
+
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut guards162, mut differences) =
+            (0, 0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let k: usize = v[4].parse().unwrap();
+            let j: usize = v[5].parse().unwrap();
+            let seed: u8 = v[6].parse().unwrap();
+            let storage = storage_from_row(n, seed, v[7]);
+            let before = storage;
+            for _ in 0..2 {
+                let wanted = if admit {
+                    let e: Vec<_> = expected
+                        .next()
+                        .expect("all native rows consumed")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(e[0].parse::<usize>().unwrap(), id);
+                    let kind: i16 = e[1].parse().unwrap();
+                    let block: u16 = e[2].parse().unwrap();
+                    Ok(if kind == 0 { None } else { Some((kind, block)) })
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let actual = std::panic::catch_unwind(|| {
+                    classify_ring_back_connector(&storage[off..n], k, j)
+                });
+                match actual {
+                    Ok(value) => {
+                        if value != wanted {
+                            differences += 1;
+                            eprintln!(
+                                "ring connector id={id} expected={wanted:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards162 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                assert_eq!(storage, before, "full atom fields ID{id}");
+                for (a, b) in storage.iter().zip(&before) {
+                    assert_eq!(
+                        (a.x.to_bits(), a.y.to_bits(), a.z.to_bits()),
+                        (b.x.to_bits(), b.y.to_bits(), b.z.to_bits())
+                    );
+                }
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 152368);
+        eprintln!(
+            "ring_back_connector calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} exact0162={guards162} differences={differences}; expected145892Ok6476Bounds0guards0differences; whole atom fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!(
+            (ok, bounds, guards159, guards162, differences),
+            (145892, 6476, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod carbon_sulfur_oxygen_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.neighbor = [65535; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 27);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/carbon_sulfur_oxygen");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (3084344, 0x9fc8f9df114fd392));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (110704, 0x39ee5f1a53baa953)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2574, 0x003b7fae1c80d733));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1747, 0x5157fff5299f4e80)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut guards258, mut differences) =
+            (0, 0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 7);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let index: i32 = v[4].parse().unwrap();
+            let seed: u8 = v[5].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[6]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                match std::panic::catch_unwind(|| is_C_or_S_DB_O(&atoms[off..], index)) {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!(
+                                "carbon/sulfur oxygen id={id} expected={want:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0258: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards258 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                same_storage(&atoms, &before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 17582);
+        eprintln!(
+            "carbon_sulfur_oxygen calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} exact0258={guards258} differences={differences}; expected16098Ok1484Bounds0guards0differences; full fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!(
+            (ok, bounds, guards159, guards258, differences),
+            (16098, 1484, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod carbonyl_ordinal_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.neighbor = [65535; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 27);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/carbonyl_ordinal");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (2818500, 0xac95aabd76aa4b81));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (103722, 0x82691830b7443fef)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2582, 0x7a4f085291ccda85));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1614, 0xdaf4a94bcc9a0962)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 7);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let index: i32 = v[4].parse().unwrap();
+            let seed: u8 = v[5].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[6]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                match std::panic::catch_unwind(|| is_C_DB_O(&atoms[off..], index)) {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!(
+                                "carbonyl ordinal id={id} expected={want:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                same_storage(&atoms, &before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 16142);
+        eprintln!(
+            "carbonyl_ordinal calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} differences={differences}; expected15134Ok1008Bounds0guards0differences; full fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!((ok, bounds, guards159, differences), (15134, 1008, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod carbon_unsaturation_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 47);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/carbon_unsaturation");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (37566851, 0xaebb03e0bfb5a869));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (924022, 0x9479eb1330822973)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2691, 0x8803ef99282010a7));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1877, 0xe3a451c8b6cee997)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 7);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let index: i32 = v[4].parse().unwrap();
+            let seed: u8 = v[5].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[6]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                match std::panic::catch_unwind(|| is_C_unsat_not_arom(&atoms[off..], index)) {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!(
+                                "carbon unsaturation id={id} expected={want:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                same_storage(&atoms, &before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 161412);
+        eprintln!(
+            "carbon_unsaturation calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} differences={differences}; expected118170Ok43242Bounds0guards0differences; full fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!((ok, bounds, guards159, differences), (118170, 43242, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod phenyl_attachment_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/phenyl_attachment");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (26131634, 0x6ad547d7cfd15b8f));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (301880, 0x3d689bbaac790db1)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2628, 0x7cd54d392f44920a));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1753, 0x8ee8d68d6e4e4947)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards162, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 8);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let attachment: i32 = v[4].parse().unwrap();
+            let outside: i32 = v[5].parse().unwrap();
+            let seed: u8 = v[6].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[7]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                match std::panic::catch_unwind(|| is_Phenyl(&atoms[off..], outside, attachment)) {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!(
+                                "phenyl attachment id={id} expected={want:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards162 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                same_storage(&atoms, &before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 43742);
+        eprintln!(
+            "phenyl_attachment calls={calls} Ok={ok} Bounds={bounds} exact0162={guards162} differences={differences}; expected40508Ok3234Bounds0guards0differences; full fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!((ok, bounds, guards162, differences), (40508, 3234, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod pentafluorophenyl_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/pentafluorophenyl");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (91850108, 0x464aad75144b6e7f));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (653646, 0x230aa90c2d3d4239)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2386, 0xb2bef64b05d93c17));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (1985, 0x35d15afb09b59fda)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards162, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 8);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let attachment: i32 = v[4].parse().unwrap();
+            let outside: i32 = v[5].parse().unwrap();
+            let seed: u8 = v[6].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[7]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                match std::panic::catch_unwind(|| {
+                    is_PentaFluoroPhenyl(&atoms[off..], outside, attachment)
+                }) {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!(
+                                "pentafluorophenyl attachment id={id} expected={want:?} actual={value:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards162 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+                same_storage(&atoms, &before);
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 88578);
+        eprintln!(
+            "pentafluorophenyl calls={calls} Ok={ok} Bounds={bounds} exact0162={guards162} differences={differences}; expected84478Ok4100Bounds0guards0differences; full fields/bits unchanged after EACH repeat"
+        );
+        assert_eq!((ok, bounds, guards162, differences), (84478, 4100, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod pyrrolidide_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+
+    fn descriptor(seed: u8, output: bool) -> DERIV_AT {
+        if output {
+            DERIV_AT {
+                typ: std::array::from_fn(|j| -123 - i16::from(seed) - j as i16),
+                ord: std::array::from_fn(|j| (255 - i32::from(seed) - j as i32) as i8),
+                num: std::array::from_fn(|j| (i32::from(seed) + j as i32 * 3) as i8),
+                other_atom: u16::from(seed) + 1234,
+            }
+        } else {
+            DERIV_AT {
+                typ: std::array::from_fn(|j| 123 + i16::from(seed) + j as i16),
+                ord: std::array::from_fn(|j| (i32::from(seed) + j as i32) as i8),
+                num: std::array::from_fn(|j| (i32::from(seed) - j as i32) as i8),
+                other_atom: 65535 - u16::from(seed),
+            }
+        }
+    }
+    fn decode_da(v: &[&str]) -> DERIV_AT {
+        assert_eq!(v.len(), 13);
+        DERIV_AT {
+            typ: std::array::from_fn(|i| v[i].parse().unwrap()),
+            ord: std::array::from_fn(|i| v[4 + i].parse().unwrap()),
+            num: std::array::from_fn(|i| v[8 + i].parse().unwrap()),
+            other_atom: v[12].parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/pyrrolidide");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (78583680, 0x079b482b2349e119));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (10744074, 0x413c747f1fb6a849)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2404, 0x169f45792c1f2230));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (2585, 0xa7eb484057600a49)
+        );
+
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut guards162, mut differences) =
+            (0, 0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 10);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let cur: i32 = v[4].parse().unwrap();
+            let ordinal: i32 = v[5].parse().unwrap();
+            let has_da = v[6] == "1";
+            let has_da1 = v[7] == "1";
+            let seed: u8 = v[8].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[9]);
+            let before = atoms.clone();
+            let original_da = descriptor(seed, false);
+            let original_output = descriptor(seed, true);
+            for _ in 0..2 {
+                let (mut da, mut output) = (original_da.clone(), original_output.clone());
+                let (want, want_da, want_output) = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row.len(), 28);
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    (
+                        Ok(row[1].parse::<i32>().unwrap()),
+                        decode_da(&row[2..15]),
+                        decode_da(&row[15..28]),
+                    )
+                } else {
+                    (
+                        Err(SourceHeapError::PointerOutOfBounds),
+                        original_da.clone(),
+                        original_output.clone(),
+                    )
+                };
+                let got = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    is_DERIV_RING2_PRRLDD_PPRDN(
+                        &atoms[off..],
+                        cur,
+                        ordinal,
+                        has_da.then_some(&mut da),
+                        has_da1.then_some(&mut output),
+                    )
+                }));
+                same_storage(&atoms, &before);
+                assert_eq!(da, original_da);
+                calls += 1;
+                match got {
+                    Ok(value) => {
+                        if value != want || da != want_da || output != want_output {
+                            differences += 1;
+                            eprintln!(
+                                "pyrrolidide id={id} expected={want:?}/{want_da:?}/{want_output:?} actual={value:?}/{da:?}/{output:?}"
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                        if value.is_err() {
+                            assert_eq!(output, original_output);
+                        }
+                    }
+                    Err(payload) => {
+                        assert_eq!(output, original_output);
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards162 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 104452);
+        eprintln!(
+            "pyrrolidide calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} exact0162={guards162} differences={differences}; expected101192Ok3260Bounds0guards0differences; full backing/descriptors after EACHrepeat"
+        );
+        assert_eq!(
+            (ok, bounds, guards159, guards162, differences),
+            (101192, 3260, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod aromatic_chain_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 2;
+                a.chem_bonds_valence = 3;
+                a.num_H = 1;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.neighbor[0] = if i == 0 { 65535 } else { (i - 1) as u16 };
+                a.neighbor[1] = (i + 1).min(65535) as u16;
+                a.bond_type = [4; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/aromatic_chain");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!((inputs.len(), fnv(&inputs)), (55492805, 0x70e4fff29fabe817));
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (4011100, 0x43ad8481879339d3)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2392, 0xc74931319f0a84e7));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (2165, 0xbb93cb4675d97b66)
+        );
+
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut guards259, mut differences) =
+            (0, 0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 10);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let cur: i32 = v[4].parse().unwrap();
+            let from: i32 = v[5].parse().unwrap();
+            let last: i32 = v[6].parse().unwrap();
+            let len: i32 = v[7].parse().unwrap();
+            let seed: u8 = v[8].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[9]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row.len(), 2);
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let got = std::panic::catch_unwind(|| {
+                    check_arom_chain(&atoms[off..], cur, from, last, len)
+                });
+                same_storage(&atoms, &before);
+                calls += 1;
+                match got {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!("aromatic_chain id={id} expected={want:?} actual={value:?}");
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0259: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards259 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 532402);
+        eprintln!(
+            "aromatic_chain calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} exact0259={guards259} differences={differences}; expected468628Ok63774Bounds0guards0differences; full backing after EACHrepeat"
+        );
+        assert_eq!(
+            (ok, bounds, guards159, guards259, differences),
+            (468628, 63774, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod silyl2_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/silyl2");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!(
+            (inputs.len(), fnv(&inputs)),
+            (210205065, 0x16b88eb44ec54546)
+        );
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (2231430, 0x1a19e1d072cbe3c1)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2385, 0x743a450c2845570e));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (2106, 0x5bb791bb9aaa40ec)
+        );
+
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 8);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let start: i32 = v[4].parse().unwrap();
+            let from: i32 = v[5].parse().unwrap();
+            let seed: u8 = v[6].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[7]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row.len(), 2);
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let got = std::panic::catch_unwind(|| is_silyl2(&atoms[off..], start, from));
+                same_storage(&atoms, &before);
+                calls += 1;
+                match got {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!("silyl2 id={id} expected={want:?} actual={value:?}");
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 293182);
+        eprintln!(
+            "silyl2 calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} differences={differences}; expected271946Ok21236Bounds0guards0differences; full backing after EACHrepeat"
+        );
+        assert_eq!((ok, bounds, guards159, differences), (271946, 21236, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod silyl_regressions {
+    use super::*;
+    use crate::source_types::{AT_NUMB, S_CHAR, U_CHAR};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn initialized(seed: u8) -> inp_ATOM {
+        inp_ATOM {
+            elname: std::array::from_fn(|i| seed.wrapping_add((i as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: f64::from(seed) + 0.125,
+            y: f64::from(seed) + 0.125,
+            z: f64::from(seed) + 0.125,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|i| {
+                seed.wrapping_add((i as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        }
+    }
+    fn storage_from_row(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut atoms: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add(i as u8));
+                a.el_number = 6;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.bCutVertex = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.neighbor = [65535; 20];
+                a.bond_type = [1; 20];
+                let x = f64::from(seed) + i as f64;
+                a.x = x + 0.25;
+                a.y = -x - 0.5;
+                a.z = x + 0.75;
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 50);
+                let a = &mut atoms[usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.bCutVertex = i8::try_from(v[47]).unwrap();
+                a.nRingSystem = u16::try_from(v[48]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[49]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[j + 7]).unwrap();
+                    a.bond_type[j] = u8::try_from(v[j + 27]).unwrap();
+                }
+            }
+        }
+        atoms
+    }
+    fn same_storage(a: &[inp_ATOM], b: &[inp_ATOM]) {
+        assert_eq!(a, b);
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.x.to_bits(), b.x.to_bits());
+            assert_eq!(a.y.to_bits(), b.y.to_bits());
+            assert_eq!(a.z.to_bits(), b.z.to_bits());
+        }
+    }
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/silyl");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs.txt");
+        assert_eq!(
+            (inputs.len(), fnv(&inputs)),
+            (390913423, 0xc4870563b39d03dd)
+        );
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expected.txt");
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (4117576, 0xe154776fa3886d5d)
+        );
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest.json");
+        assert_eq!((manifest.len(), fnv(&manifest)), (2397, 0xb6cde796a9d950a3));
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance.md");
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (2105, 0xa20aff539bad246e)
+        );
+
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guards159, mut differences) = (0, 0, 0, 0, 0);
+        for line in inputs.lines() {
+            let v: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(v.len(), 8);
+            let id: usize = v[0].parse().unwrap();
+            let admit = v[1] == "1";
+            let n: usize = v[2].parse().unwrap();
+            let off: usize = v[3].parse().unwrap();
+            let start: i32 = v[4].parse().unwrap();
+            let previous_order: i32 = v[5].parse().unwrap();
+            let seed: u8 = v[6].parse().unwrap();
+            let atoms = storage_from_row(n, seed, v[7]);
+            let before = atoms.clone();
+            for _ in 0..2 {
+                let want = if admit {
+                    let row: Vec<_> = expected
+                        .next()
+                        .expect("all native rows")
+                        .split_whitespace()
+                        .collect();
+                    assert_eq!(row.len(), 2);
+                    assert_eq!(row[0].parse::<usize>().unwrap(), id);
+                    Ok(row[1].parse::<i32>().unwrap())
+                } else {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                };
+                let got =
+                    std::panic::catch_unwind(|| is_silyl(&atoms[off..], start, previous_order));
+                same_storage(&atoms, &before);
+                calls += 1;
+                match got {
+                    Ok(value) => {
+                        if value != want {
+                            differences += 1;
+                            eprintln!("silyl id={id} expected={want:?} actual={value:?}");
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(e) => panic!("unexpected error {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guards159 += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 545258);
+        eprintln!(
+            "silyl calls={calls} Ok={ok} Bounds={bounds} exact0159={guards159} differences={differences}; expected481518Ok63740Bounds0guards0differences; full backing after EACHrepeat"
+        );
+        assert_eq!((ok, bounds, guards159, differences), (481518, 63740, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod underiv_list_add_regressions {
+    use super::*;
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325, |v, b| {
+            (v ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        })
+    }
+    fn unhex(s: &str) -> Vec<i8> {
+        if s == "-" {
+            return vec![];
+        }
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap() as i8)
+            .collect()
+    }
+    #[test]
+    fn source_values_errors_and_full_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/underiv_list_add");
+        let inputs = std::fs::read(root.join("inputs.txt")).expect("fixed inputs");
+        let expected = std::fs::read(root.join("expected.txt")).expect("fixed expectations");
+        let manifest = std::fs::read(root.join("manifest.json")).expect("fixed manifest");
+        let provenance = std::fs::read(root.join("provenance.md")).expect("fixed provenance");
+        assert_eq!((inputs.len(), fnv(&inputs)), (43699334, 0xf3a4a86985ba3a9d));
+        assert_eq!(
+            (expected.len(), fnv(&expected)),
+            (82934374, 0xeca53748391d4a71)
+        );
+        assert_eq!((manifest.len(), fnv(&manifest)), (2059, 0x7f4f82b0fcd74a9f));
+        assert_eq!(
+            (provenance.len(), fnv(&provenance)),
+            (2192, 0x0fb11740d0ed33ef)
+        );
+        let inputs = std::str::from_utf8(&inputs).unwrap();
+        let expected = std::str::from_utf8(&expected).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut bounds, mut guard, mut differences, mut partial) =
+            (0, 0, 0, 0, 0, 0);
+        for row in inputs.lines() {
+            let v: Vec<_> = row.split_whitespace().collect();
+            assert_eq!(v.len(), 10);
+            let id: usize = v[0].parse().unwrap();
+            let lp = v[2] == "1";
+            let ap = v[3] == "1";
+            let cap: i32 = v[4].parse().unwrap();
+            let d: i8 = v[5].parse().unwrap();
+            let lo: usize = v[6].parse().unwrap();
+            let ao: usize = v[7].parse().unwrap();
+            let l0 = unhex(v[8]);
+            let a0 = unhex(v[9]);
+            for _ in 0..2 {
+                let want: Vec<_> = expected
+                    .next()
+                    .expect("every fixed row")
+                    .split_whitespace()
+                    .collect();
+                assert_eq!(want.len(), 4);
+                assert_eq!(want[0].parse::<usize>().unwrap(), id);
+                let result = if want[1] == "B" {
+                    Err(SourceHeapError::PointerOutOfBounds)
+                } else {
+                    Ok(want[1].parse::<i32>().unwrap())
+                };
+                let wanted_list = unhex(want[2]);
+                let wanted_added = unhex(want[3]);
+                assert_eq!(wanted_added, a0);
+                let mut l = l0.clone();
+                let a = a0.clone();
+                let got = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    underiv_list_add(
+                        if lp { Some(&mut l[lo..]) } else { None },
+                        cap,
+                        if ap { Some(&a[ao..]) } else { None },
+                        d,
+                    )
+                }));
+                calls += 1;
+                assert_eq!(a, a0);
+                assert_eq!(&l[..lo], &l0[..lo]);
+                match got {
+                    Ok(value) => {
+                        if value != result || l != wanted_list {
+                            differences += 1;
+                            eprintln!(
+                                "underiv_list_add id={id} expected={result:?} actual={value:?} full-state equal={}",
+                                l == wanted_list
+                            );
+                        }
+                        match value {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => {
+                                bounds += 1;
+                                if l != l0 {
+                                    partial += 1;
+                                }
+                            }
+                            Err(e) => panic!("unexpected {e:?}"),
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => guard += 1,
+                            _ => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 279446);
+        eprintln!(
+            "underiv_list_add calls={calls} Ok={ok} Bounds={bounds} exact0159={guard} differences={differences} partial_Bounds={partial}; expected254638Ok24808Bounds0guards0differences12192partial; EACHrepeat2 fresh full backing"
+        );
+        assert_eq!(
+            (ok, bounds, guard, differences, partial),
+            (254638, 24808, 0, 0, 12192)
+        );
+    }
+}
+
+#[cfg(test)]
+mod add_inp_atom_regressions {
+    use super::{SourceHeapError, add_inp_ATOM, inp_ATOM};
+    type U_CHAR = u8;
+    type S_CHAR = i8;
+    type AT_NUMB = u16;
+    fn initialized(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM {
+            elname: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            el_number: seed as U_CHAR,
+            neighbor: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            orig_at_number: seed as AT_NUMB,
+            orig_compt_at_numb: seed as AT_NUMB,
+            bond_stereo: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            bond_type: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as U_CHAR
+            }),
+            valence: seed as S_CHAR,
+            chem_bonds_valence: seed as S_CHAR,
+            num_H: seed as S_CHAR,
+            num_iso_H: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            iso_atw_diff: seed as S_CHAR,
+            charge: seed as S_CHAR,
+            radical: seed as S_CHAR,
+            bAmbiguousStereo: seed as S_CHAR,
+            cFlags: seed as S_CHAR,
+            at_type: seed as AT_NUMB,
+            component: seed as AT_NUMB,
+            endpoint: seed as AT_NUMB,
+            c_point: seed as AT_NUMB,
+            x: seed as f64,
+            y: seed as f64,
+            z: seed as f64,
+            bUsed0DParity: seed as S_CHAR,
+            p_parity: seed as S_CHAR,
+            p_orig_at_num: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            sb_ord: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_ord: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sb_parity: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as S_CHAR
+            }),
+            sn_orig_at_num: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as AT_NUMB
+            }),
+            bCutVertex: seed as S_CHAR,
+            nRingSystem: seed as AT_NUMB,
+            nNumAtInRingSystem: seed as AT_NUMB,
+            nBlockSystem: seed as AT_NUMB,
+        };
+        a.valence = (index % 21) as i8;
+        a.neighbor = std::array::from_fn(|j| {
+            (u32::from(seed) * 257 + index as u32 * 31 + j as u32 * 37) as u16
+        });
+        let x = f64::from(seed) + index as f64;
+        a.x = x + 0.25;
+        a.y = -x - 0.5;
+        a.z = x + 0.75;
+        a
+    }
+    fn backing(n: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut a: Vec<_> = (0..n)
+            .map(|i| initialized(seed.wrapping_add((i as u8).wrapping_mul(13)), i))
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 22);
+                let atom = &mut a[usize::try_from(v[0]).unwrap()];
+                atom.valence = i8::try_from(v[1]).unwrap();
+                for j in 0..20 {
+                    atom.neighbor[j] = u16::try_from(v[j + 2]).unwrap();
+                }
+            }
+        }
+        a
+    }
+    fn append_hex(out: &mut String, bytes: &[u8]) {
+        const H: &[u8] = b"0123456789abcdef";
+        for &b in bytes {
+            out.push(H[(b >> 4) as usize] as char);
+            out.push(H[(b & 15) as usize] as char);
+        }
+    }
+    fn state(atoms: &[inp_ATOM]) -> String {
+        let mut out = String::with_capacity(atoms.len() * 334);
+        if atoms.is_empty() {
+            out.push('-');
+        }
+        for a in atoms {
+            for value in a.elname {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.el_number.to_le_bytes());
+            for value in a.neighbor {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.orig_at_number.to_le_bytes());
+            append_hex(&mut out, &a.orig_compt_at_numb.to_le_bytes());
+            for value in a.bond_stereo {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.bond_type {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.valence.to_le_bytes());
+            append_hex(&mut out, &a.chem_bonds_valence.to_le_bytes());
+            append_hex(&mut out, &a.num_H.to_le_bytes());
+            for value in a.num_iso_H {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.iso_atw_diff.to_le_bytes());
+            append_hex(&mut out, &a.charge.to_le_bytes());
+            append_hex(&mut out, &a.radical.to_le_bytes());
+            append_hex(&mut out, &a.bAmbiguousStereo.to_le_bytes());
+            append_hex(&mut out, &a.cFlags.to_le_bytes());
+            append_hex(&mut out, &a.at_type.to_le_bytes());
+            append_hex(&mut out, &a.component.to_le_bytes());
+            append_hex(&mut out, &a.endpoint.to_le_bytes());
+            append_hex(&mut out, &a.c_point.to_le_bytes());
+            append_hex(&mut out, &a.x.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.y.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.z.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.bUsed0DParity.to_le_bytes());
+            append_hex(&mut out, &a.p_parity.to_le_bytes());
+            for value in a.p_orig_at_num {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sb_ord {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sn_ord {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sb_parity {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sn_orig_at_num {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.bCutVertex.to_le_bytes());
+            append_hex(&mut out, &a.nRingSystem.to_le_bytes());
+            append_hex(&mut out, &a.nNumAtInRingSystem.to_le_bytes());
+            append_hex(&mut out, &a.nBlockSystem.to_le_bytes());
+        }
+        out
+    }
+    fn tag(value: Result<i32, SourceHeapError>) -> String {
+        match value {
+            Ok(v) => format!("ok:{v}"),
+            Err(SourceHeapError::PointerOutOfBounds) => "bounds".into(),
+            Err(e) => panic!("unexpected typed error {e:?}"),
+        }
+    }
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(14695981039346656037, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    #[test]
+    fn source_count_copy_and_neighbor_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/add_inp_atom");
+        let inputs =
+            std::fs::read_to_string(root.join("inputs.txt")).expect("fixed add_inp_atom inputs");
+        let expected = std::fs::read_to_string(root.join("expected.txt"))
+            .expect("fixed add_inp_atom expected");
+        let manifest = std::fs::read_to_string(root.join("manifest.json"))
+            .expect("fixed add_inp_atom manifest");
+        let provenance = std::fs::read_to_string(root.join("provenance.md"))
+            .expect("fixed add_inp_atom provenance");
+        assert_eq!(
+            fnv(inputs.as_bytes()),
+            0xdca0dd35bcc2fa6b,
+            "fixed inputs identity"
+        );
+        assert_eq!(
+            fnv(expected.as_bytes()),
+            0x1f76e031bc6740df,
+            "fixed expected identity"
+        );
+        assert_eq!(
+            fnv(manifest.as_bytes()),
+            0xd63186dad9dcf211,
+            "fixed manifest identity"
+        );
+        assert_eq!(
+            fnv(provenance.as_bytes()),
+            0x63efdcbafd8ab183,
+            "fixed provenance identity"
+        );
+        assert_eq!(inputs.lines().count(), 59887);
+        let mut records: Vec<&str> = Vec::new();
+        let mut expected_lines = expected.lines();
+        let mut calls = 0;
+        let mut ok = 0;
+        let mut bounds = 0;
+        let mut guards = 0;
+        let mut differences = 0;
+        let mut partial = 0;
+        for row in inputs.lines() {
+            let v: Vec<_> = row.split_whitespace().collect();
+            assert_eq!(v.len(), 11);
+            let id: usize = v[0].parse().unwrap();
+            let nd: usize = v[2].parse().unwrap();
+            let ns: usize = v[3].parse().unwrap();
+            let doff: usize = v[4].parse().unwrap();
+            let so: usize = v[5].parse().unwrap();
+            let cap: i32 = v[6].parse().unwrap();
+            let cur: i32 = v[7].parse().unwrap();
+            let n: i32 = v[8].parse().unwrap();
+            let seed: u8 = v[9].parse().unwrap();
+            for _ in 0..2 {
+                let expectation = loop {
+                    let line = expected_lines.next().expect("every ordered repeat row");
+                    if let Some(a) = line.strip_prefix("a ") {
+                        let (index, record) = a.split_once(' ').unwrap();
+                        assert_eq!(index.parse::<usize>().unwrap(), records.len());
+                        assert_eq!(record.len(), 332);
+                        records.push(record);
+                    } else {
+                        break line.strip_prefix("r ").expect("fixed record kind");
+                    }
+                };
+                let mut fields = expectation.splitn(3, ' ');
+                assert_eq!(fields.next().unwrap(), v[0]);
+                let expected_result = fields.next().unwrap();
+                let indices = fields.next().unwrap();
+                let expected_state = if indices == "-" {
+                    "-".to_string()
+                } else {
+                    indices
+                        .split(',')
+                        .map(|i| records[i.parse::<usize>().unwrap()])
+                        .collect::<String>()
+                };
+                let mut destination = backing(nd, seed.wrapping_add(83), "-");
+                let before = state(&destination);
+                let source = backing(ns, seed, v[10]);
+                let source_before = state(&source);
+                let actual = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    add_inp_ATOM(&mut destination[doff..], cap, cur, &source[so..], n)
+                }));
+                let current = state(&destination);
+                assert_eq!(source_before, state(&source), "source {id}");
+                match actual {
+                    Ok(value) => {
+                        let result = tag(value);
+                        if value.is_ok() {
+                            ok += 1;
+                        } else {
+                            bounds += 1;
+                            if current != before {
+                                partial += 1;
+                            }
+                        }
+                        if result != expected_result || current != expected_state {
+                            differences += 1;
+                            eprintln!(
+                                "add_inp_atom mismatch id={id} expected={expected_result} actual={result} full34state_equal={}",
+                                current == expected_state
+                            );
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        assert_eq!(
+                            text,
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md"
+                            ),
+                            "unexpected panic {id}"
+                        );
+                        assert_eq!(current, before, "guard state {id}");
+                        guards += 1;
+                    }
+                }
+                calls += 1;
+            }
+        }
+        assert!(expected_lines.next().is_none());
+        assert_eq!(records.len(), 70709);
+        eprintln!(
+            "add_inp_atom calls={calls} Ok={ok} Bounds={bounds} exact0159={guards} differences={differences} partialBounds={partial}"
+        );
+        assert_eq!(calls, 119774);
+        assert_eq!(differences, 0);
+        assert_eq!(guards, 0, "active add_inp_atom quarantine");
+        assert_eq!(ok, 82780);
+        assert_eq!(bounds, 36994);
+        assert_eq!(partial, 956);
+    }
+}
+
+#[cfg(test)]
+mod detect_r2c_zatom_regressions {
+    use super::{R2C_AT, SourceHeapError, detect_r2c_Zatom, inp_ATOM};
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(14695981039346656037u64, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    fn initialized(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM {
+            elname: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            el_number: seed as u8,
+            neighbor: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as u16),
+            orig_at_number: seed as u16,
+            orig_compt_at_numb: seed as u16,
+            bond_stereo: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as i8
+            }),
+            bond_type: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as u8),
+            valence: seed as i8,
+            chem_bonds_valence: seed as i8,
+            num_H: seed as i8,
+            num_iso_H: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            iso_atw_diff: seed as i8,
+            charge: seed as i8,
+            radical: seed as i8,
+            bAmbiguousStereo: seed as i8,
+            cFlags: seed as i8,
+            at_type: seed as u16,
+            component: seed as u16,
+            endpoint: seed as u16,
+            c_point: seed as u16,
+            x: seed as f64,
+            y: seed as f64,
+            z: seed as f64,
+            bUsed0DParity: seed as i8,
+            p_parity: seed as i8,
+            p_orig_at_num: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as u16
+            }),
+            sb_ord: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            sn_ord: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            sb_parity: std::array::from_fn(|j| seed.wrapping_add((j as u8).wrapping_mul(37)) as i8),
+            sn_orig_at_num: std::array::from_fn(|j| {
+                seed.wrapping_add((j as u8).wrapping_mul(37)) as u16
+            }),
+            bCutVertex: seed as i8,
+            nRingSystem: seed as u16,
+            nNumAtInRingSystem: seed as u16,
+            nBlockSystem: seed as u16,
+        };
+        a.valence = (index % 21) as i8;
+        a.neighbor = std::array::from_fn(|j| {
+            (u32::from(seed) * 257 + index as u32 * 31 + j as u32 * 37) as u16
+        });
+        let x = f64::from(seed) + index as f64;
+        a.x = x + 0.25;
+        a.y = -x - 0.5;
+        a.z = x + 0.75;
+        a
+    }
+    fn append_hex(out: &mut String, bytes: &[u8]) {
+        const H: &[u8] = b"0123456789abcdef";
+        for &b in bytes {
+            out.push(H[(b >> 4) as usize] as char);
+            out.push(H[(b & 15) as usize] as char);
+        }
+    }
+    fn atom_state(atoms: &[inp_ATOM]) -> String {
+        let mut out = String::with_capacity(atoms.len() * 334);
+        if atoms.is_empty() {
+            out.push('-');
+        }
+        for a in atoms {
+            for value in a.elname {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.el_number.to_le_bytes());
+            for value in a.neighbor {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.orig_at_number.to_le_bytes());
+            append_hex(&mut out, &a.orig_compt_at_numb.to_le_bytes());
+            for value in a.bond_stereo {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.bond_type {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.valence.to_le_bytes());
+            append_hex(&mut out, &a.chem_bonds_valence.to_le_bytes());
+            append_hex(&mut out, &a.num_H.to_le_bytes());
+            for value in a.num_iso_H {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.iso_atw_diff.to_le_bytes());
+            append_hex(&mut out, &a.charge.to_le_bytes());
+            append_hex(&mut out, &a.radical.to_le_bytes());
+            append_hex(&mut out, &a.bAmbiguousStereo.to_le_bytes());
+            append_hex(&mut out, &a.cFlags.to_le_bytes());
+            append_hex(&mut out, &a.at_type.to_le_bytes());
+            append_hex(&mut out, &a.component.to_le_bytes());
+            append_hex(&mut out, &a.endpoint.to_le_bytes());
+            append_hex(&mut out, &a.c_point.to_le_bytes());
+            append_hex(&mut out, &a.x.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.y.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.z.to_bits().to_le_bytes());
+            append_hex(&mut out, &a.bUsed0DParity.to_le_bytes());
+            append_hex(&mut out, &a.p_parity.to_le_bytes());
+            for value in a.p_orig_at_num {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sb_ord {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sn_ord {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sb_parity {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            for value in a.sn_orig_at_num {
+                append_hex(&mut out, &value.to_le_bytes());
+            }
+            append_hex(&mut out, &a.bCutVertex.to_le_bytes());
+            append_hex(&mut out, &a.nRingSystem.to_le_bytes());
+            append_hex(&mut out, &a.nNumAtInRingSystem.to_le_bytes());
+            append_hex(&mut out, &a.nBlockSystem.to_le_bytes());
+        }
+        out
+    }
+
+    fn backing(n: usize, offset: usize, seed: u8, encoded: &str) -> Vec<inp_ATOM> {
+        let mut a: Vec<_> = (0..n)
+            .map(|i| {
+                let mut a = initialized(seed.wrapping_add((i as u8).wrapping_mul(13)), i);
+                a.el_number = 7;
+                a.valence = 0;
+                a.chem_bonds_valence = 0;
+                a.num_H = 0;
+                a.charge = 0;
+                a.radical = 0;
+                a.nRingSystem = 0;
+                a.nNumAtInRingSystem = 0;
+                a.bCutVertex = 0;
+                a.neighbor.fill(65535);
+                a
+            })
+            .collect();
+        if encoded != "-" {
+            for record in encoded.split(';') {
+                let v: Vec<i32> = record.split(',').map(|x| x.parse().unwrap()).collect();
+                assert_eq!(v.len(), 30);
+                let a = &mut a[offset + usize::try_from(v[0]).unwrap()];
+                a.el_number = u8::try_from(v[1]).unwrap();
+                a.valence = i8::try_from(v[2]).unwrap();
+                a.chem_bonds_valence = i8::try_from(v[3]).unwrap();
+                a.num_H = i8::try_from(v[4]).unwrap();
+                a.charge = i8::try_from(v[5]).unwrap();
+                a.radical = i8::try_from(v[6]).unwrap();
+                a.nRingSystem = u16::try_from(v[7]).unwrap();
+                a.nNumAtInRingSystem = u16::try_from(v[8]).unwrap();
+                a.bCutVertex = i8::try_from(v[9]).unwrap();
+                for j in 0..20 {
+                    a.neighbor[j] = u16::try_from(v[10 + j]).unwrap();
+                }
+            }
+        }
+        a
+    }
+    fn derivatives(n: usize, seed: u8) -> Vec<R2C_AT> {
+        (0..n)
+            .map(|i| {
+                let b = seed.wrapping_add((i as u8).wrapping_mul(13));
+                R2C_AT {
+                    type_: b as i8,
+                    ordW: b.wrapping_add(37) as i8,
+                    ordY: b.wrapping_add(74) as i8,
+                    ordC: b.wrapping_add(111) as i8,
+                    ordCopt: b.wrapping_add(148) as i8,
+                }
+            })
+            .collect()
+    }
+    fn state(a: &[R2C_AT]) -> String {
+        let mut out = String::new();
+        if a.is_empty() {
+            out.push('-');
+        }
+        for a in a {
+            for b in [a.type_, a.ordW, a.ordY, a.ordC, a.ordCopt] {
+                append_hex(&mut out, &b.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn source_order_roles_first_oh_success_only_write_and_all_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/detect_r2c_zatom");
+        let input = std::fs::read_to_string(root.join("inputs.txt"))
+            .expect("missing fixed F0622 inputs; explicitly run documented preparation");
+        let expected = std::fs::read_to_string(root.join("expected.txt"))
+            .expect("missing fixed F0622 expected state");
+        assert_eq!(
+            (input.len(), fnv(input.as_bytes())),
+            (3181748usize, 2014232699256725549u64)
+        );
+        assert_eq!(
+            (expected.len(), fnv(expected.as_bytes())),
+            (7663054usize, 5586947787748750269u64)
+        );
+        let mut dictionary = Vec::new();
+        let mut rows = Vec::new();
+        for line in input.lines() {
+            if let Some(record) = line.strip_prefix("A ") {
+                let (id, value) = record.split_once(' ').unwrap();
+                assert_eq!(id.parse::<usize>().unwrap(), dictionary.len());
+                assert_eq!(value.split(',').count(), 30);
+                dictionary.push(value.to_owned());
+            } else {
+                assert!(line.starts_with("I "));
+                rows.push(line);
+            }
+        }
+        assert_eq!(dictionary.len(), 17904);
+        assert_eq!(rows.len(), 20998);
+        let mut expected_lines = expected.lines();
+        let mut calls = 0;
+        let mut ok = 0;
+        let mut bounds = 0;
+        let mut ordinal_panics = 0;
+        let mut guards = 0;
+        let mut modified = 0;
+        let mut native_ids = 0;
+        for row in rows {
+            let v: Vec<_> = row.split_whitespace().collect();
+            assert_eq!(v.len(), 10);
+            assert_eq!(v[0], "I");
+            let id: usize = v[1].parse().unwrap();
+            let native = v[2] == "1";
+            assert!(native || v[2] == "0");
+            if native {
+                native_ids += 1;
+            }
+            let na: usize = v[3].parse().unwrap();
+            let nd: usize = v[4].parse().unwrap();
+            let ao: usize = v[5].parse().unwrap();
+            let doff: usize = v[6].parse().unwrap();
+            let z: i32 = v[7].parse().unwrap();
+            let seed: u8 = v[8].parse().unwrap();
+            let encoded = if v[9] == "-" {
+                "-".to_owned()
+            } else {
+                v[9].split(',')
+                    .map(|i| dictionary[i.parse::<usize>().unwrap()].as_str())
+                    .collect::<Vec<_>>()
+                    .join(";")
+            };
+            for _ in 0..2 {
+                let line = expected_lines.next().unwrap();
+                let mut fields = line.splitn(3, ' ');
+                assert_eq!(fields.next().unwrap().parse::<usize>().unwrap(), id);
+                let expected_result = fields.next().unwrap();
+                let expected_state = fields.next().unwrap();
+                assert!(!native || matches!(expected_result, "ok:0" | "ok:1"));
+                let atoms = backing(na, ao, seed, &encoded);
+                let source_before = atom_state(&atoms);
+                let mut d = derivatives(nd, seed);
+                let before = d.clone();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    detect_r2c_Zatom(&atoms[ao..], &mut d[doff..], z)
+                }));
+                assert_eq!(
+                    source_before,
+                    atom_state(&atoms),
+                    "all34 atom fields/float bits {id}"
+                );
+                let current = state(&d);
+                match result {
+                    Ok(value) => {
+                        let tag = match value {
+                            Ok(n) => {
+                                assert!(n == 0 || n == 1);
+                                ok += 1;
+                                format!("ok:{n}")
+                            }
+                            Err(SourceHeapError::PointerOutOfBounds) => {
+                                bounds += 1;
+                                "bounds".to_owned()
+                            }
+                            Err(e) => panic!("unexpected error {id}: {e:?}"),
+                        };
+                        assert_eq!(tag, expected_result, "result {id}");
+                        assert_eq!(current, expected_state, "all5 fields/full backing {id}");
+                        if tag == "ok:1" {
+                            let at = doff + usize::try_from(z).unwrap();
+                            assert_eq!(d[at].type_, 1);
+                            for (i, (actual, prior)) in d.iter().zip(&before).enumerate() {
+                                if i != at {
+                                    assert_eq!(actual, prior, "success canary {id}:{i}");
+                                }
+                            }
+                            let c = &d[at];
+                            assert!(
+                                (0..4).contains(&c.ordW)
+                                    && (0..4).contains(&c.ordY)
+                                    && (0..4).contains(&c.ordC)
+                            );
+                            assert!(c.ordW != c.ordY && c.ordW != c.ordC && c.ordY != c.ordC);
+                        } else {
+                            assert_eq!(d, before, "non-success state {id}");
+                        }
+                    }
+                    Err(p) => {
+                        let s = p
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| p.downcast_ref::<&str>().copied())
+                            .expect("nontext panic");
+                        if s == "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md"
+                        {
+                            assert_eq!(d, before, "quarantine must precede mutation {id}");
+                            guards += 1;
+                        } else {
+                            assert_eq!(
+                                s, "index out of bounds: the len is 20 but the index is 20",
+                                "unexpected panic {id}"
+                            );
+                            assert!(!native);
+                            assert_eq!(expected_result, "ordinal_panic:20");
+                            assert_eq!(current, expected_state, "ordinal-panic full state {id}");
+                            assert_eq!(d, before);
+                            ordinal_panics += 1;
+                        }
+                    }
+                }
+                if d != before {
+                    modified += 1;
+                }
+                calls += 1;
+            }
+        }
+        assert!(expected_lines.next().is_none());
+        assert_eq!(native_ids, 19125);
+        eprintln!(
+            "detect_r2c_Zatom calls={calls} Ok={ok} Bounds={bounds} ordinal_panics={ordinal_panics} exact0159={guards} modified={modified} differences=0"
+        );
+        assert_eq!(calls, 41996);
+        assert_eq!(guards, 0, "active detect_r2c_Zatom quarantine");
+        assert_eq!(ok, 38250);
+        assert_eq!(bounds, 3532);
+        assert_eq!(ordinal_panics, 214);
+        assert_eq!(modified, 17156);
+    }
+}
+
+#[cfg(test)]
+mod unmark_component_regressions {
+    use super::UnMarkOneComponent;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u16) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6],
+            el_number: byte,
+            neighbor: [word; 20],
+            orig_at_number: word,
+            orig_compt_at_numb: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            bond_stereo: [byte as i8; 20],
+            bond_type: [byte; 20],
+            valence: byte as i8,
+            chem_bonds_valence: !byte as i8,
+            num_H: byte as i8,
+            num_iso_H: [byte as i8; 3],
+            iso_atw_diff: !byte as i8,
+            charge: byte as i8,
+            radical: !byte as i8,
+            bAmbiguousStereo: byte as i8,
+            cFlags: byte as i8,
+            at_type: word,
+            component: flags.wrapping_add((index as u16).wrapping_mul(37)),
+            endpoint: !word,
+            c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8,
+            p_parity: !byte as i8,
+            p_orig_at_num: [word; 4],
+            sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3],
+            sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3],
+            bCutVertex: byte as i8,
+            nRingSystem: word,
+            nNumAtInRingSystem: !word,
+            nBlockSystem: word,
+        }
+    }
+
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits()
+            && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0;
+        a.y = 0.0;
+        a.z = 0.0;
+        b.x = 0.0;
+        b.y = 0.0;
+        b.z = 0.0;
+        floats && a == b
+    }
+
+    #[test]
+    fn complete_component_labels_prefix_errors_and_preservation() {
+        let inputs = include_str!(
+            "../../../../../testdata/inchi/expected/official/unmark_component/inputs.txt"
+        );
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/unmark_component/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 137131);
+        assert_eq!(expected.lines().count(), 137131);
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut audit159,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (ident, (input, output)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 7);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let n: usize = cells[1].parse().unwrap();
+            let count: i32 = cells[2].parse().unwrap();
+            let typ: u16 = cells[3].parse().unwrap();
+            let flags: u16 = cells[4].parse().unwrap();
+            let seed: u8 = cells[5].parse().unwrap();
+            assert!(n <= 8);
+            assert_eq!(cells[6] == "N", count <= 0 || count as usize <= n);
+            let wanted: Vec<_> = output.split_whitespace().collect();
+            assert_eq!(wanted.len(), 11);
+            let before: [inp_ATOM; 10] = std::array::from_fn(|i| dirty_atom(seed, i, typ, flags));
+            for _repeat in 0..2 {
+                calls += 1;
+                let mut atoms = before;
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    UnMarkOneComponent(&mut atoms[..n], count)
+                }));
+                let mut quarantined = false;
+                match result {
+                    Ok(Ok(value)) => {
+                        completed += 1;
+                        differences += usize::from(value != 0 || wanted[0] != "0");
+                    }
+                    Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                        bounds += 1;
+                        differences += usize::from(wanted[0] != "E");
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                    }
+                    Err(payload) => {
+                        quarantined = true;
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audit159 += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                for i in 0..10 {
+                    let mut state = before[i];
+                    if !quarantined {
+                        let pair = u32::from_str_radix(wanted[i + 1], 16).unwrap();
+                        state.orig_compt_at_numb = (pair >> 16) as u16;
+                        state.component = pair as u16;
+                    }
+                    changes += usize::from(!same_bits(atoms[i], state));
+                }
+            }
+        }
+        eprintln!(
+            "UNMARK_COMPONENT COUNTS calls={calls} completed={completed} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 274262);
+        assert_eq!((audit159, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
     }
 }

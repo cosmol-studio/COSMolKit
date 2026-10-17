@@ -1,5 +1,6 @@
+use crate::source::base::runichi::CanonicalTarget;
 use crate::source::base::{
-    ichi_bns::bExistsAnyAltPath,
+    ichi_bns::{SourceBnsFlagRead, bExistsAnyAltPath, exists_any_alt_path_flags},
     ichitaut::{AddAtom2DA, AddAtom2num, is_centerpoint_elem_strict, nGetEndpointInfo},
     util::get_endpoint_valence,
 };
@@ -84,36 +85,36 @@ pub(crate) fn are_alt_bonds(bonds: &[u8], len: i32) -> Result<i32, SourceHeapErr
         return Ok(0);
     }
     let len = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let bonds = bonds
-        .get(..len)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if bonds[0] == BOND_TRIPLE as u8 || bonds[0] == BOND_ALT_13 as u8 {
+    // INCHI✔️❗: source probes only the reached bond before any later extent.
+    // O(reached length), no scratch/allocation; checked-index cost remains OPEN.
+    let first = *bonds.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if first == BOND_TRIPLE as u8 || first == BOND_ALT_13 as u8 {
         return Ok(0);
     }
 
     let mut bTautBondPresent = BOND_ALTERN as i32;
-    let mut next_bond = if bonds[0] == BOND_SINGLE as u8 {
+    let mut next_bond = if first == BOND_SINGLE as u8 {
         BOND_DOUBLE as u8
-    } else if bonds[0] == BOND_DOUBLE as u8 {
+    } else if first == BOND_DOUBLE as u8 {
         BOND_SINGLE as u8
     } else {
         0
     };
-    if bonds[0] == BOND_TAUTOM as u8 {
+    if first == BOND_TAUTOM as u8 {
         bTautBondPresent = BOND_TAUTOM as i32;
         next_bond = 0;
     } else {
-        next_bond = if bonds[0] == BOND_SINGLE as u8 {
+        next_bond = if first == BOND_SINGLE as u8 {
             BOND_DOUBLE as u8
-        } else if bonds[0] == BOND_DOUBLE as u8 {
+        } else if first == BOND_DOUBLE as u8 {
             BOND_SINGLE as u8
         } else {
             0
         };
     }
 
-    for &bond in &bonds[1..] {
+    for index in 1..len {
+        let bond = *bonds.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let bAnyBond = if bond == BOND_TAUTOM as u8 {
             bTautBondPresent = BOND_TAUTOM as i32;
             true
@@ -213,52 +214,28 @@ pub(crate) fn AddBondsPos(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddBondsPos
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let temporary_count =
-        usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if temporary_count > BondPosTmp.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let mut j = 0_usize;
-    while j < temporary_count {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: signed loop bounds and reached reads match native short circuits.
+    // O(temporary*valence + temporary*existing), O(1) scratch/no allocation;
+    // safe per-element index checks remain independently OPEN.
+    let mut j = 0_i32;
+    while j < nNumBondPosTmp {
         let first = BondPosTmp
-            .get(j)
+            .get(j as usize)
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let cur_at = usize::from(first.nAtomNumber);
         let neighbor_index = usize::from(first.neighbor_index);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let current = atom
-            .get(cur_at)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        let current = atom.get(cur_at).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let nxt_at = usize::from(
-            *current
-                .neighbor
-                .get(neighbor_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            *current.neighbor.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let next = atom
-            .get(nxt_at)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence =
-            usize::try_from(next.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        for k in 0..valence {
-            if cur_at
-                == usize::from(
-                    *next
-                        .neighbor
-                        .get(k)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )
-            {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        let next = atom.get(nxt_at).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        for k in 0..i32::from(next.valence) {
+            if cur_at == usize::from(
+                *next.neighbor.get(k as usize).ok_or(SourceHeapError::PointerOutOfBounds)?,
+            ) {
                 let opposite = BondPosTmp
-                    .get_mut(j + 1)
+                    .get_mut(j.wrapping_add(1) as usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 opposite.nAtomNumber = nxt_at as AT_RANK;
                 opposite.neighbor_index = k as AT_RANK;
@@ -268,51 +245,38 @@ pub(crate) fn AddBondsPos(
         j = j.wrapping_add(2);
     }
 
-    let mut j = 0_usize;
-    while j < temporary_count {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let existing_count =
-            usize::try_from(nNumBondPos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if existing_count > BondPos.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let first = BondPosTmp
-            .get(j)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let opposite = BondPosTmp
-            .get(j + 1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mut i = 0_usize;
-        while i < existing_count {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let existing = BondPos.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if (existing.nAtomNumber == first.nAtomNumber
-                && existing.neighbor_index == first.neighbor_index)
-                || (existing.nAtomNumber == opposite.nAtomNumber
-                    && existing.neighbor_index == opposite.neighbor_index)
+    let mut j = 0_i32;
+    while j < nNumBondPosTmp {
+        let mut i = 0_i32;
+        while i < nNumBondPos {
+            let existing = BondPos.get(i as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first = BondPosTmp.get(j as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == first.nAtomNumber
+                && existing.neighbor_index == first.neighbor_index
             {
                 break;
             }
-            i += 1;
-        }
-        if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                > nMaxNumBondPos
+            let opposite = BondPosTmp
+                .get(j.wrapping_add(1) as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == opposite.nAtomNumber
+                && existing.neighbor_index == opposite.neighbor_index
             {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+        if i == nNumBondPos {
+            if i > nMaxNumBondPos {
                 return Ok(-1);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *BondPos
-                .get_mut(existing_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = first.clone();
+            let first = BondPosTmp.get(j as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *BondPos.get_mut(nNumBondPos as usize).ok_or(SourceHeapError::PointerOutOfBounds)? =
+                first.clone();
             nNumBondPos = nNumBondPos.wrapping_add(1);
         }
         j = j.wrapping_add(2);
     }
-
     Ok(nNumBondPos)
 }
 
@@ -356,44 +320,25 @@ pub(crate) fn AddEndPoints(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddEndPoints
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let new_count =
-        usize::try_from(nNumNewEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let new_endpoints = EndPointTmp
-        .get(..new_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for candidate in new_endpoints {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        let existing_count =
-            usize::try_from(nNumEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        if existing_count > EndPoint.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let mut i = 0_usize;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        while i < existing_count {
-            if EndPoint
-                .get(i)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .nAtomNumber
-                == candidate.nAtomNumber
-            {
+    // INCHI✔️❗: signed loops skip negative counts; candidate reads follow gates.
+    // O(new*existing), O(1) scratch/no allocation; safe access cost stays OPEN.
+    for j in 0..nNumNewEndPoint {
+        let mut i = 0_i32;
+        while i < nNumEndPoint {
+            let existing = EndPoint.get(i as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let candidate = EndPointTmp.get(j as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == candidate.nAtomNumber {
                 break;
             }
-            i += 1;
+            i = i.wrapping_add(1);
         }
-        if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                > nMaxNumEndPoint
-            {
+        if i == nNumEndPoint {
+            if i > nMaxNumEndPoint {
                 return Ok(-1);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            *EndPoint
-                .get_mut(existing_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = candidate.clone();
+            let candidate = EndPointTmp.get(j as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *EndPoint.get_mut(nNumEndPoint as usize).ok_or(SourceHeapError::PointerOutOfBounds)? =
+                candidate.clone();
             nNumEndPoint = nNumEndPoint.wrapping_add(1);
         }
     }
@@ -419,7 +364,32 @@ pub(crate) fn Check7MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check7MembTautRing_flags(heap, pCG, atom, DfsPath, nLenDfsPath, nStartAtomNeighbor, nStartAtomNeighbor2, nStartAtomNeighborNeighbor, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check7MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:951 Check7MembTautRing
     // INCHI✔️❌: int Check7MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -623,17 +593,12 @@ pub(crate) fn Check7MembTautRing(
     let mut o2_at = 0_i32;
 
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path0 = DfsPath.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path1 = DfsPath.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path1_atom = atoms
             .get(usize::from(path1.at_no))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         o1_at = i32::from(
             *path1_atom
                 .neighbor
@@ -643,11 +608,9 @@ pub(crate) fn Check7MembTautRing(
                 )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path0_atom = atoms
             .get(usize::from(path0.at_no))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         o2_at = i32::from(
             *path0_atom
                 .neighbor
@@ -658,9 +621,7 @@ pub(crate) fn Check7MembTautRing(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
 
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif1 = ENDPOINT_INFO::default();
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif2 = ENDPOINT_INFO::default();
         if nGetEndpointInfo(atoms, o1_at, &mut eif1) == 0
             || nGetEndpointInfo(atoms, o2_at, &mut eif2) == 0
@@ -668,13 +629,10 @@ pub(crate) fn Check7MembTautRing(
             return Ok(0);
         }
 
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
-        panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
         for endpoint in [o1_at, o2_at] {
             let temporary_index = usize::try_from(nNumEndPointTmp)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let endpoint_atom = atoms
                 .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -690,15 +648,12 @@ pub(crate) fn Check7MembTautRing(
             nNumEndPointTmp = nNumEndPointTmp.wrapping_add(1);
         }
 
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut path_bonds = [0_u8; PATH_LEN as usize + 1];
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut BondPosTmp: [T_BONDPOS; 2 * PATH_LEN as usize] =
             std::array::from_fn(|_| T_BONDPOS::default());
         let k = i32::from(path1.at_no);
         let first_neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut bond_type = *path1_atom
             .bond_type
             .get(first_neighbor_index)
@@ -721,7 +676,6 @@ pub(crate) fn Check7MembTautRing(
 
         let mut i = 1_i32;
         while i <= nLenDfsPath {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let path = DfsPath
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -744,7 +698,6 @@ pub(crate) fn Check7MembTautRing(
             i = i.wrapping_add(1);
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         bond_type = *path0_atom
             .bond_type
             .get(
@@ -778,11 +731,9 @@ pub(crate) fn Check7MembTautRing(
             return Ok(0);
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let o1 = atoms
             .get(usize::try_from(o1_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let o2 = atoms
             .get(usize::try_from(o2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -823,20 +774,17 @@ pub(crate) fn Check7MembTautRing(
     }
 
     if ret != 0 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let o1_endpoint = atoms
             .get(usize::try_from(o1_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let o2_endpoint = atoms
             .get(usize::try_from(o2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
         if o1_endpoint != o2_endpoint || o1_endpoint == 0 {
-            let nErr = bExistsAnyAltPath(
+            let nErr = exists_any_alt_path_flags(
                 heap,
                 pCG,
                 pBNS,
@@ -847,7 +795,7 @@ pub(crate) fn Check7MembTautRing(
                 o2_at,
                 ALT_PATH_MODE_TAUTOM as i32,
                 clock_result,
-            )?;
+             flag_storage,)?;
             if nErr <= 0 {
                 return Ok(nErr);
             }
@@ -876,7 +824,32 @@ pub(crate) fn Check6MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check6MembTautRing_flags(heap, pCG, atom, DfsPath, nLenDfsPath, nStartAtomNeighbor, nStartAtomNeighbor2, nStartAtomNeighborNeighbor, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check6MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1142 Check6MembTautRing
     // INCHI✔️❌: int Check6MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -1156,14 +1129,12 @@ pub(crate) fn Check6MembTautRing(
     }
 
     let middle_pos = nLenDfsPath.wrapping_add(1) / 2;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let n_at = i32::from(
         DfsPath
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let nxt_at = i32::from(
         DfsPath
             .get(usize::try_from(middle_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -1182,28 +1153,16 @@ pub(crate) fn Check6MembTautRing(
         nMobile1,
         nMobile2,
     ) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let center = atoms
             .get(usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if center.valence != 3 || center.bCutVertex == 0 {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let previous = DfsPath
             .get(
                 usize::try_from(middle_pos.wrapping_sub(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .at_no;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let next = DfsPath
-            .get(
-                usize::try_from(middle_pos.wrapping_add(1))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
             )
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1212,20 +1171,30 @@ pub(crate) fn Check6MembTautRing(
             usize::try_from(center.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut external = None;
         for i in 0..valence {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = *center
                 .neighbor
                 .get(i)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if neighbor != previous && neighbor != next {
-                external = Some((i, i32::from(neighbor)));
-                break;
+            // INCHI✔️❗: Native reads the next path atom only after the
+            // previous-neighbor rejection. O(1), no scratch/allocation;
+            // checked-access cost remains OPEN.
+            if neighbor != previous {
+                let next = DfsPath
+                    .get(
+                        usize::try_from(middle_pos.wrapping_add(1))
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .at_no;
+                if neighbor != next {
+                    external = Some((i, i32::from(neighbor)));
+                    break;
+                }
             }
         }
         let Some((external_bond_pos, o_at)) = external else {
             return Ok(0);
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let external_bond = *center
             .bond_type
             .get(external_bond_pos)
@@ -1241,13 +1210,11 @@ pub(crate) fn Check6MembTautRing(
         ) {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif1 = ENDPOINT_INFO::default();
         let endpoint_valence1 = nGetEndpointInfo(atoms, o_at, &mut eif1);
         if endpoint_valence1 == 0 {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let oxygen = atoms
             .get(usize::try_from(o_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1255,13 +1222,11 @@ pub(crate) fn Check6MembTautRing(
         if external_bond == BOND_SINGLE as u8 && eif1.cDonor == 0 && oxygen.endpoint == 0 {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif2 = ENDPOINT_INFO::default();
         let endpoint_valence2 = nGetEndpointInfo(atoms, n_at, &mut eif2);
         if endpoint_valence2 == 0 {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let nitrogen = atoms
             .get(usize::try_from(n_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1289,11 +1254,9 @@ pub(crate) fn Check6MembTautRing(
     };
 
     const PATH_LEN: usize = 4;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut path_bonds = [[0_u8; PATH_LEN + 1]; 2];
     path_bonds[0][0] = external_bond;
     path_bonds[1][0] = external_bond;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut BondPosTmp: [T_BONDPOS; 4 * PATH_LEN] = std::array::from_fn(|_| T_BONDPOS::default());
     let mut nNumBondPosTmp = 0_i32;
     if matches!(
@@ -1314,7 +1277,6 @@ pub(crate) fn Check6MembTautRing(
             } else {
                 middle_pos.wrapping_sub(1).wrapping_sub(j)
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let path = DfsPath
                 .get(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1343,18 +1305,15 @@ pub(crate) fn Check6MembTautRing(
     }
 
     let (endpoint_o, endpoint_n) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let endpoint_o =
             atoms[usize::try_from(o_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let endpoint_n =
             atoms[usize::try_from(n_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
         (endpoint_o, endpoint_n)
     };
     if endpoint_o != endpoint_n || endpoint_o == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -1365,19 +1324,16 @@ pub(crate) fn Check6MembTautRing(
             o_at,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
-        )?;
+         flag_storage,)?;
         if nErr <= 0 {
             return Ok(nErr);
         }
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = heap.slice(atom.as_const())?;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
     let mut nNumEndPointTmp = 0_i32;
     for (j, endpoint) in [o_at, n_at].into_iter().enumerate() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let endpoint_atom = atoms
             .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1451,7 +1407,32 @@ pub(crate) fn Check5MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check5MembTautRing_flags(heap, pCG, atom, DfsPath, nLenDfsPath, _nStartAtomNeighbor, nStartAtomNeighbor2, nStartAtomNeighborNeighbor, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check5MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    _nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1666 Check5MembTautRing
     // INCHI✔️❌: int Check5MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -1628,29 +1609,22 @@ pub(crate) fn Check5MembTautRing(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let path0 = DfsPath.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let path1 = DfsPath.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let n1_at = i32::from(path0.at_no);
     let n2_at = i32::from(path1.at_no);
     let (eif1, eif2, endpoint1, endpoint2) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif1 = ENDPOINT_INFO::default();
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut eif2 = ENDPOINT_INFO::default();
         if nGetEndpointInfo(atoms, n1_at, &mut eif1) == 0
             || nGetEndpointInfo(atoms, n2_at, &mut eif2) == 0
         {
             return Ok(0);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom1 = atoms
             .get(usize::try_from(n1_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom2 = atoms
             .get(usize::try_from(n2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1665,7 +1639,7 @@ pub(crate) fn Check5MembTautRing(
     };
 
     if endpoint1 != endpoint2 || endpoint1 == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -1676,23 +1650,20 @@ pub(crate) fn Check5MembTautRing(
             n2_at,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
-        )?;
+         flag_storage,)?;
         if nErr <= 0 {
             return Ok(nErr);
         }
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = heap.slice(atom.as_const())?;
     let mut nNumBondPos = *pnNumBondPos;
     let mut nNumEndPoint = *pnNumEndPoint;
     let mut nNumEndPointTmp = 0_i32;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
     for endpoint in [n2_at, n1_at] {
         let temporary_index =
             usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let endpoint_atom = atoms
             .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1708,14 +1679,11 @@ pub(crate) fn Check5MembTautRing(
         nNumEndPointTmp = nNumEndPointTmp.wrapping_add(1);
     }
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut path_bonds = [0_u8; PATH_LEN + 1];
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut BondPosTmp: [T_BONDPOS; 2 * PATH_LEN] = std::array::from_fn(|_| T_BONDPOS::default());
     let mut nNumBondPosTmp = 0_i32;
     let mut i = 1_i32;
     while i <= nLenDfsPath {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1742,11 +1710,9 @@ pub(crate) fn Check5MembTautRing(
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom1 = atoms
         .get(usize::try_from(n1_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom2 = atoms
         .get(usize::try_from(n2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1809,7 +1775,34 @@ pub(crate) fn nGet14TautIn7MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet14TautIn7MembAltRing_flags(heap, pCG, atom, nStartAtom, nStartAtomNeighbor, nStartAtomNeighborEndpoint, nStartAtomNeighborNeighborEndpoint, nDfsPathPos, DfsPath, nMaxLenDfsPath, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet14TautIn7MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighborEndpoint: i32,
+    nStartAtomNeighborNeighborEndpoint: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:240 nGet14TautIn7MembAltRing
     // INCHI✔️❌: int nGet14TautIn7MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -1861,12 +1854,10 @@ pub(crate) fn nGet14TautIn7MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check7MembTautRing(
+        Check7MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -1885,7 +1876,7 @@ pub(crate) fn nGet14TautIn7MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
-        )
+         flag_storage,)
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
         bIsCenterPointStrict(heap, atom, iat)
@@ -1937,7 +1928,34 @@ pub(crate) fn nGet14TautIn5MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet14TautIn5MembAltRing_flags(heap, pCG, atom, nStartAtom, nStartAtomNeighbor, nStartAtomNeighborEndpoint, nStartAtomNeighborNeighborEndpoint, nDfsPathPos, DfsPath, nMaxLenDfsPath, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet14TautIn5MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighborEndpoint: i32,
+    nStartAtomNeighborNeighborEndpoint: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:283 nGet14TautIn5MembAltRing
     // INCHI✔️❌: int nGet14TautIn5MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -1986,12 +2004,10 @@ pub(crate) fn nGet14TautIn5MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check7MembTautRing(
+        Check7MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2010,7 +2026,7 @@ pub(crate) fn nGet14TautIn5MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
-        )
+         flag_storage,)
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
         bIsCenterPointStrict(heap, atom, iat)
@@ -2060,7 +2076,32 @@ pub(crate) fn nGet12TautIn5MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet12TautIn5MembAltRing_flags(heap, pCG, atom, nStartAtom, nStartAtomNeighbor, nDfsPathPos, DfsPath, nMaxLenDfsPath, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet12TautIn5MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:322 nGet12TautIn5MembAltRing
     // INCHI✔️❌: int nGet12TautIn5MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -2108,12 +2149,10 @@ pub(crate) fn nGet12TautIn5MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check5MembTautRing(
+        Check5MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2132,7 +2171,7 @@ pub(crate) fn nGet12TautIn5MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
-        )
+         flag_storage,)
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
         bIsCenterPointStrict(heap, atom, iat)
@@ -2181,7 +2220,31 @@ pub(crate) fn nGet15TautIn6MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet15TautIn6MembAltRing_flags(heap, pCG, atom, nStartAtom, nDfsPathPos, DfsPath, nMaxLenDfsPath, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet15TautIn6MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:361 nGet15TautIn6MembAltRing
     // INCHI✔️❌: int nGet15TautIn6MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -2232,12 +2295,10 @@ pub(crate) fn nGet15TautIn6MembAltRing(
     if nMaxLenDfsPath <= 7 {
         return Ok(-1);
     }
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check6MembTautRing(
+        Check6MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2256,7 +2317,7 @@ pub(crate) fn nGet15TautIn6MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
-        )
+         flag_storage,)
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
         bIsCenterPointStrict(heap, atom, iat)
@@ -2304,7 +2365,31 @@ pub(crate) fn nGet15TautInAltPath(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet15TautInAltPath_flags(heap, pCG, atom, nStartAtom, nDfsPathPos, DfsPath, nMaxLenDfsPath, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet15TautInAltPath_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:407 nGet15TautInAltPath
     // INCHI✔️❌: int nGet15TautInAltPath( struct tagCANON_GLOBALS *pCG,
@@ -2359,12 +2444,10 @@ pub(crate) fn nGet15TautInAltPath(
         return Ok(-1);
     }
 
-    let mut check_path = |args: DfsPathCallbackArgs<'_>| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let mut check_path = |args: DfsPathCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check15TautPath(
+        Check15TautPath_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2384,7 +2467,7 @@ pub(crate) fn nGet15TautInAltPath(
             pBD,
             args.num_atoms,
             clock_result,
-        )
+         flag_storage,)
     };
     let mut check_center = |args: DfsPathCenterCallbackArgs<'_>| {
         Check15TautPathCenterpoint(
@@ -2459,7 +2542,6 @@ pub(crate) fn bIsCenterPointStrict(
     // END INCHI ACTIVE HEADER CONFIGURATION: bIsCenterPointStrict
     // SourceHeap preserves C pointer identity but adds a BTreeMap allocation lookup.
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(atom.as_const())?
         .get(usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -2513,7 +2595,6 @@ pub(crate) fn Check15TautPathCenterpoint(
 
     let path_index =
         usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let current_atom_index = usize::from(
         DfsPath
             .get(path_index)
@@ -2522,7 +2603,6 @@ pub(crate) fn Check15TautPathCenterpoint(
     );
     let neighbor_index =
         usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let nxt_at = i32::from(
         *heap
             .slice(atom.as_const())?
@@ -2534,7 +2614,6 @@ pub(crate) fn Check15TautPathCenterpoint(
     );
     let next_atom_index =
         usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let endpoint = heap
         .slice(atom.as_const())?
         .get(next_atom_index)
@@ -2566,7 +2645,33 @@ pub(crate) fn Check15TautPath(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check15TautPath_flags(heap, pCG, atom, DfsPath, nLenDfsPath, jNxtNeigh, nStartAtomNeighbor, nStartAtomNeighbor2, nStartAtomNeighborNeighbor, EndPoint, nMaxNumEndPoint, BondPos, nMaxNumBondPos, pnNumEndPoint, pnNumBondPos, pBNS, pBD, num_atoms, clock_result, None)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check15TautPath_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &mut [DFS_PATH],
+    mut nLenDfsPath: i32,
+    jNxtNeigh: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1434 Check15TautPath
     // INCHI✔️❌: int Check15TautPath( struct tagCANON_GLOBALS *pCG,
@@ -2812,7 +2917,6 @@ pub(crate) fn Check15TautPath(
 
     let path_index =
         usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let prv_at = i32::from(
         DfsPath
             .get(path_index)
@@ -2822,7 +2926,6 @@ pub(crate) fn Check15TautPath(
     let neighbor_index =
         usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let (cur_at, bond_type) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let previous = heap
             .slice(atom.as_const())?
             .get(usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -2841,7 +2944,6 @@ pub(crate) fn Check15TautPath(
                 & !(BOND_MARK_ALL as u8),
         )
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let path = DfsPath
         .get_mut(path_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2850,7 +2952,6 @@ pub(crate) fn Check15TautPath(
     nLenDfsPath = nLenDfsPath.wrapping_add(1);
     let end_path_index =
         usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let end_path = DfsPath
         .get_mut(end_path_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2858,14 +2959,12 @@ pub(crate) fn Check15TautPath(
     end_path.bond_type = 0;
     end_path.bond_pos = -1;
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let at1 = i32::from(
         DfsPath
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no,
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let at2 = i32::from(
         DfsPath
             .get(end_path_index)
@@ -2875,20 +2974,17 @@ pub(crate) fn Check15TautPath(
     let at1_index = usize::try_from(at1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let at2_index = usize::try_from(at2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let endpoint1 = atoms
             .get(at1_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint2 = atoms
-            .get(at2_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .endpoint;
-        if endpoint1 != 0 && endpoint1 == endpoint2 {
+        // INCHI✔️❗: Zero first endpoint short-circuits the second read.
+        // No extra allocation/scan; checked whole-call cost remains OPEN.
+        if endpoint1 != 0
+            && endpoint1 == atoms.get(at2_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.endpoint
+        {
             return Ok(ret);
         }
     }
@@ -2907,7 +3003,6 @@ pub(crate) fn Check15TautPath(
     };
     let mut alt_bonds = [0_i32; 2];
     for i in 0..end_path_index {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let bond = DfsPath
             .get(i)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -2921,12 +3016,9 @@ pub(crate) fn Check15TautPath(
         return Ok(ret);
     }
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut eif1 = ENDPOINT_INFO::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut eif2 = ENDPOINT_INFO::default();
     let (endpoint_valence1, endpoint_valence2) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
         (
             nGetEndpointInfo(atoms, at1, &mut eif1),
@@ -2937,27 +3029,13 @@ pub(crate) fn Check15TautPath(
         return Ok(ret);
     }
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let (nMobile1, nMobile2, endpoint1, endpoint2, valence1, valence2) = {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atoms = heap.slice(atom.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atom1 = atoms
-            .get(at1_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atom2 = atoms
-            .get(at2_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        (
-            i32::from(atom1.num_H) + i32::from(atom1.charge == -1),
-            i32::from(atom2.num_H) + i32::from(atom2.charge == -1),
-            atom1.endpoint,
-            atom2.endpoint,
-            i32::from(atom1.valence),
-            i32::from(atom2.valence),
-        )
-    };
+    // INCHI✔️❗: Both native endpoint-info calls remain unconditional above.
+    // Subsequent second mobile/record reads follow first donor/acceptor gates.
+    // O(1), borrowed records/no snapshots; checked whole-call cost OPEN.
+    let atoms = heap.slice(atom.as_const())?;
+    let atom1 = atoms.get(at1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let nMobile1 = i32::from(atom1.num_H) + i32::from(atom1.charge == -1);
+    let endpoint1 = atom1.endpoint;
     if endpoint1 == 0 {
         if (alt_bonds[0] & BOND_SINGLE as i32) != 0 && eif1.cDonor == 0 {
             return Ok(ret);
@@ -2966,6 +3044,9 @@ pub(crate) fn Check15TautPath(
             return Ok(ret);
         }
     }
+    let atom2 = atoms.get(at2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let nMobile2 = i32::from(atom2.num_H) + i32::from(atom2.charge == -1);
+    let endpoint2 = atom2.endpoint;
     if endpoint2 == 0 {
         if (alt_bonds[1] & BOND_SINGLE as i32) != 0 && eif2.cDonor == 0 {
             return Ok(ret);
@@ -2975,6 +3056,8 @@ pub(crate) fn Check15TautPath(
         }
     }
 
+    let valence1 = i32::from(atom1.valence);
+    let valence2 = i32::from(atom2.valence);
     let mut nMobile = 0_i32;
     nMobile += i32::from(
         (endpoint1 != 0 || eif1.cDonor != 0)
@@ -2991,7 +3074,7 @@ pub(crate) fn Check15TautPath(
     }
 
     if endpoint1 != endpoint2 || endpoint1 == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -3002,17 +3085,15 @@ pub(crate) fn Check15TautPath(
             at2,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
-        )?;
+         flag_storage,)?;
         if nErr <= 0 {
             return Ok(nErr);
         }
     }
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut BondPosTmp: [T_BONDPOS; 4 * PATH_LEN] = std::array::from_fn(|_| T_BONDPOS::default());
     let mut nNumBondPosTmp = 0_i32;
     for k in 0..end_path_index {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let bond_type = path.bond_type;
         if bond_type == BOND_SINGLE as u8
@@ -3028,7 +3109,6 @@ pub(crate) fn Check15TautPath(
         }
     }
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
     let mut nNumEndPointTmp = 0_i32;
     for (j, endpoint) in [at1, at2].into_iter().enumerate() {
@@ -3036,7 +3116,6 @@ pub(crate) fn Check15TautPath(
             usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let endpoint_index =
             usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let known_endpoint = heap
             .slice(atom.as_const())?
             .get(endpoint_index)
@@ -3057,7 +3136,6 @@ pub(crate) fn Check15TautPath(
             if mobile + chem_bonds_valence != endpoint_valence {
                 return Ok(ret);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atoms = heap.slice(atom.as_const())?;
             AddAtom2num(&mut EndPointTmp[temporary_index].num, atoms, endpoint, 2)?;
             AddAtom2DA(&mut EndPointTmp[temporary_index].num_DA, atoms, endpoint, 2)?;
@@ -3071,7 +3149,6 @@ pub(crate) fn Check15TautPath(
     }
 
     {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(atom.as_const())?;
         nNumBondPos = AddBondsPos(
             atoms,
@@ -3100,9 +3177,9 @@ pub(crate) fn Check15TautPath(
     Ok(ret)
 }
 
-pub(crate) struct DfsRingCallbackArgs<'a> {
+pub(crate) struct DfsRingCallbackArgs<'a, CG: CanonicalTarget = CANON_GLOBALS> {
     heap: &'a mut SourceHeap,
-    pCG: &'a mut CANON_GLOBALS,
+    pCG: &'a mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     DfsPath: &'a mut [DFS_PATH],
     nLenDfsPath: i32,
@@ -3121,9 +3198,9 @@ pub(crate) struct DfsRingCallbackArgs<'a> {
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
-pub(crate) fn DFS_FindTautInARing<CheckRing, CheckCenter>(
+pub(crate) fn DFS_FindTautInARing<CG: CanonicalTarget, CheckRing, CheckCenter>(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     nStartAtom: i32,
     nStartAtomNeighbor: i32,
@@ -3145,7 +3222,7 @@ pub(crate) fn DFS_FindTautInARing<CheckRing, CheckCenter>(
     num_atoms: i32,
 ) -> Result<i32, SourceHeapError>
 where
-    CheckRing: for<'a> FnMut(DfsRingCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
+    CheckRing: for<'a> FnMut(DfsRingCallbackArgs<'a, CG>) -> Result<i32, SourceHeapError>,
     CheckCenter:
         FnMut(&SourceHeap, SourceMutPointer<inp_ATOM>, i32) -> Result<i32, SourceHeapError>,
 {
@@ -3323,7 +3400,6 @@ where
     let mut cur_at = nStartAtom;
     let path_index =
         usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let path = DfsPath
         .get_mut(path_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3331,7 +3407,6 @@ where
     path.bond_type = 0;
     path.bond_pos = -1;
     let atom_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(nDfsPathPos)?
         .get_mut(atom_index)
@@ -3341,7 +3416,6 @@ where
     if nStartAtomNeighbor2 >= 0 {
         let neighbor_index = usize::try_from(nStartAtomNeighbor2)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         nDoNotTouchAtom1 = i32::from(
             *heap
                 .slice(atom.as_const())?
@@ -3360,7 +3434,6 @@ where
         let previous_index =
             usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let (next_atom, bond_type) = {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let previous = heap
                 .slice(atom.as_const())?
                 .get(previous_index)
@@ -3378,7 +3451,6 @@ where
             )
         };
         cur_at = i32::from(next_atom);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3388,7 +3460,6 @@ where
         nLenDfsPath = nLenDfsPath.wrapping_add(1);
         let path_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3397,7 +3468,6 @@ where
         path.bond_pos = -1;
         let current_index =
             usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(current_index)
@@ -3406,7 +3476,6 @@ where
         if nStartAtomNeighborNeighbor >= 0 {
             let neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             nDoNotTouchAtom2 = i32::from(
                 *heap
                     .slice(atom.as_const())?
@@ -3422,7 +3491,6 @@ where
     while nLenDfsPath >= i32::from(nMinLenDfsPath) {
         let path_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3431,7 +3499,6 @@ where
         cur_at = i32::from(path.at_no);
         let current_index =
             usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence = i32::from(
             heap.slice(atom.as_const())?
                 .get(current_index)
@@ -3442,7 +3509,6 @@ where
             let neighbor_index =
                 usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let (bond_type, next_atom) = {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let current = heap
                     .slice(atom.as_const())?
                     .get(current_index)
@@ -3460,7 +3526,6 @@ where
                 )
             };
             let nxt_at = i32::from(next_atom);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             DfsPath
                 .get_mut(path_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3469,14 +3534,12 @@ where
             if nxt_at != nDoNotTouchAtom1 && nxt_at != nDoNotTouchAtom2 {
                 let next_index =
                     usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let next_path_position = *heap
                     .slice(nDfsPathPos.as_const())?
                     .get(next_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if next_path_position != 0 {
                     if next_path_position == 1 && nLenDfsPath == nCycleLen {
-                        panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                         let ret = CheckDfsRing(DfsRingCallbackArgs {
                             heap,
                             pCG,
@@ -3501,7 +3564,6 @@ where
                             while nLenDfsPath >= 0 {
                                 let clear_index = usize::try_from(nLenDfsPath)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let atom_to_clear = i32::from(
                                     DfsPath
                                         .get(clear_index)
@@ -3510,7 +3572,6 @@ where
                                 );
                                 let atom_to_clear = usize::try_from(atom_to_clear)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 *heap
                                     .slice_mut(nDfsPathPos)?
                                     .get_mut(atom_to_clear)
@@ -3526,7 +3587,6 @@ where
                     cur_at = nxt_at;
                     let next_path_index = usize::try_from(nLenDfsPath)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let next_path = DfsPath
                         .get_mut(next_path_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3535,7 +3595,6 @@ where
                     next_path.bond_pos = -1;
                     let next_index =
                         usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     *heap
                         .slice_mut(nDfsPathPos)?
                         .get_mut(next_index)
@@ -3544,7 +3603,6 @@ where
                 }
             }
         } else {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_to_clear = i32::from(
                 DfsPath
                     .get(path_index)
@@ -3553,7 +3611,6 @@ where
             );
             let atom_to_clear =
                 usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(nDfsPathPos)?
                 .get_mut(atom_to_clear)
@@ -3565,7 +3622,6 @@ where
     while nLenDfsPath >= 0 {
         let clear_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_to_clear = i32::from(
             DfsPath
                 .get(clear_index)
@@ -3574,7 +3630,6 @@ where
         );
         let atom_to_clear =
             usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(atom_to_clear)
@@ -3585,9 +3640,9 @@ where
     Ok(nNumFound)
 }
 
-pub(crate) struct DfsPathCallbackArgs<'a> {
+pub(crate) struct DfsPathCallbackArgs<'a, CG: CanonicalTarget = CANON_GLOBALS> {
     heap: &'a mut SourceHeap,
-    pCG: &'a mut CANON_GLOBALS,
+    pCG: &'a mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     DfsPath: &'a mut [DFS_PATH],
     nLenDfsPath: i32,
@@ -3618,9 +3673,9 @@ pub(crate) struct DfsPathCenterCallbackArgs<'a> {
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
-pub(crate) fn DFS_FindTautAltPath<CheckPath, CheckCenter>(
+pub(crate) fn DFS_FindTautAltPath<CG: CanonicalTarget, CheckPath, CheckCenter>(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     nStartAtom: i32,
     nStartAtomNeighbor: i32,
@@ -3642,7 +3697,7 @@ pub(crate) fn DFS_FindTautAltPath<CheckPath, CheckCenter>(
     num_atoms: i32,
 ) -> Result<i32, SourceHeapError>
 where
-    CheckPath: for<'a> FnMut(DfsPathCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
+    CheckPath: for<'a> FnMut(DfsPathCallbackArgs<'a, CG>) -> Result<i32, SourceHeapError>,
     CheckCenter: for<'a> FnMut(DfsPathCenterCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:616 DFS_FindTautAltPath
@@ -3820,7 +3875,6 @@ where
     nCycleLen = nCycleLen.wrapping_sub(1);
 
     let mut cur_at = nStartAtom;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let path = DfsPath
         .get_mut(0)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3828,7 +3882,6 @@ where
     path.bond_type = 0;
     path.bond_pos = -1;
     let start_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(nDfsPathPos)?
         .get_mut(start_index)
@@ -3838,7 +3891,6 @@ where
     if nStartAtomNeighbor2 >= 0 {
         let neighbor_index = usize::try_from(nStartAtomNeighbor2)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         nDoNotTouchAtom1 = i32::from(
             *heap
                 .slice(atom.as_const())?
@@ -3857,7 +3909,6 @@ where
         let previous_index =
             usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let (next_atom, bond_type) = {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let previous = heap
                 .slice(atom.as_const())?
                 .get(previous_index)
@@ -3875,7 +3926,6 @@ where
             )
         };
         cur_at = i32::from(next_atom);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(0)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3885,7 +3935,6 @@ where
         nLenDfsPath = nLenDfsPath.wrapping_add(1);
         let path_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3894,7 +3943,6 @@ where
         path.bond_pos = -1;
         let current_index =
             usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(current_index)
@@ -3903,7 +3951,6 @@ where
         if nStartAtomNeighborNeighbor >= 0 {
             let neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             nDoNotTouchAtom2 = i32::from(
                 *heap
                     .slice(atom.as_const())?
@@ -3919,7 +3966,6 @@ where
     while nLenDfsPath >= i32::from(nMinLenDfsPath) {
         let path_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let path = DfsPath
             .get_mut(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3928,7 +3974,6 @@ where
         cur_at = i32::from(path.at_no);
         let current_index =
             usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence = i32::from(
             heap.slice(atom.as_const())?
                 .get(current_index)
@@ -3939,7 +3984,6 @@ where
             let neighbor_index =
                 usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let (bond_type, next_atom) = {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let current = heap
                     .slice(atom.as_const())?
                     .get(current_index)
@@ -3957,7 +4001,6 @@ where
                 )
             };
             let nxt_at = i32::from(next_atom);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             DfsPath
                 .get_mut(path_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3965,14 +4008,19 @@ where
 
             let next_index =
                 usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            // INCHI✔️❗: Preserve native forbidden -> visited -> previous
+            // path order. Skipped branches never admit later storage.
+            // O(1), no allocation/copy; checked-access cost remains OPEN.
+            if nxt_at == nDoNotTouchAtom1 || nxt_at == nDoNotTouchAtom2 {
+                continue;
+            }
             let next_path_position = *heap
                 .slice(nDfsPathPos.as_const())?
                 .get(next_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            if next_path_position != 0 {
+                continue;
+            }
             let is_step_backwards = if nLenDfsPath != 0 {
                 let previous_path_index = usize::try_from(nLenDfsPath.wrapping_sub(1))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -3986,17 +4034,13 @@ where
             } else {
                 false
             };
-            if nxt_at == nDoNotTouchAtom1
-                || nxt_at == nDoNotTouchAtom2
-                || next_path_position != 0
-                || is_step_backwards
-            {
+            if is_step_backwards {
                 continue;
             }
 
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            let endpoint_is_outside_ring = {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            // INCHI✔️❗: Ring fields are reached only at requested length;
+            // keep the existing endpoint OR short-circuit and callbacks.
+            let endpoint_is_outside_ring = nLenDfsPath == nCycleLen && {
                 let atoms = heap.slice(atom.as_const())?;
                 atoms
                     .get(next_index)
@@ -4009,8 +4053,7 @@ where
                         .nNumAtInRingSystem
                         == 1
             };
-            let ret = if nLenDfsPath == nCycleLen && endpoint_is_outside_ring {
-                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
+            let ret = if endpoint_is_outside_ring {
                 CheckDfsPath(DfsPathCallbackArgs {
                     heap,
                     pCG,
@@ -4040,14 +4083,12 @@ where
                     while nLenDfsPath >= 0 {
                         let clear_index = usize::try_from(nLenDfsPath)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom_to_clear = usize::from(
                             DfsPath
                                 .get(clear_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .at_no,
                         );
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         *heap
                             .slice_mut(nDfsPathPos)?
                             .get_mut(atom_to_clear)
@@ -4058,7 +4099,6 @@ where
                 }
                 nNumFound = nNumFound.wrapping_add(ret);
             } else {
-                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                 let center = CheckCenterPointPath(DfsPathCenterCallbackArgs {
                     heap,
                     atom,
@@ -4074,14 +4114,12 @@ where
                     cur_at = nxt_at;
                     let next_path_index = usize::try_from(nLenDfsPath)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let next_path = DfsPath
                         .get_mut(next_path_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     next_path.at_no = cur_at as AT_RANK;
                     next_path.bond_type = 0;
                     next_path.bond_pos = -1;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     *heap
                         .slice_mut(nDfsPathPos)?
                         .get_mut(next_index)
@@ -4090,14 +4128,12 @@ where
                 }
             }
         } else {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_to_clear = usize::from(
                 DfsPath
                     .get(path_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at_no,
             );
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap
                 .slice_mut(nDfsPathPos)?
                 .get_mut(atom_to_clear)
@@ -4109,14 +4145,12 @@ where
     while nLenDfsPath >= 0 {
         let clear_index =
             usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_to_clear = usize::from(
             DfsPath
                 .get(clear_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .at_no,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(atom_to_clear)
@@ -7034,7 +7068,7 @@ mod tests {
         );
         assert_eq!(
             AddBondsPos(&atoms, &mut temporary, -1, &mut output, 3, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
+            Ok(0)
         );
     }
 
@@ -7079,7 +7113,7 @@ mod tests {
 
         assert_eq!(
             AddEndPoints(&temporary, -1, &mut output, 3, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
+            Ok(0)
         );
         assert_eq!(
             AddEndPoints(&temporary[..1], 2, &mut output, 3, 0),

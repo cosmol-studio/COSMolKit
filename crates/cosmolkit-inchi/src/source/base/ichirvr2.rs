@@ -1,3 +1,5 @@
+use crate::source::base::ichirvr1::{SourceRestoreMode};
+use crate::source::base::ichirvr1::SourceBfsQueue;
 use crate::source::base::ichi_bns::{RemoveRadEndpoints, SetForbiddenEdges, SetRadEndpoints};
 use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
@@ -35,24 +37,18 @@ fn copy_inp_atom_prefix(
     source: SourceMutPointer<inp_ATOM>,
     count: usize,
 ) -> Result<(), SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if destination == source {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice(source.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         return Ok(());
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if destination.allocation_identity() != source.allocation_identity() {
         // SAFETY: the allocation identities above prove that the source view
         // cannot alias the destination mutation. Neither allocation is freed
         // or resized during this direct equivalent of the source memcpy.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source_view = unsafe { heap.stable_slice(source.as_const())? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source = source_view.prefix(count)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(destination)?
             .get_mut(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -62,18 +58,25 @@ fn copy_inp_atom_prefix(
 
     // Preserve the port's defined behavior for modeled overlapping pointers.
     // Official production calls use the two distinct `at` and `at2` buffers.
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let source = heap
-        .slice(source.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.slice_mut(destination)?
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from_slice(&source);
+    {
+        // Pinned ichirvr4.c:1699 shared atom-copy operation:
+        // memcpy(at2, at, len_at * sizeof(at2[0]));
+        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+        // reached bounds/errors and modeled overlap without a payload Vec.
+        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+        let copy_source = source.as_const();
+        let copy_count = (heap.slice(copy_source)?.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+        let copy_destination = destination;
+        {
+            let copy_target = &mut (heap.slice_mut(copy_destination)?.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?);
+            assert_eq!(copy_target.len(), copy_count);
+        }
+        if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+            heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+        } else {
+            heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+        }
+    }
     Ok(())
 }
 
@@ -87,13 +90,10 @@ fn mobile_h_endpoint_center_is_better(
     let Some(found) = found else {
         return true;
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let candidate_non_carbon = valence_atoms[candidate].cNumValenceElectrons != 4
         || valence_atoms[candidate].cPeriodicRowNumber != 1;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let found_is_carbon = valence_atoms[found].cNumValenceElectrons == 4
         && valence_atoms[found].cPeriodicRowNumber == 1;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     candidate_non_carbon
         && (found_is_carbon
             || original_atoms[candidate].valence > original_atoms[found].valence
@@ -104,7 +104,6 @@ fn mobile_h_endpoint_center_is_better(
 #[inline]
 fn valence_atom_is_carbon(valence_atoms: &[VAL_AT], vertex: Option<usize>) -> bool {
     vertex.is_some_and(|vertex| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         valence_atoms[vertex].cNumValenceElectrons == 4
             && valence_atoms[vertex].cPeriodicRowNumber == 1
     })
@@ -117,7 +116,6 @@ fn copy_bns_to_atom_source_layout_is_valid(
     valence_atoms: &[VAL_AT],
     groups: &ALL_TC_GROUPS,
 ) -> bool {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let Some(atom_count) = usize::try_from(structure.num_atoms).ok() else {
         return false;
     };
@@ -209,7 +207,6 @@ fn copy_bns_to_atom_source_indices_are_valid(
     atom_count: usize,
     tgroup_count: usize,
 ) -> bool {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let Some(required_vertices) = atom_count.checked_add(tgroup_count) else {
         return false;
     };
@@ -318,7 +315,6 @@ unsafe fn copy_bns_to_atom_source_layout(
     let mut atom_index = 0_usize;
     while atom_index < atom_count {
         let vertex = unsafe { vertices.get_unchecked(atom_index) };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let offset = unsafe { vertex.iedge.forward_difference_unchecked(adjacency_origin) };
         let atom_valence = unsafe { atoms.get_unchecked(atom_index) }.valence as usize;
         let mut chemical_bond_valence = 0_i32;
@@ -332,7 +328,6 @@ unsafe fn copy_bns_to_atom_source_layout(
             let bonded_atom = unsafe { atoms.get_unchecked(bonded_atom_index) };
             let atom_va = unsafe { valence_atoms.get_unchecked(atom_index) };
             let bonded_atom_va = unsafe { valence_atoms.get_unchecked(bonded_atom_index) };
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut minimum_order = 0_i32;
             unsafe {
                 bond_flow_maxcap_minorder_source(
@@ -406,7 +401,6 @@ unsafe fn copy_bns_to_atom_source_layout(
             number_minus = number_minus.wrapping_sub(1);
         }
         let adjacency_count = usize::from(vertex.num_adj_edges);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let offset = unsafe { vertex.iedge.forward_difference_unchecked(adjacency_origin) };
 
         macro_rules! apply_tautomer_edge {
@@ -476,6 +470,22 @@ pub(crate) fn CopyBnsToAtom(
     valence_atoms: &[crate::source_types::VAL_AT],
     groups: &crate::source_types::ALL_TC_GROUPS,
     allow_zero_bond_order: i32,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(structure.pSrm);
+    copy_bns_to_atom_with_restore_mode(heap, structure, bns, valence_atoms, groups, allow_zero_bond_order, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn copy_bns_to_atom_with_restore_mode(
+    heap: &mut SourceHeap,
+    structure: &mut StrFromINChI,
+    bns: &crate::source_types::BN_STRUCT,
+    valence_atoms: &[crate::source_types::VAL_AT],
+    groups: &crate::source_types::ALL_TC_GROUPS,
+    allow_zero_bond_order: i32,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:979 CopyBnsToAtom
     // INCHI✔️✔️:     int CopyBnsToAtom( StrFromINChI *pStruct,
@@ -653,535 +663,358 @@ pub(crate) fn CopyBnsToAtom(
     // INCHI✔️✔️:     }
     // END INCHI C FUNCTION: CopyBnsToAtom
 
+    // BEGIN INCHI VERBATIM CALLEE: ichirvr1.c:1690 BondFlowMaxcapMinorder
+    // int BondFlowMaxcapMinorder( inp_ATOM *atom,
+    //                             VAL_AT *pVA,
+    //                             ICHICONST SRM *pSrm,
+    //                             int iat,
+    //                             int ineigh,
+    //                             int *pnMaxcap,
+    //                             int *pnMinorder,
+    //                             int *pbNeedsFlower )
+    // {
+    // 
+    //     int nFlow, nMaxcap, nMinorder, nInitorder, bNeedsFlower = 0;
+    //     inp_ATOM *at = atom + iat;
+    //     int       neigh = at->neighbor[ineigh];
+    //     int       bond_type = at->bond_type[ineigh] & BOND_TYPE_MASK;
+    //     int       nMetal = ( 0 != pVA[iat].cMetal ) + ( 0 != pVA[neigh].cMetal );
+    //     int       nEndpoint = ( 0 != at->endpoint ) + ( 0 != atom[neigh].endpoint );
+    //     int       nStereo = ( at->p_parity || at->sb_parity[0] ) + ( atom[neigh].p_parity || atom[neigh].sb_parity[0] );
+    // 
+    //     if (bond_type > BOND_TYPE_TRIPLE)
+    //     {
+    //         bond_type = BOND_TYPE_SINGLE;
+    //     }
+    // 
+    //     /* M=metal, A=non-metal atom, e=endpoint */
+    //     if ((nStereo && pSrm->bFixStereoBonds) || !nMetal || !pSrm->bMetalAddFlower) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         /* atom-atom rules, no metal atoms involved (1: A-A, A-Ae, Ae-Ae) */
+    //         nMinorder = BOND_TYPE_SINGLE;
+    //         nInitorder = bond_type;
+    //         nFlow = nInitorder - nMinorder;
+    //     }
+    //     else if (nMetal && !nEndpoint)
+    //     {
+    //         /* M-a, M-M */
+    //         /* atom - metal or metal-metal, none of them is an endpoint (2: M-M, M-A) */
+    //         nMinorder = pSrm->nMetalMinBondOrder;
+    //         nInitorder = pSrm->nMetalInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+    //         nFlow = nInitorder - nMinorder;
+    //         if (!pSrm->nMetalInitEdgeFlow &&
+    //              pSrm->nMetalInitBondOrder > pSrm->nMetalMinBondOrder &&
+    //              nFlow > 0)
+    //         {
+    //             /* reduce initial flow by 1 and increase st_cap on metal by 1 */
+    //             nFlow--;
+    //         }
+    //         bNeedsFlower = ( 0 != pVA[iat].cMetal );
+    //     }
+    //     else
+    //         if ((pVA[iat].cMetal && !at->endpoint && !pVA[neigh].cMetal && atom[neigh].endpoint) ||
+    //              (pVA[neigh].cMetal && !atom[neigh].endpoint && !pVA[iat].cMetal && at->endpoint)) /* djb-rwth: addressing LLVM warnings */
+    //         {
+    //             /* M-ae */
+    //             /* metal connected to a non-metal endpoint (3: M-Ae) */
+    //             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
+    //             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+    //             nFlow = nInitorder - nMinorder;
+    //             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
+    //                  pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder &&
+    //                  nFlow > 0)
+    //             {
+    //                 /* reduce initial flow by 1 and increase st_cap on metal by 1 */
+    //                 nFlow--;
+    //             }
+    //             bNeedsFlower = ( 0 != pVA[iat].cMetal );
+    //         }
+    //         else
+    //         {
+    //             /* endpoint is metal => no flower (4: M-Me, Me-Me, Me-A, Me-Ae) */
+    //             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
+    //             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+    //             nFlow = nInitorder - nMinorder;
+    //             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
+    //                  pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder &&
+    //                  nFlow > 0)
+    //             {
+    // /* reduce initial flow by 1 and increase st_cap on metal by 1 */
+    //                 nFlow--;
+    //             }
+    //             bNeedsFlower = ( pVA[iat].cMetal && !at->endpoint );
+    //         }
+    // 
+    //     nMaxcap = BOND_TYPE_TRIPLE - nMinorder;
+    //     if (pnMaxcap)
+    //     {
+    //         *pnMaxcap = nMaxcap;
+    //     }
+    //     if (pnMinorder)
+    //     {
+    //         *pnMinorder = nMinorder;
+    //     }
+    //     if (pbNeedsFlower)
+    //     {
+    //         *pbNeedsFlower = bNeedsFlower;
+    //     }
+    // 
+    //     return nFlow;
+    // }
+    // END INCHI VERBATIM CALLEE: BondFlowMaxcapMinorder
+
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CopyBnsToAtom
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
-    // INCHI✔️✔️: Production BNS storage uses the source's contiguous pBNS->iedge allocation.
-    // INCHI✔️✔️: That layout is validated before mutation and executes directly on pStruct->at.
-    // INCHI✔️✔️: Compatibility layouts retain checked access and rollback only on Rust pointer errors.
     // END INCHI ACTIVE MACRO CONFIGURATION: CopyBnsToAtom
-
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_count =
-        usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let restore_mode = if atom_count == 0 {
-        None
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        Some(
-            heap.slice(structure.pSrm)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone(),
-        )
-    };
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let vertex_count =
-        usize::try_from(bns.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let vertices_view = if vertex_count == 0 {
-        None
-    } else {
-        // SAFETY: CopyBnsToAtom never frees, resizes, or mutates BNS vertices.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        Some(unsafe { heap.stable_slice(bns.vert.as_const())? })
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let vertices = match &vertices_view {
-        Some(view) => view.prefix(vertex_count)?,
-        None => &[],
-    };
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let edge_count =
-        usize::try_from(bns.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let edges_view = if edge_count == 0 {
-        None
-    } else {
-        // SAFETY: CopyBnsToAtom only reads BNS edges.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        Some(unsafe { heap.stable_slice(bns.edge.as_const())? })
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let edges = match &edges_view {
-        Some(view) => view.prefix(edge_count)?,
-        None => &[],
-    };
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let tgroup_count =
-        usize::try_from(bns.num_t_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let tgroups_view = if tgroup_count == 0 {
-        None
-    } else {
-        // SAFETY: CopyBnsToAtom only reads tautomer groups.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        Some(unsafe { heap.stable_slice(groups.pTCG.as_const())? })
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let tgroups = match &tgroups_view {
-        Some(view) => view.prefix(tgroup_count)?,
-        None => &[],
-    };
-    let source_layout_is_valid =
-        copy_bns_to_atom_source_layout_is_valid(heap, structure, bns, valence_atoms, groups);
-    if !source_layout_is_valid {
-        // Compatibility layouts keep the previous Rust error ordering: every
-        // adjacency row is checked before the first atom is modified.
-        for vertex in vertices {
-            let count = usize::from(vertex.num_adj_edges);
-            if count != 0 {
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let _ = heap
-                    .slice(vertex.iedge.as_const())?
-                    .get(..count)
+    // C313 supersedes the previous compatibility-layout rollback/preflight.
+    // INCHI✔️❗: Native signed loops admit only reached operands and retain
+    // earlier writes on later errors. No allocation, clone, prepass or rollback.
+    // O(atoms + bonds + group adjacency), O(1) extra space. Checked arena
+    // queries can cost more than native/old validated fast paths; cost OPEN.
+    let num_at = structure.num_atoms;
+    for atom_index in 0..num_at {
+        let valence = i32::from(heap.element_signed(structure.at.as_const(), atom_index)?.valence);
+        let mut chemical_bond_valence = 0_i32;
+        for neighbor_order in 0..valence {
+            let adjacency_pointer = heap.element_signed(bns.vert.as_const(), atom_index)?.iedge;
+            let edge_index = *heap.element_signed(adjacency_pointer.as_const(), neighbor_order)?;
+            let mut minimum_order = 0_i32;
+            {
+                let atoms = heap.slice(structure.at.as_const())?;
+                let atom = atoms.get(atom_index as usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ordinal = neighbor_order as usize;
+                let neighbor_index = usize::from(*atom.neighbor.get(ordinal)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                let neighbor = atoms.get(neighbor_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom_va = valence_atoms.get(atom_index as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let neighbor_va = valence_atoms.get(neighbor_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                // The helper's first branch needs no SRM dereference when both
+                // stereo and metal counts are zero. Its only consumed output
+                // here is nMinorder; the source return flow is discarded.
+                let n_stereo = i32::from(atom.p_parity != 0 || atom.sb_parity[0] != 0)
+                    + i32::from(neighbor.p_parity != 0 || neighbor.sb_parity[0] != 0);
+                let n_metal = i32::from(atom_va.cMetal != 0)
+                    + i32::from(neighbor_va.cMetal != 0);
+                if n_stereo == 0 && n_metal == 0 {
+                    minimum_order = BOND_TYPE_SINGLE as i32;
+                } else {
+                    let restore_mode = source_restore_mode.get(heap)?;
+                    crate::source::base::ichirvr1::BondFlowMaxcapMinorder(
+                        atoms, valence_atoms, restore_mode, atom_index, neighbor_order,
+                        None, Some(&mut minimum_order), None,
+                    )?;
+                }
             }
+            let mut bond_order = heap.element_signed(bns.edge.as_const(), edge_index)?.flow
+                .wrapping_add(minimum_order);
+            if allow_zero_bond_order == 0 && bond_order == 0 {
+                bond_order = 1;
+            }
+            chemical_bond_valence = chemical_bond_valence.wrapping_add(bond_order);
+            *heap.element_signed_mut(structure.at, atom_index)?.bond_type
+                .get_mut(neighbor_order as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = bond_order as u8;
+        }
+        heap.element_signed_mut(structure.at, atom_index)?.chem_bonds_valence =
+            chemical_bond_valence as i8;
+        let valence_atom = valence_atoms.get(atom_index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        heap.element_signed_mut(structure.at, atom_index)?.charge = valence_atom.cInitCharge;
+        if valence_atom.nCMinusGroupEdge != 0 {
+            let edge_index = valence_atom.nCMinusGroupEdge.wrapping_sub(1);
+            let charge = heap.element_signed(bns.edge.as_const(), edge_index)?.flow;
+            if charge != 0 {
+                let atom = heap.element_signed_mut(structure.at, atom_index)?;
+                atom.charge = i32::from(atom.charge).wrapping_sub(charge) as i8;
+            }
+        }
+        if valence_atom.nCPlusGroupEdge != 0 {
+            let edge_index = valence_atom.nCPlusGroupEdge.wrapping_sub(1);
+            let edge = heap.element_signed(bns.edge.as_const(), edge_index)?;
+            let charge = edge.cap.wrapping_sub(edge.flow);
+            if charge != 0 {
+                let atom = heap.element_signed_mut(structure.at, atom_index)?;
+                atom.charge = i32::from(atom.charge).wrapping_add(charge) as i8;
+            }
+        }
+        let vertex = heap.element_signed(bns.vert.as_const(), atom_index)?;
+        if vertex.st_edge.cap > vertex.st_edge.flow {
+            let radical = (crate::source_types::RADICAL_SINGLET as i32)
+                .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow));
+            heap.element_signed_mut(structure.at, atom_index)?.radical = radical as i8;
         }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let adjacency_view = if source_layout_is_valid && !bns.iedge.is_null() {
-        // SAFETY: the layout check proves that pBNS->iedge is live, has the
-        // expected type, and is disjoint from the writable atom allocation.
-        Some(unsafe { heap.stable_slice(bns.iedge.as_const())? })
-    } else {
-        None
-    };
-
-    let copy_from_bns = |atoms: &mut [inp_ATOM], heap: &SourceHeap| {
-        // INCHI✔️✔️:         for (i = 0; i < num_at; i++)
-        let mut atom_index = 0_usize;
-        while atom_index < atom_count {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let vertex = vertices
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let adjacency_count = usize::from(vertex.num_adj_edges);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let adjacency = if adjacency_count == 0 {
-                &[][..]
-            } else if let Some(view) = &adjacency_view {
-                let offset = usize::try_from(vertex.iedge.difference(bns.iedge)?)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let end = offset
-                    .checked_add(adjacency_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                &view.prefix(end)?[offset..end]
-            } else {
-                heap.slice(vertex.iedge.as_const())?
-                    .get(..adjacency_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            let atom_valence = i32::from(atoms[atom_index].valence);
-            let mut chemical_bond_valence = 0_i32;
-            let mut neighbor_order = 0_i32;
-            while neighbor_order < atom_valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let order_index = usize::try_from(neighbor_order)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let edge_index = usize::try_from(
-                    *adjacency
-                        .get(order_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let edge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-                let mut minimum_order = 0_i32;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom = atoms
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                if order_index >= atom.neighbor.len() || order_index >= atom.bond_type.len() {
-                    return Err(SourceHeapError::PointerOutOfBounds);
-                }
-                let bonded_atom_index = usize::from(atom.neighbor[order_index]);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let bonded_atom = atoms
-                    .get(bonded_atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom_va = valence_atoms
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let bonded_atom_va = valence_atoms
-                    .get(bonded_atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let restore_mode = restore_mode.as_ref().ok_or(SourceHeapError::NullPointer)?;
-                // INCHI✔️✔️:                 BondFlowMaxcapMinorder(
-                // INCHI✔️✔️:                     at, pVA, pSrm, i, j, NULL, &nMinorder, NULL );
-                // SAFETY: this loop resolved the exact `at[i]`, `at[neigh]`,
-                // `pVA[i]`, and `pVA[neigh]` operands and validated `j` in
-                // both fixed bond arrays immediately above.
-                unsafe {
-                    bond_flow_maxcap_minorder_source(
-                        atom,
-                        bonded_atom,
-                        atom_va,
-                        bonded_atom_va,
-                        restore_mode,
-                        order_index,
-                        None,
-                        Some(&mut minimum_order),
-                        None,
-                    );
-                }
-                let mut bond_order = edge.flow.wrapping_add(minimum_order);
-                if allow_zero_bond_order == 0 && bond_order == 0 {
-                    bond_order = 1;
-                }
-                chemical_bond_valence = chemical_bond_valence.wrapping_add(bond_order);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                atoms[atom_index].bond_type[order_index] = bond_order as u8;
-                neighbor_order = neighbor_order.wrapping_add(1);
-            }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            atoms[atom_index].chem_bonds_valence = chemical_bond_valence as i8;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            atoms[atom_index].charge = valence_atoms
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .cInitCharge;
-
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let minus_edge = valence_atoms[atom_index].nCMinusGroupEdge;
-            if minus_edge != 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let edge_index = usize::try_from(minus_edge.wrapping_sub(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let charge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .flow;
-                if charge != 0 {
-                    atoms[atom_index].charge =
-                        i32::from(atoms[atom_index].charge).wrapping_sub(charge) as i8;
-                }
-            }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let plus_edge = valence_atoms[atom_index].nCPlusGroupEdge;
-            if plus_edge != 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let edge_index = usize::try_from(plus_edge.wrapping_sub(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let edge = edges
-                    .get(edge_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let charge = edge.cap.wrapping_sub(edge.flow);
-                if charge != 0 {
-                    atoms[atom_index].charge =
-                        i32::from(atoms[atom_index].charge).wrapping_add(charge) as i8;
-                }
-            }
-            if vertex.st_edge.cap > vertex.st_edge.flow {
-                atoms[atom_index].radical = (crate::source_types::RADICAL_SINGLET as i32)
-                    .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow))
-                    as i8;
-            }
-            // INCHI✔️✔️:         for-loop increment: i++
-            atom_index += 1;
+    for group_index in 0..bns.num_t_groups {
+        let group = heap.element_signed(groups.pTCG.as_const(), group_index)?;
+        let mut number_h = i32::from(group.tg_num_H);
+        let mut number_minus = i32::from(group.tg_num_Minus);
+        let minus_first = (i32::from(group.tg_RestoreFlags)
+            & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32) != 0;
+        let mut minus_vertex = crate::source_types::NO_VERTEX;
+        // C forms two successive pointer additions, not a signed int sum.
+        let vertex_pointer = bns.vert.offset(i64::from(num_at) + i64::from(group_index))?;
+        let vertex = heap.slice(vertex_pointer.as_const())?.first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
+            return Ok(RI_ERR_PROGR);
         }
-
-        let mut group_index = 0_i32;
-        while group_index < bns.num_t_groups {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let group_usize =
-                usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let group = tgroups
-                .get(group_usize)
+        if group.tg_set_Minus > 0 && number_minus > 0 {
+            minus_vertex = group.tg_set_Minus.wrapping_sub(1);
+            number_minus = number_minus.wrapping_sub(1);
+        }
+        let adjacency_count = usize::from(vertex.num_adj_edges);
+        let adjacency_pointer = vertex.iedge;
+        // INCHI✔️✔️:             if (bMinusFirst)
+        if minus_first {
+            // INCHI✔️✔️:                 for (j = 0; j < pv->num_adj_edges; j++)
+            let mut adjacency_index = 0_usize;
+            while adjacency_index < adjacency_count {
+                // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+                let edge_index = *heap.element_signed(adjacency_pointer.as_const(), adjacency_index as i32)?;
+                let edge = heap.element_signed(bns.edge.as_const(), edge_index)?;
+                let neighbor = edge.neighbor1;
+                let number_to_add = edge.flow;
+                // INCHI✔️✔️:                     v1 = pe->neighbor1;
+                let atom_index = usize::from(neighbor);
+                let atom = heap.slice_mut(structure.at)?
+                    .get_mut(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                // INCHI✔️✔️:                     num_at_add = pe->flow;
+                let mut number_to_add = number_to_add;
+                // INCHI✔️✔️:                     if (v1 == vMinus)
+                if i32::from(neighbor) == minus_vertex {
+                    // INCHI✔️✔️:                         if (num_at_add)
+                    if number_to_add != 0 {
+                        // INCHI✔️✔️:                             at[v1].charge = -1;
+                        atom.charge = -1;
+                        // INCHI✔️✔️:                             num_at_add--;
+                        number_to_add = number_to_add.wrapping_sub(1);
+                    } else {
+                        // INCHI✔️✔️:                             num_Minus++;
+                        number_minus = number_minus.wrapping_add(1);
+                    }
+                    // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+                    minus_vertex = crate::source_types::NO_VERTEX;
+                }
+                // INCHI✔️✔️:                     if (num_at_add > 0)
+                if number_to_add > 0 {
+                    // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+                    // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+                    if number_minus != 0
+                        && atom.charge == 0
+                        && atom.valence == atom.chem_bonds_valence
+                    {
+                        // INCHI✔️✔️:                             at[v1].charge--;
+                        atom.charge = atom.charge.wrapping_sub(1);
+                        // INCHI✔️✔️:                             num_at_add--;
+                        number_to_add = number_to_add.wrapping_sub(1);
+                        // INCHI✔️✔️:                             num_Minus--;
+                        number_minus = number_minus.wrapping_sub(1);
+                    }
+                    // INCHI✔️✔️:                         if (num_at_add > 0)
+                    if number_to_add > 0 {
+                        // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+                        atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
+                        // INCHI✔️✔️:                             num_H -= num_at_add;
+                        number_h = number_h.wrapping_sub(number_to_add);
+                    }
+                }
+                // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+                atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
+                // INCHI✔️✔️:                 for-loop increment: j++
+                adjacency_index += 1;
+            }
+            // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+            let vertex = heap.slice(vertex_pointer.as_const())?.first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             int num_H = pTCGroups->pTCG[i].tg_num_H;
-            let mut number_h = i32::from(group.tg_num_H);
-            // INCHI✔️✔️:             int num_Minus = pTCGroups->pTCG[i].tg_num_Minus;
-            let mut number_minus = i32::from(group.tg_num_Minus);
-            // INCHI✔️✔️:             int bMinusFirst = ( pTCGroups->pTCG[i].tg_RestoreFlags & TGRF_MINUS_FIRST );
-            let minus_first = (i32::from(group.tg_RestoreFlags)
-                & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32)
-                != 0;
-            // INCHI✔️✔️:             Vertex vMinus = NO_VERTEX;
-            let mut minus_vertex = crate::source_types::NO_VERTEX;
-            // INCHI✔️✔️:             pv = pBNS->vert + num_at + i;  /* t-group vertex */
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let vertex_index = atom_count
-                .checked_add(group_usize)
-                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let vertex = vertices
-                .get(vertex_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             if (!( pv->type & BNS_VERT_TYPE_TGROUP ))
-            if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
-                // INCHI✔️✔️:                 return RI_ERR_PROGR;
+            let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
+            if number_h.wrapping_add(number_minus) != remaining
+                && (number_h != 0
+                    || number_minus != 0
+                    || minus_vertex != crate::source_types::NO_VERTEX)
+            {
+                // INCHI✔️✔️:                     return RI_ERR_PROGR;
                 return Ok(RI_ERR_PROGR);
             }
-            // INCHI✔️✔️:             if (pTCGroups->pTCG[i].tg_set_Minus > 0 && num_Minus > 0)
-            if group.tg_set_Minus > 0 && number_minus > 0 {
-                // INCHI✔️✔️:                 vMinus = pTCGroups->pTCG[i].tg_set_Minus - 1;
-                minus_vertex = group.tg_set_Minus.wrapping_sub(1);
-                // INCHI✔️✔️:                 num_Minus--;
-                number_minus = number_minus.wrapping_sub(1);
-            }
-            let adjacency_count = usize::from(vertex.num_adj_edges);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let adjacency = if adjacency_count == 0 {
-                &[][..]
-            } else if let Some(view) = &adjacency_view {
-                let offset = usize::try_from(vertex.iedge.difference(bns.iedge)?)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let end = offset
-                    .checked_add(adjacency_count)
+        } else {
+            // INCHI✔️✔️:                 for (j = pv->num_adj_edges - 1; 0 <= j; j--)
+            let mut adjacency_index = (adjacency_count as i32).wrapping_sub(1);
+            while adjacency_index >= 0 {
+                // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+                let edge_index = *heap.element_signed(adjacency_pointer.as_const(), adjacency_index as i32)?;
+                let edge = heap.element_signed(bns.edge.as_const(), edge_index)?;
+                let neighbor = edge.neighbor1;
+                let number_to_add = edge.flow;
+                // INCHI✔️✔️:                     v1 = pe->neighbor1;
+                let atom_index = usize::from(neighbor);
+                let atom = heap.slice_mut(structure.at)?
+                    .get_mut(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                &view.prefix(end)?[offset..end]
-            } else {
-                heap.slice(vertex.iedge.as_const())?
-                    .get(..adjacency_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-
-            // INCHI✔️✔️:             if (bMinusFirst)
-            if minus_first {
-                // INCHI✔️✔️:                 for (j = 0; j < pv->num_adj_edges; j++)
-                let mut adjacency_index = 0_usize;
-                while adjacency_index < adjacency_count {
-                    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let edge_index = usize::try_from(
-                        *adjacency
-                            .get(adjacency_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let edge = edges
-                        .get(edge_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    // INCHI✔️✔️:                     v1 = pe->neighbor1;
-                    let atom_index = usize::from(edge.neighbor1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let atom = atoms
-                        .get_mut(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    // INCHI✔️✔️:                     num_at_add = pe->flow;
-                    let mut number_to_add = edge.flow;
-                    // INCHI✔️✔️:                     if (v1 == vMinus)
-                    if i32::from(edge.neighbor1) == minus_vertex {
-                        // INCHI✔️✔️:                         if (num_at_add)
-                        if number_to_add != 0 {
-                            // INCHI✔️✔️:                             at[v1].charge = -1;
-                            atom.charge = -1;
-                            // INCHI✔️✔️:                             num_at_add--;
-                            number_to_add = number_to_add.wrapping_sub(1);
-                        } else {
-                            // INCHI✔️✔️:                             num_Minus++;
-                            number_minus = number_minus.wrapping_add(1);
-                        }
-                        // INCHI✔️✔️:                         vMinus = NO_VERTEX;
-                        minus_vertex = crate::source_types::NO_VERTEX;
+                // INCHI✔️✔️:                     num_at_add = pe->flow;
+                let mut number_to_add = number_to_add;
+                // INCHI✔️✔️:                     if (v1 == vMinus)
+                if i32::from(neighbor) == minus_vertex {
+                    // INCHI✔️✔️:                         if (num_at_add)
+                    if number_to_add != 0 {
+                        // INCHI✔️✔️:                             at[v1].charge = -1;
+                        atom.charge = -1;
+                        // INCHI✔️✔️:                             num_at_add--;
+                        number_to_add = number_to_add.wrapping_sub(1);
+                    } else {
+                        // INCHI✔️✔️:                             num_Minus++;
+                        number_minus = number_minus.wrapping_add(1);
                     }
-                    // INCHI✔️✔️:                     if (num_at_add > 0)
+                    // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+                    minus_vertex = crate::source_types::NO_VERTEX;
+                }
+                // INCHI✔️✔️:                     if (num_at_add > 0)
+                if number_to_add > 0 {
+                    // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+                    // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+                    if number_minus != 0
+                        && atom.charge == 0
+                        && atom.valence == atom.chem_bonds_valence
+                    {
+                        // INCHI✔️✔️:                             at[v1].charge--;
+                        atom.charge = atom.charge.wrapping_sub(1);
+                        // INCHI✔️✔️:                             num_at_add--;
+                        number_to_add = number_to_add.wrapping_sub(1);
+                        // INCHI✔️✔️:                             num_Minus--;
+                        number_minus = number_minus.wrapping_sub(1);
+                    }
+                    // INCHI✔️✔️:                         if (num_at_add > 0)
                     if number_to_add > 0 {
-                        // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
-                        // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
-                        if number_minus != 0
-                            && atom.charge == 0
-                            && atom.valence == atom.chem_bonds_valence
-                        {
-                            // INCHI✔️✔️:                             at[v1].charge--;
-                            atom.charge = atom.charge.wrapping_sub(1);
-                            // INCHI✔️✔️:                             num_at_add--;
-                            number_to_add = number_to_add.wrapping_sub(1);
-                            // INCHI✔️✔️:                             num_Minus--;
-                            number_minus = number_minus.wrapping_sub(1);
-                        }
-                        // INCHI✔️✔️:                         if (num_at_add > 0)
-                        if number_to_add > 0 {
-                            // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
-                            atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
-                            // INCHI✔️✔️:                             num_H -= num_at_add;
-                            number_h = number_h.wrapping_sub(number_to_add);
-                        }
+                        // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+                        atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
+                        // INCHI✔️✔️:                             num_H -= num_at_add;
+                        number_h = number_h.wrapping_sub(number_to_add);
                     }
-                    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
-                    atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
-                    // INCHI✔️✔️:                 for-loop increment: j++
-                    adjacency_index += 1;
                 }
-                // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
-                let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
-                if number_h.wrapping_add(number_minus) != remaining
-                    && (number_h != 0
-                        || number_minus != 0
-                        || minus_vertex != crate::source_types::NO_VERTEX)
-                {
-                    // INCHI✔️✔️:                     return RI_ERR_PROGR;
-                    return Ok(RI_ERR_PROGR);
-                }
-            } else {
-                // INCHI✔️✔️:                 for (j = pv->num_adj_edges - 1; 0 <= j; j--)
-                let mut adjacency_index = i32::from(vertex.num_adj_edges).wrapping_sub(1);
-                while adjacency_index >= 0 {
-                    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let edge_index = usize::try_from(
-                        *adjacency
-                            .get(adjacency_index as usize)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let edge = edges
-                        .get(edge_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    // INCHI✔️✔️:                     v1 = pe->neighbor1;
-                    let atom_index = usize::from(edge.neighbor1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let atom = atoms
-                        .get_mut(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    // INCHI✔️✔️:                     num_at_add = pe->flow;
-                    let mut number_to_add = edge.flow;
-                    // INCHI✔️✔️:                     if (v1 == vMinus)
-                    if i32::from(edge.neighbor1) == minus_vertex {
-                        // INCHI✔️✔️:                         if (num_at_add)
-                        if number_to_add != 0 {
-                            // INCHI✔️✔️:                             at[v1].charge = -1;
-                            atom.charge = -1;
-                            // INCHI✔️✔️:                             num_at_add--;
-                            number_to_add = number_to_add.wrapping_sub(1);
-                        } else {
-                            // INCHI✔️✔️:                             num_Minus++;
-                            number_minus = number_minus.wrapping_add(1);
-                        }
-                        // INCHI✔️✔️:                         vMinus = NO_VERTEX;
-                        minus_vertex = crate::source_types::NO_VERTEX;
-                    }
-                    // INCHI✔️✔️:                     if (num_at_add > 0)
-                    if number_to_add > 0 {
-                        // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
-                        // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
-                        if number_minus != 0
-                            && atom.charge == 0
-                            && atom.valence == atom.chem_bonds_valence
-                        {
-                            // INCHI✔️✔️:                             at[v1].charge--;
-                            atom.charge = atom.charge.wrapping_sub(1);
-                            // INCHI✔️✔️:                             num_at_add--;
-                            number_to_add = number_to_add.wrapping_sub(1);
-                            // INCHI✔️✔️:                             num_Minus--;
-                            number_minus = number_minus.wrapping_sub(1);
-                        }
-                        // INCHI✔️✔️:                         if (num_at_add > 0)
-                        if number_to_add > 0 {
-                            // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
-                            atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
-                            // INCHI✔️✔️:                             num_H -= num_at_add;
-                            number_h = number_h.wrapping_sub(number_to_add);
-                        }
-                    }
-                    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
-                    atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
-                    // INCHI✔️✔️:                 for-loop increment: j--
-                    adjacency_index = adjacency_index.wrapping_sub(1);
-                }
-                // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
-                let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
-                if number_h.wrapping_add(number_minus) != remaining
-                    && (number_h != 0
-                        || number_minus != 0
-                        || minus_vertex != crate::source_types::NO_VERTEX)
-                {
-                    // INCHI✔️✔️:                     return RI_ERR_PROGR;
-                    return Ok(RI_ERR_PROGR);
-                }
+                // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+                atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
+                // INCHI✔️✔️:                 for-loop increment: j--
+                adjacency_index = adjacency_index.wrapping_sub(1);
             }
-            // INCHI✔️✔️:         for-loop increment: i++
-            group_index = group_index.wrapping_add(1);
+            // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+            let vertex = heap.slice(vertex_pointer.as_const())?.first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
+            if number_h.wrapping_add(number_minus) != remaining
+                && (number_h != 0
+                    || number_minus != 0
+                    || minus_vertex != crate::source_types::NO_VERTEX)
+            {
+                // INCHI✔️✔️:                     return RI_ERR_PROGR;
+                return Ok(RI_ERR_PROGR);
+            }
         }
 
-        Ok(0)
-    };
-
-    if atom_count == 0 {
-        return copy_from_bns(&mut [], heap);
     }
-    if source_layout_is_valid {
-        // SAFETY: the source-layout check proves the atom allocation is live,
-        // long enough, and disjoint from every stable read view above. This
-        // function neither frees nor resizes any participating allocation.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut atoms_view = unsafe { heap.stable_slice_mut(structure.at)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atoms = atoms_view.prefix_mut(atom_count)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let adjacency_view = adjacency_view
-            .as_ref()
-            .expect("the validated source layout has contiguous adjacency storage");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let adjacency = adjacency_view.prefix(adjacency_view.len())?;
-        if copy_bns_to_atom_source_indices_are_valid(
-            atoms,
-            vertices,
-            edges,
-            adjacency,
-            bns.iedge,
-            valence_atoms,
-            atom_count,
-            tgroup_count,
-        ) {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let restore_mode = restore_mode
-                .as_ref()
-                .expect("a non-empty validated source layout has restore settings");
-            // SAFETY: the immediately preceding validation proves every atom,
-            // vertex, adjacency, edge, charge-edge, and t-group atom index used
-            // by the Official C loops. The stable views are disjoint and no
-            // participating heap allocation is freed or resized here.
-            return Ok(unsafe {
-                copy_bns_to_atom_source_layout(
-                    atoms,
-                    vertices,
-                    edges,
-                    adjacency,
-                    bns.iedge,
-                    valence_atoms,
-                    restore_mode,
-                    tgroups,
-                    allow_zero_bond_order,
-                )
-            });
-        }
-        return copy_from_bns(atoms, heap);
-    }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0014: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.with_slice_mut_and_heap_mut(structure.at, |all_atoms, heap| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atoms = all_atoms
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        let before = atoms.to_vec();
-        let result = copy_from_bns(atoms, heap);
-        if result.is_err() {
-            atoms.clone_from_slice(&before);
-        }
-        result
-    })
+    Ok(0)
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -1195,7 +1028,27 @@ pub(crate) fn MoveRadToAtomsAddCharges(
     pVA: &mut [VAL_AT],
     pTCGroups: &mut ALL_TC_GROUPS,
     forbidden_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    move_rad_to_atoms_add_charges_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, forbidden_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn move_rad_to_atoms_add_charges_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    forbidden_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:1841 MoveRadToAtomsAddCharges
     /*
@@ -1481,7 +1334,6 @@ pub(crate) fn MoveRadToAtomsAddCharges(
     let mut num_rad_not_atom = 0_i32;
     let mut i = pBNS.num_atoms;
     while i < local_num_vertices {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let vertex = heap
             .slice(pBNS.vert.as_const())?
             .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -1498,26 +1350,29 @@ pub(crate) fn MoveRadToAtomsAddCharges(
     let mut pn_delta = SourceMutPointer::<S_SHORT>::null();
     let mut p_cand = SourceMutPointer::<CC_CAND>::null();
     let computation = (|| -> Result<i32, SourceHeapError> {
-        panic!("INCHI-AUDIT-0317: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
+        // INCHI✔️❌: C328; native1879..1886 attempts BOTH scratch
+        // allocations before testing NULL. Keep the second attempt after a
+        // first AllocationFailed; final cleanup frees every successful one.
+        // Typed initialized pnRad storage still adds source-absent O(V)
+        // zero initialization versus malloc; explicitly deferred in cost notes.
         pn_rad = match inchi_calloc::<S_SHORT>(heap, local_num_vertices as u64, 2) {
             Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
         };
         pn_delta = match inchi_calloc::<S_SHORT>(heap, pBNS.num_atoms as u64, 2) {
             Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
         };
+        if pn_rad.is_null() || pn_delta.is_null() {
+            return Ok(RI_ERR_ALLOC);
+        }
 
         i = 0;
         while i < local_num_vertices {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let vertex = &heap.slice(pBNS.vert.as_const())?[index];
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(pn_rad)?[index] =
                 vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow) as S_SHORT;
             i = i.wrapping_add(1);
@@ -1529,14 +1384,10 @@ pub(crate) fn MoveRadToAtomsAddCharges(
         loop {
             i = 0;
             while i < pBNS.num_atoms {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = &heap.slice(pBNS.vert.as_const())?[index];
                 let delta = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow) as S_SHORT;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(pn_delta)?[index] = delta;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = &mut heap.slice_mut(pBNS.vert)?[index];
                 vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(i32::from(delta));
                 b_atom_rad_removed = b_atom_rad_removed.wrapping_add(i32::from(delta != 0));
@@ -1554,27 +1405,19 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             let n_num_rad = ret;
             i = 0;
             while i < n_num_rad {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let rad_edge_index = heap.slice(pBD.RadEdges.as_const())?
                     [usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index = usize::try_from(rad_edge_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                 let v1 = usize::from(edge.neighbor1);
                 let v2 = usize::from(edge.neighbor12 ^ edge.neighbor1);
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[v1].st_edge.flow = vertices[v1].st_edge.flow.wrapping_sub(edge.flow);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[v2].st_edge.flow = vertices[v2].st_edge.flow.wrapping_sub(edge.flow);
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2_i32.wrapping_mul(edge.flow));
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                 edge.flow = 0;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_mask) as i8;
@@ -1595,12 +1438,9 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             if b_atom_rad_removed != 0 {
                 i = 0;
                 while i < pBNS.num_atoms {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let index =
                         usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let delta = i32::from(heap.slice(pn_delta.as_const())?[index]);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = &mut heap.slice_mut(pBNS.vert)?[index];
                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(delta);
                     i = i.wrapping_add(1);
@@ -1612,11 +1452,8 @@ pub(crate) fn MoveRadToAtomsAddCharges(
         if b_atom_rad_removed != 0 {
             i = 0;
             while i < pBNS.num_atoms {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let delta = i32::from(heap.slice(pn_delta.as_const())?[index]);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = &mut heap.slice_mut(pBNS.vert)?[index];
                 vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(delta);
                 i = i.wrapping_add(1);
@@ -1629,9 +1466,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
         if num_moved != 0 {
             i = pBNS.num_atoms;
             while i < local_num_vertices {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = &heap.slice(pBNS.vert.as_const())?[index];
                 let delta = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
                 if delta != 0 {
@@ -1651,14 +1486,10 @@ pub(crate) fn MoveRadToAtomsAddCharges(
 
             i = 0;
             while i < local_num_vertices {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = &heap.slice(pBNS.vert.as_const())?[index];
                 let radical = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow) as S_SHORT;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(pn_rad)?[index] = radical;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if radical > 0 && i < pBNS.num_atoms && pVA[index].nTautGroupEdge == 0 {
                     num_candidates = num_candidates.wrapping_add(1);
                 }
@@ -1672,14 +1503,16 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                 Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
                 Err(error) => return Err(error),
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let len_at = usize::try_from(pStruct.num_atoms.wrapping_add(pStruct.num_deleted_H))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             copy_inp_atom_prefix(heap, at2, at, len_at)?;
             pStruct.at = at2;
-            panic!("INCHI-AUDIT-0318: suspected source divergence; see dev/audits/inchi/findings.md");
-            let ret2 = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+            // INCHI✔️❗: native2011..2014 restores at before checking ret2.
+            // Restore the same owner before propagating a typed Rust error.
+            // O(1) result hold/store, no allocation/clone; checked costs OPEN.
+            let conversion = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
             pStruct.at = at;
+            let ret2 = conversion?;
             if ret2 < 0 {
                 return Ok(ret2);
             }
@@ -1687,20 +1520,13 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             let mut j = 0_i32;
             i = 0;
             while i < local_num_vertices {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if heap.slice(pn_rad.as_const())?[index] > 0
                     && i < pBNS.num_atoms
                     && pVA[index].nTautGroupEdge == 0
                 {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom = heap.slice(at2.as_const())?[index].clone();
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let va = pVA[index].clone();
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let candidate = &mut heap.slice_mut(p_cand)?
                         [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     candidate.iat = i;
@@ -1711,7 +1537,6 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                     candidate.cNumValenceElectrons = va.cNumValenceElectrons;
                     candidate.cPeriodicRowNumber = va.cPeriodicRowNumber;
                     candidate.el_number = atom.el_number;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut cn_bits = if va.cnListIndex > 0 {
                         CN_LIST[usize::try_from(i32::from(va.cnListIndex).wrapping_sub(1))
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -1728,9 +1553,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                 i = i.wrapping_add(1);
             }
             if j > 1 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let count = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(p_cand)?[..count]
                     .sort_unstable_by(|left, right| comp_cc_cand(left, right).cmp(&0));
             }
@@ -1750,24 +1573,20 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                 } else {
                     charge_per_left_atom.wrapping_neg()
                 };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom_index = usize::try_from(
                     heap.slice(p_cand.as_const())?
                         [usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .iat,
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 pVA[atom_index].cInitCharge =
                     i32::from(pVA[atom_index].cInitCharge).wrapping_add(this_atom_add_charge) as i8;
                 added_charge = added_charge.wrapping_add(this_atom_add_charge);
 
                 i = local_num_vertices.wrapping_sub(1);
                 while this_atom_add_charge != 0 && pBNS.num_atoms <= i {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let index =
                         usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = &heap.slice(pBNS.vert.as_const())?[index];
                     let mut delta = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
                     let type_ = u32::from(vertex.type_);
@@ -1775,7 +1594,6 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                         if delta.wrapping_add(this_atom_add_charge) > 0 {
                             delta = this_atom_add_charge.wrapping_neg();
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
                             vertex.st_edge.cap.wrapping_sub(delta);
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
@@ -1785,7 +1603,6 @@ pub(crate) fn MoveRadToAtomsAddCharges(
                         if delta > this_atom_add_charge {
                             delta = this_atom_add_charge;
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
                             vertex.st_edge.cap.wrapping_sub(delta);
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
@@ -1826,7 +1643,7 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
     pVA: &mut [VAL_AT],
     pTCGroups: &mut ALL_TC_GROUPS,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:3403 RearrangePlusMinusEdgesFlow
     /*
@@ -1955,7 +1772,6 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
     // INCHI✔️❌: lookups compared with the active direct-pointer C implementation.
     // END INCHI ACTIVE MACRO CONFIGURATION: RearrangePlusMinusEdgesFlow
 
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut newly_fixed_edges = EDGE_LIST::default();
     let _ = AllocEdgeList(heap, &mut newly_fixed_edges, EDGE_LIST_CLEAR)?;
 
@@ -1964,10 +1780,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
         let mut number_total = 0_i32;
         let mut atom_index = 0_i32;
         while atom_index < pBNS.num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let valence_atom = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let minus_edge = valence_atom.nCMinusGroupEdge.wrapping_sub(1);
             let plus_edge = valence_atom.nCPlusGroupEdge.wrapping_sub(1);
@@ -1975,25 +1789,25 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                 .wrapping_add(i32::from(minus_edge >= 0))
                 .wrapping_add(i32::from(plus_edge >= 0));
             if minus_edge >= 0 && plus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice(pBNS.edge.as_const())?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus = edges
                     .get(
                         usize::try_from(minus_edge)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let plus = edges
-                    .get(
-                        usize::try_from(plus_edge)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if minus.flow > 0 && plus.cap.wrapping_sub(plus.flow) > 0 {
-                    number_found = number_found.wrapping_add(1);
+                // INCHI✔️❗: Preserve the source && read gate; no edge copies.
+                // The two passes/list remain linear; arena costs stay OPEN.
+                if minus.flow > 0 {
+                    let plus = edges
+                        .get(
+                            usize::try_from(plus_edge)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if plus.cap.wrapping_sub(plus.flow) > 0 {
+                        number_found = number_found.wrapping_add(1);
+                    }
                 }
             }
             atom_index = atom_index.wrapping_add(1);
@@ -2014,10 +1828,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
         atom_index = 0;
         number_total = 0;
         while atom_index < pBNS.num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let valence_atom = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
             let minus_edge = valence_atom.nCMinusGroupEdge.wrapping_sub(1);
             let plus_edge = valence_atom.nCPlusGroupEdge.wrapping_sub(1);
@@ -2026,59 +1838,51 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                 .wrapping_add(i32::from(plus_edge >= 0));
 
             if minus_edge >= 0 && plus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus_index =
                     usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_index =
                     usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus = heap
                     .slice(pBNS.edge.as_const())?
                     .get(minus_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let plus = heap
-                    .slice(pBNS.edge.as_const())?
-                    .get(plus_index)
-                    .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let first_capacity = minus.flow;
-                let second_capacity = plus.cap.wrapping_sub(plus.flow);
-                if first_capacity > 0 && second_capacity > 0 {
-                    let first_vertex = usize::from(minus.neighbor1);
-                    let second_vertex = usize::from(minus.neighbor12 ^ minus.neighbor1);
-                    let delta = first_capacity.min(second_capacity);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(pBNS.edge)?[minus_index].flow = minus.flow.wrapping_sub(delta);
-                    {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let vertices = heap.slice_mut(pBNS.vert)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let first = vertices
-                            .get_mut(first_vertex)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        first.st_edge.flow = first.st_edge.flow.wrapping_sub(delta);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let second = vertices
-                            .get_mut(second_vertex)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        second.st_edge.flow = second.st_edge.flow.wrapping_sub(delta);
+                if first_capacity > 0 {
+                    let plus = heap
+                        .slice(pBNS.edge.as_const())?
+                        .get(plus_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let second_capacity = plus.cap.wrapping_sub(plus.flow);
+                    if second_capacity > 0 {
+                        let first_vertex = usize::from(minus.neighbor1);
+                        let second_vertex = usize::from(minus.neighbor12 ^ minus.neighbor1);
+                        let delta = first_capacity.min(second_capacity);
+                        heap.slice_mut(pBNS.edge)?[minus_index].flow =
+                            first_capacity.wrapping_sub(delta);
+                        {
+                            let vertices = heap.slice_mut(pBNS.vert)?;
+                            let first = vertices
+                                .get_mut(first_vertex)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            first.st_edge.flow = first.st_edge.flow.wrapping_sub(delta);
+                            let second = vertices
+                                .get_mut(second_vertex)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            second.st_edge.flow = second.st_edge.flow.wrapping_sub(delta);
+                        }
+                        pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2_i32.wrapping_mul(delta));
                     }
-                    pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2_i32.wrapping_mul(delta));
                 }
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice_mut(pBNS.edge)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    edges[plus_index].forbidden =
-                        (i32::from(edges[plus_index].forbidden) | forbidden_edge_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    edges[minus_index].forbidden =
-                        (i32::from(edges[minus_index].forbidden) | forbidden_edge_mask) as i8;
+                    let plus = edges
+                        .get_mut(plus_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    plus.forbidden = (i32::from(plus.forbidden) | forbidden_edge_mask) as i8;
+                    let minus = edges
+                        .get_mut(minus_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    minus.forbidden = (i32::from(minus.forbidden) | forbidden_edge_mask) as i8;
                 }
                 ret = AddToEdgeList(heap, &mut newly_fixed_edges, minus_edge, 0)?;
                 if ret != 0 {
@@ -2089,10 +1893,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                     return Ok(ret);
                 }
             } else if minus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus_index =
                     usize::try_from(minus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(minus_index)
@@ -2103,10 +1905,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
                     return Ok(ret);
                 }
             } else if plus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_index =
                     usize::try_from(plus_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(plus_index)
@@ -2122,10 +1922,8 @@ pub(crate) fn RearrangePlusMinusEdgesFlow(
 
         let mut bond_index = 0_i32;
         while bond_index < pBNS.num_bonds {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice_mut(pBNS.edge)?
                 .get_mut(index)
@@ -2486,99 +2284,46 @@ pub(crate) fn CheckBnsConsistency(
     0
 }
 
-#[derive(Clone)]
-struct InchiStereoSnapshot {
-    header: INChI_Stereo,
-    centers: Vec<AT_NUMB>,
-    center_parities: Vec<i8>,
-    bond_atoms1: Vec<AT_NUMB>,
-    bond_atoms2: Vec<AT_NUMB>,
-    bond_parities: Vec<i8>,
-}
-
-fn snapshot_inchi_stereo(
+fn inchi_stereo_header(
     heap: &SourceHeap,
     pointer: SourceMutPointer<INChI_Stereo>,
-) -> Result<Option<InchiStereoSnapshot>, SourceHeapError> {
+) -> Result<&INChI_Stereo, SourceHeapError> {
+    // Native ichirvr2.c232..268 dereferences only each reached candidate header.
+    heap.slice(pointer.as_const())?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)
+}
+
+fn select_inchi_stereo(
+    heap: &SourceHeap,
+    pointer: SourceMutPointer<INChI_Stereo>,
+) -> Result<Option<SourceMutPointer<INChI_Stereo>>, SourceHeapError> {
+    // INCHI✔️❗:     if (pInChI->StereoIsotopic &&
+    // INCHI✔️❗:         ( pInChI->StereoIsotopic->nNumberOfStereoBonds +
+    // INCHI✔️❗:             pInChI->StereoIsotopic->nNumberOfStereoCenters ))
+    // Native ichirvr2.c232..268 repeats this signed total test for each candidate.
+    // Do not clamp either count before selection or admit unused payload arrays.
+    // Widening preserves every defined native sum; signed C overflow is outside
+    // that domain. O(1), no allocation/header clone; safe lookup cost stays OPEN.
     if pointer.is_null() {
         return Ok(None);
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let header = heap
-        .slice(pointer.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    panic!("INCHI-AUDIT-0319: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let center_count = usize::try_from(header.nNumberOfStereoCenters.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0319: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let bond_count = usize::try_from(header.nNumberOfStereoBonds.max(0))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    if center_count + bond_count == 0 {
-        return Ok(None);
-    }
-    let centers = if center_count == 0 {
-        Vec::new()
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice(header.nNumber.as_const())?
-            .get(..center_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let center_parities = if center_count == 0 {
-        Vec::new()
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice(header.t_parity.as_const())?
-            .get(..center_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let bond_atoms1 = if bond_count == 0 {
-        Vec::new()
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice(header.nBondAtom1.as_const())?
-            .get(..bond_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let bond_atoms2 = if bond_count == 0 {
-        Vec::new()
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice(header.nBondAtom2.as_const())?
-            .get(..bond_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let bond_parities = if bond_count == 0 {
-        Vec::new()
-    } else {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice(header.b_parity.as_const())?
-            .get(..bond_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    Ok(Some(InchiStereoSnapshot {
-        header,
-        centers,
-        center_parities,
-        bond_atoms1,
-        bond_atoms2,
-        bond_parities,
-    }))
+    let header = inchi_stereo_header(heap, pointer)?;
+    let total = i64::from(header.nNumberOfStereoBonds) + i64::from(header.nNumberOfStereoCenters);
+    Ok((total != 0).then_some(pointer))
+}
+
+fn inchi_stereo_value<T: Copy + 'static>(
+    heap: &SourceHeap,
+    pointer: SourceMutPointer<T>,
+    index: usize,
+) -> Result<T, SourceHeapError> {
+    // Native ichirvr2.c283..395/474..776 reads only the reached stereo ordinal.
+    // One checked source field projection; no prefix scan, snapshot or allocation.
+    heap.slice(pointer.as_const())?
+        .get(index)
+        .copied()
+        .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
 #[allow(non_snake_case)]
@@ -2641,11 +2386,8 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: SetStereoBondTypeFor0DParity
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(i1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let stereo_slot = usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut order = usize::try_from(i32::from(
         *atoms
             .get(start)
@@ -2656,12 +2398,10 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
     ))
     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut current = start;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut cumulene = [0_u16; MAX_CUMULENE_LEN as usize + 2];
     let mut length = 1_usize;
     cumulene[0] = i1 as AT_NUMB;
     let found_length = loop {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let next = usize::from(
             *atoms
                 .get(current)
@@ -2670,24 +2410,19 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
                 .get(order)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *cumulene
             .get_mut(length)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = next as AT_NUMB;
         length += 1;
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let next_atom = atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut opposite_slot = 0_usize;
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut found = false;
         while opposite_slot < MAX_NUM_STEREO_BONDS as usize
             && next_atom.sb_parity[opposite_slot] != 0
         {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let opposite_order = usize::try_from(i32::from(next_atom.sb_ord[opposite_slot]))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if usize::from(
                 *next_atom
                     .neighbor
@@ -2695,23 +2430,21 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             ) == current
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 found = true;
                 break;
             }
             opposite_slot += 1;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if found {
             break length;
         }
         if next_atom.num_H != 0 || next_atom.valence != 2 || next_atom.endpoint != 0 {
             return Ok(RI_ERR_SYNTAX);
         }
-        panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
-        order = usize::from(next_atom.neighbor[0] == current as AT_NUMB);
+        // INCHI✔️❗: Native promotes the short for this comparison;
+        // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+        order = usize::from(usize::from(next_atom.neighbor[0]) == current);
         current = next;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let current_atom = &atoms[current];
         if current_atom.valence != 2
             || current_atom.num_H != 0
@@ -2732,7 +2465,6 @@ pub(crate) fn SetStereoBondTypeFor0DParity(
         BOND_TYPE_DOUBLE as i32
     };
     for index in 1..found_length {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let result = set_bond_type(atoms, cumulene[index - 1], cumulene[index], bond_type)?;
         if result < 0 {
             return Ok(RI_ERR_PROGR);
@@ -2882,13 +2614,19 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: SetStereoBondTypesFrom0DStereo
 
+    // INCHI✔️❗: Native j < at[i].valence promotes signed S_CHAR to int;
+    // negative degrees skip both counting and rewriting loops. The child
+    // setters change bond types/chemical valence, never this degree, so a
+    // nonnegative iteration extent preserves every repeated source bound.
+    // Admit each atom only when reached; retain the full allocation suffix
+    // for source child neighbor reads. O(atoms + reached degrees/chains),
+    // O(1) local storage, no allocation/clone; checked/whole-call cost OPEN.
     let stereo_active = |pointer: SourceMutPointer<INChI_Stereo>,
                          heap: &SourceHeap|
      -> Result<bool, SourceHeapError> {
         if pointer.is_null() {
             return Ok(false);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let stereo = heap
             .slice(pointer.as_const())?
             .first()
@@ -2906,19 +2644,19 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     if !has_stereo || structure.num_atoms <= 0 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count =
         usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atoms = heap
-        .slice_mut(structure.at)?
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atoms = heap.slice_mut(structure.at)?;
     let mut stereo_bond_count = 0_i32;
     for atom_index in 0..atom_count {
         let mut slot = 0_usize;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        while slot < MAX_NUM_STEREO_BONDS as usize && atoms[atom_index].sb_parity[slot] != 0 {
+        while slot < MAX_NUM_STEREO_BONDS as usize
+            && atoms
+                .get(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .sb_parity[slot]
+                != 0
+        {
             stereo_bond_count = stereo_bond_count.wrapping_add(1);
             let result = SetStereoBondTypeFor0DParity(atoms, atom_index as i32, slot as i32)?;
             if result < 0 {
@@ -2932,24 +2670,17 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     }
 
     for atom_index in 0..atom_count {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(atoms[atom_index].valence)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let valence = i32::from(atoms[atom_index].valence).max(0) as usize;
         let mut stereo_count = 0_i32;
         let mut alternating_count = 0_i32;
         for order in 0..valence {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             stereo_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             alternating_count +=
                 i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
         }
         if stereo_count + alternating_count > 1 && stereo_count != 0 {
             for order in 0..valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let neighbor = atoms[atom_index].neighbor[order];
                     let result = set_bond_type(
                         atoms,
@@ -2966,28 +2697,20 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
     }
 
     for atom_index in 0..atom_count {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence = usize::try_from(atoms[atom_index].valence)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let valence = i32::from(atoms[atom_index].valence).max(0) as usize;
         let mut stereo_count = 0_i32;
         let mut alternating_count = 0_i32;
         for order in 0..valence {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             stereo_count += i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             alternating_count +=
                 i32::from(atoms[atom_index].bond_type[order] == BOND_TYPE_ALTERN as u8);
         }
         if stereo_count == 0 && alternating_count != 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             atoms[atom_index].chem_bonds_valence =
                 atoms[atom_index].chem_bonds_valence.wrapping_add(1);
         } else if stereo_count == 1 {
             for order in 0..valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if atoms[atom_index].bond_type[order] == BOND_TYPE_STEREO as u8 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let neighbor = atoms[atom_index].neighbor[order];
                     let result = set_bond_type(
                         atoms,
@@ -2998,11 +2721,9 @@ pub(crate) fn SetStereoBondTypesFrom0DStereo(
                     if result < 0 {
                         return Ok(result);
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     atoms[atom_index].chem_bonds_valence =
                         atoms[atom_index].chem_bonds_valence.wrapping_add(1);
                     let neighbor_index = usize::from(neighbor);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     atoms[neighbor_index].chem_bonds_valence =
                         atoms[neighbor_index].chem_bonds_valence.wrapping_add(1);
                 }
@@ -3122,9 +2843,7 @@ pub(crate) fn AddExplicitDeletedH(
     // INCHI✔️✔️: #define NUM_ISO_H(AT, N) (AT[N].num_iso_H[0] + AT[N].num_iso_H[1] + AT[N].num_iso_H[2])
     // END INCHI HEADER MACRO: NUM_ISO_H
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center_index = usize::try_from(jv).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center = atoms
         .get(center_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3135,7 +2854,6 @@ pub(crate) fn AddExplicitDeletedH(
         .sum::<i32>();
     let mut num_h = i32::from(center.num_H);
     let mut isotope_h = 0_usize;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut isotope_counts = center.num_iso_H;
     let atom_type = center.at_type;
 
@@ -3145,10 +2863,8 @@ pub(crate) fn AddExplicitDeletedH(
     if atom_type > 1 {
         let mut i = 0_i32;
         while i < *i_deleted_h {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index = usize::try_from(num_at.wrapping_add(i))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if i32::from(
                 *atoms
                     .get(index)
@@ -3166,22 +2882,17 @@ pub(crate) fn AddExplicitDeletedH(
 
     *i_h = i_deleted_h.wrapping_add(num_at);
     while num_h != 0 && *i_deleted_h < num_deleted_h {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let hydrogen_index = usize::try_from(num_at.wrapping_add(*i_deleted_h))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let hydrogen = atoms
             .get_mut(hydrogen_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence =
             usize::try_from(hydrogen.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *hydrogen
             .neighbor
             .get_mut(valence)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = jv as u16;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *hydrogen
             .bond_type
             .get_mut(valence)
@@ -3214,7 +2925,6 @@ pub(crate) fn AddExplicitDeletedH(
     if num_h != 0 {
         return Ok(RI_ERR_SYNTAX);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     atoms[center_index].at_type = atoms[center_index].at_type.wrapping_add(1);
     Ok(0)
 }
@@ -3276,12 +2986,10 @@ pub(crate) fn bFindCumuleneChain(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: bFindCumuleneChain
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *cumulene
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = i1;
     let first_index = usize::from(i1);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = atoms
         .get(first_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3290,10 +2998,8 @@ pub(crate) fn bFindCumuleneChain(
     while neighbor_order < valence {
         let mut len = 0_i32;
         let mut current = i1;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let order =
             usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut next = *first
             .neighbor
             .get(order)
@@ -3301,7 +3007,6 @@ pub(crate) fn bFindCumuleneChain(
         if len + 1 == max_len {
             if next == i2 {
                 len += 1;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 *cumulene
                     .get_mut(usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = next;
@@ -3311,7 +3016,6 @@ pub(crate) fn bFindCumuleneChain(
             continue;
         }
         loop {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let next_atom = atoms
                 .get(usize::from(next))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3322,7 +3026,6 @@ pub(crate) fn bFindCumuleneChain(
                 break;
             }
             len += 1;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *cumulene
                 .get_mut(usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = next;
@@ -3331,7 +3034,6 @@ pub(crate) fn bFindCumuleneChain(
             if len + 1 == max_len {
                 if next == i2 {
                     len += 1;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     *cumulene
                         .get_mut(
                             usize::try_from(len)
@@ -3342,7 +3044,6 @@ pub(crate) fn bFindCumuleneChain(
                 }
                 break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             current =
                 cumulene[usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
         }
@@ -3383,28 +3084,24 @@ pub(crate) fn set_bond_type(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: set_bond_type
 
+    // INCHI✔️❗: Canonical is_in_the_list now preserves signed-count first match.
+    // Keep both searches/write order; O(reached degrees), O(1), no allocation.
+    // Whole-call checked access/Result cost remains OPEN.
     let first_index = usize::from(i1);
     let second_index = usize::from(i2);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = atoms
         .get(first_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0241: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_order = is_in_the_list(Some(&first.neighbor), i2, i32::from(first.valence))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = atoms
         .get(second_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0241: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_order = is_in_the_list(Some(&second.neighbor), i1, i32::from(second.valence))?;
     let (Some(first_order), Some(second_order)) = (first_order, second_order) else {
         return Ok(RI_ERR_SYNTAX);
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let previous = atoms[first_index].bond_type[first_order];
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     atoms[first_index].bond_type[first_order] = bond_type as u8;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     atoms[second_index].bond_type[second_order] = bond_type as u8;
     if previous != 0
         && i32::from(previous) <= BOND_TYPE_TRIPLE as i32
@@ -3412,11 +3109,9 @@ pub(crate) fn set_bond_type(
         && bond_type <= BOND_TYPE_TRIPLE as i32
     {
         let difference = bond_type.wrapping_sub(i32::from(previous)) as i8;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         atoms[first_index].chem_bonds_valence = atoms[first_index]
             .chem_bonds_valence
             .wrapping_add(difference);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         atoms[second_index].chem_bonds_valence = atoms[second_index]
             .chem_bonds_valence
             .wrapping_add(difference);
@@ -3573,35 +3268,32 @@ pub(crate) fn set_cumulene_0D_parity(
     // INCHI✔️✔️: #define ATOM_PARITY_WELL_DEF(P) ((P) >= AB_MIN_WELL_DEFINED_PARITY && (P) <= AB_MAX_WELL_DEFINED_PARITY)
     // END ACTIVE INCHI MACRO: ATOM_PARITY_WELL_DEF
 
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let first_index = usize::try_from(i1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let second_index = usize::try_from(i2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❌: Chain discovery precedes signed endpoint admission; second
+    // membership is reached only after first membership succeeds. Borrow the
+    // fixed descriptor arrays; no allocation or record clone. Safe scratch
+    // initialization adds four u16 writes; checked-access whole cost is OPEN.
     let mut cumulene = [0_u16; MAX_CUMULENE_LEN as usize + 2];
     if bFindCumuleneChain(atoms, i1 as AT_NUMB, i2 as AT_NUMB, &mut cumulene, len)? == 0 {
         return Ok(RI_ERR_SYNTAX);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let before_second =
-        usize::try_from(len.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let first_index = usize::try_from(i1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let first_atom = atoms
         .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let second_atom = atoms
-        .get(second_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let sb_ord_m1 = is_in_the_list(
         Some(&first_atom.neighbor),
         cumulene[1],
         i32::from(first_atom.valence),
     )?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    let Some(sb_ord_m1) = sb_ord_m1 else {
+        return Ok(RI_ERR_PROGR);
+    };
+    let second_index = usize::try_from(i2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let second_atom = atoms
+        .get(second_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let before_second =
+        usize::try_from(len.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let sb_ord_m2 = is_in_the_list(
         Some(&second_atom.neighbor),
         *cumulene
@@ -3609,7 +3301,7 @@ pub(crate) fn set_cumulene_0D_parity(
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
         i32::from(second_atom.valence),
     )?;
-    let (Some(sb_ord_m1), Some(sb_ord_m2)) = (sb_ord_m1, sb_ord_m2) else {
+    let Some(sb_ord_m2) = sb_ord_m2 else {
         return Ok(RI_ERR_PROGR);
     };
     let num_neigh1 = i32::from(first_atom.valence) + i32::from(first_atom.num_H);
@@ -3621,29 +3313,25 @@ pub(crate) fn set_cumulene_0D_parity(
     {
         return Ok(RI_ERR_SYNTAX);
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let (sb_ord1, sb_parity1, sb_ord2, sb_parity2) = if let Some(stereo) = stereo.as_deref() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let first = stereo
             .get(first_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let second = stereo
             .get(second_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         (
-            first.sb_ord,
-            first.sb_parity,
-            second.sb_ord,
-            second.sb_parity,
+            &first.sb_ord,
+            &first.sb_parity,
+            &second.sb_ord,
+            &second.sb_parity,
         )
     } else {
         (
-            first_atom.sb_ord,
-            first_atom.sb_parity,
-            second_atom.sb_ord,
-            second_atom.sb_parity,
+            &first_atom.sb_ord,
+            &first_atom.sb_parity,
+            &second_atom.sb_ord,
+            &second_atom.sb_parity,
         )
     };
     let find_slot = |orders: &[i8; 3], parities: &[i8; 3], target: usize| {
@@ -3658,8 +3346,8 @@ pub(crate) fn set_cumulene_0D_parity(
         }
         (slot, found)
     };
-    let (m1, k1) = find_slot(&sb_ord1, &sb_parity1, sb_ord_m1);
-    let (m2, k2) = find_slot(&sb_ord2, &sb_parity2, sb_ord_m2);
+    let (m1, k1) = find_slot(sb_ord1, sb_parity1, sb_ord_m1);
+    let (m2, k2) = find_slot(sb_ord2, sb_parity2, sb_ord_m2);
     if m1 == MAX_NUM_STEREO_BONDS as usize || m2 == MAX_NUM_STEREO_BONDS as usize {
         return Ok(RI_ERR_SYNTAX);
     }
@@ -3670,7 +3358,6 @@ pub(crate) fn set_cumulene_0D_parity(
         return Ok(RI_ERR_SYNTAX);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[first_index].sb_ord[m1] = sb_ord_m1 as i8;
         stereo[second_index].sb_ord[m2] = sb_ord_m2 as i8;
@@ -3678,21 +3365,17 @@ pub(crate) fn set_cumulene_0D_parity(
         atoms[first_index].sb_ord[m1] = sb_ord_m1 as i8;
         atoms[second_index].sb_ord[m2] = sb_ord_m2 as i8;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let deleted1_index =
         usize::try_from(deleted_h1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let original1 = atoms
         .get(deleted1_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .orig_at_number;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[first_index].sn_orig_at_num[m1] = original1;
     } else {
         atoms[first_index].sn_orig_at_num[m1] = original1;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let sn_order1 = if deleted_h1 < num_at {
         let order = is_in_the_list(
             Some(&atoms[first_index].neighbor),
@@ -3706,28 +3389,23 @@ pub(crate) fn set_cumulene_0D_parity(
     } else {
         -1
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[first_index].sn_ord[m1] = sn_order1;
     } else {
         atoms[first_index].sn_ord[m1] = sn_order1;
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let deleted2_index =
         usize::try_from(deleted_h2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let original2 = atoms
         .get(deleted2_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .orig_at_number;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[second_index].sn_orig_at_num[m2] = original2;
     } else {
         atoms[second_index].sn_orig_at_num[m2] = original2;
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let sn_order2 = if deleted_h2 < num_at {
         let order = is_in_the_list(
             Some(&atoms[second_index].neighbor),
@@ -3741,7 +3419,6 @@ pub(crate) fn set_cumulene_0D_parity(
     } else {
         -1
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[second_index].sn_ord[m2] = sn_order2;
     } else {
@@ -3771,7 +3448,6 @@ pub(crate) fn set_cumulene_0D_parity(
     } else {
         (parity as i8, parity as i8)
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[first_index].sb_parity[m1] = parity1;
         stereo[second_index].sb_parity[m2] = parity2;
@@ -3856,9 +3532,7 @@ pub(crate) fn set_atom_0D_parity(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: set_atom_0D_parity
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center_index = usize::try_from(i1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let center = atoms
         .get(center_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3868,10 +3542,7 @@ pub(crate) fn set_atom_0D_parity(
     let center_orig = center.orig_at_number;
     let valence = i32::from(center.valence);
     let num_h = i32::from(center.num_H);
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbors = center.neighbor;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut original_numbers = if let Some(stereo) = stereo.as_deref() {
         stereo
             .get(center_index)
@@ -3892,15 +3563,12 @@ pub(crate) fn set_atom_0D_parity(
     if num_h != 0 {
         let mut j = 0_i32;
         while m1 < m2 && j < num_deleted_h {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let hydrogen_index = usize::try_from(num_at.wrapping_add(j))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let hydrogen = atoms
                 .get(hydrogen_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if i32::from(hydrogen.neighbor[0]) == i1 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 original_numbers
                     [usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
                     hydrogen.orig_at_number;
@@ -3909,8 +3577,6 @@ pub(crate) fn set_atom_0D_parity(
             j += 1;
         }
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[center_index].p_orig_at_num = original_numbers;
     } else {
@@ -3921,13 +3587,11 @@ pub(crate) fn set_atom_0D_parity(
     }
     let mut i = 0_i32;
     while i < valence {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = usize::from(
             *neighbors
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         original_numbers[usize::try_from(m1).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
             atoms
                 .get(neighbor)
@@ -3936,8 +3600,6 @@ pub(crate) fn set_atom_0D_parity(
         m1 += 1;
         i += 1;
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(stereo) = stereo.as_deref_mut() {
         stereo[center_index].p_orig_at_num = original_numbers;
         stereo[center_index].p_parity = parity as i8;
@@ -3955,37 +3617,40 @@ pub(crate) fn CopyAt2St(
     num_atoms: i32,
 ) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:57 CopyAt2St
-    // INCHI✔️✔️: void CopyAt2St( inp_ATOM *at, inp_ATOM_STEREO * st, int num_atoms )
-    // INCHI✔️✔️: {
-    // INCHI✔️✔️:     int i;
-    // INCHI✔️✔️:     for (i = 0; i < num_atoms; i++)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         if (at[i].p_parity)
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             memcpy(st[i].p_orig_at_num, at[i].p_orig_at_num, sizeof(st[0].p_orig_at_num));
-    // INCHI✔️✔️:             st[i].p_parity = at[i].p_parity;
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:         if (at[i].sb_parity[0])
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             memcpy(st[i].sb_ord, at[i].sb_ord, sizeof(st[0].sb_ord));
-    // INCHI✔️✔️:             memcpy(st[i].sb_parity, at[i].sb_parity, sizeof(st[0].sb_parity));
-    // INCHI✔️✔️:             memcpy(st[i].sn_ord, at[i].sn_ord, sizeof(st[0].sn_ord));
-    // INCHI✔️✔️:             memcpy(st[i].sn_orig_at_num, at[i].sn_orig_at_num, sizeof(st[0].sn_orig_at_num));
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️: }
+    // INCHI✔️❗: void CopyAt2St( inp_ATOM *at, inp_ATOM_STEREO * st, int num_atoms )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int i;
+    // INCHI✔️❗:     for (i = 0; i < num_atoms; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (at[i].p_parity)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             memcpy(st[i].p_orig_at_num, at[i].p_orig_at_num, sizeof(st[0].p_orig_at_num));
+    // INCHI✔️❗:             st[i].p_parity = at[i].p_parity;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         if (at[i].sb_parity[0])
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             memcpy(st[i].sb_ord, at[i].sb_ord, sizeof(st[0].sb_ord));
+    // INCHI✔️❗:             memcpy(st[i].sb_parity, at[i].sb_parity, sizeof(st[0].sb_parity));
+    // INCHI✔️❗:             memcpy(st[i].sn_ord, at[i].sn_ord, sizeof(st[0].sn_ord));
+    // INCHI✔️❗:             memcpy(st[i].sn_orig_at_num, at[i].sn_orig_at_num, sizeof(st[0].sn_orig_at_num));
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: CopyAt2St
+    // Behavior: source parity gates target access; inactive rows need no target.
+    // Independent groups copy only their fields; reached errors retain prior writes.
+    // Cost: O(max(num_atoms, 0)) time/O(1) space, no heap, clone or buffering.
+    // Safe bounds/Result whole-call overhead remains INCHI-PERF-F1110 OPEN.
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let count =
         usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     for index in 0..count {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source = atoms
             .get(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        if source.p_parity == 0 && source.sb_parity[0] == 0 {
+            continue;
+        }
         let target = stereo
             .get_mut(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4010,45 +3675,48 @@ pub(crate) fn CopySt2At(
     num_atoms: i32,
 ) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:79 CopySt2At
-    // INCHI✔️❌: void CopySt2At( inp_ATOM *at, inp_ATOM_STEREO * st, int num_atoms )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int i;
-    // INCHI✔️❌:     if (!st)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         return;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     for (i = 0; i < num_atoms; i++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         if (st[i].p_parity)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             memcpy(at[i].p_orig_at_num, st[i].p_orig_at_num, sizeof(at[0].p_orig_at_num));
-    // INCHI✔️❌:             at[i].p_parity = st[i].p_parity;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         if (st[i].sb_parity[0])
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             memcpy(at[i].sb_ord, st[i].sb_ord, sizeof(st[0].sb_ord));
-    // INCHI✔️❌:             memcpy(at[i].sb_parity, st[i].sb_parity, sizeof(at[0].sb_parity));
-    // INCHI✔️❌:             memcpy(at[i].sn_ord, st[i].sn_ord, sizeof(at[0].sn_ord));
-    // INCHI✔️❌:             memcpy(at[i].sn_orig_at_num, st[i].sn_orig_at_num, sizeof(at[0].sn_orig_at_num));
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌: }
+    // INCHI✔️❗: void CopySt2At( inp_ATOM *at, inp_ATOM_STEREO * st, int num_atoms )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int i;
+    // INCHI✔️❗:     if (!st)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         return;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     for (i = 0; i < num_atoms; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (st[i].p_parity)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             memcpy(at[i].p_orig_at_num, st[i].p_orig_at_num, sizeof(at[0].p_orig_at_num));
+    // INCHI✔️❗:             at[i].p_parity = st[i].p_parity;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         if (st[i].sb_parity[0])
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             memcpy(at[i].sb_ord, st[i].sb_ord, sizeof(st[0].sb_ord));
+    // INCHI✔️❗:             memcpy(at[i].sb_parity, st[i].sb_parity, sizeof(at[0].sb_parity));
+    // INCHI✔️❗:             memcpy(at[i].sn_ord, st[i].sn_ord, sizeof(at[0].sn_ord));
+    // INCHI✔️❗:             memcpy(at[i].sn_orig_at_num, st[i].sn_orig_at_num, sizeof(at[0].sn_orig_at_num));
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: CopySt2At
+    // Behavior: source parity gates target access; inactive rows need no target.
+    // Independent groups copy only their fields; reached errors retain prior writes.
+    // Cost: O(max(num_atoms, 0)) time/O(1) space, no heap, clone or buffering.
+    // Safe bounds/Result whole-call overhead remains INCHI-PERF-F1111 OPEN.
 
     let Some(stereo) = stereo else {
         return Ok(());
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let count =
         usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     for index in 0..count {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source = stereo
             .get(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        if source.p_parity == 0 && source.sb_parity[0] == 0 {
+            continue;
+        }
         let target = atoms
             .get_mut(index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4764,7 +4432,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     if num_atoms <= 0 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms)
         .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let mut atom_pointer = match inchi_calloc::<inp_ATOM>(heap, atom_count as u64, 176) {
@@ -4775,93 +4442,63 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     structure.at = atom_pointer;
     structure.num_atoms = num_atoms;
     structure.charge = inchi.nTotalCharge as i8;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut atoms = vec![inp_ATOM::default(); atom_count];
+    // INCHI✔️❗: Source at[] is live from publication through every failure.
+    // Use safe views of that allocation; no atom mirror, writeback or resize.
+    // Only native replacement copies remain. O(native work)/O(1) extra storage;
+    // repeated checked arena/Result and helper whole-call costs remain OPEN.
     let mut stereo_pointer = SourceMutPointer::null();
-    let mut stereo_data: Option<Vec<inp_ATOM_STEREO>> = None;
+    // INCHI✔️❗: Native st[] is the sole stereo output allocation. Safe paired
+    // views write it directly and retain partial writes on every Result error.
+    // No second allocation, zeroing, clone or return-time copy. O(native work)
+    // time/O(1) extra space; arena extraction/restore and checked helper costs
+    // remain INCHI-PERF-RESTORE-LIVE-STEREO-STORAGE OPEN.
 
-    macro_rules! return_with_state {
-        ($value:expr) => {{
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(atom_pointer)?
-                .get_mut(..atoms.len())
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from_slice(&atoms);
-            if let Some(data) = stereo_data.as_ref() {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(stereo_pointer)?
-                    .get_mut(..data.len())
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from_slice(data);
-            }
-            return Ok($value);
-        }};
-    }
-
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_numbers = heap
-        .slice(inchi.nAtom.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let hydrogen_counts = heap
-        .slice(inchi.nNum_H.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
+    // Native element/metadata/H stores remain live in source order. Input
+    // scalars resolve at their reached read before taking a mutable atom view.
     for index in 0..atom_count {
-        atoms[index].el_number = atom_numbers[index];
-        if get_element_chemical_symbol(i32::from(atom_numbers[index]), &mut atoms[index].elname)?
-            == -1
-        {
-            return_with_state!(RI_ERR_PROGR);
+        let element = *heap
+            .slice(inchi.nAtom.as_const())?
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = heap
+            .slice_mut(atom_pointer)?
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        atom.el_number = element;
+        if get_element_chemical_symbol(i32::from(element), &mut atom.elname)? == -1 {
+            return Ok(RI_ERR_PROGR);
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let source_index =
-            i32::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        atoms[index].orig_at_number = atom_number_offset
+        let source_index = index as i32;
+        atom.orig_at_number = atom_number_offset
             .wrapping_add(source_index)
             .wrapping_add(1) as AT_NUMB;
-        atoms[index].orig_compt_at_numb = source_index.wrapping_add(1) as AT_NUMB;
-        atoms[index].component = component.wrapping_add(1) as AT_NUMB;
-        atoms[index].num_H = hydrogen_counts[index];
+        atom.orig_compt_at_numb = source_index.wrapping_add(1) as AT_NUMB;
+        atom.component = component.wrapping_add(1) as AT_NUMB;
+        let hydrogen = *heap
+            .slice(inchi.nNum_H.as_const())?
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        heap.slice_mut(atom_pointer)?[index].num_H = hydrogen;
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let connection_count = usize::try_from(inchi.lenConnTable.max(1))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let connection_table = heap
-        .slice(inchi.nConnTable.as_const())?
-        .get(..connection_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let mut vertex = i32::from(connection_table[0]) - 1;
+    let mut vertex = i32::from(
+        *heap.slice(inchi.nConnTable.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+    ) - 1;
     let mut position = 1_i32;
     while position < inchi.lenConnTable {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = i32::from(
-            *connection_table
-                .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            *heap.slice(inchi.nConnTable.as_const())?
+                .get(position as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ) - 1;
         if neighbor < vertex {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let vertex_index =
                 usize::try_from(vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor_index =
                 usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            let atoms = heap.slice_mut(atom_pointer)?;
             let vertex_order = usize::try_from(atoms[vertex_index].valence)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             atoms[vertex_index].valence = atoms[vertex_index].valence.wrapping_add(1);
@@ -4870,7 +4507,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
             atoms[vertex_index].chem_bonds_valence = atoms[vertex_index]
                 .chem_bonds_valence
                 .wrapping_add(BOND_TYPE_SINGLE as i8);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor_order = usize::try_from(atoms[neighbor_index].valence)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             atoms[neighbor_index].valence = atoms[neighbor_index].valence.wrapping_add(1);
@@ -4882,44 +4518,39 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         } else {
             vertex = neighbor;
             if vertex >= num_atoms {
-                return_with_state!(RI_ERR_PROGR);
+                return Ok(RI_ERR_PROGR);
             }
         }
         position += 1;
     }
 
     if !inchi.IsotopicAtom.is_null() && inchi.nNumberOfIsotopicAtoms != 0 {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let isotope_count = usize::try_from(inchi.nNumberOfIsotopicAtoms)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let isotopes = heap
-            .slice(inchi.IsotopicAtom.as_const())?
-            .get(..isotope_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        for isotope in isotopes {
+        for isotope_index in 0..inchi.nNumberOfIsotopicAtoms {
+            let isotope = heap
+                .slice(inchi.IsotopicAtom.as_const())?
+                .get(isotope_index as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let isotope_vertex = i32::from(isotope.nAtomNumber) - 1;
             if isotope_vertex < num_atoms {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(isotope_vertex)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                atoms[index].iso_atw_diff = isotope.nIsoDifference as i8;
-                atoms[index].num_iso_H = [
+                let difference = isotope.nIsoDifference as i8;
+                let isotope_h = [
                     isotope.nNum_H as i8,
                     isotope.nNum_D as i8,
                     isotope.nNum_T as i8,
                 ];
+                let atom = heap
+                    .slice_mut(atom_pointer)?
+                    .get_mut(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                atom.iso_atw_diff = difference;
+                atom.num_iso_H = isotope_h;
             }
         }
         structure.bIsotopic |= 1;
     }
 
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.slice_mut(atom_pointer)?[..atom_count].clone_from_slice(&atoms);
     let tautomer_result = GetTgroupInfoFromInChI(
         heap,
         &mut structure.ti,
@@ -4927,11 +4558,8 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         SourceMutPointer::null(),
         Some(inchi),
     )?;
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    atoms.clone_from_slice(&heap.slice(atom_pointer.as_const())?[..atom_count]);
     if tautomer_result != 0 {
-        return_with_state!(tautomer_result);
+        return Ok(tautomer_result);
     }
 
     if !inchi.IsotopicTGroup.is_null() && inchi.nNumberOfIsotopicTGroups == 0 {
@@ -4939,15 +4567,15 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         inchi.IsotopicTGroup = SourceMutPointer::null();
     }
 
-    let fixed_stereo = match snapshot_inchi_stereo(heap, inchi.StereoIsotopic)? {
+    let fixed_stereo = match select_inchi_stereo(heap, inchi.StereoIsotopic)? {
         Some(value) => Some(value),
-        None => snapshot_inchi_stereo(heap, inchi.Stereo)?,
+        None => select_inchi_stereo(heap, inchi.Stereo)?,
     };
     let mobile_stereo =
         if let Some(mobile) = mobile_h_inchi.filter(|value| value.nNumberOfAtoms != 0) {
-            match snapshot_inchi_stereo(heap, mobile.StereoIsotopic)? {
+            match select_inchi_stereo(heap, mobile.StereoIsotopic)? {
                 Some(value) => Some(value),
-                None => snapshot_inchi_stereo(heap, mobile.Stereo)?,
+                None => select_inchi_stereo(heap, mobile.Stereo)?,
             }
         } else {
             None
@@ -4956,7 +4584,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     let allene_terminals = |atoms: &[inp_ATOM],
                             center: usize|
      -> Result<Option<(usize, usize)>, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .get(center)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4966,9 +4593,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
         }
         let left = usize::from(atom.neighbor[0]);
         let right = usize::from(atom.neighbor[1]);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let left_atom = atoms.get(left).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let right_atom = atoms
             .get(right)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4987,49 +4612,75 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     let mut additional_centers = 0_i32;
     let mut additional_bonds = 0_i32;
     if fixed_stereo.is_some() || mobile_stereo.is_some() {
-        let fixed_centers = fixed_stereo
-            .as_ref()
-            .map(|value| value.centers.as_slice())
-            .unwrap_or(&[]);
-        let mobile_centers = mobile_stereo
-            .as_ref()
-            .map(|value| value.centers.as_slice())
-            .unwrap_or(&[]);
+        // INCHI✔️❗: Capture scalar counts/handles, then release header borrows
+        // before live atom stores. Payloads resolve per reached ordinal; no
+        // whole-array admission, header clone or staging vectors.
+        let fixed_header = fixed_stereo
+            .map(|pointer| inchi_stereo_header(heap, pointer))
+            .transpose()?;
+        let mobile_header = mobile_stereo
+            .map(|pointer| inchi_stereo_header(heap, pointer))
+            .transpose()?;
+        let fixed_centers = fixed_header
+            .map_or(0, |value| value.nNumberOfStereoCenters.max(0) as usize);
+        let mobile_centers = mobile_header
+            .map_or(0, |value| value.nNumberOfStereoCenters.max(0) as usize);
+        let fixed_center_numbers = fixed_header.map(|value| value.nNumber);
+        let mobile_center_numbers = mobile_header.map(|value| value.nNumber);
+        let fixed_bonds = fixed_header.map_or(0, |value| value.nNumberOfStereoBonds.max(0) as usize);
+        let mobile_bonds = mobile_header.map_or(0, |value| value.nNumberOfStereoBonds.max(0) as usize);
+        let fixed_bond_atoms1 = fixed_header.map(|value| value.nBondAtom1);
+        let fixed_bond_atoms2 = fixed_header.map(|value| value.nBondAtom2);
+        let mobile_bond_atoms1 = mobile_header.map(|value| value.nBondAtom1);
+        let mobile_bond_atoms2 = mobile_header.map(|value| value.nBondAtom2);
         let mut fixed_index = 0_usize;
         let mut mobile_index = 0_usize;
-        while fixed_index < fixed_centers.len() || mobile_index < mobile_centers.len() {
+        while fixed_index < fixed_centers || mobile_index < mobile_centers {
             let center_number =
-                if fixed_index < fixed_centers.len() && mobile_index < mobile_centers.len() {
-                    let difference = i32::from(fixed_centers[fixed_index])
-                        - i32::from(mobile_centers[mobile_index]);
+                if fixed_index < fixed_centers && mobile_index < mobile_centers {
+                    let fixed_number = inchi_stereo_value(
+                        heap,
+                        fixed_center_numbers.ok_or(SourceHeapError::NullPointer)?,
+                        fixed_index,
+                    )?;
+                    let mobile_number = inchi_stereo_value(
+                        heap,
+                        mobile_center_numbers.ok_or(SourceHeapError::NullPointer)?,
+                        mobile_index,
+                    )?;
+                    let difference = i32::from(fixed_number) - i32::from(mobile_number);
                     if difference <= 0 {
-                        let value = fixed_centers[fixed_index];
                         fixed_index += 1;
                         mobile_index += usize::from(difference == 0);
-                        value
+                        fixed_number
                     } else {
-                        let value = mobile_centers[mobile_index];
                         additional_centers += 1;
                         mobile_index += 1;
-                        value
+                        mobile_number
                     }
-                } else if fixed_index < fixed_centers.len() {
-                    let value = fixed_centers[fixed_index];
+                } else if fixed_index < fixed_centers {
+                    let value = inchi_stereo_value(
+                        heap,
+                        fixed_center_numbers.ok_or(SourceHeapError::NullPointer)?,
+                        fixed_index,
+                    )?;
                     fixed_index += 1;
                     value
                 } else {
-                    let value = mobile_centers[mobile_index];
+                    let value = inchi_stereo_value(
+                        heap,
+                        mobile_center_numbers.ok_or(SourceHeapError::NullPointer)?,
+                        mobile_index,
+                    )?;
                     additional_centers += 1;
                     mobile_index += 1;
                     value
                 };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let center = usize::try_from(i32::from(center_number) - 1)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            if let Some((left, right)) = allene_terminals(&atoms, center)? {
+            let atoms = heap.slice_mut(atom_pointer)?;
+            if let Some((left, right)) = allene_terminals(atoms, center)? {
                 for terminal in [left, right] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if atoms[terminal].at_type == 0 && atoms[terminal].num_H != 0 {
                         num_deleted_h =
                             num_deleted_h.wrapping_add(i32::from(atoms[terminal].num_H));
@@ -5042,36 +4693,16 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
             }
         }
 
-        let fixed_bonds = fixed_stereo
-            .as_ref()
-            .map(|value| {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                value
-                    .bond_atoms1
-                    .iter()
-                    .copied()
-                    .zip(value.bond_atoms2.iter().copied())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let mobile_bonds = mobile_stereo
-            .as_ref()
-            .map(|value| {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                value
-                    .bond_atoms1
-                    .iter()
-                    .copied()
-                    .zip(value.bond_atoms2.iter().copied())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
         let mut fixed_index = 0_usize;
         let mut mobile_index = 0_usize;
-        while fixed_index < fixed_bonds.len() || mobile_index < mobile_bonds.len() {
-            let bond = if fixed_index < fixed_bonds.len() && mobile_index < mobile_bonds.len() {
-                let left = fixed_bonds[fixed_index];
-                let right = mobile_bonds[mobile_index];
+        while fixed_index < fixed_bonds || mobile_index < mobile_bonds {
+            let bond = if fixed_index < fixed_bonds && mobile_index < mobile_bonds {
+                let first_left = inchi_stereo_value(heap, fixed_bond_atoms1.ok_or(SourceHeapError::NullPointer)?, fixed_index)?;
+                let first_right = inchi_stereo_value(heap, mobile_bond_atoms1.ok_or(SourceHeapError::NullPointer)?, mobile_index)?;
+                let second_left = inchi_stereo_value(heap, fixed_bond_atoms2.ok_or(SourceHeapError::NullPointer)?, fixed_index)?;
+                let second_right = inchi_stereo_value(heap, mobile_bond_atoms2.ok_or(SourceHeapError::NullPointer)?, mobile_index)?;
+                let left = (first_left, second_left);
+                let right = (first_right, second_right);
                 let first_difference = i32::from(left.0) - i32::from(right.0);
                 let second_difference = i32::from(left.1) - i32::from(right.1);
                 if first_difference < 0 || (first_difference == 0 && second_difference <= 0) {
@@ -5083,22 +4714,31 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     additional_bonds += 1;
                     right
                 }
-            } else if fixed_index < fixed_bonds.len() {
-                let value = fixed_bonds[fixed_index];
+            } else if fixed_index < fixed_bonds {
+                let value = {
+                    (
+                        inchi_stereo_value(heap, fixed_bond_atoms1.ok_or(SourceHeapError::NullPointer)?, fixed_index)?,
+                        inchi_stereo_value(heap, fixed_bond_atoms2.ok_or(SourceHeapError::NullPointer)?, fixed_index)?,
+                    )
+                };
                 fixed_index += 1;
                 value
             } else {
-                let value = mobile_bonds[mobile_index];
+                let value = {
+                    (
+                        inchi_stereo_value(heap, mobile_bond_atoms1.ok_or(SourceHeapError::NullPointer)?, mobile_index)?,
+                        inchi_stereo_value(heap, mobile_bond_atoms2.ok_or(SourceHeapError::NullPointer)?, mobile_index)?,
+                    )
+                };
                 mobile_index += 1;
                 additional_bonds += 1;
                 value
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first = usize::try_from(i32::from(bond.0) - 1)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let second = usize::try_from(i32::from(bond.1) - 1)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atoms = heap.slice_mut(atom_pointer)?;
             if first < atom_count
                 && is_in_the_list(
                     Some(&atoms[first].neighbor),
@@ -5107,7 +4747,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 )?
                 .is_none()
             {
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut cumulene = [0_u16; MAX_CUMULENE_LEN as usize + 2];
                 if bFindCumuleneChain(
                     &atoms,
@@ -5117,19 +4756,20 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     MAX_CUMULENE_LEN as i32 + 1,
                 )? == 0
                 {
-                    return_with_state!(RI_ERR_SYNTAX);
+                    return Ok(RI_ERR_SYNTAX);
                 }
             }
-            for terminal in [first, second] {
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom = atoms
-                    .get_mut(terminal)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if first < atom_count {
+                let atom = atoms.get_mut(first).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if atom.at_type == 0 && atom.num_H != 0 {
                     num_deleted_h = num_deleted_h.wrapping_add(i32::from(atom.num_H));
                     atom.at_type = atom.at_type.wrapping_add(1);
                 }
+            }
+            let atom = atoms.get_mut(second).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.at_type == 0 && atom.num_H != 0 {
+                num_deleted_h = num_deleted_h.wrapping_add(i32::from(atom.num_H));
+                atom.at_type = atom.at_type.wrapping_add(1);
             }
         }
 
@@ -5139,28 +4779,29 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
             } else {
                 num_atoms
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let allocation_count = usize::try_from(allocation_count)
                 .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
             let replacement = match inchi_calloc::<inp_ATOM>(heap, allocation_count as u64, 176) {
                 Ok(pointer) => pointer,
-                Err(SourceHeapError::AllocationFailed) => return_with_state!(RI_ERR_ALLOC),
+                Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
                 Err(error) => return Err(error),
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(replacement)?[..atom_count].clone_from_slice(&atoms[..atom_count]);
+            structure.num_deleted_H = num_deleted_h;
+            heap.copy_nonoverlapping_prefix(
+                replacement,
+                atom_pointer.as_const(),
+                atom_count,
+                true,
+            )?;
             inchi_free(heap, atom_pointer)?;
             atom_pointer = replacement;
             structure.at = replacement;
-            structure.num_deleted_H = num_deleted_h;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            atoms.resize(allocation_count, inp_ATOM::default());
             let mut index = num_atoms;
             while index < num_atoms.wrapping_add(num_deleted_h) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom = &mut atoms
-                    [usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+                let atom = heap
+                    .slice_mut(atom_pointer)?
+                    .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 atom.elname = [b'H' as i8, 0, 0, 0, 0, 0];
                 atom.el_number = EL_NUMBER_H;
                 atom.orig_at_number = atom_number_offset.wrapping_add(index).wrapping_add(1) as u16;
@@ -5172,10 +4813,10 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
     }
 
     let mut deleted_h_index = 0_i32;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut first_deleted_h = 0_i32;
     if num_deleted_h != 0 {
         for index in 0..atom_count {
+            let mut atoms = heap.slice_mut(atom_pointer)?;
             if atoms[index].at_type == 1 {
                 let result = AddExplicitDeletedH(
                     &mut atoms,
@@ -5187,22 +4828,31 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     i32::from(mobile_stereo.is_some()),
                 )?;
                 if result < 0 {
-                    return_with_state!(result);
+                    return Ok(result);
                 }
             }
         }
     }
 
-    macro_rules! apply_stereo_view {
+    macro_rules! apply_stereo_centers {
         ($view:expr, $target_stereo:expr, $skip_existing:expr) => {{
-            let view = $view;
-            let inverted = view.header.nCompInv2Abs == -1;
-            for (&center_number, &source_parity) in
-                view.centers.iter().zip(view.center_parities.iter())
-            {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            let (inverted, center_count, center_numbers, center_parities) = {
+                let view = inchi_stereo_header(heap, *$view)?;
+                (
+                    view.nCompInv2Abs == -1,
+                    view.nNumberOfStereoCenters,
+                    view.nNumber,
+                    view.t_parity,
+                )
+            };
+            for center_index in 0..center_count {
+                let center_number =
+                    inchi_stereo_value(heap, center_numbers, center_index as usize)?;
+                let source_parity =
+                    inchi_stereo_value(heap, center_parities, center_index as usize)?;
                 let center = usize::try_from(i32::from(center_number) - 1)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let mut atoms = heap.slice_mut(atom_pointer)?;
                 if $skip_existing && atoms[center].p_parity != 0 {
                     continue;
                 }
@@ -5218,7 +4868,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                 }
                 if let Some((left, right)) = allene_terminals(&atoms, center)? {
                     let deleted1 = if atoms[left].num_H != 0 {
-                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut output = 0;
                         let result = AddExplicitDeletedH(
                             &mut atoms,
@@ -5230,7 +4879,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                             i32::from(mobile_stereo.is_some()),
                         )?;
                         if result < 0 {
-                            return_with_state!(result);
+                            return Ok(result);
                         }
                         output
                     } else {
@@ -5238,7 +4887,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         i32::from(atoms[left].neighbor[order])
                     };
                     let deleted2 = if atoms[right].num_H != 0 {
-                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut output = 0;
                         let result = AddExplicitDeletedH(
                             &mut atoms,
@@ -5250,7 +4898,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                             i32::from(mobile_stereo.is_some()),
                         )?;
                         if result < 0 {
-                            return_with_state!(result);
+                            return Ok(result);
                         }
                         output
                     } else {
@@ -5258,16 +4906,23 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         i32::from(atoms[right].neighbor[order])
                     };
                     let result = if $target_stereo {
-                        set_cumulene_0D_parity(
-                            &mut atoms,
-                            stereo_data.as_mut().map(Vec::as_mut_slice),
-                            num_atoms,
-                            deleted1,
-                            left as i32,
-                            right as i32,
-                            deleted2,
-                            parity,
-                            2,
+                        heap.with_two_slices_mut_and_optional_third(
+                            atom_pointer,
+                            stereo_pointer,
+                            None::<SourceMutPointer<i8>>,
+                            |atoms, stereo, _| {
+                                set_cumulene_0D_parity(
+                                    atoms,
+                                    Some(stereo),
+                                    num_atoms,
+                                    deleted1,
+                                    left as i32,
+                                    right as i32,
+                                    deleted2,
+                                    parity,
+                                    2,
+                                )
+                            },
                         )?
                     } else {
                         set_cumulene_0D_parity(
@@ -5283,7 +4938,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         )?
                     };
                     if result < 0 {
-                        return_with_state!(result);
+                        return Ok(result);
                     }
                 } else {
                     if atoms[center].num_H != 0 {
@@ -5297,17 +4952,24 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                             i32::from(mobile_stereo.is_some()),
                         )?;
                         if result < 0 {
-                            return_with_state!(result);
+                            return Ok(result);
                         }
                     }
                     let result = if $target_stereo {
-                        set_atom_0D_parity(
-                            &mut atoms,
-                            stereo_data.as_mut().map(Vec::as_mut_slice),
-                            num_atoms,
-                            num_deleted_h,
-                            center as i32,
-                            parity,
+                        heap.with_two_slices_mut_and_optional_third(
+                            atom_pointer,
+                            stereo_pointer,
+                            None::<SourceMutPointer<i8>>,
+                            |atoms, stereo, _| {
+                                set_atom_0D_parity(
+                                    atoms,
+                                    Some(stereo),
+                                    num_atoms,
+                                    num_deleted_h,
+                                    center as i32,
+                                    parity,
+                                )
+                            },
                         )?
                     } else {
                         set_atom_0D_parity(
@@ -5320,31 +4982,45 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         )?
                     };
                     if result < 0 {
-                        return_with_state!(result);
+                        return Ok(result);
                     }
                 }
             }
 
-            for ((&first_number, &second_number), &source_parity) in view
-                .bond_atoms1
-                .iter()
-                .zip(view.bond_atoms2.iter())
-                .zip(view.bond_parities.iter())
-            {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        }};
+    }
+
+    macro_rules! apply_stereo_bonds {
+        ($view:expr, $target_stereo:expr) => {{
+            let (bond_count, bond_atoms1, bond_atoms2, bond_parities) = {
+                let view = inchi_stereo_header(heap, *$view)?;
+                (
+                    view.nNumberOfStereoBonds,
+                    view.nBondAtom1,
+                    view.nBondAtom2,
+                    view.b_parity,
+                )
+            };
+            for bond_index in 0..bond_count {
+                let first_number =
+                    inchi_stereo_value(heap, bond_atoms1, bond_index as usize)?;
+                let second_number =
+                    inchi_stereo_value(heap, bond_atoms2, bond_index as usize)?;
+                let source_parity =
+                    inchi_stereo_value(heap, bond_parities, bond_index as usize)?;
                 let first = usize::try_from(i32::from(first_number) - 1)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second = usize::try_from(i32::from(second_number) - 1)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+                let mut atoms = heap.slice_mut(atom_pointer)?;
                 let mut cumulene = [0_u16; MAX_CUMULENE_LEN as usize + 2];
-                let len = if is_in_the_list(
-                    Some(&atoms[first].neighbor),
-                    second as AT_NUMB,
-                    i32::from(atoms[first].valence),
-                )?
-                .is_none()
+                let len = if ($target_stereo || first < atom_count)
+                    && is_in_the_list(
+                        Some(&atoms[first].neighbor),
+                        second as AT_NUMB,
+                        i32::from(atoms[first].valence),
+                    )?
+                    .is_none()
                 {
                     if bFindCumuleneChain(
                         &atoms,
@@ -5354,7 +5030,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         MAX_CUMULENE_LEN as i32 + 1,
                     )? == 0
                     {
-                        return_with_state!(RI_ERR_SYNTAX);
+                        return Ok(RI_ERR_SYNTAX);
                     }
                     MAX_CUMULENE_LEN as i32 + 1
                 } else {
@@ -5363,7 +5039,6 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     1
                 };
                 let deleted1 = if atoms[first].num_H != 0 {
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut output = 0;
                     let result = AddExplicitDeletedH(
                         &mut atoms,
@@ -5375,18 +5050,16 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         i32::from(mobile_stereo.is_some()),
                     )?;
                     if result < 0 {
-                        return_with_state!(result);
+                        return Ok(result);
                     }
                     output
                 } else {
                     let order = usize::from(atoms[first].neighbor[0] == cumulene[1]);
                     i32::from(atoms[first].neighbor[order])
                 };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let before_second =
                     usize::try_from(len - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let deleted2 = if atoms[second].num_H != 0 {
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut output = 0;
                     let result = AddExplicitDeletedH(
                         &mut atoms,
@@ -5398,7 +5071,7 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                         i32::from(mobile_stereo.is_some()),
                     )?;
                     if result < 0 {
-                        return_with_state!(result);
+                        return Ok(result);
                     }
                     output
                 } else {
@@ -5406,16 +5079,23 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     i32::from(atoms[second].neighbor[order])
                 };
                 let result = if $target_stereo {
-                    set_cumulene_0D_parity(
-                        &mut atoms,
-                        stereo_data.as_mut().map(Vec::as_mut_slice),
-                        num_atoms,
-                        deleted1,
-                        first as i32,
-                        second as i32,
-                        deleted2,
-                        i32::from(source_parity),
-                        len,
+                    heap.with_two_slices_mut_and_optional_third(
+                        atom_pointer,
+                        stereo_pointer,
+                        None::<SourceMutPointer<i8>>,
+                        |atoms, stereo, _| {
+                            set_cumulene_0D_parity(
+                                atoms,
+                                Some(stereo),
+                                num_atoms,
+                                deleted1,
+                                first as i32,
+                                second as i32,
+                                deleted2,
+                                i32::from(source_parity),
+                                len,
+                            )
+                        },
                     )?
                 } else {
                     set_cumulene_0D_parity(
@@ -5431,37 +5111,46 @@ pub(crate) fn RestoreAtomConnectionsSetStereo(
                     )?
                 };
                 if result < 0 {
-                    return_with_state!(result);
+                    return Ok(result);
                 }
             }
         }};
     }
 
     if let Some(view) = fixed_stereo.as_ref() {
-        apply_stereo_view!(view, false, false);
+        apply_stereo_centers!(view, false, false);
+        apply_stereo_bonds!(view, false);
     }
 
     if additional_centers + additional_bonds != 0 {
         stereo_pointer = match inchi_calloc::<inp_ATOM_STEREO>(heap, atom_count as u64, 64) {
             Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => return_with_state!(RI_ERR_ALLOC),
+            Err(SourceHeapError::AllocationFailed) => return Ok(RI_ERR_ALLOC),
             Err(error) => return Err(error),
         };
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        let mut value = vec![inp_ATOM_STEREO::default(); atom_count];
-        CopyAt2St(&atoms, &mut value, num_atoms)?;
-        stereo_data = Some(value);
+        heap.with_two_slices_mut_and_optional_third(
+            atom_pointer,
+            stereo_pointer,
+            None::<SourceMutPointer<i8>>,
+            |atoms, stereo, _| CopyAt2St(atoms, stereo, num_atoms),
+        )?;
     }
     structure.st = stereo_pointer;
 
     if let Some(view) = mobile_stereo.as_ref() {
-        if additional_centers != 0 || additional_bonds != 0 {
-            panic!("INCHI-AUDIT-0320: suspected source divergence; see dev/audits/inchi/findings.md");
-            apply_stereo_view!(view, true, true);
+        // INCHI✔️❗: Native632 and725 independently gate the two mobile phases.
+        // Skip all centers/bonds of an inactive phase, including shared allene
+        // and bond parity helpers. No added scan/allocation; live
+        // storage and helper whole-call costs remain independently OPEN.
+        if additional_centers != 0 {
+            apply_stereo_centers!(view, true, true);
+        }
+        if additional_bonds != 0 {
+            apply_stereo_bonds!(view, true);
         }
     }
 
-    return_with_state!(num_atoms)
+    Ok(num_atoms)
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -5477,7 +5166,29 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    increment_zero_order_bonds_to_heteroat_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn increment_zero_order_bonds_to_heteroat_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:3520 IncrementZeroOrderBondsToHeteroat
     /*
@@ -5694,9 +5405,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
     let num_at = pStruct.num_atoms;
     let len_at = num_at.wrapping_add(pStruct.num_deleted_H);
     let inv_mask = !forbidden_edge_mask;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut fixed_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
     let mut num_changes = 0_i32;
@@ -5711,7 +5420,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
         if flower_group < 0 {
             return Ok(());
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let flower_vertex = heap
             .slice(pTCGroups.pTCG.as_const())?
             .get(usize::try_from(flower_group).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -5721,11 +5429,10 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
             return Ok(());
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count = usize::try_from(len_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         copy_inp_atom_prefix(heap, at2, at, count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -5736,14 +5443,12 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
         let mut fixed_carbon = false;
         let mut i = 0_i32;
         while i < num_at {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if pVA[atom_index].cMetal == 0 || pVA[atom_index].nMetalGroupEdge <= 0 {
                 i = i.wrapping_add(1);
                 continue;
             }
             let metal_edge_index = pVA[atom_index].nMetalGroupEdge.wrapping_sub(1);
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let metal_edge =
                 heap.slice(pBNS.edge.as_const())?[usize::try_from(metal_edge_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -5752,11 +5457,9 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                 ret = RI_ERR_PROGR;
                 return Ok(());
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let valence = i32::from(heap.slice(at2.as_const())?[atom_index].valence);
             let mut j = 0_i32;
             while j < valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if heap.slice(pBNS.edge.as_const())?[usize::try_from(metal_edge_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .flow
@@ -5764,7 +5467,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                 {
                     break;
                 }
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom2 = heap.slice(at2.as_const())?[atom_index].clone();
                 if atom2.bond_type
                     [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -5784,12 +5486,9 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         }
                         fixed_carbon = true;
                     }
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap.slice(pBNS.vert.as_const())?[atom_index].clone();
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let zero_edge_index = heap.slice(vertex.iedge.as_const())?
                         [usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if heap.slice(pBNS.edge.as_const())?[usize::try_from(zero_edge_index)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .flow
@@ -5800,12 +5499,10 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     }
                     let mut k = 0_i32;
                     while k < valence {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge_index =
                             heap.slice(vertex.iedge.as_const())?[usize::try_from(k)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         let (edge_flow, edge_forbidden) = {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge =
                                 &heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
@@ -5821,7 +5518,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                             if ret != 0 {
                                 return Ok(());
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()]
                                 .forbidden = (edge_forbidden as i32 | forbidden_edge_mask) as i8;
                         }
@@ -5829,11 +5525,9 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     }
                     k = 0;
                     while k < num_at {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let ki =
                             usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let candidate = &pVA[ki];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let candidate_atom = &heap.slice(at2.as_const())?[ki];
                         if candidate.cMetal == 0
                             && candidate.cNumValenceElectrons == 5
@@ -5844,7 +5538,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         {
                             let edge_index = candidate.nCPlusGroupEdge.wrapping_sub(1);
                             let (edge_flow, edge_forbidden) = {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = &heap.slice(pBNS.edge.as_const())?
                                     [usize::try_from(edge_index).unwrap()];
                                 (edge.flow, edge.forbidden)
@@ -5859,7 +5552,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                                 if ret != 0 {
                                     return Ok(());
                                 }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.edge)?[usize::try_from(edge_index).unwrap()]
                                     .forbidden =
                                     (edge_forbidden as i32 | forbidden_edge_mask) as i8;
@@ -5868,21 +5560,16 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         k = k.wrapping_add(1);
                     }
                     let neighbor = i32::from(atom2.neighbor[usize::try_from(j).unwrap()]);
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let neighbor_vertex =
                         heap.slice(pBNS.vert.as_const())?[usize::try_from(neighbor)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                         .clone();
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut neighbor_neighbor = NO_VERTEX;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut neighbor_edge_index = NO_VERTEX;
                     k = i32::from(neighbor_vertex.num_adj_edges).wrapping_sub(1);
                     while k >= 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge_index = heap.slice(neighbor_vertex.iedge.as_const())?
                             [usize::try_from(k).unwrap()];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = &heap.slice(pBNS.edge.as_const())?
                             [usize::try_from(edge_index).unwrap()];
                         if edge.flow != 0 {
@@ -5900,7 +5587,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         continue;
                     }
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edges = heap.slice_mut(pBNS.edge)?;
                         let zero = usize::try_from(zero_edge_index).unwrap();
                         edges[zero].flow = edges[zero].flow.wrapping_add(1);
@@ -5912,7 +5598,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         edges[neighbor_edge].flow = edges[neighbor_edge].flow.wrapping_sub(1);
                     }
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         vertices[usize::try_from(flower_vertex).unwrap()]
                             .st_edge
@@ -5928,9 +5613,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                             .wrapping_sub(1);
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                     ret = RunBnsTestOnce(
                         heap,
@@ -5967,7 +5650,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                             return Ok(());
                         }
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edges = heap.slice_mut(pBNS.edge)?;
                         let zero = usize::try_from(zero_edge_index).unwrap();
                         edges[zero].flow = edges[zero].flow.wrapping_sub(1);
@@ -5976,7 +5658,6 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                         edges[metal].flow = edges[metal].flow.wrapping_add(1);
                         let neighbor_edge = usize::try_from(neighbor_edge_index).unwrap();
                         edges[neighbor_edge].flow = edges[neighbor_edge].flow.wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         vertices[usize::try_from(flower_vertex).unwrap()]
                             .st_edge
@@ -5997,7 +5678,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     if success != 0 {
                         copy_inp_atom_prefix(heap, at2, at, count)?;
                         pStruct.at = at2;
-                        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+                        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
                         pStruct.at = at;
                         let copy_result = copy_result?;
                         if copy_result < 0 {
@@ -6041,7 +5722,29 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
     pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    move_plus_from_s2_diamino_carbon_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, _pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn move_plus_from_s2_diamino_carbon_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:3736 MovePlusFromS2DiaminoCarbon
     /*
@@ -6198,11 +5901,19 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
     // INCHI✔️❌: SourceHeap checked access adds overhead versus direct C pointer arithmetic.
     // END INCHI ACTIVE MACRO CONFIGURATION: MovePlusFromS2DiaminoCarbon
 
+    // INCHI✔️❗: Source peCN[3] uses fixed stack edge identities with every
+    // original adjacency assignment/count; no Vec allocation/growth. Defined
+    // source states fit the three slots; invalid excess accesses are checked.
+    // S/C/N predicates admit only reached atom/vertex/endpoint fields, and
+    // native N electron/st-edge/H/own-endpoint gates precede optional endpoint.
+    // Read-only record borrows end before list/flow mutations. Required atom
+    // copies/owner restoration, masks, flow trial/rollback/cleanup unchanged.
+    // O(source scans+search), O(1) scratch. Fixed safe stack initialization and
+    // checked per-row costs remain INCHI-PERF-SULFUR-FIXED-SCRATCH OPEN.
+
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_charge_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
 
@@ -6210,7 +5921,7 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
         AllocEdgeList(heap, &mut all_charge_edges, EDGE_LIST_CLEAR)?;
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -6220,51 +5931,41 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
 
         let mut sulfur = 0_i32;
         while sulfur < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let sulfur_index =
                 usize::try_from(sulfur).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let sulfur_valence = &pVA[sulfur_index];
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let sulfur_atom = heap.slice(at2.as_const())?[sulfur_index].clone();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let sulfur_vertex = heap.slice(pBNS.vert.as_const())?[sulfur_index].clone();
-            let sulfur_plus_edge = sulfur_valence.nCPlusGroupEdge.wrapping_sub(1);
-            let candidate_header = sulfur_valence.cMetal == 0
-                && sulfur_valence.cNumValenceElectrons == 6
-                && sulfur_atom.valence == 2
-                && sulfur_vertex.st_edge.cap == sulfur_vertex.st_edge.flow
-                && sulfur_plus_edge >= 0;
-            if !candidate_header {
+            let sulfur_valence = pVA.get(sulfur_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if sulfur_valence.cMetal != 0
+                || sulfur_valence.cNumValenceElectrons != 6
+                || heap.element_signed(at2.as_const(), sulfur)?.valence != 2
+            {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
             }
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let sulfur_plus = heap.slice(pBNS.edge.as_const())?[usize::try_from(sulfur_plus_edge)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-            .clone();
+            let sulfur_vertex = heap.element_signed(pBNS.vert.as_const(), sulfur)?;
+            let sulfur_plus_edge = sulfur_valence.nCPlusGroupEdge.wrapping_sub(1);
+            if sulfur_vertex.st_edge.cap != sulfur_vertex.st_edge.flow || sulfur_plus_edge < 0 {
+                sulfur = sulfur.wrapping_add(1);
+                continue;
+            }
+            let sulfur_plus = &heap.slice(pBNS.edge.as_const())?[usize::try_from(sulfur_plus_edge)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
             if sulfur_plus.flow != 0 {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let sulfur_incident = heap.slice(sulfur_vertex.iedge.as_const())?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_edge_index = *sulfur_incident
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let second_edge_index = *sulfur_incident
                 .get(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_edge =
-                heap.slice(pBNS.edge.as_const())?[usize::try_from(first_edge_index)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                .clone();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let second_edge = heap.slice(pBNS.edge.as_const())?[usize::try_from(second_edge_index)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-            .clone();
+                &heap.slice(pBNS.edge.as_const())?[usize::try_from(first_edge_index)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+            let second_edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(second_edge_index)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
             if first_edge.flow.wrapping_add(second_edge.flow) != 1 {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
@@ -6280,16 +5981,13 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                 second_edge
             };
             let carbon = i32::from(sulfur_carbon_edge.neighbor12) ^ sulfur;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let carbon_index =
                 usize::try_from(carbon).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let carbon_valence = &pVA[carbon_index];
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let carbon_atom2 = heap.slice(at2.as_const())?[carbon_index].clone();
             let carbon_plus_edge = carbon_valence.nCPlusGroupEdge.wrapping_sub(1);
             let carbon_minus_edge = carbon_valence.nCMinusGroupEdge.wrapping_sub(1);
             if carbon_valence.cNumValenceElectrons != 4
-                || carbon_atom2.valence != 3
+                || heap.element_signed(at2.as_const(), carbon)?.valence != 3
                 || carbon_plus_edge < 0
                 || heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_plus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -6305,59 +6003,51 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                 continue;
             }
 
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let carbon_vertex = heap.slice(pBNS.vert.as_const())?[carbon_index].clone();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let original_carbon = heap.slice(at.as_const())?[carbon_index].clone();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let mut carbon_nitrogen_edges = Vec::with_capacity(2);
+            let carbon_vertex = &heap.slice(pBNS.vert.as_const())?[carbon_index];
+            let original_carbon = &heap.slice(at.as_const())?[carbon_index];
+            let mut carbon_nitrogen_edges = [0_i32; 3];
+            let mut nitrogen_edge_count = 0_usize;
             let mut neighbor_order = 0_i32;
             while neighbor_order < i32::from(original_carbon.valence) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index =
                     heap.slice(carbon_vertex.iedge.as_const())?[usize::try_from(neighbor_order)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                *carbon_nitrogen_edges.get_mut(nitrogen_edge_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = edge_index;
                 if edge_index != sulfur_carbon_edge_index
                     && heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .flow
                         == 0
                 {
-                    carbon_nitrogen_edges.push(edge_index);
+                    nitrogen_edge_count += 1;
                 }
                 neighbor_order = neighbor_order.wrapping_add(1);
             }
-            if carbon_nitrogen_edges.len() != 2 {
+            if nitrogen_edge_count != 2 {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
             }
             let mut fits = true;
-            for edge_index in &carbon_nitrogen_edges {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            for edge_index in &carbon_nitrogen_edges[..nitrogen_edge_count] {
                 let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(*edge_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 let nitrogen = i32::from(edge.neighbor12) ^ carbon;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nitrogen_index =
                     usize::try_from(nitrogen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let nitrogen_atom = &heap.slice(at2.as_const())?[nitrogen_index];
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                let endpoint = if pStruct.endpoint.is_null() {
-                    0
-                } else {
-                    *heap
-                        .slice(pStruct.endpoint.as_const())?
-                        .get(nitrogen_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let nitrogen_vertex = &heap.slice(pBNS.vert.as_const())?[nitrogen_index];
-                if pVA[nitrogen_index].cNumValenceElectrons != 5
-                    || nitrogen_vertex.st_edge.cap != nitrogen_vertex.st_edge.flow
-                    || nitrogen_atom.num_H != 2
-                    || nitrogen_atom.endpoint != 0
-                    || endpoint != 0
+                if pVA.get(nitrogen_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .cNumValenceElectrons != 5
+                    || {
+                        let vertex = heap.element_signed(pBNS.vert.as_const(), nitrogen)?;
+                        vertex.st_edge.cap != vertex.st_edge.flow
+                    }
+                    || {
+                        let atom = heap.element_signed(at2.as_const(), nitrogen)?;
+                        atom.num_H != 2 || atom.endpoint != 0
+                    }
+                    || (!pStruct.endpoint.is_null()
+                        && *heap.element_signed(pStruct.endpoint.as_const(), nitrogen)? != 0)
                 {
                     fits = false;
                     break;
@@ -6371,7 +6061,6 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             if all_charge_edges.num_edges == 0 {
                 let mut atom_index = 0_i32;
                 while atom_index < num_atoms {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let valence = &pVA[usize::try_from(atom_index)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     for edge_index in [
@@ -6400,15 +6089,12 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             }
             SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &mut heap.slice_mut(pBNS.edge)?[usize::try_from(sulfur_plus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 edge.forbidden = (i32::from(edge.forbidden) & !forbidden_edge_mask) as i8;
             }
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let carbon_plus = heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_plus_edge)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-            .clone();
+            let carbon_plus = &heap.slice(pBNS.edge.as_const())?[usize::try_from(carbon_plus_edge)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
             if carbon_plus.flow == 0 {
                 sulfur = sulfur.wrapping_add(1);
                 continue;
@@ -6416,7 +6102,6 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             let first_vertex = i32::from(carbon_plus.neighbor1);
             let second_vertex = i32::from(carbon_plus.neighbor12) ^ first_vertex;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 edges[usize::try_from(carbon_plus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -6425,7 +6110,6 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                     .wrapping_sub(1);
             }
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex in [first_vertex, second_vertex] {
                     let vertex = &mut vertices[usize::try_from(vertex)
@@ -6435,9 +6119,7 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
             }
             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
             ret = RunBnsTestOnce(
                 heap,
@@ -6461,12 +6143,10 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
                     *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                 }
             } else {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 let edge = &mut edges[usize::try_from(carbon_plus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 edge.flow = edge.flow.wrapping_add(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex in [first_vertex, second_vertex] {
                     let vertex = &mut vertices[usize::try_from(vertex)
@@ -6503,7 +6183,31 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
     forbidden_stereo_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    // One original algorithm/frame below; no eager BFS admission.
+    eliminate_charge_separation_with_bfs(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, forbidden_stereo_edge_mask, clock_result, SourceBfsQueue::Legacy, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn eliminate_charge_separation_with_bfs(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    forbidden_stereo_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    bfs_queue: SourceBfsQueue<'_>,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:3884 EliminateChargeSeparationOnHeteroatoms
     /*
@@ -6763,14 +6467,20 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
     // INCHI✔️❌: SourceHeap checked access and atom snapshots add overhead versus direct C pointers.
     // END INCHI ACTIVE MACRO CONFIGURATION: EliminateChargeSeparationOnHeteroatoms
 
+    // INCHI✔️❗: Native stereo prepass may return before using len_at or any
+    // vertex. Convert copy length only at reached memcpy, and admit vertex
+    // adjacency only inside a positive-valence iteration. Ring arguments use
+    // the three source pointer fields without a whole BFS/vertex clone.
+    // Charge count uses signed source loops and metal-before-atom admission.
+    // Group/edge/vertex borrows end before mutations; six whole clones gone.
+    // Required copies/owner restoration, masks, ring/flow/rollback/cleanup and
+    // counters unchanged. O(source passes+ring/search), O(1) extra scratch;
+    // checked cost INCHI-PERF-HETERO-PREPASS-ADMISSION remains OPEN.
+
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let copy_length = num_atoms.wrapping_add(pStruct.num_deleted_H);
     let inverse_mask = !forbidden_edge_mask;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut fixed_stereo_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut fixed_carbon_charges = false;
     let mut ret = 0_i32;
@@ -6783,41 +6493,31 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
         if forbidden_stereo_edge_mask != 0 {
             let mut atom_index = 0_i32;
             while atom_index < num_atoms {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index =
                     usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let valence = i32::from(heap.slice(at2.as_const())?[index].valence);
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let vertex = heap.slice(pBNS.vert.as_const())?[index].clone();
                 let mut neighbor_order = 0_i32;
                 while neighbor_order < valence {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                    let adjacency = heap.element_signed(pBNS.vert.as_const(), atom_index)?.iedge;
                     let edge_index =
-                        heap.slice(vertex.iedge.as_const())?[usize::try_from(neighbor_order)
+                        heap.slice(adjacency.as_const())?[usize::try_from(neighbor_order)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if i32::from(
                         heap.slice(pBNS.edge.as_const())?[usize::try_from(edge_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                         .forbidden,
                     ) == forbidden_stereo_edge_mask
                     {
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let queue = heap
-                            .slice(pStruct.pbfsq.as_const())?
-                            .first()
-                            .cloned()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let (queue_pointer, atom_levels, atom_sources) =
+                            bfs_queue.handles(heap, pStruct.pbfsq)?;
                         let ring_size = is_bond_in_Nmax_memb_ring(
                             heap,
                             at2,
                             atom_index,
                             neighbor_order,
-                            queue.q,
-                            queue.nAtomLevel,
-                            queue.cSource,
+                            queue_pointer,
+                            atom_levels,
+                            atom_sources,
                             99,
                         )?;
                         if ring_size > 0 {
@@ -6837,9 +6537,11 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
             RemoveForbiddenEdgeMask(heap, pBNS, &fixed_stereo_edges, forbidden_stereo_edge_mask)?;
         }
 
+        let atom_count = usize::try_from(copy_length)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -6849,15 +6551,15 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
 
         let mut positive = 0_i32;
         let mut negative = 0_i32;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atoms2 = heap.slice(at2.as_const())?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        for atom_index in
-            0..usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        {
-            if pVA[atom_index].cMetal == 0 && atoms2[atom_index].radical == 0 {
-                positive = positive.wrapping_add(i32::from(atoms2[atom_index].charge > 0));
-                negative = negative.wrapping_add(i32::from(atoms2[atom_index].charge < 0));
+        for atom_index in 0..num_atoms {
+            if pVA.get(atom_index as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.cMetal == 0
+            {
+                let atom = heap.element_signed(at2.as_const(), atom_index)?;
+                if atom.radical == 0 {
+                    positive = positive.wrapping_add(i32::from(atom.charge > 0));
+                    negative = negative.wrapping_add(i32::from(atom.charge < 0));
+                }
             }
         }
         num_min = positive.min(negative);
@@ -6865,40 +6567,32 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
         if num_min != 0 {
             let group_index = pTCGroups.nGroup[TCG_Plus as usize];
             if group_index >= 0 {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let group = heap
                     .slice(pTCGroups.pTCG.as_const())?
                     .get(
                         usize::try_from(group_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
-                    .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let super_edge_index = group.nForwardEdge;
                 let plus_super = group.nVertexNumber;
                 if super_edge_index > 0 && plus_super >= num_atoms {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let super_edge = heap
                         .slice(pBNS.edge.as_const())?
                         .get(
                             usize::try_from(super_edge_index)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )
-                        .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if super_edge.forbidden == 0 {
                         let plus_minus = i32::from(super_edge.neighbor12) ^ plus_super;
                         num_min = num_min.min(super_edge.flow);
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let plus_vertex =
-                            heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_super)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                            .clone();
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                            &heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_super)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         let minus_vertex =
-                            heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_minus)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                            .clone();
+                            &heap.slice(pBNS.vert.as_const())?[usize::try_from(plus_minus)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         let mut plus_delta = plus_vertex
                             .st_edge
                             .cap
@@ -6921,7 +6615,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             }
                             fixed_carbon_charges = true;
                             {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = &mut heap.slice_mut(pBNS.edge)?
                                     [usize::try_from(super_edge_index).unwrap()];
                                 edge.forbidden =
@@ -6933,11 +6626,9 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             let mut processed = 0_i32;
                             while processed < num_min {
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge = &mut heap.slice_mut(pBNS.edge)?
                                         [usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_sub(1);
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
                                         let vertex =
@@ -6946,9 +6637,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     }
                                 }
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                                 ret = RunBnsTestOnce(
                                     heap,
@@ -6990,11 +6679,9 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     }
                                     processed = processed.wrapping_add(1);
                                 } else {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge = &mut heap.slice_mut(pBNS.edge)?
                                         [usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_add(1);
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
                                         let vertex =
@@ -7006,16 +6693,13 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                 }
                             }
                             num_min = num_min.wrapping_sub(processed);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = &mut heap.slice_mut(pBNS.edge)?
                                 [usize::try_from(super_edge_index).unwrap()];
                             edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                         }
 
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let current_plus = &heap.slice(pBNS.vert.as_const())?
                             [usize::try_from(plus_super).unwrap()];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let current_minus = &heap.slice(pBNS.vert.as_const())?
                             [usize::try_from(plus_minus).unwrap()];
                         plus_delta = current_plus
@@ -7028,7 +6712,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             .wrapping_sub(current_minus.st_edge.flow);
                         if num_min > 1 && plus_delta == 0 && minus_delta == 0 {
                             {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = &mut heap.slice_mut(pBNS.edge)?
                                     [usize::try_from(super_edge_index).unwrap()];
                                 edge.forbidden =
@@ -7039,15 +6722,12 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                             let mut processed = 0_i32;
                             while processed < num_min {
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertex = &mut heap.slice_mut(pBNS.vert)?
                                         [usize::try_from(plus_super).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(2);
                                 }
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(2);
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                                 ret = RunBnsTestOnce(
                                     heap,
@@ -7065,7 +6745,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     return Ok(());
                                 }
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertex = &mut heap.slice_mut(pBNS.vert)?
                                         [usize::try_from(plus_super).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(2);
@@ -7080,7 +6759,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                 }
 
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertex = &mut heap.slice_mut(pBNS.vert)?
                                         [usize::try_from(plus_minus).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(2);
@@ -7102,7 +6780,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     return Ok(());
                                 }
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertex = &mut heap.slice_mut(pBNS.vert)?
                                         [usize::try_from(plus_minus).unwrap()];
                                     vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(2);
@@ -7116,11 +6793,9 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                     break;
                                 }
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge = &mut heap.slice_mut(pBNS.edge)?
                                         [usize::try_from(super_edge_index).unwrap()];
                                     edge.flow = edge.flow.wrapping_sub(2);
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertices = heap.slice_mut(pBNS.vert)?;
                                     for vertex in [plus_super, plus_minus] {
                                         let vertex =
@@ -7150,7 +6825,6 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
                                 processed = processed.wrapping_add(2);
                             }
                             num_min = num_min.wrapping_sub(processed);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = &mut heap.slice_mut(pBNS.edge)?
                                 [usize::try_from(super_edge_index).unwrap()];
                             edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
@@ -7196,7 +6870,29 @@ pub(crate) fn RestoreCyanoGroup(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    restore_cyano_group_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn restore_cyano_group_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:4554 RestoreCyanoGroup
     /*
@@ -7315,12 +7011,10 @@ pub(crate) fn RestoreCyanoGroup(
     // END INCHI ACTIVE MACRO CONFIGURATION: RestoreCyanoGroup
 
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
     let cyano_bits = ((cn_bits_N as i32) << cn_bits_shift) | cn_bits_M as i32;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
 
@@ -7329,7 +7023,7 @@ pub(crate) fn RestoreCyanoGroup(
 
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -7339,10 +7033,8 @@ pub(crate) fn RestoreCyanoGroup(
 
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
@@ -7358,13 +7050,11 @@ pub(crate) fn RestoreCyanoGroup(
                 && pVA[index].nTautGroupEdge == 0;
             let neighbor_index = usize::from(atom.neighbor[0]);
             let matches = if prefix_matches {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = heap
                     .slice(at2.as_const())?
                     .get(neighbor_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let cn_index = i32::from(pVA[index].cnListIndex);
                 neighbor.valence == 2
                     && neighbor.num_H == 0
@@ -7386,10 +7076,8 @@ pub(crate) fn RestoreCyanoGroup(
             };
 
             if matches {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index = usize::try_from(pVA[index].nCMinusGroupEdge.wrapping_sub(1))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(edge_index)
@@ -7402,11 +7090,9 @@ pub(crate) fn RestoreCyanoGroup(
                 let first_vertex = i32::from(edge.neighbor1);
                 let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                     edge.flow = edge.flow.wrapping_sub(1);
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index)
@@ -7427,9 +7113,7 @@ pub(crate) fn RestoreCyanoGroup(
                     return Ok(());
                 }
 
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -7453,10 +7137,8 @@ pub(crate) fn RestoreCyanoGroup(
                     *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index)
@@ -7466,7 +7148,6 @@ pub(crate) fn RestoreCyanoGroup(
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                 }
                 RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                 edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
             }
@@ -7496,7 +7177,29 @@ pub(crate) fn RestoreIsoCyanoGroup(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    restore_iso_cyano_group_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn restore_iso_cyano_group_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:4663 RestoreIsoCyanoGroup
     /*
@@ -7810,7 +7513,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
 
     const INC_EDGE_LIST: i32 = 16;
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
@@ -7818,11 +7520,8 @@ pub(crate) fn RestoreIsoCyanoGroup(
         |type_: u16| (type_ & BNS_VT_C_POS_ALL as u16) == BNS_VERT_TYPE_C_GROUP as u16;
     let is_charge_structure =
         |type_: u16| type_ & BNS_VT_CHRG_STRUCT as u16 == BNS_VT_CHRG_STRUCT as u16;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut isocyano_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
     let mut num_failed = 0_i32;
@@ -7835,7 +7534,7 @@ pub(crate) fn RestoreIsoCyanoGroup(
 
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -7850,10 +7549,8 @@ pub(crate) fn RestoreIsoCyanoGroup(
         )?;
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
@@ -7863,7 +7560,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
                 pVA[index].cNumValenceElectrons == 4 && pVA[index].cPeriodicRowNumber == 1;
             let minus_edge = pVA[index].nCMinusGroupEdge.wrapping_sub(1);
             if minus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if edge.forbidden == 0 {
@@ -7889,7 +7585,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
 
             let plus_edge = pVA[index].nCPlusGroupEdge.wrapping_sub(1);
             if plus_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if edge.forbidden == 0 {
@@ -7910,7 +7605,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         }
                         if pVA[index].cNumValenceElectrons == 5 {
                             let flower_edge = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if flower_edge != NO_VERTEX
                                 && heap.slice(pBNS.edge.as_const())?[usize::try_from(flower_edge)
                                     .map_err(|_| {
@@ -7934,7 +7628,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
                 }
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let prefix_matches = is_carbon
                 && minus_edge >= 0
                 && plus_edge >= 0
@@ -7952,7 +7645,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
             let mut candidate = false;
             if prefix_matches {
                 let neighbor_index = usize::from(atom.neighbor[0]);
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = heap
                     .slice(at2.as_const())?
                     .get(neighbor_index)
@@ -7968,19 +7660,15 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         == 0;
             }
             if candidate {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_edge_index = usize::try_from(plus_edge).unwrap();
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus = heap.slice(pBNS.edge.as_const())?[plus_edge_index].clone();
                 let mut first_vertex = i32::from(plus.neighbor1);
                 let second_vertex = i32::from(plus.neighbor12) ^ first_vertex;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if is_charge_group(
                     heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()].type_,
                 ) {
                     first_vertex = second_vertex;
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let charge_structure =
                     &heap.slice(pBNS.vert.as_const())?[usize::try_from(first_vertex).unwrap()];
                 if !is_charge_structure(charge_structure.type_)
@@ -7989,18 +7677,14 @@ pub(crate) fn RestoreIsoCyanoGroup(
                     atom_index = atom_index.wrapping_add(1);
                     continue;
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let adjacency = heap.slice(charge_structure.iedge.as_const())?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let first_incident = *adjacency
                     .first()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let other_order = usize::from(first_incident == plus_edge);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let inner_edge = *adjacency
                     .get(other_order)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let inner = &heap.slice(pBNS.edge.as_const())?[usize::try_from(inner_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if inner.forbidden != 0 || inner.flow == 0 {
@@ -8023,7 +7707,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
 
         let mut triple_index = isocyano_edges.num_edges.wrapping_sub(3);
         while triple_index >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let inner_edge = *heap
                 .slice(isocyano_edges.pnEdges.as_const())?
                 .get(
@@ -8031,24 +7714,19 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                 )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let inner_index =
                 usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
             }
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap.slice(pBNS.edge.as_const())?[inner_index].clone();
             if edge.flow != 0 {
                 let first_vertex = i32::from(edge.neighbor1);
                 let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                     edge.flow = edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index).unwrap()];
@@ -8056,9 +7734,7 @@ pub(crate) fn RestoreIsoCyanoGroup(
                     }
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -8082,17 +7758,14 @@ pub(crate) fn RestoreIsoCyanoGroup(
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                     _num_success = _num_success.wrapping_add(1);
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index).unwrap()];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                     edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                     num_failed = num_failed.wrapping_add(1);
@@ -8105,7 +7778,6 @@ pub(crate) fn RestoreIsoCyanoGroup(
             RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
             let mut triple_index = isocyano_edges.num_edges.wrapping_sub(3);
             while triple_index >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let inner_edge = *heap
                     .slice(isocyano_edges.pnEdges.as_const())?
                     .get(
@@ -8113,24 +7785,19 @@ pub(crate) fn RestoreIsoCyanoGroup(
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let inner_index =
                     usize::try_from(inner_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                 }
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap.slice(pBNS.edge.as_const())?[inner_index].clone();
                 if edge.flow != 0 {
                     let first_vertex = i32::from(edge.neighbor1);
                     let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                         edge.flow = edge.flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_index in [first_vertex, second_vertex] {
                             let vertex = &mut vertices[usize::try_from(vertex_index).unwrap()];
@@ -8138,9 +7805,7 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         }
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                     ret = RunBnsTestOnce(
                         heap,
@@ -8164,17 +7829,14 @@ pub(crate) fn RestoreIsoCyanoGroup(
                         *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                         _num_success = _num_success.wrapping_add(1);
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                         edge.flow = edge.flow.wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_index in [first_vertex, second_vertex] {
                             let vertex = &mut vertices[usize::try_from(vertex_index).unwrap()];
                             vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                         }
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = &mut heap.slice_mut(pBNS.edge)?[inner_index];
                         edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                         num_failed = num_failed.wrapping_add(1);
@@ -8216,7 +7878,29 @@ pub(crate) fn FixMetal_Nminus_Ominus(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    fix_metal_nminus_ominus_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn fix_metal_nminus_ominus_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:4965 FixMetal_Nminus_Ominus
     /*
@@ -8376,11 +8060,9 @@ pub(crate) fn FixMetal_Nminus_Ominus(
     // END INCHI ACTIVE MACRO CONFIGURATION: FixMetal_Nminus_Ominus
 
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_charge_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
     let mut num_success = 0_i32;
@@ -8390,7 +8072,7 @@ pub(crate) fn FixMetal_Nminus_Ominus(
 
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -8400,10 +8082,8 @@ pub(crate) fn FixMetal_Nminus_Ominus(
 
         let mut atom_index = 0_i32;
         while atom_index < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom = heap
                 .slice(at2.as_const())?
                 .get(index)
@@ -8416,22 +8096,17 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 && pVA[index].cNumValenceElectrons == 6
                 && oxygen_minus_edge >= 0;
             if candidate {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge =
                     &heap.slice(pBNS.edge.as_const())?[usize::try_from(oxygen_minus_edge)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 candidate = edge.flow == 1 && edge.forbidden == 0;
             }
 
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut nitrogen_minus_edge = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut metal_minus_edge = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut metal_plus_edge = NO_VERTEX;
             if candidate {
                 let nitrogen_index = usize::from(atom.neighbor[0]);
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nitrogen = heap
                     .slice(at2.as_const())?
                     .get(nitrogen_index)
@@ -8444,17 +8119,16 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     && pVA[nitrogen_index].cNumValenceElectrons == 5
                     && nitrogen_minus_edge >= 0;
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge =
                         &heap.slice(pBNS.edge.as_const())?[usize::try_from(nitrogen_minus_edge)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     candidate = edge.flow == 1 && edge.forbidden == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let neighbor_order = usize::from(nitrogen.neighbor[0] == atom_index as u16);
+                    // INCHI✔️❗: Native promotes the short for this comparison;
+                    // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+                    let neighbor_order = usize::from(i32::from(nitrogen.neighbor[0]) == atom_index);
                     let metal_index = usize::from(nitrogen.neighbor[neighbor_order]);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     candidate = pVA
                         .get(metal_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -8466,7 +8140,6 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                         candidate = metal_minus_edge >= 0 && metal_plus_edge >= 0;
                     }
                     if candidate {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edges = heap.slice(pBNS.edge.as_const())?;
                         candidate = edges[usize::try_from(metal_minus_edge).unwrap()].forbidden
                             == 0
@@ -8479,11 +8152,9 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 if all_charge_edges.num_edges == 0 {
                     let mut charge_atom = 0_i32;
                     while charge_atom < num_atoms {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let charge_index = usize::try_from(charge_atom)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let minus_edge = pVA[charge_index].nCMinusGroupEdge.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if minus_edge >= 0
                             && heap.slice(pBNS.edge.as_const())?[usize::try_from(minus_edge)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -8497,7 +8168,6 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                             }
                         }
                         let plus_edge = pVA[charge_index].nCPlusGroupEdge.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if plus_edge >= 0
                             && heap.slice(pBNS.edge.as_const())?[usize::try_from(plus_edge)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -8511,7 +8181,6 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                             if pVA[charge_index].cNumValenceElectrons == 6 {
                                 let flower_edge =
                                     GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if flower_edge != NO_VERTEX
                                     && heap.slice(pBNS.edge.as_const())?[usize::try_from(
                                         flower_edge,
@@ -8538,7 +8207,6 @@ pub(crate) fn FixMetal_Nminus_Ominus(
 
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice_mut(pBNS.edge)?;
                     for edge_index in [nitrogen_minus_edge, metal_minus_edge, metal_plus_edge] {
                         let edge = &mut edges[usize::try_from(edge_index)
@@ -8547,18 +8215,14 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     }
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_index = usize::try_from(oxygen_minus_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_edge = heap.slice(pBNS.edge.as_const())?[oxygen_index].clone();
                 let first_vertex = i32::from(oxygen_edge.neighbor1);
                 let second_vertex = i32::from(oxygen_edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[oxygen_index];
                     edge.flow = edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index)
@@ -8568,9 +8232,7 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_len) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -8593,10 +8255,8 @@ pub(crate) fn FixMetal_Nminus_Ominus(
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                     num_success = num_success.wrapping_add(1);
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = &mut heap.slice_mut(pBNS.edge)?[oxygen_index];
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_index in [first_vertex, second_vertex] {
                         let vertex = &mut vertices[usize::try_from(vertex_index)
@@ -8636,7 +8296,29 @@ pub(crate) fn RestoreNNNgroup(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    restore_nn_ngroup_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn restore_nn_ngroup_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:5115 RestoreNNNgroup
     /*
@@ -9343,22 +9025,15 @@ pub(crate) fn RestoreNNNgroup(
 
     const INC_EDGE_LIST: i32 = 16;
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
     let nnn_bits = cn_bits_M as i32 | ((cn_bits_N as i32) << cn_bits_shift);
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut nnn_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut current_nnn_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_nnn_terminal_atoms = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_niii_charge_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
     let mut number_failed = 0_i32;
@@ -9374,7 +9049,7 @@ pub(crate) fn RestoreNNNgroup(
 
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
         pStruct.at = at;
         let copy_result = copy_result?;
         if copy_result < 0 {
@@ -9384,16 +9059,13 @@ pub(crate) fn RestoreNNNgroup(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let terminal_minus = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -9407,7 +9079,6 @@ pub(crate) fn RestoreNNNgroup(
                 && pVA[atom_index].cNumValenceElectrons == 5
                 && terminal_minus >= 0;
             if candidate {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -9419,20 +9090,15 @@ pub(crate) fn RestoreNNNgroup(
             }
 
             let middle_index = usize::from(terminal.neighbor[0]);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_index = 0_usize;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut middle_plus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_plus = NO_VERTEX;
             if candidate {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let middle = heap
                     .slice(at2.as_const())?
                     .get(middle_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 middle_plus = pVA
                     .get(middle_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -9446,7 +9112,6 @@ pub(crate) fn RestoreNNNgroup(
                     && pVA[middle_index].cNumValenceElectrons == 5
                     && middle_plus >= 0;
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
                         .get(
@@ -9457,16 +9122,15 @@ pub(crate) fn RestoreNNNgroup(
                     candidate = edge.flow == 0 && edge.forbidden == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
+                    // INCHI✔️❗: Native promotes the short for this comparison;
+                    // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
                     third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
+                        middle.neighbor[usize::from(i32::from(middle.neighbor[0]) == atom_number)],
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     third_plus = pVA
                         .get(third_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -9479,7 +9143,6 @@ pub(crate) fn RestoreNNNgroup(
                         && third_plus >= 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
                         .get(
@@ -9490,7 +9153,6 @@ pub(crate) fn RestoreNNNgroup(
                     candidate = edge.flow == 1 && edge.forbidden == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
@@ -9505,7 +9167,6 @@ pub(crate) fn RestoreNNNgroup(
             }
 
             if candidate {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let chemical_edge = {
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
@@ -9516,10 +9177,8 @@ pub(crate) fn RestoreNNNgroup(
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                 };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let chemical_index = usize::try_from(chemical_edge)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(chemical_index)
@@ -9528,14 +9187,12 @@ pub(crate) fn RestoreNNNgroup(
                 let first_vertex = i32::from(edge.neighbor1);
                 let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(chemical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.flow = edge.flow.wrapping_sub(1);
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice_mut(pBNS.edge)?;
                     for edge_number in [middle_plus, third_plus] {
                         let edge = edges
@@ -9546,7 +9203,6 @@ pub(crate) fn RestoreNNNgroup(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
@@ -9576,9 +9232,7 @@ pub(crate) fn RestoreNNNgroup(
                     SetForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)?;
                 }
 
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -9601,7 +9255,6 @@ pub(crate) fn RestoreNNNgroup(
                     *pnNumRunBNS = pnNumRunBNS.wrapping_add(1);
                     *pnTotalDelta = pnTotalDelta.wrapping_add(ret);
                     number_success = number_success.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                     for edge_number in [terminal_minus, middle_plus] {
                         ret = AddToEdgeList(
                             heap,
@@ -9614,13 +9267,11 @@ pub(crate) fn RestoreNNNgroup(
                         }
                     }
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(chemical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
@@ -9635,7 +9286,6 @@ pub(crate) fn RestoreNNNgroup(
                     number_failed = number_failed.wrapping_add(1);
                 }
                 RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 for edge_number in [chemical_edge, middle_plus, third_plus] {
                     let edge = edges
@@ -9658,17 +9308,14 @@ pub(crate) fn RestoreNNNgroup(
 
         atom_number = 0;
         while atom_number < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut terminal_minus = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .nCMinusGroupEdge
                 .wrapping_sub(1);
             if terminal_minus >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -9688,7 +9335,6 @@ pub(crate) fn RestoreNNNgroup(
             }
             let terminal_plus = pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1);
             if terminal_plus >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -9701,7 +9347,6 @@ pub(crate) fn RestoreNNNgroup(
                     if ret != 0 {
                         return Ok(());
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom = heap
                         .slice(at2.as_const())?
                         .get(atom_index)
@@ -9725,7 +9370,6 @@ pub(crate) fn RestoreNNNgroup(
                     {
                         let flower = GetChargeFlowerUpperEdge(heap, pBNS, pVA, terminal_plus)?;
                         if flower != NO_VERTEX {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let flow = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(
@@ -9750,7 +9394,6 @@ pub(crate) fn RestoreNNNgroup(
                 }
             }
 
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -9762,18 +9405,12 @@ pub(crate) fn RestoreNNNgroup(
                 && terminal.radical == 0
                 && pVA[atom_index].cNumValenceElectrons == 5;
             let middle_index = usize::from(terminal.neighbor[0]);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_index = 0_usize;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut middle_minus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut middle_plus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_minus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_plus = NO_VERTEX;
             if candidate {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let middle = heap
                     .slice(at2.as_const())?
                     .get(middle_index)
@@ -9788,7 +9425,6 @@ pub(crate) fn RestoreNNNgroup(
                     && middle_minus >= 0
                     && middle_plus >= 0;
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
                         .get(
@@ -9808,11 +9444,9 @@ pub(crate) fn RestoreNNNgroup(
                             == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
                     third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
+                        middle.neighbor[usize::from(i32::from(middle.neighbor[0]) == atom_number)],
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
@@ -9827,7 +9461,6 @@ pub(crate) fn RestoreNNNgroup(
                         && third_plus >= 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
                         .get(
@@ -9847,7 +9480,6 @@ pub(crate) fn RestoreNNNgroup(
                             == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
@@ -9862,7 +9494,6 @@ pub(crate) fn RestoreNNNgroup(
             }
 
             if candidate {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice(pBNS.edge.as_const())?;
                 let flows = [
                     edges[usize::try_from(terminal_minus).unwrap()].flow,
@@ -9911,7 +9542,6 @@ pub(crate) fn RestoreNNNgroup(
 
         let mut terminal_position = all_nnn_terminal_atoms.num_edges.wrapping_sub(1);
         while terminal_position >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_number = *heap
                 .slice(all_nnn_terminal_atoms.pnEdges.as_const())?
                 .get(
@@ -9919,31 +9549,26 @@ pub(crate) fn RestoreNNNgroup(
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                 )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let middle_index = usize::from(terminal.neighbor[0]);
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let middle = heap
                 .slice(at2.as_const())?
                 .get(middle_index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
             let third_index =
-                usize::from(middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)]);
+                usize::from(middle.neighbor[usize::from(i32::from(middle.neighbor[0]) == atom_number)]);
             let terminal_minus = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
             let middle_minus = pVA[middle_index].nCMinusGroupEdge.wrapping_sub(1);
             let middle_plus = pVA[middle_index].nCPlusGroupEdge.wrapping_sub(1);
             let third_minus = pVA[third_index].nCMinusGroupEdge.wrapping_sub(1);
             let third_plus = pVA[third_index].nCPlusGroupEdge.wrapping_sub(1);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edges = heap.slice(pBNS.edge.as_const())?;
             let flows = [
                 edges[usize::try_from(terminal_minus).unwrap()].flow,
@@ -9964,7 +9589,6 @@ pub(crate) fn RestoreNNNgroup(
                 }
                 None
             } else if matches!(flows, [0, 0, 0, 0, 1] | [0, 0, 0, 1, 1] | [0, 0, 0, 0, 0]) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = heap
                     .slice(pBNS.vert.as_const())?
                     .get(atom_index)
@@ -9984,10 +9608,8 @@ pub(crate) fn RestoreNNNgroup(
             if let Some(edge_number) = edge_to_decrement {
                 SetForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                 RemoveForbiddenEdgeMask(heap, pBNS, &nnn_charge_edges, forbidden_edge_mask)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index = usize::try_from(edge_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(edge_index)
@@ -9996,14 +9618,12 @@ pub(crate) fn RestoreNNNgroup(
                 let first_vertex = i32::from(edge.neighbor1);
                 let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.flow = edge.flow.wrapping_sub(1);
                     edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
@@ -10016,9 +9636,7 @@ pub(crate) fn RestoreNNNgroup(
                     }
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -10051,13 +9669,11 @@ pub(crate) fn RestoreNNNgroup(
                             RemoveFromEdgeListByValue(heap, &mut nnn_charge_edges, charge_edge)?;
                     }
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
                         let vertex = vertices
@@ -10071,7 +9687,6 @@ pub(crate) fn RestoreNNNgroup(
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
                     number_failed = number_failed.wrapping_add(1);
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(edge_index)
@@ -10084,10 +9699,8 @@ pub(crate) fn RestoreNNNgroup(
 
         atom_number = 0;
         while atom_number < num_atoms && ret >= 0 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let terminal = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
@@ -10100,18 +9713,12 @@ pub(crate) fn RestoreNNNgroup(
                 && terminal.radical == 0
                 && pVA[atom_index].cNumValenceElectrons == 5;
             let middle_index = usize::from(terminal.neighbor[0]);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_index = 0_usize;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut middle_minus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut middle_plus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_minus = NO_VERTEX;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut third_plus = NO_VERTEX;
             if candidate {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let middle = heap
                     .slice(at2.as_const())?
                     .get(middle_index)
@@ -10126,7 +9733,6 @@ pub(crate) fn RestoreNNNgroup(
                     && middle_minus >= 0
                     && middle_plus >= 0;
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
                         .get(
@@ -10146,11 +9752,9 @@ pub(crate) fn RestoreNNNgroup(
                             == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0236: suspected source divergence; see dev/audits/inchi/findings.md");
                     third_index = usize::from(
-                        middle.neighbor[usize::from(middle.neighbor[0] == atom_number as u16)],
+                        middle.neighbor[usize::from(i32::from(middle.neighbor[0]) == atom_number)],
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let third = heap
                         .slice(at2.as_const())?
                         .get(third_index)
@@ -10165,7 +9769,6 @@ pub(crate) fn RestoreNNNgroup(
                         && third_plus >= 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edges = heap.slice(pBNS.edge.as_const())?;
                     candidate = edges
                         .get(
@@ -10185,7 +9788,6 @@ pub(crate) fn RestoreNNNgroup(
                             == 0;
                 }
                 if candidate {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
                     candidate = pVA[atom_index].cnListIndex > 0
                         && CN_LIST
@@ -10206,7 +9808,6 @@ pub(crate) fn RestoreNNNgroup(
             nnn_charge_edges.num_edges = 0;
             let middle_flower = GetChargeFlowerUpperEdge(heap, pBNS, pVA, middle_plus)?;
             let third_flower = GetChargeFlowerUpperEdge(heap, pBNS, pVA, third_plus)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edges = heap.slice(pBNS.edge.as_const())?;
             let flows = [
                 edges[usize::try_from(terminal_minus).unwrap()].flow,
@@ -10235,7 +9836,6 @@ pub(crate) fn RestoreNNNgroup(
 
             let (base_edges, edge_to_decrement, maximum_delta_charge): (&[i32], i32, i32) =
                 if flows == [0, 0, 0, 0, 1] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
@@ -10262,7 +9862,6 @@ pub(crate) fn RestoreNNNgroup(
                         2,
                     )
                 } else if flows == [0, 0, 0, 1, 1] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
@@ -10276,7 +9875,6 @@ pub(crate) fn RestoreNNNgroup(
                         0,
                     )
                 } else if flows == [0, 0, 0, 0, 0] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
@@ -10306,7 +9904,6 @@ pub(crate) fn RestoreNNNgroup(
                 }
             }
             for flower in [middle_flower, third_flower] {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if flower != NO_VERTEX
                     && heap
                         .slice(pBNS.edge.as_const())?
@@ -10325,10 +9922,8 @@ pub(crate) fn RestoreNNNgroup(
                 }
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge_index = usize::try_from(edge_to_decrement)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index)
@@ -10337,14 +9932,12 @@ pub(crate) fn RestoreNNNgroup(
             let first_vertex = i32::from(edge.neighbor1);
             let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(edge_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.flow = edge.flow.wrapping_sub(1);
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
@@ -10374,9 +9967,7 @@ pub(crate) fn RestoreNNNgroup(
             }
             SetForbiddenEdgeMask(heap, pBNS, &nnn_charge_edges, forbidden_edge_mask)?;
 
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
             ret = RunBnsTestOnce(
                 heap,
@@ -10413,13 +10004,11 @@ pub(crate) fn RestoreNNNgroup(
                     }
                 }
             } else {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(edge_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.flow = edge.flow.wrapping_add(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
                     let vertex = vertices
@@ -10435,7 +10024,6 @@ pub(crate) fn RestoreNNNgroup(
             }
             RemoveForbiddenEdgeMask(heap, pBNS, &carbon_charge_edges, forbidden_edge_mask)?;
             RemoveForbiddenEdgeMask(heap, pBNS, &nnn_charge_edges, forbidden_edge_mask)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice_mut(pBNS.edge)?
                 .get_mut(edge_index)
@@ -10457,7 +10045,6 @@ pub(crate) fn RestoreNNNgroup(
     ];
     let mut cleanup_error = None;
     for edge_list in cleanup_lists {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if let Err(error) = AllocEdgeList(heap, edge_list, EDGE_LIST_FREE)
             && cleanup_error.is_none()
         {
@@ -10486,7 +10073,29 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
     _pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    eliminate_nitrogen5_val3_bonds_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, _pnNumRunBNS, _pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn eliminate_nitrogen5_val3_bonds_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    _pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:5810 EliminateNitrogen5Val3Bonds
     /*
@@ -10740,15 +10349,22 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
     // INCHI✔️❌: SourceHeap checked accesses and atom snapshots add overhead.
     // END INCHI ACTIVE MACRO CONFIGURATION: EliminateNitrogen5Val3Bonds
 
+    // INCHI✔️❗: Native cNumValenceElectrons and atom predicates gate the
+    // optional endpoint read. Both metal scans admit adjacency only for an
+    // actual single bond; nonpositive valence performs no vertex admission.
+    // Immutable charge/vertex views end before BNS mutations. Source-required
+    // atom copies, graph search, masks, rollback and cleanup are unchanged.
+    // O(source scans/adjacency/search) time/O(1) additional scratch; no whole
+    // input/vertex clone or added allocation. Checked per-row costs remain
+    // INCHI-PERF-NITROGEN-INPUT-ADMISSION OPEN, not whole-owner equivalence.
+
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
     let npn_bits = cn_bits_N as i32
         | ((cn_bits_P as i32) << cn_bits_shift)
         | ((cn_bits_N as i32) << (2 * cn_bits_shift));
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
     let mut carbon_charges_forbidden = false;
     let mut ret = 0_i32;
@@ -10757,7 +10373,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
         AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_CLEAR)?;
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
         if copy_result < 0 {
             ret = copy_result;
             return Ok(());
@@ -10765,10 +10381,8 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let flower_edge = if pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -10784,7 +10398,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             } else {
                 NO_VERTEX
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if flower_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
@@ -10796,7 +10409,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     .flow
                     == 1
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(
@@ -10806,32 +10418,20 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
             } else if pVA[atom_index].cMetal != 0 {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom = heap
-                    .slice(at2.as_const())?
-                    .get(atom_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let vertex = heap
-                    .slice(pBNS.vert.as_const())?
-                    .get(atom_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = heap.element_signed(at2.as_const(), atom_number)?.valence;
                 let mut neighbor_number = 0_i32;
-                while neighbor_number < i32::from(atom.valence) {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                while neighbor_number < i32::from(valence) {
                     let neighbor_index = usize::try_from(neighbor_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
-                        == BOND_TYPE_SINGLE
-                    {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                    let bond_type = *heap.element_signed(at2.as_const(), atom_number)?
+                        .bond_type.get(neighbor_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if u32::from(bond_type) & BOND_TYPE_MASK == BOND_TYPE_SINGLE {
+                        let adjacency = heap.element_signed(pBNS.vert.as_const(), atom_number)?.iedge;
                         let edge_number = *heap
-                            .slice(vertex.iedge.as_const())?
+                            .slice(adjacency.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(
@@ -10849,43 +10449,27 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
 
         atom_number = 0;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let atom = heap
-                .slice(at2.as_const())?
+            let candidate = pVA
                 .get(atom_index)
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let endpoint_from_array = if pStruct.endpoint.is_null() {
-                0
-            } else {
-                *heap
-                    .slice(pStruct.endpoint.as_const())?
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
-            let candidate = pVA[atom_index].cNumValenceElectrons == 5
-                && atom.valence == 3
-                && atom.chem_bonds_valence == 5
-                && atom.charge == 0
-                && atom.radical == 0
-                && atom.endpoint == 0
-                && endpoint_from_array == 0
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .cNumValenceElectrons == 5
+                && {
+                    let atom = heap.element_signed(at2.as_const(), atom_number)?;
+                    atom.valence == 3
+                        && atom.chem_bonds_valence == 5
+                        && atom.charge == 0
+                        && atom.radical == 0
+                        && atom.endpoint == 0
+                        && (pStruct.endpoint.is_null()
+                            || *heap.element_signed(pStruct.endpoint.as_const(), atom_number)? == 0)
+                }
                 && pVA[atom_index].cnListIndex > 0
                 && CN_LIST
-                    .get(
-                        usize::try_from(list_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
+                    .get((pVA[atom_index].cnListIndex - 1) as usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .bits
-                    == npn_bits
+                    .bits == npn_bits
                 && pVA[atom_index].nCPlusGroupEdge > 0;
             if !candidate {
                 atom_number = atom_number.wrapping_add(1);
@@ -10893,17 +10477,13 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             }
 
             let plus_edge_number = pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let plus_edge_index = usize::try_from(plus_edge_number)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let plus_edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(plus_edge_index)
-                .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let first_neighbor = usize::from(plus_edge.neighbor1);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_type = heap
                 .slice(pBNS.vert.as_const())?
                 .get(first_neighbor)
@@ -10915,14 +10495,11 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 } else {
                     i32::from(plus_edge.neighbor1)
                 };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let vertex_zero_index =
                 usize::try_from(vertex_zero).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let zero_vertex = heap
                 .slice(pBNS.vert.as_const())?
                 .get(vertex_zero_index)
-                .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut vertex_one = NO_VERTEX;
             let mut vertex_two = NO_VERTEX;
@@ -10930,10 +10507,8 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             let mut edge_zero_two = NO_VERTEX;
             let mut adjacent_number = 0_i32;
             while adjacent_number < i32::from(zero_vertex.num_adj_edges) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let adjacency_index = usize::try_from(adjacent_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_number = *heap
                     .slice(zero_vertex.iedge.as_const())?
                     .get(adjacency_index)
@@ -10942,7 +10517,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     adjacent_number = adjacent_number.wrapping_add(1);
                     continue;
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -10967,27 +10541,21 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 return Ok(());
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let vertex_two_index =
                 usize::try_from(vertex_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let two_vertex = heap
                 .slice(pBNS.vert.as_const())?
                 .get(vertex_two_index)
-                .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut edge_one_two = NO_VERTEX;
             adjacent_number = 0;
             while adjacent_number < i32::from(two_vertex.num_adj_edges) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let adjacency_index = usize::try_from(adjacent_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_number = *heap
                     .slice(two_vertex.iedge.as_const())?
                     .get(adjacency_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -11011,17 +10579,13 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 return Ok(());
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge_zero_one_index =
                 usize::try_from(edge_zero_one).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge_zero_two_index =
                 usize::try_from(edge_zero_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge_one_two_index =
                 usize::try_from(edge_one_two).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 edges[edge_zero_one_index].flow = 1;
                 edges[edge_one_two_index].flow = 0;
@@ -11030,7 +10594,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                     (i32::from(edges[plus_edge_index].forbidden) | forbidden_edge_mask) as i8;
                 edges[edge_zero_one_index].forbidden =
                     (i32::from(edges[edge_zero_one_index].forbidden) | forbidden_edge_mask) as i8;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = heap
                     .slice_mut(pBNS.vert)?
                     .get_mut(vertex_two_index)
@@ -11052,9 +10615,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 carbon_charges_forbidden = true;
             }
 
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
             ret = RunBnsTestOnce(
                 heap,
@@ -11080,12 +10641,10 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             {
                 ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
             } else {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 edges[edge_zero_one_index].flow = 0;
                 edges[edge_one_two_index].flow = 1;
                 edges[edge_zero_two_index].flow = 1;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = heap
                     .slice_mut(pBNS.vert)?
                     .get_mut(vertex_two_index)
@@ -11094,7 +10653,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(2);
             }
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edges = heap.slice_mut(pBNS.edge)?;
                 for edge_index in [plus_edge_index, edge_zero_one_index] {
                     edges[edge_index].forbidden =
@@ -11107,7 +10665,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
             if ret != 0 {
                 copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                 pStruct.at = at2;
-                let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+                let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
                 if copy_result < 0 {
                     ret = copy_result;
                     return Ok(());
@@ -11121,10 +10679,8 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
     let cleanup = (|| -> Result<(), SourceHeapError> {
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let flower_edge = if pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -11141,7 +10697,6 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 NO_VERTEX
             };
             if flower_edge >= 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(
@@ -11156,32 +10711,20 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 }
             }
             if pVA[atom_index].cMetal != 0 {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let atom = heap
-                    .slice(at2.as_const())?
-                    .get(atom_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let vertex = heap
-                    .slice(pBNS.vert.as_const())?
-                    .get(atom_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let valence = heap.element_signed(at2.as_const(), atom_number)?.valence;
                 let mut neighbor_number = 0_i32;
-                while neighbor_number < i32::from(atom.valence) {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                while neighbor_number < i32::from(valence) {
                     let neighbor_index = usize::try_from(neighbor_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
-                        == BOND_TYPE_SINGLE
-                    {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                    let bond_type = *heap.element_signed(at2.as_const(), atom_number)?
+                        .bond_type.get(neighbor_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if u32::from(bond_type) & BOND_TYPE_MASK == BOND_TYPE_SINGLE {
+                        let adjacency = heap.element_signed(pBNS.vert.as_const(), atom_number)?.iedge;
                         let edge_number = *heap
-                            .slice(vertex.iedge.as_const())?
+                            .slice(adjacency.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(
@@ -11223,7 +10766,29 @@ pub(crate) fn Convert_SIV_to_SVI(
     _pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    convert_siv_to_svi_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, _pnNumRunBNS, _pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn convert_siv_to_svi_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    _pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6054 Convert_SIV_to_SVI
     /*
@@ -11444,16 +11009,13 @@ pub(crate) fn Convert_SIV_to_SVI(
 
     const EDGE_LIST_GROWTH: i32 = 64;
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
     let npn_bits = cn_bits_N as i32
         | ((cn_bits_P as i32) << cn_bits_shift)
         | ((cn_bits_N as i32) << (2 * cn_bits_shift));
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut flower_edges = EDGE_LIST::default();
     let mut carbon_charges_forbidden = false;
     let mut ret = 0_i32;
@@ -11463,7 +11025,7 @@ pub(crate) fn Convert_SIV_to_SVI(
         AllocEdgeList(heap, &mut flower_edges, EDGE_LIST_CLEAR)?;
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
         if copy_result < 0 {
             ret = copy_result;
             return Ok(());
@@ -11471,10 +11033,8 @@ pub(crate) fn Convert_SIV_to_SVI(
 
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let electrons = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -11489,9 +11049,7 @@ pub(crate) fn Convert_SIV_to_SVI(
             } else {
                 NO_VERTEX
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let fixes_flower = flower_edge >= 0 && {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(
@@ -11502,7 +11060,6 @@ pub(crate) fn Convert_SIV_to_SVI(
                 edge.forbidden == 0 && 6 == i32::from(electrons).wrapping_add(edge.flow)
             };
             if fixes_flower {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(
@@ -11516,13 +11073,11 @@ pub(crate) fn Convert_SIV_to_SVI(
                     return Ok(());
                 }
             } else if pVA[atom_index].cMetal != 0 {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = heap
                     .slice(pBNS.vert.as_const())?
                     .get(atom_index)
@@ -11530,18 +11085,15 @@ pub(crate) fn Convert_SIV_to_SVI(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut neighbor_number = 0_i32;
                 while neighbor_number < i32::from(atom.valence) {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let neighbor_index = usize::try_from(neighbor_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if u32::from(atom.bond_type[neighbor_index]) & BOND_TYPE_MASK
                         == BOND_TYPE_SINGLE
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge_number = *heap
                             .slice(vertex.iedge.as_const())?
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(
@@ -11559,15 +11111,12 @@ pub(crate) fn Convert_SIV_to_SVI(
                     neighbor_number = neighbor_number.wrapping_add(1);
                 }
             } else {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let sulfur_iv = electrons == 6
                     && atom.valence == 4
                     && atom.chem_bonds_valence == 4
@@ -11594,7 +11143,6 @@ pub(crate) fn Convert_SIV_to_SVI(
                         .flow
                         > 0;
                 if sulfur_iv {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
@@ -11602,16 +11150,13 @@ pub(crate) fn Convert_SIV_to_SVI(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut neighbor_number = 0_i32;
                     while neighbor_number < i32::from(atom.valence) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor_index = usize::try_from(neighbor_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_atom_index = usize::from(atom.neighbor[neighbor_index]);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor = heap
                             .slice(at2.as_const())?
                             .get(neighbor_atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if pVA
                             .get(neighbor_atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -11619,15 +11164,12 @@ pub(crate) fn Convert_SIV_to_SVI(
                             != 6
                             && neighbor.valence > 1
                         {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_number = *heap
                                 .slice(vertex.iedge.as_const())?
                                 .get(neighbor_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_index = usize::try_from(edge_number)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(edge_index)
@@ -11644,7 +11186,6 @@ pub(crate) fn Convert_SIV_to_SVI(
                                 if ret != 0 {
                                     return Ok(());
                                 }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(edge_index)
@@ -11662,19 +11203,15 @@ pub(crate) fn Convert_SIV_to_SVI(
 
         atom_number = 0;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom = heap
                 .slice(at2.as_const())?
                 .get(atom_index)
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let list_index = pVA[atom_index].cnListIndex.wrapping_sub(1);
             let mut flower_edge = NO_VERTEX;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let candidate = pVA[atom_index].cNumValenceElectrons == 6
                 && atom.valence == 4
                 && atom.chem_bonds_valence == 4
@@ -11726,10 +11263,8 @@ pub(crate) fn Convert_SIV_to_SVI(
                 carbon_charges_forbidden = true;
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge_index =
                 usize::try_from(flower_edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index)
@@ -11738,17 +11273,14 @@ pub(crate) fn Convert_SIV_to_SVI(
             let first_vertex = i32::from(edge.neighbor1);
             let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
             {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(edge_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden = (i32::from(edge.forbidden) | forbidden_edge_mask) as i8;
                 edge.flow = edge.flow.wrapping_sub(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = vertices
                         .get_mut(
                             usize::try_from(vertex_number)
@@ -11759,9 +11291,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                 }
             }
             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
             ret = RunBnsTestOnce(
                 heap,
@@ -11787,17 +11317,14 @@ pub(crate) fn Convert_SIV_to_SVI(
             {
                 ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
             } else {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice_mut(pBNS.edge)?
                     .get_mut(edge_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                 edge.flow = edge.flow.wrapping_add(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertices = heap.slice_mut(pBNS.vert)?;
                 for vertex_number in [first_vertex, second_vertex] {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = vertices
                         .get_mut(
                             usize::try_from(vertex_number)
@@ -11814,7 +11341,7 @@ pub(crate) fn Convert_SIV_to_SVI(
             if ret != 0 {
                 copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                 pStruct.at = at2;
-                let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+                let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
                 if copy_result < 0 {
                     ret = copy_result;
                     return Ok(());
@@ -11858,7 +11385,29 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
     _pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    plus_from_db_n_db_o_to_metal_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, _pnNumRunBNS, _pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn plus_from_db_n_db_o_to_metal_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    _pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6270 PlusFromDB_N_DB_O_to_Metal
     /*
@@ -12043,21 +11592,26 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
     // INCHI✔️❌: Edge lists grow by 64; SourceHeap checked accesses and snapshots add overhead.
     // END INCHI ACTIVE MACRO CONFIGURATION: PlusFromDB_N_DB_O_to_Metal
 
+    // INCHI✔️❗: Native oxygen availability gates the nitrogen edge[j] read;
+    // j is the atom index, deliberately not the N-plus charge-edge number.
+    // Metal/electron predicates precede O atom admission; N electrons precede
+    // N atom admission. Immutable views end before list/flow mutations, with
+    // no atom/edge clone or additional allocation/prepass. Source-required
+    // copies, lists, BNS trial/restore/rollback and cleanup remain unchanged.
+    // O(source scans+search) time/O(1) extra scratch. Checked access constants
+    // remain INCHI-PERF-NO-METAL-ADMISSION OPEN, not performance equivalence.
+
     if pTCGroups.num_metal_atoms == 0 {
         return Ok(0);
     }
 
     const EDGE_LIST_GROWTH: i32 = 64;
     let num_atoms = pStruct.num_atoms;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(num_atoms.wrapping_add(pStruct.num_deleted_H))
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverse_mask = !forbidden_edge_mask;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut carbon_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut no_charge_edges = EDGE_LIST::default();
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut no_edges = EDGE_LIST::default();
     let mut ret = 0_i32;
 
@@ -12067,7 +11621,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
         AllocEdgeList(heap, &mut no_edges, EDGE_LIST_CLEAR)?;
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
-        let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+        let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
         if copy_result < 0 {
             ret = copy_result;
             return Ok(());
@@ -12077,10 +11631,8 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
         let mut number_metals = 0_i32;
         let mut atom_number = 0_i32;
         while atom_number < num_atoms {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -12092,10 +11644,8 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                     pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1),
                 ] {
                     if edge_number >= 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge_index = usize::try_from(edge_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if heap
                             .slice(pBNS.edge.as_const())?
                             .get(edge_index)
@@ -12119,44 +11669,39 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                 number_metals = number_metals.wrapping_add(1);
             }
 
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            let atom = heap
-                .slice(at2.as_const())?
-                .get(atom_index)
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let no_prefix = pVA[atom_index].cMetal == 0
                 && pVA[atom_index].cNumValenceElectrons == 6
-                && atom.charge == 0
-                && atom.num_H == 0
-                && atom.valence == 1
-                && atom.chem_bonds_valence == 2;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+                && {
+                    let atom = heap.element_signed(at2.as_const(), atom_number)?;
+                    atom.charge == 0
+                        && atom.num_H == 0
+                        && atom.valence == 1
+                        && atom.chem_bonds_valence == 2
+                };
             let mut neighbor_index = 0_usize;
             let is_no = if no_prefix {
-                neighbor_index = usize::from(atom.neighbor[0]);
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                let neighbor = heap
-                    .slice(at2.as_const())?
-                    .get(neighbor_index)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                neighbor_index = usize::from(
+                    heap.element_signed(at2.as_const(), atom_number)?.neighbor[0],
+                );
                 pVA.get(neighbor_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .cNumValenceElectrons
-                    == 5
-                    && neighbor.charge == 1
-                    && neighbor.num_H == 0
-                    && neighbor.valence == 2
-                    && neighbor.chem_bonds_valence == 4
+                    .cNumValenceElectrons == 5
+                    && {
+                        let neighbor = heap
+                            .slice(at2.as_const())?
+                            .get(neighbor_index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        neighbor.charge == 1
+                            && neighbor.num_H == 0
+                            && neighbor.valence == 2
+                            && neighbor.chem_bonds_valence == 4
+                    }
             } else {
                 false
             };
             if is_no {
                 let oxygen_charge_edge = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
                 let nitrogen_charge_edge = pVA[neighbor_index].nCPlusGroupEdge.wrapping_sub(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_available = oxygen_charge_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
@@ -12167,16 +11712,15 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let source_index_available = nitrogen_charge_edge >= 0
+                let source_index_available = oxygen_available
+                    && nitrogen_charge_edge >= 0
                     && heap
                         .slice(pBNS.edge.as_const())?
                         .get(neighbor_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden
                         == 0;
-                if oxygen_available && source_index_available {
+                if source_index_available {
                     ret = AddToEdgeList(
                         heap,
                         &mut no_charge_edges,
@@ -12195,17 +11739,14 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                     if ret != 0 {
                         return Ok(());
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let no_edge = *heap
                         .slice(vertex.iedge.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if heap
                         .slice(pBNS.edge.as_const())?
                         .get(
@@ -12233,7 +11774,6 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
             RemoveForbiddenEdgeMask(heap, pBNS, &no_charge_edges, forbidden_edge_mask)?;
             let mut list_index = 0_i32;
             while list_index < no_edges.num_edges {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_number = *heap
                     .slice(no_edges.pnEdges.as_const())?
                     .get(
@@ -12241,28 +11781,22 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index = usize::try_from(edge_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = heap
                     .slice(pBNS.edge.as_const())?
                     .get(edge_index)
-                    .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let first_vertex = i32::from(edge.neighbor1);
                 let second_vertex = i32::from(edge.neighbor12) ^ first_vertex;
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.flow = edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertex = vertices
                             .get_mut(
                                 usize::try_from(vertex_number)
@@ -12273,9 +11807,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                     }
                 }
                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut path_start, mut path_end, mut path_length) = (0, 0, 0);
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (mut delta_h, mut delta_charge, mut visited_atoms) = (0, 0, 0);
                 ret = RunBnsTestOnce(
                     heap,
@@ -12296,17 +11828,14 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
                 {
                     ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                 } else {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice_mut(pBNS.edge)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                     edge.flow = edge.flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertices = heap.slice_mut(pBNS.vert)?;
                     for vertex_number in [first_vertex, second_vertex] {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertex = vertices
                             .get_mut(
                                 usize::try_from(vertex_number)
@@ -12371,21 +11900,17 @@ fn bns_edge_index(
     vertex: usize,
     neighbor_order: usize,
 ) -> Result<usize, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let vertex = vertices
         .get(vertex)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let edge = *heap
         .slice(vertex.iedge.as_const())?
         .get(neighbor_order)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     usize::try_from(edge).map_err(|_| SourceHeapError::PointerOutOfBounds)
 }
 
 fn opposite_vertex(edge: &BNS_EDGE, vertex: usize) -> Result<usize, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     usize::try_from(i32::from(edge.neighbor12) ^ vertex as i32)
         .map_err(|_| SourceHeapError::PointerOutOfBounds)
 }
@@ -12396,13 +11921,11 @@ fn bns_direct_edge_index(
     vertex: usize,
     neighbor_order: usize,
 ) -> Result<usize, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let iedge = heap
         .slice(bns.vert.as_const())?
         .get(vertex)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .iedge;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     usize::try_from(
         *heap
             .slice(iedge.as_const())?
@@ -13698,81 +13221,89 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
     if num_atoms <= 0 {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let vertex_count =
-        usize::try_from(pBNS.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let edge_count =
-        usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    // SAFETY: BNS vertices and edges are separate typed allocations, and the
-    // adjacency reads below target separate i32 allocations. This function
-    // neither frees nor resizes any of them, so these views are the direct
-    // equivalent of the source's pBNS->vert and pBNS->edge pointers.
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut vertices_view = if vertex_count == 0 {
-        None
-    } else {
-        Some(unsafe { heap.stable_slice_mut(pBNS.vert)? })
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let vertices = match &mut vertices_view {
-        Some(view) => view.prefix_mut(vertex_count)?,
-        None => &mut [],
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut edges_view = if edge_count == 0 {
-        None
-    } else {
-        Some(unsafe { heap.stable_slice_mut(pBNS.edge)? })
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let edges = match &mut edges_view {
-        Some(view) => view.prefix_mut(edge_count)?,
-        None => &mut [],
-    };
+    // Native uses physical graph pointers only at reached adjacency accesses;
+    // num_vertices/num_edges are not bounds in this owner. Preserve physical
+    // typed extents and acquire each existing stable view once, on demand.
+    let mut vertices_view = None;
+    let mut edges_view = None;
     let inverse_forbidden_mask = !forbidden_mask;
     let mut num_changes = 0_i32;
     let mut atom_number = 0_i32;
 
     'atoms: while atom_number < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let center_index =
             usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let center = at
             .get(center_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0322: suspected source divergence; see dev/audits/inchi/findings.md");
-        let center_type = get_pVA_atom_type(pVA, at, atom_number, 0)?;
-        panic!("INCHI-AUDIT-0322: suspected source divergence; see dev/audits/inchi/findings.md");
-        let ordinary_valence = get_el_valence(i32::from(center.el_number), 0, 0)?;
-        panic!("INCHI-AUDIT-0322: suspected source divergence; see dev/audits/inchi/findings.md");
-        let bonds_valence_non_metal = n_no_metal_bonds_valence(Some(at), atom_number)?;
-        let delta_val = i32::from(center.chem_bonds_valence).wrapping_sub(ordinary_valence);
-        let delta_met = bonds_valence_non_metal.wrapping_sub(ordinary_valence);
+        // VERBATIM SOURCE FRAGMENT: ichirvr2.c:2160 source center rejection
+        //         if (at[i].chem_bonds_valence == at[i].valence || at[i].num_H ||
+        //              at[i].endpoint || at[i].charge || at[i].radical ||
+        //              !is_centerpoint_elem( at[i].el_number ) ||
+        //              !( centerpoint_type = get_pVA_atom_type( pVA, at, i, 0 ) ) ||
+        //              2 > ( delta_val = at[i].chem_bonds_valence - ( val = get_el_valence( at[i].el_number, 0, 0 ) ) ) ||
+        //              2 > ( delta_met = ( bonds_valence_non_metal = nNoMetalBondsValence( at, i ) ) - val )
+        //            ) /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+        //         {
+        //             continue;
+        //         }
+        // END VERBATIM SOURCE FRAGMENT: source center rejection
+        // INCHI✔️❗: Preserve the source OR's reached-helper order. Cheap
+        // rejected atoms read no pVA/valence/neighbor data; type/delta failures
+        // skip subsequent helpers. Accepted centers retain original values,
+        // Table5 operations and errors. No allocation/clone/extra scan;
+        // eliminated rejected-center work, whole checked-call cost stays OPEN.
         if center.chem_bonds_valence == center.valence
             || center.num_H != 0
             || center.endpoint != 0
             || center.charge != 0
             || center.radical != 0
             || is_centerpoint_elem(center.el_number) == 0
-            || center_type == 0
-            || delta_val < 2
-            || delta_met < 2
         {
+            atom_number = atom_number.wrapping_add(1);
+            continue;
+        }
+        let center_type = get_pVA_atom_type(pVA, at, atom_number, 0)?;
+        if center_type == 0 {
+            atom_number = atom_number.wrapping_add(1);
+            continue;
+        }
+        let ordinary_valence = get_el_valence(i32::from(center.el_number), 0, 0)?;
+        let delta_val = i32::from(center.chem_bonds_valence).wrapping_sub(ordinary_valence);
+        if delta_val < 2 {
+            atom_number = atom_number.wrapping_add(1);
+            continue;
+        }
+        let bonds_valence_non_metal = n_no_metal_bonds_valence(Some(at), atom_number)?;
+        let delta_met = bonds_valence_non_metal.wrapping_sub(ordinary_valence);
+        if delta_met < 2 {
             atom_number = atom_number.wrapping_add(1);
             continue;
         }
 
         let num_bonds_non_metal = n_no_metal_num_bonds(Some(at), atom_number)?;
-        panic!("INCHI-AUDIT-0321: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+        // INCHI✔️❗: An empty native neighbor loop leaves num_acceptors0
+        // and continues before any graph access. No observable state changes.
+        if center.valence <= 0 {
+            atom_number = atom_number.wrapping_add(1);
+            continue;
+        }
+        // SAFETY: the original vertex/edge views retain distinct typed
+        // allocation identities; adjacency is a separate i32 allocation.
+        // No graph allocation is freed/resized and nested calls only borrow
+        // the arena immutably. Mutable view borrows end on each iteration.
+        if vertices_view.is_none() {
+            vertices_view = Some(unsafe { heap.stable_slice_mut(pBNS.vert)? });
+        }
+        if edges_view.is_none() {
+            edges_view = Some(unsafe { heap.stable_slice_mut(pBNS.edge)? });
+        }
+        let vertex_view = vertices_view.as_mut().expect("vertex view initialized above");
+        let vertices = vertex_view.prefix_mut(vertex_view.len())?;
+        let edge_view = edges_view.as_mut().expect("edge view initialized above");
+        let edges = edge_view.prefix_mut(edge_view.len())?;
+
         let mut mobile_groups = [MobileGroup::default(); 20];
-        panic!("INCHI-AUDIT-0321: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut group_counts = [MobileGroupCount::default(); 20];
         let mut num_endpoints = 0_usize;
         let mut num_groups = 0_usize;
@@ -13795,7 +13326,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
 
         let mut neighbor_order = 0_i32;
         while neighbor_order < i32::from(center.valence) {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor_index = usize::from(
                 *center
                     .neighbor
@@ -13805,7 +13335,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor = at
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13816,14 +13345,12 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 center_index,
                 usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
             )?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let forbidden = i32::from(
                 edges
                     .get(edge_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .forbidden,
             );
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let bond_type = i32::from(
                 *center
                     .bond_type
@@ -13855,7 +13382,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
 
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let slot = mobile_groups
                 .get_mut(num_endpoints)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -13922,7 +13448,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 let group_number = i32::from(neighbor.endpoint);
                 let mut group_index = 0_usize;
                 while group_index < num_groups {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if group_counts[group_index].group_number == group_number {
                         group_counts[group_index].count =
                             group_counts[group_index].count.wrapping_add(1);
@@ -13931,7 +13456,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     group_index += 1;
                 }
                 if group_index == num_groups {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     group_counts[group_index] = MobileGroupCount {
                         group_number,
                         count: 1,
@@ -13952,7 +13476,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             atom_number = atom_number.wrapping_add(1);
             continue;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let groups = &mobile_groups[..num_endpoints];
 
         if num_bonds_non_metal == 3
@@ -13990,48 +13513,37 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let xh = xh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let o_double = o_double.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let fixed_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[xh].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[o_double].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[xh].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
                     let taut_vertex = opposite_vertex(
                         &edges[taut_edge],
                         usize::from(edges[taut_edge].neighbor1),
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[oxygen_vertex].st_edge.flow =
                         vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[taut_vertex].st_edge.flow =
                         vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14076,48 +13588,37 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let xh = xh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen = oxygens[0].ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let fixed_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[xh].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[oxygen].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[xh].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
                     let taut_vertex = opposite_vertex(
                         &edges[taut_edge],
                         usize::from(edges[taut_edge].neighbor1),
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[oxygen_vertex].st_edge.flow =
                         vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[taut_vertex].st_edge.flow =
                         vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14166,36 +13667,27 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen = oxygen.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let fixed_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[oxygen].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nh_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[nh].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[fixed_edge].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[nh_edge].flow = edges[nh_edge].flow.wrapping_add(1);
                     let oxygen_vertex = opposite_vertex(&edges[fixed_edge], center_index)?;
                     let nh_vertex = opposite_vertex(&edges[nh_edge], center_index)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[oxygen_vertex].st_edge.flow =
                         vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[nh_vertex].st_edge.flow =
                         vertices[nh_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14219,13 +13711,10 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             && num_donor_endpoints > 0
         {
             let mut fixed_n = None;
-            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0321: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut to_fix = [0_usize; 4];
             let mut num_to_fix = 0_usize;
             let mut found = 0_i32;
             for (index, group) in groups.iter().enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = &at[group.atom_number as usize];
                 if group.bond_type == BOND_TYPE_DOUBLE as i32
                     && group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
@@ -14242,7 +13731,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     found += 1;
                 } else if group.bond_type == BOND_TYPE_SINGLE as i32 && neighbor.endpoint != 0 {
                     if group.num_bonds > 1 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         *to_fix
                             .get_mut(num_to_fix)
                             .ok_or(SourceHeapError::PointerOutOfBounds)? = index;
@@ -14253,34 +13741,27 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
             if let Some(fixed_n) = fixed_n {
                 if found >= 2 && 1 + num_to_fix as i32 != found {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let fixed_edge = bns_edge_index(
                         heap,
                         &vertices,
                         center_index,
                         groups[fixed_n].neighbor_order as usize,
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if edges[fixed_edge].flow != 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[center_index].st_edge.flow =
                             vertices[center_index].st_edge.flow.wrapping_sub(1);
                         let neighbor_vertex = opposite_vertex(&edges[fixed_edge], center_index)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[neighbor_vertex].st_edge.flow =
                             vertices[neighbor_vertex].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                         for group_index in to_fix.into_iter().take(num_to_fix) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_index = bns_edge_index(
                                 heap,
                                 &vertices,
                                 center_index,
                                 groups[group_index].neighbor_order as usize,
                             )?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             edges[edge_index].forbidden =
                                 (i32::from(edges[edge_index].forbidden) | forbidden_mask) as i8;
                         }
@@ -14292,7 +13773,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if num_bonds_non_metal == 3
             && bonds_valence_non_metal == 4
             && center_type == EL_TYPE_S as i32
@@ -14330,48 +13810,37 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen = oxygen.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let fixed_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[nh].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[oxygen].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[nh].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[oxygen_edge].flow != 0 && edges[taut_edge].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].flow = edges[fixed_edge].flow.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[oxygen_edge].flow = edges[oxygen_edge].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
                     let oxygen_vertex = opposite_vertex(&edges[oxygen_edge], center_index)?;
                     let taut_vertex = opposite_vertex(
                         &edges[taut_edge],
                         usize::from(edges[taut_edge].neighbor1),
                     )?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[oxygen_vertex].st_edge.flow =
                         vertices[oxygen_vertex].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[taut_vertex].st_edge.flow =
                         vertices[taut_vertex].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14382,7 +13851,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if num_bonds_non_metal == 3
             && bonds_valence_non_metal == 4
             && center_type == EL_TYPE_S as i32
@@ -14415,23 +13883,17 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if oxygen.is_some() && nh.is_some() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge_index = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[forbidden_index as usize].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[edge_index].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[edge_index].flow = edges[edge_index].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first = usize::from(edges[edge_index].neighbor1);
                     let second = opposite_vertex(&edges[edge_index], first)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[second].st_edge.flow = vertices[second].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                     num_changes = num_changes.wrapping_add(1);
@@ -14441,7 +13903,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if num_bonds_non_metal == 3
             && bonds_valence_non_metal == 4
             && center_type == EL_TYPE_S as i32
@@ -14463,7 +13924,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let mut x = None;
             let mut found = 0;
             for (index, group) in groups.iter().enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = &at[group.atom_number as usize];
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
                     && group.forbidden & forbidden_mask == 0
@@ -14495,28 +13955,20 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nh = nh.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[nh].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[taut_edge].flow != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first = usize::from(edges[taut_edge].neighbor1);
                     let second = opposite_vertex(&edges[taut_edge], first)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     vertices[second].st_edge.flow = vertices[second].st_edge.flow.wrapping_sub(1);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[taut_edge].forbidden =
                         (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                     num_changes = num_changes.wrapping_add(1);
@@ -14526,7 +13978,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if num_bonds_non_metal == 3
             && bonds_valence_non_metal == 4
             && center_type == EL_TYPE_S as i32
@@ -14547,7 +13998,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let mut x = None;
             let mut found = 0;
             for (index, group) in groups.iter().enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = &at[group.atom_number as usize];
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32
                     && group.forbidden & forbidden_mask == 0
@@ -14579,51 +14029,38 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let n_fixed = n_fixed.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[n_fixed].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[taut_edge].flow == 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first_vertex = usize::from(edges[taut_edge].neighbor1);
                     let second_vertex = opposite_vertex(&edges[taut_edge], first_vertex)?;
                     let mut first_path = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut first_path_vertex = None;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for order in 0..usize::from(vertices[first_vertex].num_adj_edges) {
                         let edge_index = bns_edge_index(heap, &vertices, first_vertex, order)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             first_path = Some(edge_index);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             first_path_vertex =
                                 Some(opposite_vertex(&edges[edge_index], first_vertex)?);
                             break;
                         }
                     }
                     let mut second_path = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut second_path_vertex = None;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for order in 0..usize::from(vertices[second_vertex].num_adj_edges) {
                         let edge_index = bns_edge_index(heap, &vertices, second_vertex, order)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             second_path = Some(edge_index);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             second_path_vertex =
                                 Some(opposite_vertex(&edges[edge_index], second_vertex)?);
                             break;
                         }
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let (
                         Some(first_path),
                         Some(second_path),
@@ -14635,19 +14072,13 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         first_path_vertex,
                         second_path_vertex,
                     ) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].flow = edges[taut_edge].flow.wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].forbidden =
                             (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[first_path].flow = edges[first_path].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[second_path].flow = edges[second_path].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[first_path_vertex].st_edge.flow =
                             vertices[first_path_vertex].st_edge.flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[second_path_vertex].st_edge.flow =
                             vertices[second_path_vertex].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14659,7 +14090,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             }
         }
 
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if num_bonds_non_metal == 3
             && bonds_valence_non_metal == 4
             && center_type == EL_TYPE_S as i32
@@ -14679,7 +14109,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let mut n_single = None;
             let mut x = None;
             for (index, group) in groups.iter().enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = &at[group.atom_number as usize];
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32 {
                     if group.bond_type == BOND_TYPE_DOUBLE as i32
@@ -14708,59 +14137,45 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if let (Some(n_fixed), Some(n_single)) = (n_fixed, n_single) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let fixed_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[n_fixed].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let taut_edge = usize::try_from(
                     pVA[groups[n_single].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if edges[taut_edge].flow == 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first_vertex = usize::from(edges[taut_edge].neighbor1);
                     let second_vertex = opposite_vertex(&edges[taut_edge], first_vertex)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].forbidden =
                         (i32::from(edges[fixed_edge].forbidden) & inverse_forbidden_mask) as i8;
                     let mut first_path = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut first_path_vertex = None;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for order in 0..usize::from(vertices[first_vertex].num_adj_edges) {
                         let edge_index = bns_edge_index(heap, &vertices, first_vertex, order)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             first_path = Some(edge_index);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             first_path_vertex =
                                 Some(opposite_vertex(&edges[edge_index], first_vertex)?);
                             break;
                         }
                     }
                     let mut second_path = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut second_path_vertex = None;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for order in 0..usize::from(vertices[second_vertex].num_adj_edges) {
                         let edge_index = bns_edge_index(heap, &vertices, second_vertex, order)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if edges[edge_index].flow != 0 && edges[edge_index].forbidden == 0 {
                             second_path = Some(edge_index);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             second_path_vertex =
                                 Some(opposite_vertex(&edges[edge_index], second_vertex)?);
                             break;
                         }
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let (
                         Some(first_path),
                         Some(second_path),
@@ -14772,19 +14187,13 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         first_path_vertex,
                         second_path_vertex,
                     ) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].flow = edges[taut_edge].flow.wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].forbidden =
                             (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[first_path].flow = edges[first_path].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[second_path].flow = edges[second_path].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[first_path_vertex].st_edge.flow =
                             vertices[first_path_vertex].st_edge.flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[second_path_vertex].st_edge.flow =
                             vertices[second_path_vertex].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
@@ -14792,7 +14201,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                         atom_number = atom_number.wrapping_add(1);
                         continue 'atoms;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[fixed_edge].forbidden =
                         (i32::from(edges[fixed_edge].forbidden) | forbidden_mask) as i8;
                 }
@@ -14828,7 +14236,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 let mut x = None;
                 let mut found = 0;
                 for (index, group) in groups.iter().enumerate() {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let neighbor = &at[group.atom_number as usize];
                     if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32 {
                         if group.bond_type == BOND_TYPE_DOUBLE as i32
@@ -14859,29 +14266,21 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                     }
                 }
                 if found == 3 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let n_singleton = n_singleton.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let taut_edge = usize::try_from(
                         pVA[groups[n_singleton].atom_number as usize]
                             .nTautGroupEdge
                             .wrapping_sub(1),
                     )
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if edges[taut_edge].flow != 0 {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].flow = edges[taut_edge].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let first = usize::from(edges[taut_edge].neighbor1);
                         let second = opposite_vertex(&edges[taut_edge], first)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[second].st_edge.flow =
                             vertices[second].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[taut_edge].forbidden =
                             (i32::from(edges[taut_edge].forbidden) | forbidden_mask) as i8;
                         num_changes = num_changes.wrapping_add(1);
@@ -14910,7 +14309,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
             let mut donors = [None, None];
             let mut found = 0;
             for (index, group) in groups.iter().enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = &at[group.atom_number as usize];
                 if group.atom_type_pva & EL_TYPE_MASK as i32 == EL_TYPE_N as i32 {
                     if group.bond_type == BOND_TYPE_DOUBLE as i32
@@ -14937,56 +14335,50 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
                 }
             }
             if found == 3 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let n_double = n_double.ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let donor1 = donors[0].ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let donor2 = donors[1].ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let double_edge = bns_edge_index(
                     heap,
                     &vertices,
                     center_index,
                     groups[n_double].neighbor_order as usize,
                 )?;
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                // INCHI✔️❗: Table5 final case reaches each donor only
+                // after the previous edge has nonzero flow, as native3356..3370.
+                if edges[double_edge].flow == 0 {
+                    atom_number = atom_number.wrapping_add(1);
+                    continue 'atoms;
+                }
                 let taut1 = usize::try_from(
                     pVA[groups[donor1].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                if edges[taut1].flow == 0 {
+                    atom_number = atom_number.wrapping_add(1);
+                    continue 'atoms;
+                }
                 let taut2 = usize::try_from(
                     pVA[groups[donor2].atom_number as usize]
                         .nTautGroupEdge
                         .wrapping_sub(1),
                 )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                if edges[double_edge].flow != 0 && edges[taut1].flow != 0 && edges[taut2].flow != 0
-                {
+                if edges[taut2].flow != 0 {
                     for edge_index in [taut1, taut2] {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[edge_index].flow = edges[edge_index].flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let first = usize::from(edges[edge_index].neighbor1);
                         let second = opposite_vertex(&edges[edge_index], first)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[first].st_edge.flow = vertices[first].st_edge.flow.wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         vertices[second].st_edge.flow =
                             vertices[second].st_edge.flow.wrapping_sub(1);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         edges[edge_index].forbidden =
                             (i32::from(edges[edge_index].forbidden) | forbidden_mask) as i8;
                         num_changes = num_changes.wrapping_add(1);
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     edges[double_edge].forbidden =
                         (i32::from(edges[double_edge].forbidden) | forbidden_mask) as i8;
                     atom_number = atom_number.wrapping_add(1);
@@ -15014,7 +14406,29 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    move_mobile_h_to_avoid_fixed_bonds_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn move_mobile_h_to_avoid_fixed_bonds_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6446 MoveMobileHToAvoidFixedBonds
     // INCHI✔️✔️: int MoveMobileHToAvoidFixedBonds( BN_STRUCT *pBNS,
@@ -15104,14 +14518,13 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
 
     let num_atoms = pStruct.num_atoms;
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
 
     pStruct.at = at2;
-    let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+    let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
     pStruct.at = at;
     let copy_result = copy_result?;
     if copy_result < 0 {
@@ -15136,19 +14549,16 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
         fixed_edges = -1;
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let adjusted_atom_count =
         usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     // SAFETY: CopyBnsToAtom and MarkRingSystemsInp have completed their writes
     // to at2. The remaining source calls only read at2 while mutating distinct
     // BNS allocations, and at2 remains live and unresized for this scope.
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let adjusted_atoms_view = if adjusted_atom_count == 0 {
         None
     } else {
         Some(unsafe { heap.stable_slice(at2.as_const())? })
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let adjusted_atoms = match &adjusted_atoms_view {
         Some(view) => view.prefix(adjusted_atom_count)?,
         None => &[],
@@ -15191,7 +14601,29 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
     _pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     _forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    remove_rad_from_mobile_h_endpoint_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, _pnNumRunBNS, _pnTotalDelta, _forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn remove_rad_from_mobile_h_endpoint_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    _pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    _forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6525 RemoveRadFromMobileHEndpoint
     /*
@@ -15636,9 +15068,52 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
     // INCHI✔️❌: SourceHeap checked access adds overhead versus direct C pointer arithmetic.
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveRadFromMobileHEndpoint
 
+    fn mobile_h_center_live(
+        heap: &SourceHeap,
+        valence_atoms: &[VAL_AT],
+        atoms: SourceMutPointer<inp_ATOM>,
+        candidate: usize,
+        found: Option<usize>,
+    ) -> Result<bool, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichirvr2.c:6664..6676 stored center comparison
+        //                             /* compare centerpoints */
+        //                             if (!pCentp_found ||
+        //                                  /* try to avoid carbons */
+        //                                 (( pVA[centerpoint].cNumValenceElectrons != 4 ||
+        //                                     pVA[centerpoint].cPeriodicRowNumber != 1 ) &&
+        //                                  pVA[centerpoint_found].cNumValenceElectrons == 4 &&
+        //                                  pVA[centerpoint_found].cPeriodicRowNumber == 1) ||
+        //                                  /* try a better non-carbon */
+        //                                  (( pVA[centerpoint].cNumValenceElectrons != 4 ||
+        //                                      pVA[centerpoint].cPeriodicRowNumber != 1 ) &&
+        //                                      ( at[centerpoint].valence > at[centerpoint_found].valence ||
+        //                                          (at[centerpoint].valence == at[centerpoint_found].valence &&
+        //                                          at[centerpoint].el_number > at[centerpoint_found].el_number) ))) /* djb-rwth: addressing LLVM warnings */
+        // END VERBATIM SOURCE FRAGMENT: stored center comparison
+        // INCHI✔️❗: Admit atom storage only after the source VA-only clauses.
+        // O(1) time/space, no row clone; checked arena cost remains OPEN.
+        let Some(found) = found else {
+            return Ok(true);
+        };
+        let candidate_non_carbon = valence_atoms[candidate].cNumValenceElectrons != 4
+            || valence_atoms[candidate].cPeriodicRowNumber != 1;
+        if !candidate_non_carbon {
+            return Ok(false);
+        }
+        if valence_atoms[found].cNumValenceElectrons == 4
+            && valence_atoms[found].cPeriodicRowNumber == 1
+        {
+            return Ok(true);
+        }
+        let atoms = heap.slice(atoms.as_const())?;
+        let candidate = atoms.get(candidate).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let found = atoms.get(found).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        Ok(candidate.valence > found.valence
+            || (candidate.valence == found.valence && candidate.el_number > found.el_number))
+    }
+
     let num_atoms = pStruct.num_atoms;
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
@@ -15646,58 +15121,31 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
     pStruct.at = at2;
 
     let operation = (|| -> Result<i32, SourceHeapError> {
-        let ret2 = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+        let ret2 = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
         if ret2 < 0 {
             return Ok(ret2);
         }
 
-        // SAFETY: the source function only reads `at` and `at2` after the
-        // initial CopyBnsToAtom call. All subsequent heap mutations target BNS
-        // allocations, and neither atom allocation is freed or resized.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let original_atoms_view = if atom_count == 0 {
-            None
-        } else {
-            Some(unsafe { heap.stable_slice(at.as_const())? })
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let original_atoms = match &original_atoms_view {
-            Some(view) => view.prefix(atom_count)?,
-            None => &[],
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let copied_atoms_view = if atom_count == 0 {
-            None
-        } else {
-            Some(unsafe { heap.stable_slice(at2.as_const())? })
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let copied_atoms = match &copied_atoms_view {
-            Some(view) => view.prefix(atom_count)?,
-            None => &[],
-        };
-
+        // INCHI✔️❗: Read atom fields only at native loop/short-circuit sites.
+        // No persistent unchecked views or atom snapshots span BNS mutations.
+        // INCHI-PERF-MOBILE-H-REACHED-READS: checked arena costs remain OPEN.
         let mut total_fixes = 0_i32;
         while pBNS.tot_st_cap > pBNS.tot_st_flow && pTCGroups.num_tgroups != 0 {
             let mut num_fixes = 0_i32;
             let mut itg = 0_i32;
             'groups: while itg < pTCGroups.num_tgroups {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let group = heap
                     .slice(pTCGroups.pTCG.as_const())?
                     .get(usize::try_from(itg).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone();
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let tg_vertex = usize::try_from(group.nVertexNumber)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let num_endpoints = group.num_edges;
 
                 let mut radical_order = 0_i32;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut radical = None;
                 while radical_order < num_endpoints {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let tg_edge = bns_direct_edge_index(
                         heap,
                         pBNS,
@@ -15705,7 +15153,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         usize::try_from(radical_order)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap
                         .slice(pBNS.edge.as_const())?
                         .get(tg_edge)
@@ -15714,7 +15161,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     let endpoint = opposite_vertex(&edge, tg_vertex)?;
                     let max_vertices = pTCGroups.nVertices.wrapping_add(2);
                     if (endpoint as i32) < max_vertices {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(endpoint)
@@ -15732,9 +15178,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                 };
 
                 let mut center_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut tg_edge1_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut center_edge1_found = None;
                 let mut j = 0_i32;
                 while j < num_endpoints {
@@ -15742,21 +15186,18 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         j = j.wrapping_add(1);
                         continue;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let tg_edge1 = bns_direct_edge_index(
                         heap,
                         pBNS,
                         tg_vertex,
                         usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let tg1 = heap
                         .slice(pBNS.edge.as_const())?
                         .get(tg_edge1)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .clone();
                     let endpoint1 = opposite_vertex(&tg1, tg_vertex)?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(endpoint1)
@@ -15770,24 +15211,19 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         continue;
                     }
 
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let endpoint1_valence = i32::from(
-                        copied_atoms
+                    let mut k = 0_i32;
+                    while k < i32::from(
+                        heap.slice(at2.as_const())?
                             .get(endpoint1)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .valence,
-                    );
-                    let mut k = 0_i32;
-                    while k < endpoint1_valence {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                    ) {
                         let center_edge1 = bns_direct_edge_index(
                             heap,
                             pBNS,
                             endpoint1,
                             usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1 = heap
                             .slice(pBNS.edge.as_const())?
                             .get(center_edge1)
@@ -15798,16 +15234,13 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             continue;
                         }
                         let center = opposite_vertex(&edge1, endpoint1)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let center_valence = i32::from(
-                            copied_atoms
+                        let mut n = 0_i32;
+                        while n < i32::from(
+                            heap.slice(at2.as_const())?
                                 .get(center)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .valence,
-                        );
-                        let mut n = 0_i32;
-                        while n < center_valence {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                        ) {
                             let center_edge2 = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -15815,7 +15248,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge2 = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(center_edge2)
@@ -15826,7 +15258,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 continue;
                             }
                             let endpoint2 = opposite_vertex(&edge2, center)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if endpoint2 <= endpoint1
                                 || pVA
                                     .get(endpoint2)
@@ -15837,7 +15268,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endpoint2_vertex = heap
                                 .slice(pBNS.vert.as_const())?
                                 .get(endpoint2)
@@ -15846,11 +15276,9 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let tg_edge2_index =
                                 usize::try_from(pVA[endpoint2].nTautGroupEdge.wrapping_sub(1))
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let tg2 = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(tg_edge2_index)
@@ -15859,12 +15287,13 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            if mobile_h_endpoint_center_is_better(
+                            if mobile_h_center_live(
+                                heap,
                                 pVA,
-                                original_atoms,
+                                at,
                                 center,
                                 center_found,
-                            ) {
+                            )? {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
                                 center_edge1_found = Some(center_edge1);
@@ -15877,33 +15306,27 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     j = j.wrapping_add(1);
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if let (Some(center), Some(tg_edge1), Some(center_edge1)) =
                     (center_found, tg_edge1_found, center_edge1_found)
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[radical_tg_edge].flow = heap
                         .slice(pBNS.edge.as_const())?[radical_tg_edge]
                         .flow
                         .wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
                         .slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[tg_edge1].flow = heap.slice(pBNS.edge.as_const())?
                         [tg_edge1]
                         .flow
                         .wrapping_sub(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[center_edge1].flow = heap
                         .slice(pBNS.edge.as_const())?[center_edge1]
                         .flow
                         .wrapping_add(1);
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_vertex = &mut heap.slice_mut(pBNS.vert)?[center];
                         center_vertex.st_edge.flow = center_vertex.st_edge.flow.wrapping_add(1);
                         center_vertex.st_edge.cap = center_vertex.st_edge.cap.wrapping_add(1);
@@ -15916,15 +15339,10 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     continue 'groups;
                 }
 
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 center_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 tg_edge1_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut center_edge0_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut endpoint2_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut center_edge2_found = None;
                 j = 0;
                 while j < num_endpoints {
@@ -15932,21 +15350,18 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         j = j.wrapping_add(1);
                         continue;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let tg_edge1 = bns_direct_edge_index(
                         heap,
                         pBNS,
                         tg_vertex,
                         usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                     )?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let tg1 = heap
                         .slice(pBNS.edge.as_const())?
                         .get(tg_edge1)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .clone();
                     let endpoint1 = opposite_vertex(&tg1, tg_vertex)?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(endpoint1)
@@ -15960,21 +15375,18 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         continue;
                     }
                     let mut k = 0_i32;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     while k < i32::from(
-                        copied_atoms
+                        heap.slice(at2.as_const())?
                             .get(endpoint1)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .valence,
                     ) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_edge1 = bns_direct_edge_index(
                             heap,
                             pBNS,
                             endpoint1,
                             usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1 = heap
                             .slice(pBNS.edge.as_const())?
                             .get(center_edge1)
@@ -15985,7 +15397,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             continue;
                         }
                         let center = opposite_vertex(&edge1, endpoint1)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if heap.slice(pBNS.vert.as_const())?[center].type_
                             & BNS_VERT_TYPE_ENDPOINT as AT_NUMB
                             != 0
@@ -15997,14 +15408,12 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         let mut possible_endpoint2 = None;
                         let mut possible_center_edge2 = None;
                         let mut n = 0_i32;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         while n < i32::from(
-                            copied_atoms
+                            heap.slice(at2.as_const())?
                                 .get(center)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .valence,
                         ) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_index = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -16012,17 +15421,14 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow != 0 {
                                 let endpoint2 = opposite_vertex(&edge, center)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if heap.slice(pBNS.vert.as_const())?[endpoint2].type_
                                     & BNS_VERT_TYPE_ENDPOINT as AT_NUMB
                                     == 0
                                 {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                    let atom = original_atoms
+                                    let atom = heap.slice(at.as_const())?
                                         .get(center)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     let mut stereogenic = false;
@@ -16047,14 +15453,12 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                         }
 
                         n = 0;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         while n < i32::from(
-                            original_atoms
+                            heap.slice(at.as_const())?
                                 .get(center)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .valence,
                         ) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let center_edge0 = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -16062,16 +15466,16 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge0 = heap.slice(pBNS.edge.as_const())?[center_edge0].clone();
                             if edge0.flow == 0
                                 && opposite_vertex(&edge0, center)? == endpoint0
-                                && mobile_h_endpoint_center_is_better(
+                                && mobile_h_center_live(
+                                    heap,
                                     pVA,
-                                    original_atoms,
+                                    at,
                                     center,
                                     center_found,
-                                )
+                                )?
                             {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
@@ -16087,39 +15491,32 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                     j = j.wrapping_add(1);
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if let (Some(center), Some(center_edge0)) = (center_found, center_edge0_found) {
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge0 = &mut heap.slice_mut(pBNS.edge)?[center_edge0];
                         edge0.flow = edge0.flow.wrapping_add(1);
                         if edge0.cap < edge0.flow {
                             edge0.cap = edge0.flow;
                         }
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
                         .slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let (Some(endpoint2), Some(center_edge2)) =
                         (endpoint2_found, center_edge2_found)
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[center_edge2].flow = heap
                             .slice(pBNS.edge.as_const())?[center_edge2]
                             .flow
                             .wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[endpoint2]
                             .st_edge
                             .flow
                             .wrapping_sub(1);
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_vertex = &mut heap.slice_mut(pBNS.vert)?[center];
                         center_vertex.st_edge.flow = center_vertex.st_edge.flow.wrapping_add(1);
                         center_vertex.st_edge.cap = center_vertex.st_edge.cap.wrapping_add(1);
@@ -16135,8 +15532,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                 if radical_order < num_endpoints {
                     let mut jj = 0_i32;
                     while jj < num_atoms {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let source_bug_atom = copied_atoms
+                        let source_bug_atom = heap.slice(at2.as_const())?
                             .get(
                                 usize::try_from(radical_order)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -16146,22 +15542,21 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             jj = jj.wrapping_add(1);
                             continue;
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let jj_index =
                             usize::try_from(jj).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let jj_atom = copied_atoms
+                        let jj_atom = heap.slice(at2.as_const())?
                             .get(jj_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                        if jj_atom.valence != 2 {
+                            jj = jj.wrapping_add(1);
+                            continue;
+                        }
                         let jj_vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(jj_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .clone();
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        if jj_atom.valence == 2
-                            && jj_vertex.st_edge.cap == jj_vertex.st_edge.flow
+                        if jj_vertex.st_edge.cap == jj_vertex.st_edge.flow
                             && pVA
                                 .get(jj_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -16169,32 +15564,29 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 == 4
                         {
                             let mut carbon_edge = bns_direct_edge_index(heap, pBNS, jj_index, 0)?;
-                            let carbon_edge1 = bns_direct_edge_index(heap, pBNS, jj_index, 1)?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge0 = heap.slice(pBNS.edge.as_const())?[carbon_edge].clone();
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                            if edge0.forbidden != 0 {
+                                jj = jj.wrapping_add(1);
+                                continue;
+                            }
+                            let carbon_edge1 = bns_direct_edge_index(heap, pBNS, jj_index, 1)?;
                             let edge1 = heap.slice(pBNS.edge.as_const())?[carbon_edge1].clone();
-                            let neighbor0 = usize::from(source_bug_atom.neighbor[0]);
-                            let neighbor1 = usize::from(source_bug_atom.neighbor[1]);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            if edge0.forbidden == 0
-                                && edge1.forbidden == 0
+                            if edge1.forbidden == 0
                                 && edge0.flow == 1
                                 && edge1.flow == 1
-                                && copied_atoms
-                                    .get(neighbor0)
+                                && heap.slice(at2.as_const())?
+                                    .get(usize::from(source_bug_atom.neighbor[0]))
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .sb_parity[0]
                                     == 0
-                                && copied_atoms
-                                    .get(neighbor1)
+                                && heap.slice(at2.as_const())?
+                                    .get(usize::from(source_bug_atom.neighbor[1]))
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .sb_parity[0]
                                     == 0
                             {
                                 let mut k = opposite_vertex(&edge0, jj_index)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                if copied_atoms
+                                if heap.slice(at2.as_const())?
                                     .get(k)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .endpoint
@@ -16202,8 +15594,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 {
                                     carbon_edge = carbon_edge1;
                                     k = opposite_vertex(&edge1, jj_index)?;
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                    if copied_atoms
+                                    if heap.slice(at2.as_const())?
                                         .get(k)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                                         .endpoint
@@ -16213,18 +15604,14 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                         continue;
                                     }
                                 }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.vert)?[jj_index].st_edge.flow =
                                     jj_vertex.st_edge.flow.wrapping_sub(1);
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.vert)?[jj_index].st_edge.cap =
                                     jj_vertex.st_edge.cap.wrapping_sub(1);
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.edge)?[carbon_edge].flow = heap
                                     .slice(pBNS.edge.as_const())?[carbon_edge]
                                     .flow
                                     .wrapping_sub(1);
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.vert)?[k].st_edge.flow = heap
                                     .slice(pBNS.vert.as_const())?[k]
                                     .st_edge
@@ -16233,17 +15620,11 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(1);
                                 pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut path_start = NO_VERTEX;
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut path_end = NO_VERTEX;
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut path_len = 0_i32;
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut delta_h = 0_i32;
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut delta_charge = 0_i32;
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let mut visited_atoms = 0_i32;
                                 let mut ret2 = RunBnsTestOnce(
                                     heap,
@@ -16274,7 +15655,6 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                     if ret2 > 0 {
                                         num_fixes = num_fixes.wrapping_add(1);
                                         total_fixes = total_fixes.wrapping_add(1);
-                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         heap.slice_mut(pBNS.vert)?[jj_index].st_edge.cap = heap
                                             .slice(pBNS.vert.as_const())?[jj_index]
                                             .st_edge
@@ -16285,17 +15665,14 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                     }
                                 } else {
                                     {
-                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let vertex = &mut heap.slice_mut(pBNS.vert)?[jj_index];
                                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                                         vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
                                     }
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     heap.slice_mut(pBNS.edge)?[carbon_edge].flow = heap
                                         .slice(pBNS.edge.as_const())?[carbon_edge]
                                         .flow
                                         .wrapping_add(1);
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     heap.slice_mut(pBNS.vert)?[k].st_edge.flow = heap
                                         .slice(pBNS.vert.as_const())?[k]
                                         .st_edge
@@ -16346,7 +15723,29 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     _pnNumRunBNS: &mut i32,
     _pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    remove_rad_from_mobile_h_endpoint_fix_h_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, _pnNumRunBNS, _pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn remove_rad_from_mobile_h_endpoint_fix_h_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    _pnNumRunBNS: &mut i32,
+    _pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6963 RemoveRadFromMobileHEndpointFixH
     /*
@@ -17060,102 +16459,46 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
 
     let num_atoms = pStruct.num_atoms;
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
     pStruct.at = at2;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut masks_set = false;
 
     let operation = (|| -> Result<i32, SourceHeapError> {
-        let ret2 = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
+        let ret2 = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode)?;
         if ret2 < 0 {
             return Ok(ret2);
         }
 
         // SAFETY: CopyBnsToAtom has completed its only write to `at2`. The
-        // source function only reads these five allocations until cleanup,
+        // source function only reads these two atom allocations until cleanup,
         // while the BNS calls below mutate separate network allocations.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let original_atoms_view = if atom_count == 0 {
             None
         } else {
             Some(unsafe { heap.stable_slice(at.as_const())? })
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let original_atoms = match &original_atoms_view {
             Some(view) => view.prefix(atom_count)?,
             None => &[],
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let copied_atoms_view = if atom_count == 0 {
             None
         } else {
             Some(unsafe { heap.stable_slice(at2.as_const())? })
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let copied_atoms = match &copied_atoms_view {
             Some(view) => view.prefix(atom_count)?,
             None => &[],
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_count = if num_atoms <= 0 {
-            0
-        } else {
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        };
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_flags_view = if endpoint_count == 0 {
-            None
-        } else {
-            Some(unsafe { heap.stable_slice(pStruct.endpoint.as_const())? })
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_flags = match &endpoint_flags_view {
-            Some(view) => view.prefix(endpoint_count)?,
-            None => &[],
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_number_count = if pStruct.ti.nNumEndpoints <= 0 {
-            0
-        } else {
-            usize::try_from(pStruct.ti.nNumEndpoints)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        };
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_numbers_view = if endpoint_number_count == 0 {
-            None
-        } else {
-            Some(unsafe { heap.stable_slice(pStruct.ti.nEndpointAtomNumber.as_const())? })
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let endpoint_numbers = match &endpoint_numbers_view {
-            Some(view) => view.prefix(endpoint_number_count)?,
-            None => &[],
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let taut_group_count = if pStruct.ti.num_t_groups <= 0 {
-            0
-        } else {
-            usize::try_from(pStruct.ti.num_t_groups)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        };
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let taut_groups_view = if taut_group_count == 0 {
-            None
-        } else {
-            Some(unsafe { heap.stable_slice(pStruct.ti.t_group.as_const())? })
-        };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let taut_groups = match &taut_groups_view {
-            Some(view) => view.prefix(taut_group_count)?,
-            None => &[],
-        };
+        // VERBATIM SOURCE FRAGMENT: ichirvr2.c7014
+        //             num_endpoints = pStruct->ti.t_group[itg].nNumEndpoints;
+        // INCHI✔️❗: Source reads group/endpoint storage only at reached
+        // predicates. Use safe live projections, no eager full prefix and
+        // no stable unsafe endpoint view across mutable network callbacks.
+        // Same loops/state/aliases; O(1) scratch, checked/whole-call costs OPEN.
 
         let mut total_fixes = 0_i32;
         while pBNS.tot_st_cap > pBNS.tot_st_flow && pStruct.ti.num_t_groups != 0 {
@@ -17163,8 +16506,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
             let mut num_fixes = 0_i32;
             let mut group_index = 0_i32;
             'groups: while group_index < pStruct.ti.num_t_groups {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let group = taut_groups
+                let group = heap.slice(pStruct.ti.t_group.as_const())?
                     .get(
                         usize::try_from(group_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -17175,16 +16517,14 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 let mut radical_endpoint = None;
                 while radical_order < num_endpoints {
                     let endpoint_position = endpoint_offset.wrapping_add(radical_order);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint = usize::from(
-                        *endpoint_numbers
+                        *heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?
                             .get(
                                 usize::try_from(endpoint_position)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(endpoint)
@@ -17202,11 +16542,8 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 };
 
                 let mut center_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut edge0_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut endpoint2_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut edge2_found = None;
 
                 let mut j = 0_i32;
@@ -17215,44 +16552,37 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                         j = j.wrapping_add(1);
                         continue;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1 = usize::from(
-                        endpoint_numbers[usize::try_from(endpoint_offset.wrapping_add(j))
+                        heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?[usize::try_from(endpoint_offset.wrapping_add(j))
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                     );
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1_vertex = heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
                         || (copied_atoms[endpoint1].num_H == 0
                             && copied_atoms[endpoint1].charge != -1)
-                        || endpoint_flags[endpoint1] == 0
+                        || heap.slice(pStruct.endpoint.as_const())?[endpoint1] == 0
                     {
                         j = j.wrapping_add(1);
                         continue;
                     }
                     let mut k = 0_i32;
                     while k < i32::from(endpoint1_vertex.num_adj_edges) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1 = bns_direct_edge_index(
                             heap,
                             pBNS,
                             endpoint1,
                             usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                         if edge1_data.flow != 0 {
                             k = k.wrapping_add(1);
                             continue;
                         }
                         let center = opposite_vertex(&edge1_data, endpoint1)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if center >= usize::try_from(pBNS.num_atoms).unwrap_or(0) {
                             break;
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        if endpoint_flags[center] != 0 {
+                        if heap.slice(pStruct.endpoint.as_const())?[center] != 0 {
                             k = k.wrapping_add(1);
                             continue;
                         }
@@ -17260,9 +16590,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                         let mut possible_endpoint2 = None;
                         let mut possible_edge2 = None;
                         let mut n = 0_i32;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         while n < i32::from(copied_atoms[center].valence) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_index = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -17270,12 +16598,10 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow != 0 {
                                 let endpoint2 = opposite_vertex(&edge, center)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                if endpoint_flags
+                                if heap.slice(pStruct.endpoint.as_const())?
                                     .get(endpoint2)
                                     .copied()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -17286,7 +16612,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 }
                                 let mut stereogenic = false;
                                 let mut m = 0_usize;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 while m < MAX_NUM_STEREO_BONDS as usize
                                     && original_atoms[center].sb_parity[m] != 0
                                 {
@@ -17304,16 +16629,13 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             }
                             n = n.wrapping_add(1);
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let Some(possible_edge2) = possible_edge2 else {
                             k = k.wrapping_add(1);
                             continue;
                         };
 
                         n = 0;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         while n < i32::from(copied_atoms[center].valence) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_index = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -17321,7 +16643,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow == 0
                                 && opposite_vertex(&edge, center)? == endpoint0
@@ -17345,37 +16666,30 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     j = j.wrapping_add(1);
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if let (Some(center), Some(edge0)) = (center_found, edge0_found) {
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = &mut heap.slice_mut(pBNS.edge)?[edge0];
                         edge.flow = edge.flow.wrapping_add(1);
                         if edge.cap < edge.flow {
                             edge.cap = edge.flow;
                         }
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
                         .slice(pBNS.vert.as_const())?[endpoint0]
                         .st_edge
                         .flow
                         .wrapping_add(1);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let (Some(endpoint2), Some(edge2)) = (endpoint2_found, edge2_found) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[edge2].flow = heap
                             .slice(pBNS.edge.as_const())?[edge2]
                             .flow
                             .wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[endpoint2]
                             .st_edge
                             .flow
                             .wrapping_sub(1);
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertex = &mut heap.slice_mut(pBNS.vert)?[center];
                         vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
                         vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
@@ -17390,7 +16704,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 }
 
                 center_found = None;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut center_edge1_found = None;
                 j = 0;
                 while j < num_endpoints {
@@ -17398,47 +16711,39 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                         j = j.wrapping_add(1);
                         continue;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1 = usize::from(
-                        endpoint_numbers[usize::try_from(endpoint_offset.wrapping_add(j))
+                        heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?[usize::try_from(endpoint_offset.wrapping_add(j))
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                     );
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint1_vertex = heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
                         || (copied_atoms[endpoint1].num_H == 0
                             && copied_atoms[endpoint1].charge != -1)
-                        || endpoint_flags[endpoint1] == 0
+                        || heap.slice(pStruct.endpoint.as_const())?[endpoint1] == 0
                     {
                         j = j.wrapping_add(1);
                         continue;
                     }
                     let mut k = 0_i32;
                     while k < i32::from(endpoint1_vertex.num_adj_edges) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1 = bns_direct_edge_index(
                             heap,
                             pBNS,
                             endpoint1,
                             usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                         if edge1_data.flow != 0 {
                             k = k.wrapping_add(1);
                             continue;
                         }
                         let center = opposite_vertex(&edge1_data, endpoint1)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if center >= usize::try_from(pBNS.num_atoms).unwrap_or(0) {
                             break;
                         }
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_vertex = heap.slice(pBNS.vert.as_const())?[center].clone();
                         let mut n = 0_i32;
                         while n < i32::from(center_vertex.num_adj_edges) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge2 = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -17446,16 +16751,13 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 usize::try_from(n)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge2_data = heap.slice(pBNS.edge.as_const())?[edge2].clone();
                             if edge2_data.flow == 0 {
                                 let endpoint2 = opposite_vertex(&edge2_data, center)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if endpoint2 >= usize::try_from(pBNS.num_atoms).unwrap_or(0) {
                                     break;
                                 }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                if endpoint_flags[endpoint2] != 0
+                                if heap.slice(pStruct.endpoint.as_const())?[endpoint2] != 0
                                     && copied_atoms[endpoint2].num_H == 0
                                     && copied_atoms[endpoint1].charge != -1
                                     && mobile_h_endpoint_center_is_better(
@@ -17477,26 +16779,18 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     j = j.wrapping_add(1);
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if let (Some(center), Some(_center_edge1)) = (center_found, center_edge1_found) {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[center].st_edge.cap = heap
                         .slice(pBNS.vert.as_const())?[center]
                         .st_edge
                         .cap
                         .wrapping_add(1);
                     pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_start = NO_VERTEX;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_end = NO_VERTEX;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_len = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_h = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_charge = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut visited = 0_i32;
                     let mut ret3 = RunBnsTestOnce(
                         heap,
@@ -17524,7 +16818,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             continue 'groups;
                         }
                     } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[center].st_edge.cap = heap
                             .slice(pBNS.vert.as_const())?[center]
                             .st_edge
@@ -17538,20 +16831,14 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                 }
 
                 center_found = None;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus0 = pVA[endpoint0].nCMinusGroupEdge.wrapping_sub(1);
                 if minus0 >= 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let minus0_index =
                         usize::try_from(minus0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if heap.slice(pBNS.edge.as_const())?[minus0_index].forbidden == 0 {
                         let mut chosen_center = None;
-                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut chosen_endpoint2 = None;
-                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut chosen_edge2 = None;
-                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut chosen_edge1 = None;
                         let mut j = 0_i32;
                         while j < pStruct.ti.nNumEndpoints {
@@ -17559,15 +16846,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 j = j.wrapping_add(1);
                                 continue;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endpoint1 = usize::from(
-                                endpoint_numbers[usize::try_from(j)
+                                heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?[usize::try_from(j)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                             );
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endpoint1_vertex =
                                 heap.slice(pBNS.vert.as_const())?[endpoint1].clone();
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus1 = pVA[endpoint1].nCMinusGroupEdge.wrapping_sub(1);
                             if endpoint1_vertex.st_edge.cap > endpoint1_vertex.st_edge.flow
                                 || minus1 < 0
@@ -17575,23 +16859,19 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 j = j.wrapping_add(1);
                                 continue;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus1_index = usize::try_from(minus1)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus1_edge = &heap.slice(pBNS.edge.as_const())?[minus1_index];
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if minus1_edge.flow == 0
                                 || minus1_edge.forbidden != 0
-                                || endpoint_flags[endpoint1] == 0
+                                || heap.slice(pStruct.endpoint.as_const())?[endpoint1] == 0
                             {
                                 j = j.wrapping_add(1);
                                 continue;
                             }
 
                             let mut k = 0_i32;
-                            while k < i32::from(endpoint1_vertex.num_adj_edges) {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+                            'candidate_centers: while k < i32::from(endpoint1_vertex.num_adj_edges) {
                                 let edge1 = bns_direct_edge_index(
                                     heap,
                                     pBNS,
@@ -17599,28 +16879,23 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     usize::try_from(k)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                 )?;
-                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                                 if edge1_data.flow != 0 || edge1_data.forbidden != 0 {
                                     k = k.wrapping_add(1);
                                     continue;
                                 }
                                 let center = opposite_vertex(&edge1_data, endpoint1)?;
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if center >= usize::try_from(pBNS.num_atoms).unwrap_or(0) {
                                     break;
                                 }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                if endpoint_flags[center] != 0 {
+                                if heap.slice(pStruct.endpoint.as_const())?[center] != 0 {
                                     k = k.wrapping_add(1);
                                     continue;
                                 }
-                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let center_vertex =
                                     heap.slice(pBNS.vert.as_const())?[center].clone();
                                 let mut n = 0_i32;
                                 while n < i32::from(center_vertex.num_adj_edges) {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge2 = bns_direct_edge_index(
                                         heap,
                                         pBNS,
@@ -17628,21 +16903,18 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                         usize::try_from(n)
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                                     )?;
-                                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge2_data =
                                         heap.slice(pBNS.edge.as_const())?[edge2].clone();
                                     if edge2_data.flow != 0 && edge2_data.forbidden == 0 {
                                         let endpoint2 = opposite_vertex(&edge2_data, center)?;
-                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         if endpoint2 >= usize::try_from(pBNS.num_atoms).unwrap_or(0)
-                                            || endpoint_flags[endpoint2] != 0
+                                            || heap.slice(pStruct.endpoint.as_const())?[endpoint2] != 0
                                         {
                                             n = n.wrapping_add(1);
                                             continue;
                                         }
                                         let mut stereogenic = false;
                                         let mut m = 0_usize;
-                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         while m < MAX_NUM_STEREO_BONDS as usize
                                             && original_atoms[center].sb_parity[m] != 0
                                         {
@@ -17653,7 +16925,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                             m += 1;
                                         }
                                         if !stereogenic {
-                                            panic!("INCHI-AUDIT-0323: suspected source divergence; see dev/audits/inchi/findings.md");
+                                            // INCHI✔️❗: Source selects the first nonstereo
+                                            // edge in n, then accepting its center exits k.
+                                            // No later neighbor of this endpoint is read;
+                                            // outer j still considers other endpoints.
+                                            // Same scalar state/lookup costs, no allocation;
+                                            // removed extra k iterations, whole cost OPEN.
                                             let replace = chosen_center.is_none()
                                                 || (!valence_atom_is_carbon(pVA, chosen_endpoint2)
                                                     && valence_atom_is_carbon(
@@ -17672,6 +16949,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                                 chosen_endpoint2 = Some(endpoint2);
                                                 chosen_edge2 = Some(edge2);
                                                 chosen_edge1 = Some(edge1);
+                                                break 'candidate_centers;
                                             }
                                             break;
                                         }
@@ -17683,26 +16961,21 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             j = j.wrapping_add(1);
                         }
 
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if let (Some(center), Some(endpoint2), Some(edge2), Some(edge1)) =
                             (chosen_center, chosen_endpoint2, chosen_edge2, chosen_edge1)
                         {
                             if charge_edges.num_alloc == 0 {
                                 let mut n = 0_i32;
                                 while n < num_atoms {
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let atom_index = usize::try_from(n)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     for charge_edge in [
                                         pVA[atom_index].nCMinusGroupEdge,
                                         pVA[atom_index].nCPlusGroupEdge,
                                     ] {
                                         if charge_edge >= 0 {
-                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let edge_index = usize::try_from(charge_edge)
                                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             if heap.slice(pBNS.edge.as_const())?[edge_index]
                                                 .forbidden
                                                 == 0
@@ -17735,21 +17008,17 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             }
                             SetForbiddenEdgeMask(heap, pBNS, &charge_edges, forbidden_edge_mask)?;
                             SetForbiddenEdgeMask(heap, pBNS, &bond_edges, forbidden_edge_mask)?;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             masks_set = true;
 
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(pBNS.edge)?[edge2].flow = heap
                                 .slice(pBNS.edge.as_const())?[edge2]
                                 .flow
                                 .wrapping_sub(1);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(pBNS.vert)?[center].st_edge.flow = heap
                                 .slice(pBNS.vert.as_const())?[center]
                                 .st_edge
                                 .flow
                                 .wrapping_sub(1);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                                 .slice(pBNS.vert.as_const())?[endpoint2]
                                 .st_edge
@@ -17757,39 +17026,29 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 .wrapping_sub(1);
                             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus1 = pVA[opposite_vertex(
                                 &heap.slice(pBNS.edge.as_const())?[edge1],
                                 center,
                             )?]
                             .nCMinusGroupEdge
                             .wrapping_sub(1);
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus1_index = usize::try_from(minus1)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let inverse_mask = !forbidden_edge_mask;
                             for edge_index in [minus0_index, minus1_index, edge1] {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = &mut heap.slice_mut(pBNS.edge)?[edge_index];
                                 edge.forbidden = (i32::from(edge.forbidden) & inverse_mask) as i8;
                             }
                             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(1);
 
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endp0_path = usize::from(
                                 heap.slice(pBNS.edge.as_const())?[minus0_index].neighbor1,
                             );
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut path_start = NO_VERTEX;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut path_end = NO_VERTEX;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut path_len = 0_i32;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut delta_h = 0_i32;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut delta_charge = 0_i32;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut visited = 0_i32;
                             let mut ret2 = RunBnsTestOnce(
                                 heap,
@@ -17808,7 +17067,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     || (path_end == center as i32
                                         && path_start == endp0_path as i32))
                                 && delta_charge == 0;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut fixed = false;
                             if test_succeeded {
                                 ret2 = RunBnsRestoreOnce(
@@ -17825,18 +17083,15 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                     fixed = true;
                                 }
                             } else {
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.edge)?[edge2].flow = heap
                                     .slice(pBNS.edge.as_const())?[edge2]
                                     .flow
                                     .wrapping_add(1);
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.vert)?[center].st_edge.flow = heap
                                     .slice(pBNS.vert.as_const())?[center]
                                     .st_edge
                                     .flow
                                     .wrapping_add(1);
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                                     .slice(pBNS.vert.as_const())?[endpoint2]
                                     .st_edge
@@ -17851,7 +17106,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 forbidden_edge_mask,
                             )?;
                             RemoveForbiddenEdgeMask(heap, pBNS, &bond_edges, forbidden_edge_mask)?;
-                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             masks_set = false;
                             if ret2 < 0 {
                                 return Ok(ret2);
@@ -17878,8 +17132,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
             let mut num_fixes = 0_i32;
             let mut group_index = 0_i32;
             'again_groups: while group_index < pStruct.ti.num_t_groups {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let group = taut_groups
+                let group = heap.slice(pStruct.ti.t_group.as_const())?
                     .get(
                         usize::try_from(group_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -17887,17 +17140,14 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let num_endpoints = i32::from(group.nNumEndpoints);
                 let mut radical_order = 0_i32;
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut endpoint0 = None;
                 while radical_order < num_endpoints {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint = usize::from(
-                        endpoint_numbers[usize::try_from(
+                        heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?[usize::try_from(
                             endpoint_offset.wrapping_add(radical_order),
                         )
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?],
                     );
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = &heap.slice(pBNS.vert.as_const())?[endpoint];
                     if vertex.st_edge.cap > vertex.st_edge.flow {
                         endpoint0 = Some(endpoint);
@@ -17905,42 +17155,32 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                     }
                     radical_order = radical_order.wrapping_add(1);
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if let Some(endpoint0) = endpoint0 {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let endpoint0_vertex = heap.slice(pBNS.vert.as_const())?[endpoint0].clone();
                     let mut best_endpoint = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut best_center = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut best_edge0 = None;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut best_edge1 = None;
                     let mut j = 0_i32;
                     while j < i32::from(endpoint0_vertex.num_adj_edges) {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge0 = bns_direct_edge_index(
                             heap,
                             pBNS,
                             endpoint0,
                             usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                         )?;
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge0_data = heap.slice(pBNS.edge.as_const())?[edge0].clone();
                         let center = opposite_vertex(&edge0_data, endpoint0)?;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if center >= usize::try_from(pBNS.num_atoms).unwrap_or(0)
                             || edge0_data.flow != 0
-                            || endpoint_flags[center] != 0
+                            || heap.slice(pStruct.endpoint.as_const())?[center] != 0
                         {
                             j = j.wrapping_add(1);
                             continue;
                         }
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_vertex = heap.slice(pBNS.vert.as_const())?[center].clone();
                         let mut k = 0_i32;
                         while k < i32::from(center_vertex.num_adj_edges) {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge1 = bns_direct_edge_index(
                                 heap,
                                 pBNS,
@@ -17948,18 +17188,15 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 usize::try_from(k)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
                             )?;
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge1_data = heap.slice(pBNS.edge.as_const())?[edge1].clone();
                             let endpoint1 = opposite_vertex(&edge1_data, center)?;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             if endpoint1 >= usize::try_from(pBNS.num_atoms).unwrap_or(0)
                                 || edge1_data.flow == 0
-                                || endpoint_flags[endpoint1] != 0
+                                || heap.slice(pStruct.endpoint.as_const())?[endpoint1] != 0
                             {
                                 k = k.wrapping_add(1);
                                 continue;
                             }
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endpoint1_vertex = &heap.slice(pBNS.vert.as_const())?[endpoint1];
                             if endpoint1 != endpoint0
                                 && endpoint1_vertex.st_edge.cap == endpoint1_vertex.st_edge.flow
@@ -17982,27 +17219,22 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                         }
                         j = j.wrapping_add(1);
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let (Some(endpoint2), Some(edge0), Some(edge1)) =
                         (best_endpoint, best_edge0, best_edge1)
                     {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[endpoint0].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[endpoint0]
                             .st_edge
                             .flow
                             .wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[edge0].flow = heap
                             .slice(pBNS.edge.as_const())?[edge0]
                             .flow
                             .wrapping_add(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[edge1].flow = heap
                             .slice(pBNS.edge.as_const())?[edge1]
                             .flow
                             .wrapping_sub(1);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[endpoint2].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[endpoint2]
                             .st_edge
@@ -18026,7 +17258,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
         Ok(total_fixes)
     })();
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if masks_set {
         let _ = RemoveForbiddenEdgeMask(heap, pBNS, &charge_edges, forbidden_edge_mask);
         let _ = RemoveForbiddenEdgeMask(heap, pBNS, &bond_edges, forbidden_edge_mask);
@@ -18039,7 +17270,6 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     } else {
         copy_inp_atom_prefix(heap, at2, at, atom_count)
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (operation, free_charge, free_bond, restore_atoms) {
         (Ok(value), Ok(_), Ok(_), Ok(())) => Ok(value),
         (Err(error), _, _, _)
@@ -18062,7 +17292,29 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
     pnNumRunBNS: &mut i32,
     pnTotalDelta: &mut i32,
     forbidden_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    move_charge_to_make_cenerpoints_with_restore_mode(heap, pBNS, pBD, pStruct, at, at2, pVA, pTCGroups, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn move_charge_to_make_cenerpoints_with_restore_mode(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    pnNumRunBNS: &mut i32,
+    pnTotalDelta: &mut i32,
+    forbidden_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:7658 MoveChargeToMakeCenerpoints
     // INCHI✔️✔️: int MoveChargeToMakeCenerpoints( BN_STRUCT *pBNS,
@@ -18298,13 +17550,12 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
 
     let num_atoms = pStruct.num_atoms;
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
     pStruct.at = at2;
-    let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+    let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
     pStruct.at = at;
     let ret2 = copy_result?;
     if ret2 < 0 {
@@ -18316,7 +17567,6 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
     // freed here. The source mutates BNS allocations between reads; `at2` is
     // written only by the source-equivalent copy followed by CopyBnsToAtom,
     // and each indexed reference is used only before that next write.
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let copied_atoms_view = if atom_count == 0 {
         None
     } else {
@@ -18326,14 +17576,11 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
     let mut tg_group = 0_i32;
     let mut i = 0_i32;
     while i < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = match &copied_atoms_view {
             Some(view) => view.get(atom_index)?,
             None => return Err(SourceHeapError::PointerOutOfBounds),
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let valence = pVA
             .get(atom_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -18350,14 +17597,12 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
             let mut j = 0_i32;
             let mut num_endpoints = 0_i32;
             while j < i32::from(atom.valence) {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let neighbor = usize::from(
                     *atom
                         .neighbor
                         .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let endpoint = i32::from(match &copied_atoms_view {
                     Some(view) => view.get(neighbor)?.endpoint,
                     None => return Err(SourceHeapError::PointerOutOfBounds),
@@ -18374,10 +17619,8 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
             }
 
             if j == i32::from(atom.valence) && num_endpoints > 1 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_index = usize::try_from(valence.nCPlusGroupEdge.wrapping_sub(1))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus_index = if valence.nCMinusGroupEdge > 0 {
                     Some(
                         usize::try_from(valence.nCMinusGroupEdge.wrapping_sub(1))
@@ -18386,13 +17629,11 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                 } else {
                     None
                 };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_flow = heap
                     .slice(pBNS.edge.as_const())?
                     .get(plus_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .flow;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus_flow = if let Some(index) = minus_index {
                     heap.slice(pBNS.edge.as_const())?
                         .get(index)
@@ -18406,13 +17647,10 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                     continue;
                 }
 
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let plus_edge = heap.slice(pBNS.edge.as_const())?[plus_index].clone();
                 let v1p = usize::from(plus_edge.neighbor1);
                 let v2p = opposite_vertex(&plus_edge, v1p)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minus_vertices = if let Some(index) = minus_index {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge = heap.slice(pBNS.edge.as_const())?[index].clone();
                     Some((
                         usize::from(edge.neighbor1),
@@ -18425,44 +17663,32 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                 let mut ret = 0_i32;
 
                 if delta != 0 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[plus_index].flow = plus_flow.wrapping_sub(delta);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow = heap
                         .slice(pBNS.vert.as_const())?[v1p]
                         .st_edge
                         .flow
                         .wrapping_sub(delta);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow = heap
                         .slice(pBNS.vert.as_const())?[v2p]
                         .st_edge
                         .flow
                         .wrapping_sub(delta);
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(delta.wrapping_mul(2));
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
                         (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
                             | forbidden_edge_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let Some(index) = minus_index {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[index].forbidden =
                             (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden)
                                 | forbidden_edge_mask) as i8;
                     }
 
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_start = NO_VERTEX;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_end = NO_VERTEX;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_len = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_h = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_charge = 0_i32;
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut visited = 0_i32;
                     ret = RunBnsTestOnce(
                         heap,
@@ -18495,18 +17721,15 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                         }
                     } else {
                         ret = 0;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[plus_index].flow = heap
                             .slice(pBNS.edge.as_const())?[plus_index]
                             .flow
                             .wrapping_add(delta);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[v1p].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[v1p]
                             .st_edge
                             .flow
                             .wrapping_add(delta);
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.vert)?[v2p].st_edge.flow = heap
                             .slice(pBNS.vert.as_const())?[v2p]
                             .st_edge
@@ -18514,20 +17737,16 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                             .wrapping_add(delta);
                         pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_add(delta.wrapping_mul(2));
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[plus_index].forbidden =
                         (i32::from(heap.slice(pBNS.edge.as_const())?[plus_index].forbidden)
                             & inverse_mask) as i8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if let Some(index) = minus_index {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[index].forbidden =
                             (i32::from(heap.slice(pBNS.edge.as_const())?[index].forbidden)
                                 & inverse_mask) as i8;
                     }
                 } else if let (Some(minus_index), Some((v1m, v2m))) = (minus_index, minus_vertices)
                 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if delta == minus_flow && plus_flow == 0 {
                         heap.slice_mut(pBNS.edge)?[minus_index].flow =
                             minus_flow.wrapping_sub(delta);
@@ -18617,7 +17836,7 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                         copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                     }
                     pStruct.at = at2;
-                    let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
+                    let copy_result = copy_bns_to_atom_with_restore_mode(heap, pStruct, pBNS, pVA, pTCGroups, 1, source_restore_mode);
                     pStruct.at = at;
                     let ret2 = copy_result?;
                     if ret2 < 0 {
@@ -20458,10 +19677,14 @@ mod tests {
 
         let mut negative_valence = pair(1, 2, 7, 8);
         negative_valence[0].valence = -1;
-        let before = negative_valence.clone();
+        let mut before = negative_valence.clone();
+        before[0].bond_type[0] = BOND_TYPE_DOUBLE as u8;
+        before[1].bond_type[0] = BOND_TYPE_DOUBLE as u8;
+        before[0].chem_bonds_valence = 8;
+        before[1].chem_bonds_valence = 9;
         assert_eq!(
             set_bond_type(&mut negative_valence, 0, 1, BOND_TYPE_DOUBLE as i32,),
-            Err(SourceHeapError::SourceIntegerOverflow)
+            Ok(0)
         );
         assert_eq!(negative_valence, before);
 
@@ -25602,5 +24825,471 @@ mod tests {
             ),
             (0, 2, 1, 4)
         );
+    }
+}
+
+#[cfg(test)]
+mod mobile_h_center_regressions {
+    use super::mobile_h_endpoint_center_is_better;
+    use crate::source_types::{VAL_AT, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    #[test]
+    fn complete_center_predicate_none_alias_signed_bytes_and_bounds() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/mobile_h_center");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(f.len(), 14);
+            assert_eq!(f[0].parse::<usize>().unwrap(), id);
+            assert!(matches!(f[1], "N" | "E"));
+            let n: Vec<i16> = f[2..12].iter().map(|x| x.parse().unwrap()).collect();
+            let candidate = f[12].parse::<usize>().unwrap();
+            let found = if f[13] == "-1" {
+                None
+            } else {
+                Some(f[13].parse::<usize>().unwrap())
+            };
+            let want = expected.next().unwrap();
+            assert!(matches!(want, "T" | "F" | "P"));
+            let mut v: [VAL_AT; 2] = std::array::from_fn(|_| VAL_AT::default());
+            let mut a = [inp_ATOM::default(); 2];
+            v[0].cNumValenceElectrons = n[0] as i8;
+            v[0].cPeriodicRowNumber = n[1] as i8;
+            v[1].cNumValenceElectrons = n[2] as i8;
+            v[1].cPeriodicRowNumber = n[3] as i8;
+            a[0].valence = n[4] as i8;
+            a[1].valence = n[5] as i8;
+            a[0].el_number = n[6] as u8;
+            a[1].el_number = n[7] as u8;
+            v[0].cDoNotAddH = -37;
+            v[1].nTautGroupEdge = 91;
+            a[0].x = 3.25;
+            a[1].orig_at_number = 71;
+            let before = (v.clone(), a);
+            for _rep in 0..2 {
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| {
+                    mobile_h_endpoint_center_is_better(
+                        &v[..n[8] as usize],
+                        &a[..n[9] as usize],
+                        candidate,
+                        found,
+                    )
+                })) {
+                    Ok(result) => {
+                        completed += 1;
+                        differences += usize::from(if result { "T" } else { "F" } != want);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantine += 1;
+                        } else if message.is_some_and(|s| s.starts_with("index out of bounds: ")) {
+                            bounds += 1;
+                            differences += usize::from(want != "P");
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                changes += usize::from(v != before.0 || a != before.1);
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "MOBILE_H_CENTER COUNTS calls={calls} completed={completed} bounds={bounds} audit159={quarantine} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 87806);
+        assert_eq!((quarantine, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
+    }
+}
+
+#[cfg(test)]
+mod valence_carbon_regressions {
+    use super::valence_atom_is_carbon;
+    use crate::source_types::VAL_AT;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn backing(ve: i8, row: i8, byte: u8) -> [VAL_AT; 2] {
+        std::array::from_fn(|j| VAL_AT {
+            cDoNotAddH: byte as i8,
+            cMetal: 0x19,
+            cNumBondsToMetal: 0x19,
+            cInitFlowToMetal: 0x19,
+            cInitValenceToMetal: 0x19,
+            cInitOrigValenceToMetal: 0x19,
+            cMaxFlowToMetal: 0x19,
+            cInitFreeValences: 0x19,
+            cInitCharge: 0x19,
+            cNumValenceElectrons: ve.wrapping_add(if j == 0 { 0 } else { 37 }),
+            cPeriodicRowNumber: row.wrapping_add(j as i8),
+            cMinRingSize: 0x19,
+            cPeriodicNumber: byte,
+            cnListIndex: 0x19,
+            nCMinusGroupEdge: 0x19191919,
+            nCPlusGroupEdge: 0x19191919,
+            nMetalGroupEdge: 0x19191919,
+            nTautGroupEdge: 0x19191919,
+        })
+    }
+    #[test]
+    fn complete_carbon_signed_fields_none_and_reached_bounds() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/valence_carbon");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(f.len(), 7);
+            assert_eq!(f[0].parse::<usize>().unwrap(), id);
+            assert!(matches!(f[1], "N" | "E"));
+            let ve: i8 = f[2].parse().unwrap();
+            let row: i8 = f[3].parse().unwrap();
+            let byte: u8 = f[4].parse().unwrap();
+            let len: usize = f[5].parse().unwrap();
+            assert!(len <= 2);
+            let vertex = match f[6] {
+                "-2" => None,
+                "-1" => Some(usize::MAX),
+                s => Some(s.parse().unwrap()),
+            };
+            let want = expected.next().unwrap();
+            assert!(matches!(want, "T" | "F" | "P"));
+            for _rep in 0..2 {
+                let a = backing(ve, row, byte);
+                let before = a.clone();
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| {
+                    valence_atom_is_carbon(&a[..len], vertex)
+                })) {
+                    Ok(result) => {
+                        completed += 1;
+                        differences += usize::from(if result { "T" } else { "F" } != want);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantine += 1;
+                        } else if message.is_some_and(|s| s.starts_with("index out of bounds: ")) {
+                            bounds += 1;
+                            differences += usize::from(want != "P");
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                changes += usize::from(a != before);
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "VALENCE_CARBON COUNTS calls={calls} completed={completed} bounds={bounds} audit159={quarantine} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 331228);
+        assert_eq!((quarantine, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
+    }
+}
+
+#[cfg(test)]
+mod stereo_copy_regressions {
+    use super::{CopyAt2St, CopySt2At};
+    use crate::source_types::{SourceHeapError, inp_ATOM, inp_ATOM_STEREO};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u16) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6],
+            el_number: byte,
+            neighbor: [word; 20],
+            orig_at_number: word,
+            orig_compt_at_numb: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            bond_stereo: [byte as i8; 20],
+            bond_type: [byte; 20],
+            valence: byte as i8,
+            chem_bonds_valence: !byte as i8,
+            num_H: byte as i8,
+            num_iso_H: [byte as i8; 3],
+            iso_atw_diff: !byte as i8,
+            charge: byte as i8,
+            radical: !byte as i8,
+            bAmbiguousStereo: byte as i8,
+            cFlags: byte as i8,
+            at_type: word,
+            component: flags.wrapping_add((index as u16).wrapping_mul(37)),
+            endpoint: !word,
+            c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8,
+            p_parity: !byte as i8,
+            p_orig_at_num: [word; 4],
+            sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3],
+            sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3],
+            bCutVertex: byte as i8,
+            nRingSystem: word,
+            nNumAtInRingSystem: !word,
+            nBlockSystem: word,
+        }
+    }
+
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits()
+            && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0;
+        a.y = 0.0;
+        a.z = 0.0;
+        b.x = 0.0;
+        b.y = 0.0;
+        b.z = 0.0;
+        floats && a == b
+    }
+
+    macro_rules! prepare_projection {
+        ($record:expr, $index:expr, $source:expr, $p:expr, $sb:expr, $selection:expr, $word:expr, $seed:expr) => {{
+            let i = $index;
+            let byte = ($seed as u8)
+                .wrapping_add((i as u8).wrapping_mul(37))
+                .wrapping_add(if $source { 0 } else { 91 });
+            let offset =
+                (i as u16)
+                    .wrapping_mul(4099)
+                    .wrapping_add(if $source { 0 } else { 0x5aa5 });
+            $record.bUsed0DParity = byte as i8;
+            $record.p_parity = byte as i8;
+            $record.p_orig_at_num = std::array::from_fn(|j| {
+                ($word as u16)
+                    .wrapping_add(offset)
+                    .wrapping_add((j as u16) * 257)
+            });
+            $record.sb_ord = std::array::from_fn(|j| byte.wrapping_add(j as u8 * 17) as i8);
+            $record.sn_ord =
+                std::array::from_fn(|j| byte.wrapping_add(j as u8 * 19).wrapping_add(53) as i8);
+            $record.sb_parity =
+                std::array::from_fn(|j| byte.wrapping_add(j as u8 * 23).wrapping_add(101) as i8);
+            $record.sn_orig_at_num = std::array::from_fn(|j| {
+                ($word as u16)
+                    .wrapping_add(offset)
+                    .wrapping_add((j as u16 + 4) * 257)
+            });
+            if $source {
+                let chosen = ($selection as u32 >> (2 * i)) & 3;
+                $record.p_parity = if chosen & 1 != 0 { $p } else { 0 };
+                $record.sb_parity[0] = if chosen & 2 != 0 { $sb } else { 0 };
+            }
+        }};
+    }
+    fn prepared_atoms(
+        p: i8,
+        sb: i8,
+        selection: u32,
+        word: u16,
+        seed: u8,
+        source: bool,
+    ) -> [inp_ATOM; 10] {
+        std::array::from_fn(|i| {
+            let mut row = dirty_atom(seed, i, 0x5aa5, 0xa55a);
+            prepare_projection!(row, i, source, p, sb, selection, word, seed);
+            row
+        })
+    }
+    fn prepared_stereo(
+        p: i8,
+        sb: i8,
+        selection: u32,
+        word: u16,
+        seed: u8,
+        source: bool,
+    ) -> [inp_ATOM_STEREO; 10] {
+        std::array::from_fn(|i| {
+            let mut row = inp_ATOM_STEREO::default();
+            prepare_projection!(row, i, source, p, sb, selection, word, seed);
+            row
+        })
+    }
+    fn protected_atom(mut actual: inp_ATOM, before: inp_ATOM) -> bool {
+        actual.p_parity = before.p_parity;
+        actual.p_orig_at_num = before.p_orig_at_num;
+        actual.sb_ord = before.sb_ord;
+        actual.sn_ord = before.sn_ord;
+        actual.sb_parity = before.sb_parity;
+        actual.sn_orig_at_num = before.sn_orig_at_num;
+        same_bits(actual, before)
+    }
+    macro_rules! append_projection {
+        ($output:expr, $row:expr) => {{
+            use std::fmt::Write;
+            write!(
+                $output,
+                " {:02x}{:02x}",
+                $row.bUsed0DParity as u8, $row.p_parity as u8
+            )
+            .unwrap();
+            for x in $row.p_orig_at_num {
+                write!($output, "{x:04x}").unwrap();
+            }
+            for field in [$row.sb_ord, $row.sn_ord, $row.sb_parity] {
+                for x in field {
+                    write!($output, "{:02x}", x as u8).unwrap();
+                }
+            }
+            for x in $row.sn_orig_at_num {
+                write!($output, "{x:04x}").unwrap();
+            }
+        }};
+    }
+    #[test]
+    fn complete_conditional_stereo_projections_lazy_targets_partial_errors_and_none() {
+        let inputs =
+            include_str!("../../../../../testdata/inchi/expected/official/stereo_copy/inputs.txt");
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/stereo_copy/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 413952);
+        assert_eq!(expected.lines().count(), 413952);
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut audit159,
+            mut audit162,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (
+            0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize,
+        );
+        let mut directions = [0usize; 3];
+        for (ident, (input, output)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 11);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let direction: usize = cells[1].parse().unwrap();
+            let slen: usize = cells[2].parse().unwrap();
+            let tlen: usize = cells[3].parse().unwrap();
+            let count: i32 = cells[4].parse().unwrap();
+            let p: i8 = cells[5].parse().unwrap();
+            let sb: i8 = cells[6].parse().unwrap();
+            let selection: u32 = cells[7].parse().unwrap();
+            let word: u16 = cells[8].parse().unwrap();
+            let seed: u8 = cells[9].parse().unwrap();
+            assert!(direction <= 2 && slen <= 8 && tlen <= 8);
+            assert_eq!(output.split_whitespace().count(), 11);
+            let source_atoms = prepared_atoms(p, sb, selection, word, seed, true);
+            let source_stereo = prepared_stereo(p, sb, selection, word, seed, true);
+            let before_atoms = prepared_atoms(p, sb, selection, word, seed, false);
+            let before_stereo = prepared_stereo(p, sb, selection, word, seed, false);
+            for _repeat in 0..2 {
+                let mut atoms = before_atoms;
+                let mut stereo = before_stereo.clone();
+                for _phase in 0..2 {
+                    calls += 1;
+                    directions[direction] += 1;
+                    let reached = match catch_unwind(AssertUnwindSafe(|| match direction {
+                        0 => CopyAt2St(&source_atoms[..slen], &mut stereo[..tlen], count),
+                        1 => CopySt2At(&mut atoms[..tlen], Some(&source_stereo[..slen]), count),
+                        _ => CopySt2At(&mut atoms[..tlen], None, count),
+                    })) {
+                        Ok(Ok(())) => {
+                            completed += 1;
+                            Some("O")
+                        }
+                        Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                            bounds += 1;
+                            Some("E")
+                        }
+                        Ok(Err(_)) => {
+                            unexpected += 1;
+                            None
+                        }
+                        Err(payload) => {
+                            let message = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            match message {
+                                Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                ) => audit159 += 1,
+                                Some(
+                                    "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                                ) => audit162 += 1,
+                                _ => unexpected += 1,
+                            }
+                            None
+                        }
+                    };
+                    for i in 0..10 {
+                        changes += usize::from(
+                            !protected_atom(atoms[i], before_atoms[i])
+                                || stereo[i].bUsed0DParity != before_stereo[i].bUsed0DParity,
+                        );
+                    }
+                    if let Some(status) = reached {
+                        let mut actual = status.to_owned();
+                        for i in 0..10 {
+                            if direction == 0 {
+                                append_projection!(actual, stereo[i]);
+                            } else {
+                                append_projection!(actual, atoms[i]);
+                            }
+                        }
+                        differences += usize::from(actual != output);
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "STEREO_COPY COUNTS calls={calls} completed={completed} bounds={bounds} audit159={audit159} audit162={audit162} unexpected={unexpected} differences={differences} changes={changes} directions={directions:?}"
+        );
+        assert_eq!(calls, 1655808);
+        assert_eq!(directions, [825732, 825572, 4504]);
+        assert_eq!(
+            (audit159, audit162, unexpected, differences, changes),
+            (0, 0, 0, 0, 0)
+        );
+        assert_eq!(completed + bounds, calls);
     }
 }

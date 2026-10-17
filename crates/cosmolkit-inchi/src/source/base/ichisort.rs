@@ -42,7 +42,6 @@ pub(crate) fn CompNeighborsAT_NUMBER(
     */
     // END INCHI C FUNCTION: CompNeighborsAT_NUMBER
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let (neighbors, ranks) = match context {
         CompNeighborsATNumberContext::Globals { heap, globals } => (
             heap.slice(globals.m_pNeighborsForSort)?,
@@ -50,19 +49,15 @@ pub(crate) fn CompNeighborsAT_NUMBER(
         ),
         CompNeighborsATNumberContext::Slices { neighbors, ranks } => (neighbors, ranks),
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_neighbor = *neighbors
         .get(usize::from(a1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_neighbor = *neighbors
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_rank = *ranks
         .get(usize::from(first_neighbor))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_rank = *ranks
         .get(usize::from(second_neighbor))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -154,7 +149,6 @@ impl<'a> AtomInvariant2SortWorkspace<'a> {
         invariants: &'a [ATOM_INVARIANT2],
         count: usize,
     ) -> Result<Self, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         Ok(Self {
             invariants: invariants
                 .get(..count)
@@ -172,9 +166,7 @@ impl<'a> AtomInvariant2SortWorkspace<'a> {
     pub(crate) unsafe fn compare_only_in_bounds(&self, a1: AT_RANK, a2: AT_RANK) -> i32 {
         let first_index = usize::from(a1);
         let second_index = usize::from(a2);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         debug_assert!(first_index < self.invariants.len());
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         debug_assert!(second_index < self.invariants.len());
         // SAFETY: the caller proves both source indices against the complete
         // invariant prefix at workspace construction.
@@ -242,13 +234,10 @@ pub(crate) fn CompAtomInvariants2Only(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CompAtomInvariants2Only
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let invariants = heap.slice(pCG.m_pAtomInvariant2ForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = invariants
         .get(usize::from(a1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = invariants
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -302,14 +291,11 @@ pub(crate) fn CompRank(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CompRank
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(pCG.m_pn_RankForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = ranks
         .get(usize::from(a1))
         .copied()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = ranks
         .get(usize::from(a2))
         .copied()
@@ -323,6 +309,16 @@ pub(crate) fn CompRanksOrd(
     a1: AT_RANK,
     a2: AT_RANK,
     pCG: &CANON_GLOBALS,
+) -> Result<i32, SourceHeapError> {
+    let ranks = heap.slice(pCG.m_pn_RankForSort)?;
+    CompRanksOrdWithRanks(a1, a2, ranks)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CompRanksOrdWithRanks(
+    a1: AT_RANK,
+    a2: AT_RANK,
+    ranks: &[AT_RANK],
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:486 CompRanksOrd
     // INCHI✔️✔️: int CompRanksOrd( const void* a1, const void* a2, void *p )
@@ -340,14 +336,14 @@ pub(crate) fn CompRanksOrd(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CompRanksOrd
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let ranks = heap.slice(pCG.m_pn_RankForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: One comparison algorithm for an actual arena or temporary
+    // source rank array, with the same reached first/second bounds order.
+    // O(1), no allocation/clone/scan; checked constants remain OPEN under
+    // INCHI-PERF-TRANSIENT-NEIGHBOR-RANKS.
     let first = ranks
         .get(usize::from(a1))
         .copied()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = ranks
         .get(usize::from(a2))
         .copied()
@@ -392,35 +388,26 @@ where
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_AT_NUMBERS
 
-    if num <= 0 {
-        return Ok(0);
-    }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let count = usize::try_from(num).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0171: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.with_slice_mut_and_heap(base, |values, heap| {
-        let mut num_trans = 0_i32;
-        for k in 1..count {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let tmp = values
-                .get(k)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut j = k;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            while j > 0 && compare(heap, values[j - 1], tmp)? > 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                values[j] = values[j - 1];
-                num_trans = num_trans.wrapping_add(1);
-                j -= 1;
+    // Keep the allocation visible to comparator aliases; release each borrow
+    // before invoking the comparator. No base read occurs for a skipped loop.
+    // Cost: O(n^2) comparisons/moves, O(1) extra space, no allocation/clone;
+    // checked arena lookups per access remain independently unresolved.
+    let mut num_trans = 0_i32;
+    for k in 1..num {
+        let tmp = source_at_number_get(heap, base, k)?;
+        let mut j = k;
+        while j > 0 {
+            let previous = source_at_number_get(heap, base, j - 1)?;
+            if compare(heap, previous, tmp)? <= 0 {
+                break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            values[j] = tmp;
+            source_at_number_set(heap, base, j, previous)?;
+            num_trans = num_trans.wrapping_add(1);
+            j -= 1;
         }
-        Ok(num_trans)
-    })
+        source_at_number_set(heap, base, j, tmp)?;
+    }
+    Ok(num_trans)
 }
 
 #[allow(non_snake_case)]
@@ -432,9 +419,7 @@ pub(crate) fn CompChemElemLex(a1: &[u8], a2: &[u8]) -> Result<i32, SourceHeapErr
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CompChemElemLex
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = a1.get(..2).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = a2.get(..2).ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..2 {
         if first[index] != second[index] {
@@ -449,7 +434,6 @@ fn source_at_number_get(
     pointer: SourceMutPointer<AT_NUMB>,
     index: i32,
 ) -> Result<AT_NUMB, SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.slice(pointer.as_const())?
         .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .copied()
@@ -462,7 +446,6 @@ fn source_at_number_set(
     index: i32,
     value: AT_NUMB,
 ) -> Result<(), SourceHeapError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.slice_mut(pointer)?
         .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)
@@ -622,15 +605,12 @@ pub(crate) fn CompNeighListRanks(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CompNeighListRanks
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(pCG.m_pn_RankForSort)?;
     let first_index = usize::from(a1);
     let second_index = usize::from(a2);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first_rank = *ranks
         .get(first_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second_rank = *ranks
         .get(second_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -639,13 +619,10 @@ pub(crate) fn CompNeighListRanks(
         return Ok(ret);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_lists = heap.slice(pCG.m_pNeighList_RankForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = *neighbor_lists
         .get(first_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = *neighbor_lists
         .get(second_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -676,13 +653,10 @@ pub(crate) fn CompNeighLists(
     // INCHI✔️❌:     const NEIGH_LIST      *m_pNeighList_RankForSort;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighLists
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_lists = heap.slice(pCG.m_pNeighList_RankForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = *neighbor_lists
         .get(usize::from(a1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = *neighbor_lists
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -716,13 +690,10 @@ pub(crate) fn CompNeighListsUpToMaxRank(
     // INCHI✔️❌:     AT_RANK m_nMaxAtNeighRankForSort;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighListsUpToMaxRank
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let neighbor_lists = heap.slice(pCG.m_pNeighList_RankForSort)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = *neighbor_lists
         .get(usize::from(a1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = *neighbor_lists
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -805,11 +776,9 @@ pub(crate) fn CompNeighborsRanksCountEql(
     */
     // END INCHI C FUNCTION: CompNeighborsRanksCountEql
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = *ranks
         .get(usize::from(a1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let second = *ranks
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -844,51 +813,28 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS
 
-    panic!("INCHI-AUDIT-0171: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.with_slice_mut_and_heap(base, |values, heap| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let num = usize::from(
-            values
-                .first()
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        if num <= 1 {
-            return Ok(());
-        }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let ranks = heap.slice(nRank.as_const())?;
-        for k in 1..num {
-            let mut j = k + 1;
-            let mut i = k;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let current = values
-                .get(j)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let current_rank = *ranks
-                .get(usize::from(current))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            while j > 1 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let previous = values[i];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let previous_rank = *ranks
-                    .get(usize::from(previous))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if previous_rank <= current_rank {
-                    break;
-                }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                values.swap(i, j);
-                j = i;
-                i -= 1;
+    // Keep rank/row aliases live; scalar borrows end before every next read.
+    // Cost: O(n^2) comparisons/swaps, O(1) space, no allocation or clone;
+    // repeated checked arena lookup cost remains unresolved.
+    let num = i32::from(source_at_number_get(heap, base, 0)?);
+    for k in 1..num {
+        let mut j = k + 1;
+        let current = source_at_number_get(heap, base, j)?;
+        let current_rank = source_at_number_get(heap, nRank, i32::from(current))?;
+        while j > 1 {
+            let i = j - 1;
+            let previous = source_at_number_get(heap, base, i)?;
+            let previous_rank = source_at_number_get(heap, nRank, i32::from(previous))?;
+            if previous_rank <= current_rank {
+                break;
             }
+            let right = source_at_number_get(heap, base, j)?;
+            source_at_number_set(heap, base, i, right)?;
+            source_at_number_set(heap, base, j, previous)?;
+            j = i;
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -919,55 +865,28 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS3(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS3
 
-    panic!("INCHI-AUDIT-0171: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.with_slice_mut_and_heap(base, |values, heap| {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let num = usize::from(
-            values
-                .first()
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        if num <= 1 {
-            return Ok(0);
-        }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let ranks = heap.slice(nRank.as_const())?;
-        let mut transitions = 0_i32;
-        for k in 1..num {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let tmp = values
-                .get(k + 1)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let current_rank = *ranks
-                .get(usize::from(tmp))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut j = k + 1;
-            let mut i = k;
-            while j > 1 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let previous = values[i];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let previous_rank = *ranks
-                    .get(usize::from(previous))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if previous_rank <= current_rank {
-                    break;
-                }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                values[j] = previous;
-                transitions = transitions.wrapping_add(1);
-                j = i;
-                i -= 1;
+    // Keep rank/row aliases live and cache only the source's temporary/rank.
+    // Cost: O(n^2) comparisons/moves, O(1) space, no allocation or clone;
+    // repeated checked arena lookup cost remains unresolved.
+    let num = i32::from(source_at_number_get(heap, base, 0)?);
+    let mut transitions = 0_i32;
+    for k in 1..num {
+        let tmp = source_at_number_get(heap, base, k + 1)?;
+        let current_rank = source_at_number_get(heap, nRank, i32::from(tmp))?;
+        let mut j = k + 1;
+        while j > 1 {
+            let previous = source_at_number_get(heap, base, j - 1)?;
+            let previous_rank = source_at_number_get(heap, nRank, i32::from(previous))?;
+            if previous_rank <= current_rank {
+                break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            values[j] = tmp;
+            source_at_number_set(heap, base, j, previous)?;
+            transitions = transitions.wrapping_add(1);
+            j -= 1;
         }
-        Ok(transitions)
-    })
+        source_at_number_set(heap, base, j, tmp)?;
+    }
+    Ok(transitions)
 }
 
 #[allow(non_snake_case)]
@@ -1056,25 +975,22 @@ pub(crate) fn insertions_sort_AT_RANK(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: insertions_sort_AT_RANK
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let count = usize::try_from(num.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if base.len() < count {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
+    // INCHI✔️❗: Admit the prefix only when native reaches its final element.
+    // Earlier insertions remain visible before a later bounds error. Native
+    // comparison/shift order, O(n²)/O(1), no allocation; checked cost OPEN.
     let mut num_trans = 0_i32;
     for k in 1..count {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        let base = base
+            .get_mut(..=k)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let temporary = base[k];
         let mut j = k;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         while j > 0 && base[j - 1] > temporary {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             base[j] = base[j - 1];
             num_trans = num_trans.wrapping_add(1);
             j -= 1;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         base[j] = temporary;
     }
     Ok(num_trans)
@@ -1273,151 +1189,31 @@ where
     if width == 0 {
         return Err(SourceHeapError::UnsupportedSourceBehavior);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let required = num
         .checked_mul(width)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if required > base.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let width = isize::try_from(width).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
-    let mut lo = 0_isize;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut hi = isize::try_from(required - width as usize)
-        .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut low_stack = [0_isize; 62];
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut high_stack = [0_isize; 62];
-    let mut stack_pointer = 0_usize;
-
-    let compare_at = |bytes: &[u8],
-                      first: isize,
-                      second: isize,
-                      compare: &mut C|
-     -> Result<i32, SourceHeapError> {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let first = usize::try_from(first).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let second = usize::try_from(second).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let width = usize::try_from(width).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let first_slice = bytes
-            .get(first..first + width)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let second_slice = bytes
-            .get(second..second + width)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        compare(first_slice, second_slice)
-    };
-
-    loop {
-        let size = (hi - lo) / width + 1;
-        let mut mid = lo + (size / 2) * width;
-        if compare_at(base, lo, mid, compare)? > 0 {
-            inchi_swap(base, lo as usize, mid as usize, width as usize)?;
-        }
-        if compare_at(base, lo, hi, compare)? > 0 {
-            inchi_swap(base, lo as usize, hi as usize, width as usize)?;
-        }
-        if compare_at(base, mid, hi, compare)? > 0 {
-            inchi_swap(base, mid as usize, hi as usize, width as usize)?;
-        }
-
-        let mut low_guy = lo;
-        let mut high_guy = hi;
-        loop {
-            if mid > low_guy {
-                loop {
-                    low_guy += width;
-                    if !(low_guy < mid && compare_at(base, low_guy, mid, compare)? <= 0) {
-                        break;
-                    }
-                }
+    // INCHI✔️❗: Delegate the unchanged source partition sequence; no
+    // allocation, staging or comparator copy. Adapter constants remain OPEN.
+    qsort_offsets(num, width, &mut |operation, first, second| {
+        match operation {
+            SortStep::Compare => {
+                let first = base
+                    .get(first..first + width)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let second = base
+                    .get(second..second + width)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                compare(first, second)
             }
-            if mid <= low_guy {
-                loop {
-                    low_guy += width;
-                    if !(low_guy <= hi && compare_at(base, low_guy, mid, compare)? <= 0) {
-                        break;
-                    }
-                }
-            }
-            loop {
-                high_guy -= width;
-                if !(high_guy > mid && compare_at(base, high_guy, mid, compare)? > 0) {
-                    break;
-                }
-            }
-            if high_guy < low_guy {
-                break;
-            }
-            inchi_swap(base, low_guy as usize, high_guy as usize, width as usize)?;
-            if mid == high_guy {
-                mid = low_guy;
+            SortStep::Swap => {
+                inchi_swap(base, first, second, width)?;
+                Ok(0)
             }
         }
-
-        high_guy += width;
-        if mid < high_guy {
-            loop {
-                high_guy -= width;
-                if !(high_guy > mid && compare_at(base, high_guy, mid, compare)? == 0) {
-                    break;
-                }
-            }
-        }
-        if mid >= high_guy {
-            loop {
-                high_guy -= width;
-                if !(high_guy > lo && compare_at(base, high_guy, mid, compare)? == 0) {
-                    break;
-                }
-            }
-        }
-
-        let mut recurse = false;
-        if high_guy - lo >= hi - low_guy {
-            if lo < high_guy {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                low_stack[stack_pointer] = lo;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                high_stack[stack_pointer] = high_guy;
-                stack_pointer += 1;
-            }
-            if low_guy < hi {
-                lo = low_guy;
-                recurse = true;
-            }
-        } else {
-            if low_guy < hi {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                low_stack[stack_pointer] = low_guy;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                high_stack[stack_pointer] = hi;
-                stack_pointer += 1;
-            }
-            if lo < high_guy {
-                hi = high_guy;
-                recurse = true;
-            }
-        }
-        if recurse {
-            continue;
-        }
-        if stack_pointer == 0 {
-            return Ok(());
-        }
-        stack_pointer -= 1;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        lo = low_stack[stack_pointer];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        hi = high_stack[stack_pointer];
-    }
+    })
 }
 
 pub(crate) fn inchi_swap(
@@ -1445,22 +1241,17 @@ pub(crate) fn inchi_swap(
     if first == second {
         return Ok(());
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     first
         .checked_add(width)
         .filter(|end| *end <= bytes.len())
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     second
         .checked_add(width)
         .filter(|end| *end <= bytes.len())
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for offset in 0..width {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let temporary = bytes[first + offset];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         bytes[first + offset] = bytes[second + offset];
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         bytes[second + offset] = temporary;
     }
     Ok(())
@@ -1497,36 +1288,479 @@ pub(crate) fn insertions_sort(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: insertions_sort
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let required = number
+    // INCHI✔️❗: Admit each reached adjacent comparison's prefix, preserving
+    // prior swaps/callbacks before missing later records. Empty/singleton and
+    // zero-width paths do not require unused storage. O(n²*width)/O(1), no
+    // allocation/copy staging; checked arithmetic/load whole-call cost OPEN.
+    insertion_sort_offsets(number, width, &mut |operation, first, second| {
+        match operation {
+            SortStep::Compare => {
+                let end = second
+                    .checked_add(width)
+                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                let prefix = base
+                    .get(..end)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                compare(&prefix[first..first + width], &prefix[second..end])
+            }
+            SortStep::Swap => {
+                inchi_swap(base, first, second, width)?;
+                Ok(0)
+            }
+        }
+    })
+}
+
+#[derive(Clone, Copy)]
+enum SortStep {
+    Compare,
+    Swap,
+}
+
+fn qsort_offsets<S>(num: usize, width: usize, step: &mut S) -> Result<(), SourceHeapError>
+where
+    S: FnMut(SortStep, usize, usize) -> Result<i32, SourceHeapError>,
+{
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:66 inchi_qsort storage kernel
+    // INCHI✔️❗: void inchi_qsort( void *pParam,
+    // INCHI✔️❗:                   void *base,
+    // INCHI✔️❗:                   size_t num,
+    // INCHI✔️❗:                   size_t width,
+    // INCHI✔️❗:                   int( *comp )( const void *, const void *, void * ) )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     char *lo, *hi;              /* ends of sub-array currently sorting */
+    // INCHI✔️❗:     char *mid;                  /* points to middle of subarray */
+    // INCHI✔️❗:     char *loguy, *higuy;        /* traveling pointers for partition step */
+    // INCHI✔️❗:     size_t size;                /* size of the sub-array */
+    // INCHI✔️❗:     char *lostk[STKSIZ], *histk[STKSIZ];
+    // INCHI✔️❗:     int stkptr;                 /* stack for saving sub-array to be processed */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     if (num < 2)
+    // INCHI✔️❗:         return;                 /* nothing to do */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     stkptr = 0;                 /* initialize stack */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     lo = (char *) base;
+    // INCHI✔️❗:     hi = (char *) base + width * ( num - 1 );        /* initialize limits */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* This entry point is for pseudo-recursion calling: setting
+    // INCHI✔️❗:     lo and hi and jumping to here is like recursion, but stkptr is
+    // INCHI✔️❗:     preserved, locals aren't, so we preserve stuff on the stack */
+    // INCHI✔️❗: recurse:
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     size = ( hi - lo ) / width + 1;        /* number of el's to sort */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* First we pick a partitioning element.  The efficiency of the
+    // INCHI✔️❗:     algorithm demands that we find one that is approximately the median
+    // INCHI✔️❗:     of the values, but also that we select one fast.  We choose the
+    // INCHI✔️❗:     median of the first, middle, and last elements, to avoid bad
+    // INCHI✔️❗:     performance in the face of already sorted data, or data that is made
+    // INCHI✔️❗:     up of multiple sorted runs appended together.  Testing shows that a
+    // INCHI✔️❗:     median-of-three algorithm provides better performance than simply
+    // INCHI✔️❗:     picking the middle element for the latter case. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     mid = lo + ( size / 2 ) * width;      /* find middle element */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* Sort the first, middle, last elements into order */
+    // INCHI✔️❗:     if (comp( lo, mid, pParam ) > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         inchi_swap( lo, mid, width );
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:     if (comp( lo, hi, pParam ) > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         inchi_swap( lo, hi, width );
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:     if (comp( mid, hi, pParam ) > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         inchi_swap( mid, hi, width );
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* We now wish to partition the array into three pieces, one consisting
+    // INCHI✔️❗:     of elements <= partition element, one of elements equal to the
+    // INCHI✔️❗:     partition element, and one of elements > than it.  This is done
+    // INCHI✔️❗:     below; comments indicate conditions established at every step. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     loguy = lo;
+    // INCHI✔️❗:     higuy = hi;
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* Note that higuy decreases and loguy increases on every iteration,
+    // INCHI✔️❗:     so loop must terminate. */
+    // INCHI✔️❗:     for (;;)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         /* lo <= loguy < hi, lo < higuy <= hi,
+    // INCHI✔️❗:         A[i] <= A[mid] for lo <= i <= loguy,
+    // INCHI✔️❗:         A[i] > A[mid] for higuy <= i < hi,
+    // INCHI✔️❗:         A[hi] >= A[mid] */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         /* The doubled loop is to avoid calling comp(mid,mid), since some
+    // INCHI✔️❗:         existing comparison funcs don't work when passed the same
+    // INCHI✔️❗:         value for both pointers. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         if (mid > loguy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             do
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 loguy += width;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             while (loguy < mid && comp( loguy, mid, pParam ) <= 0);
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         if (mid <= loguy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             do
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 loguy += width;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             while (loguy <= hi && comp( loguy, mid, pParam ) <= 0);
+    // INCHI✔️❗:         }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         /* lo < loguy <= hi+1, A[i] <= A[mid] for lo <= i < loguy,
+    // INCHI✔️❗:         either loguy > hi or A[loguy] > A[mid] */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         do
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             higuy -= width;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         while (higuy > mid && comp( higuy, mid, pParam ) > 0);
+    // INCHI✔️❗: 
+    // INCHI✔️❗:          /* lo <= higuy < hi, A[i] > A[mid] for higuy < i < hi,
+    // INCHI✔️❗:          either higuy == lo or A[higuy] <= A[mid] */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         if (higuy < loguy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             break;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         /* if loguy > hi or higuy == lo, then we would have exited, so
+    // INCHI✔️❗:         A[loguy] > A[mid], A[higuy] <= A[mid],
+    // INCHI✔️❗:         loguy <= hi, higuy > lo */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         inchi_swap( loguy, higuy, width );
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         /* If the partition element was moved, follow it.  Only need
+    // INCHI✔️❗:         to check for mid == higuy, since before the swap,
+    // INCHI✔️❗:         A[loguy] > A[mid] implies loguy != mid. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         if (mid == higuy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             mid = loguy;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         /* A[loguy] <= A[mid], A[higuy] > A[mid]; so condition at top
+    // INCHI✔️❗:         of loop is re-established */
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /*     A[i] <= A[mid] for lo <= i < loguy,
+    // INCHI✔️❗:     A[i] > A[mid] for higuy < i < hi,
+    // INCHI✔️❗:     A[hi] >= A[mid]
+    // INCHI✔️❗:     higuy < loguy
+    // INCHI✔️❗:     implying:
+    // INCHI✔️❗:     higuy == loguy-1
+    // INCHI✔️❗:     or higuy == hi - 1, loguy == hi + 1, A[hi] == A[mid] */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* Find adjacent elements equal to the partition element.  The
+    // INCHI✔️❗:     doubled loop is to avoid calling comp(mid,mid), since some
+    // INCHI✔️❗:     existing comparison funcs don't work when passed the same value
+    // INCHI✔️❗:     for both pointers. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     higuy += width;
+    // INCHI✔️❗:     if (mid < higuy)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         do
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             higuy -= width;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         while (higuy > mid && comp( higuy, mid, pParam ) == 0);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:     if (mid >= higuy)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         do
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             higuy -= width;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         while (higuy > lo && comp( higuy, mid, pParam ) == 0);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* OK, now we have the following:
+    // INCHI✔️❗:     higuy < loguy
+    // INCHI✔️❗:     lo <= higuy <= hi
+    // INCHI✔️❗:     A[i]  <= A[mid] for lo <= i <= higuy
+    // INCHI✔️❗:     A[i]  == A[mid] for higuy < i < loguy
+    // INCHI✔️❗:     A[i]  >  A[mid] for loguy <= i < hi
+    // INCHI✔️❗:     A[hi] >= A[mid] */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* We've finished the partition, now we want to sort the subarrays
+    // INCHI✔️❗:     [lo, higuy] and [loguy, hi].
+    // INCHI✔️❗:     We do the smaller one first to minimize stack usage.
+    // INCHI✔️❗:     We only sort arrays of length 2 or more.*/
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     if (higuy - lo >= hi - loguy)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (lo < higuy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             lostk[stkptr] = lo;
+    // INCHI✔️❗:             histk[stkptr] = higuy;
+    // INCHI✔️❗:             ++stkptr;
+    // INCHI✔️❗:         }                           /* save big recursion for later */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         if (loguy < hi)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             lo = loguy;
+    // INCHI✔️❗:             goto recurse;           /* do small recursion */
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:     else
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (loguy < hi)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             lostk[stkptr] = loguy;
+    // INCHI✔️❗:             histk[stkptr] = hi;
+    // INCHI✔️❗:             ++stkptr;               /* save big recursion for later */
+    // INCHI✔️❗:         }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:         if (lo < higuy)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             hi = higuy;
+    // INCHI✔️❗:             goto recurse;           /* do small recursion */
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /* We have sorted the array, except for any pending sorts on the stack.
+    // INCHI✔️❗:     Check if there are any, and do them. */
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     --stkptr;
+    // INCHI✔️❗:     if (stkptr >= 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         lo = lostk[stkptr];
+    // INCHI✔️❗:         hi = histk[stkptr];
+    // INCHI✔️❗:         goto recurse;           /* pop subarray from stack */
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:     else
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         return;                 /* all subarrays done */
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
+    // END INCHI C FUNCTION: inchi_qsort storage kernel
+    // INCHI✔️❗: One canonical source partition sequence for byte/heap storage.
+    // Median-of-three, moving pivot and smaller-first fixed 62-entry stack
+    // are unchanged. No element snapshot/allocation; checked adapter cost OPEN.
+    if num < 2 {
+        return Ok(());
+    }
+    if width == 0 {
+        return Err(SourceHeapError::UnsupportedSourceBehavior);
+    }
+    let required = num
         .checked_mul(width)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    if required > base.len() {
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let mut transactions = 0_i32;
-    for element in 1..number {
-        let mut right = element * width;
-        while right > 0 {
-            let left = right - width;
-            let ordering = {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let first = &base[left..left + width];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let second = &base[right..right + width];
-                compare(first, second)?
-            };
-            if ordering <= 0 {
+    let width = isize::try_from(width).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+    let mut lo = 0_isize;
+    let mut hi = isize::try_from(required - width as usize)
+        .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+    let mut low_stack = [0_isize; 62];
+    let mut high_stack = [0_isize; 62];
+    let mut stack_pointer = 0_usize;
+
+    loop {
+        let size = (hi - lo) / width + 1;
+        let mut mid = lo + (size / 2) * width;
+        if step(SortStep::Compare, lo as usize, mid as usize)? > 0 {
+            step(SortStep::Swap, lo as usize, mid as usize)?;
+        }
+        if step(SortStep::Compare, lo as usize, hi as usize)? > 0 {
+            step(SortStep::Swap, lo as usize, hi as usize)?;
+        }
+        if step(SortStep::Compare, mid as usize, hi as usize)? > 0 {
+            step(SortStep::Swap, mid as usize, hi as usize)?;
+        }
+
+        let mut low_guy = lo;
+        let mut high_guy = hi;
+        loop {
+            if mid > low_guy {
+                loop {
+                    low_guy += width;
+                    if !(low_guy < mid && step(SortStep::Compare, low_guy as usize, mid as usize)? <= 0) {
+                        break;
+                    }
+                }
+            }
+            if mid <= low_guy {
+                loop {
+                    low_guy += width;
+                    if !(low_guy <= hi && step(SortStep::Compare, low_guy as usize, mid as usize)? <= 0) {
+                        break;
+                    }
+                }
+            }
+            loop {
+                high_guy -= width;
+                if !(high_guy > mid && step(SortStep::Compare, high_guy as usize, mid as usize)? > 0) {
+                    break;
+                }
+            }
+            if high_guy < low_guy {
                 break;
             }
-            inchi_swap(base, left, right, width)?;
+            step(SortStep::Swap, low_guy as usize, high_guy as usize)?;
+            if mid == high_guy {
+                mid = low_guy;
+            }
+        }
+
+        high_guy += width;
+        if mid < high_guy {
+            loop {
+                high_guy -= width;
+                if !(high_guy > mid && step(SortStep::Compare, high_guy as usize, mid as usize)? == 0) {
+                    break;
+                }
+            }
+        }
+        if mid >= high_guy {
+            loop {
+                high_guy -= width;
+                if !(high_guy > lo && step(SortStep::Compare, high_guy as usize, mid as usize)? == 0) {
+                    break;
+                }
+            }
+        }
+
+        let mut recurse = false;
+        if high_guy - lo >= hi - low_guy {
+            if lo < high_guy {
+                low_stack[stack_pointer] = lo;
+                high_stack[stack_pointer] = high_guy;
+                stack_pointer += 1;
+            }
+            if low_guy < hi {
+                lo = low_guy;
+                recurse = true;
+            }
+        } else {
+            if low_guy < hi {
+                low_stack[stack_pointer] = low_guy;
+                high_stack[stack_pointer] = hi;
+                stack_pointer += 1;
+            }
+            if lo < high_guy {
+                hi = high_guy;
+                recurse = true;
+            }
+        }
+        if recurse {
+            continue;
+        }
+        if stack_pointer == 0 {
+            return Ok(());
+        }
+        stack_pointer -= 1;
+        lo = low_stack[stack_pointer];
+        hi = high_stack[stack_pointer];
+    }
+}
+
+fn insertion_sort_offsets<S>(
+    number: usize,
+    width: usize,
+    step: &mut S,
+) -> Result<i32, SourceHeapError>
+where
+    S: FnMut(SortStep, usize, usize) -> Result<i32, SourceHeapError>,
+{
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:304 insertions_sort storage kernel
+    // INCHI✔️❗: int insertions_sort( void *pCG,
+    // INCHI✔️❗:                      void *base,
+    // INCHI✔️❗:                      size_t num, size_t width,
+    // INCHI✔️❗:                      int( *compare )( const void *, const void *, void * ) ) /* djb-rwth: types of variables are sufficient */
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     char *i, *j, *pk = (char*) base;
+    // INCHI✔️❗:     int  num_trans = 0;
+    // INCHI✔️❗:     size_t k;
+    // INCHI✔️❗:     for (k = 1; k < num; k++, pk += width)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         /*for( i = pk, j = pk + width; j > (char*)base && (*compare)(i,j) > 0; j=i, i -= width )*/
+    // INCHI✔️❗:         for (i = j = pk + width;
+    // INCHI✔️❗:              j > ( char* )base && ( i -= width, ( *compare )( i, j, pCG ) ) > 0;
+    // INCHI✔️❗:              j = i)        /* changed to keep BoundsChecker happy 2007-09-24 DT */
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             inchi_swap( i, j, width );
+    // INCHI✔️❗:             num_trans++;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     return num_trans;
+    // INCHI✔️❗: }
+    // END INCHI C FUNCTION: insertions_sort storage kernel
+    // INCHI✔️❗: Preserve adjacent compares/swaps against live storage.
+    // O(n²*width) worst-case work, O(1) extra space, no allocation/clone.
+    let mut transactions = 0_i32;
+    for element in 1..number {
+        let mut right = element
+            .checked_mul(width)
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        right
+            .checked_add(width)
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        while right > 0 {
+            let left = right - width;
+            if step(SortStep::Compare, left, right)? <= 0 {
+                break;
+            }
+            step(SortStep::Swap, left, right)?;
             transactions = transactions.wrapping_add(1);
             right = left;
         }
     }
     Ok(transactions)
+}
+
+pub(crate) fn sort_rank_order<C>(
+    heap: &mut SourceHeap,
+    base: SourceMutPointer<AT_NUMB>,
+    count: usize,
+    alternate: bool,
+    compare: &mut C,
+) -> Result<(), SourceHeapError>
+where
+    C: FnMut(&SourceHeap, AT_NUMB, AT_NUMB) -> Result<i32, SourceHeapError>,
+{
+    // BEGIN INCHI SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:398..402
+    // INCHI✔️❗:     pCG->m_pNeighList_RankForSort = NeighList;
+    // INCHI✔️❗:     pCG->m_pn_RankForSort = nRank;
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     /*  sorting */
+    // INCHI✔️❗:     if (bUseAltSort & 1)
+    // END INCHI SOURCE FRAGMENT: rank-order sorting dispatch
+    // INCHI✔️❗: Both sort kernels act on the original allocation, so rank
+    // aliases observe every preceding source swap. No slice is extracted
+    // from the arena and no prefix/rank snapshot or writeback is needed.
+    // O(n log n) average/O(n²) worst qsort; O(n²) insertion, constant
+    // auxiliary storage. Checked arena access constants remain cost OPEN.
+    let width = std::mem::size_of::<AT_NUMB>();
+    let mut step = |operation, first, second| {
+        let first = i32::try_from(first / width)
+            .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+        let second = i32::try_from(second / width)
+            .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+        if matches!(operation, SortStep::Swap) && first == second {
+            return Ok(0);
+        }
+        let left = source_at_number_get(heap, base, first)?;
+        let right = source_at_number_get(heap, base, second)?;
+        match operation {
+            SortStep::Compare => compare(heap, left, right),
+            SortStep::Swap => {
+                source_at_number_set(heap, base, first, right)?;
+                source_at_number_set(heap, base, second, left)?;
+                Ok(0)
+            }
+        }
+    };
+    if alternate {
+        insertion_sort_offsets(count, width, &mut step).map(|_| ())
+    } else {
+        qsort_offsets(count, width, &mut step)
+    }
 }
 
 /// Typed form of the Official InChI insertion sort for source-ported arrays.
@@ -1567,11 +1801,9 @@ pub(crate) fn insertions_sort_typed<T>(
         let mut right = element;
         while right > 0 {
             let left = right - 1;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if compare(&base[left], &base[right]) <= 0 {
                 break;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             base.swap(left, right);
             transactions = transactions.wrapping_add(1);
             right = left;
@@ -1690,9 +1922,7 @@ pub(crate) fn CreateNeighListFromLinearCT(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CreateNeighListFromLinearCT
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let available_ct_length = heap.slice(linear_ct)?.len();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = *heap
         .slice(linear_ct)?
         .first()
@@ -1700,7 +1930,6 @@ pub(crate) fn CreateNeighListFromLinearCT(
     if i32::from(first) > number_of_atoms {
         return Ok(SourceMutPointer::null());
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count =
         usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let valence = match inchi_calloc::<S_CHAR>(heap, atom_count as u64 + 1, 1) {
@@ -1708,13 +1937,11 @@ pub(crate) fn CreateNeighListFromLinearCT(
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
         Err(error) => return Err(error),
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let ct_length = if length_ct <= 0 {
         0
     } else {
         usize::try_from(length_ct).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if available_ct_length < ct_length {
         inchi_free(heap, valence)?;
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -1723,26 +1950,19 @@ pub(crate) fn CreateNeighListFromLinearCT(
     let mut number_of_bonds = 0_i32;
     let mut valid = true;
     for index in 1..ct_length {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = heap.slice(linear_ct)?[index];
         if neighbor < vertex {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let values = heap.slice_mut(valence)?;
             let neighbor_index = usize::from(neighbor);
             let vertex_index = usize::from(vertex);
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if neighbor_index >= values.len() || vertex_index >= values.len() {
                 valid = false;
                 break;
             }
-            panic!("INCHI-AUDIT-0221: suspected source divergence; see dev/audits/inchi/findings.md");
-            values[neighbor_index] = values[neighbor_index]
-                .checked_add(1)
-                .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-            panic!("INCHI-AUDIT-0221: suspected source divergence; see dev/audits/inchi/findings.md");
-            values[vertex_index] = values[vertex_index]
-                .checked_add(1)
-                .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+            // INCHI✔️❗: pinned signed-char narrowing wraps after int promotion;
+            // preserve later diagnostic cleanup. Checked heap lookup cost remains unresolved.
+            values[neighbor_index] = values[neighbor_index].wrapping_add(1);
+            values[vertex_index] = values[vertex_index].wrapping_add(1);
             number_of_bonds = number_of_bonds.wrapping_add(2);
         } else {
             vertex = neighbor;
@@ -1767,11 +1987,8 @@ pub(crate) fn CreateNeighListFromLinearCT(
             return Err(error);
         }
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_list = match usize::try_from(list_length) {
-        Ok(length) => match heap.allocate(vec![0_u16; length]) {
+        Ok(length) => match inchi_calloc::<AT_RANK>(heap, length as u64, 2) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => {
@@ -1797,32 +2014,23 @@ pub(crate) fn CreateNeighListFromLinearCT(
     let mut position = 0_usize;
     for atom in 1..=atom_count {
         let start = position;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_valence = heap.slice(valence.as_const())?[atom];
         position = position.wrapping_add((i32::from(atom_valence) + 1) as usize);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pointer = atom_list
             .offset(i64::try_from(start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(pointer_list)?[atom - 1] = pointer;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(pointer)?[0] = 0;
     }
     vertex = first.wrapping_sub(1);
     for index in 1..ct_length {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let raw_neighbor = heap.slice(linear_ct)?[index];
         let neighbor = raw_neighbor.wrapping_sub(1);
         if neighbor < vertex {
             for (owner, adjacent) in [(vertex, neighbor), (neighbor, vertex)] {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let owner_pointer = heap.slice(pointer_list.as_const())?[usize::from(owner)];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let owner_list = heap.slice_mut(owner_pointer)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 owner_list[0] = owner_list[0].wrapping_add(1);
                 let entry = usize::from(owner_list[0]);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 owner_list[entry] = adjacent;
             }
         } else {
@@ -1835,7 +2043,6 @@ pub(crate) fn CreateNeighListFromLinearCT(
             }
         }
     }
-    panic!("INCHI-AUDIT-0164: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.record_contiguous_neighbor_layout(pointer_list, atom_list, atom_count, atom_count)?;
     inchi_free(heap, valence)?;
     Ok(pointer_list)
@@ -1981,18 +2188,15 @@ pub(crate) fn CreateNeighList(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: CreateNeighList
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let pointer_count = i64::from(num_at_tg)
         .checked_add(1)
         .and_then(|value| u64::try_from(value).ok())
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0001: suspected source performance divergence; see dev/audits/inchi/findings.md");
     let pointer_list = match inchi_calloc::<NEIGH_LIST>(heap, pointer_count, 8) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
         Err(error) => return Err(error),
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_count = match usize::try_from(num_atoms) {
         Ok(count) => count,
         Err(_) => {
@@ -2006,10 +2210,8 @@ pub(crate) fn CreateNeighList(
         // SAFETY: CreateNeighList only reads the source atom allocation, and
         // the two output allocations created below necessarily have fresh
         // identities. As in C, a null `at` is valid when there are no atoms.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         Some(unsafe { heap.stable_slice(at)? })
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = match &atoms_view {
         Some(view) => view.prefix(atom_count)?,
         None => &[],
@@ -2024,44 +2226,51 @@ pub(crate) fn CreateNeighList(
     } else {
         (0, SourceMutPointer::null(), SourceMutPointer::null())
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let group_count =
         usize::try_from(num_t_groups.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let groups_view = if group_count == 0 {
         None
     } else {
         // SAFETY: tautomer groups are read-only for this complete source loop.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         Some(unsafe { heap.stable_slice(group_pointer.as_const())? })
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let groups = match &groups_view {
         Some(view) => view.prefix(group_count)?,
         None => &[],
     };
 
+    let endpoint_values_view = if group_count == 0 {
+        None
+    } else {
+        // Inputs remain read-only across fresh output allocation. A failed
+        // view still selects the original checked fallback, never an early error.
+        unsafe { heap.stable_slice(endpoint_pointer.as_const()).ok() }
+    };
+    let endpoint_values = endpoint_values_view.as_ref().map(|view| {
+        view.prefix(view.len())
+            .expect("the complete stable view is in bounds")
+    });
+    // INCHI✔️❗: Source signed-valence construction restored, no new
+    // allocation/clone/pass. Positive-row direct path retained; checked
+    // negative-row fallback constants: INCHI-PERF-NEIGHBOR-SIGNED OPEN.
+    let mut group_ranges_valid = true;
+    let mut nonnegative_valences = true;
     let mut list_length = i64::from(num_atoms) + i64::from(num_t_groups);
     for atom in atoms {
         let valence = i32::from(atom.valence);
-        if valence < 0 {
-            panic!("INCHI-AUDIT-0175: suspected source divergence; see dev/audits/inchi/findings.md");
-            inchi_free(heap, pointer_list)?;
-            return Err(SourceHeapError::UnsupportedSourceBehavior);
-        }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let valence =
-            usize::try_from(valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        if valence > atom.neighbor.len() {
+        // INCHI✔️❗: Ordinary source length sums retain signed valence;
+        // both source neighbor loops skip negative values. Fold the direct
+        // write proof into this pass, not an extra scan or rejection.
+        nonnegative_valences &= valence >= 0;
+        let neighbor_count = valence.max(0) as usize;
+        if neighbor_count > atom.neighbor.len() {
             inchi_free(heap, pointer_list)?;
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
         if bDoubleBondSquare == 0 {
-            list_length += valence as i64;
+            list_length += i64::from(valence);
         } else {
-            for bond in 0..valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            for bond in 0..neighbor_count {
                 list_length += 1 + i64::from(atom.bond_type[bond] == BOND_DOUBLE as u8);
             }
         }
@@ -2069,12 +2278,21 @@ pub(crate) fn CreateNeighList(
     }
     for group in groups {
         list_length += i64::from(group.nNumEndpoints);
+        // INCHI✔️❗: native length pass already visits each group. Fold the
+        // safe-write proof into it instead of traversing all groups again.
+        // O(groups), O(1) scratch, no allocation; extra range predicates
+        // remain an unresolved whole-call cost against native unchecked writes.
+        if group_ranges_valid {
+            if let Some(endpoints) = endpoint_values {
+                group_ranges_valid = usize::from(group.nFirstEndpointAtNoPos)
+                    .checked_add(usize::from(group.nNumEndpoints))
+                    .is_some_and(|end| end <= endpoints.len());
+            }
+        }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     list_length = list_length
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let list_length = match usize::try_from(list_length) {
         Ok(length) => length,
         Err(_) => {
@@ -2082,9 +2300,7 @@ pub(crate) fn CreateNeighList(
             return Err(SourceHeapError::SourceIntegerOverflow);
         }
     };
-    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_list = match heap.allocate(vec![0_u16; list_length]) {
+    let atom_list = match inchi_calloc::<AT_RANK>(heap, list_length as u64, 2) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => {
             inchi_free(heap, pointer_list)?;
@@ -2096,48 +2312,23 @@ pub(crate) fn CreateNeighList(
         }
     };
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let row_count = atom_count
         .checked_add(group_count)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let endpoint_values_view = if group_count == 0 {
-        None
-    } else {
-        // A malformed compatibility fixture must retain the checked write
-        // path's error point, so failure to form this view is not returned yet.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        unsafe { heap.stable_slice(endpoint_pointer.as_const()).ok() }
-    };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let endpoint_values = endpoint_values_view.as_ref().map(|view| {
-        view.prefix(view.len())
-            .expect("the complete stable view is in bounds")
-    });
-    panic!("INCHI-AUDIT-0176: suspected source divergence; see dev/audits/inchi/findings.md");
     let source_layout_is_valid = heap
         .slice(pointer_list.as_const())
         .is_ok_and(|pointers| pointers.len() > row_count)
         && (group_count == 0 || endpoint_values.is_some())
-        && endpoint_values.as_ref().is_none_or(|endpoints| {
-            groups.iter().all(|group| {
-                let start = usize::from(group.nFirstEndpointAtNoPos);
-                start
-                    .checked_add(usize::from(group.nNumEndpoints))
-                    .is_some_and(|end| end <= endpoints.len())
-            })
-        });
+        && group_ranges_valid
+        && nonnegative_valences;
 
     if source_layout_is_valid {
         // SAFETY: both outputs are fresh, distinct allocations. The length pass
         // above proves every pAtList write, and source_layout_is_valid proves
         // pp[] and endpoint ranges before either output is exposed.
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut list_view = unsafe { heap.stable_slice_mut(atom_list)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut pointers_view = unsafe { heap.stable_slice_mut(pointer_list)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let list = list_view.prefix_mut(list_length)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pointers = pointers_view.prefix_mut(row_count + 1)?;
         let endpoints = endpoint_values.unwrap_or(&[]);
         let mut position = 0_usize;
@@ -2150,7 +2341,6 @@ pub(crate) fn CreateNeighList(
                 let neighbor = unsafe { *atom.neighbor.get_unchecked(bond) };
                 unsafe { *list.get_unchecked_mut(position) = neighbor };
                 position += 1;
-                panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                 if bDoubleBondSquare != 0
                     && unsafe { *atom.bond_type.get_unchecked(bond) } == BOND_DOUBLE as u8
                 {
@@ -2195,40 +2385,43 @@ pub(crate) fn CreateNeighList(
                     atom_list.add_unchecked(start as u64);
             }
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         debug_assert!(position < list_length);
     } else {
         let mut position = 0_usize;
         for (index, atom) in atoms.iter().enumerate() {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let valence = usize::try_from(atom.valence)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            // INCHI✔️❗: Reached safe fallback preserves native skipped
+            // negative loops without asserting an invalid output-size proof.
+            let valence = atom.valence.max(0) as usize;
             let start = position;
             position += 1;
             for bond in 0..valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(atom_list)?[position] = atom.neighbor[bond];
+                *heap.slice_mut(atom_list)?
+                    .get_mut(position)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = atom.neighbor[bond];
                 position += 1;
-                panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                 if bDoubleBondSquare != 0 && atom.bond_type[bond] == BOND_DOUBLE as u8 {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(atom_list)?[position] = atom.neighbor[bond];
+                    *heap.slice_mut(atom_list)?
+                        .get_mut(position)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = atom.neighbor[bond];
                     position += 1;
                 }
             }
             if num_t_groups != 0 && atom.endpoint != 0 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(atom_list)?[position] = num_atoms
+                *heap.slice_mut(atom_list)?
+                    .get_mut(position)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = num_atoms
                     .wrapping_add(i32::from(atom.endpoint))
                     .wrapping_sub(1)
                     as AT_NUMB;
                 position += 1;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(atom_list)?[start] =
+            *heap.slice_mut(atom_list)?
+                .get_mut(start)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? =
                 position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(pointer_list)?[index] = atom_list.offset(start as i64)?;
+            *heap.slice_mut(pointer_list)?
+                .get_mut(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = atom_list.offset(start as i64)?;
         }
         for (index, group) in groups.iter().enumerate() {
             let valence = usize::from(group.nNumEndpoints);
@@ -2236,33 +2429,30 @@ pub(crate) fn CreateNeighList(
             let start = position;
             position += 1;
             for endpoint in 0..valence {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let value = *heap
                     .slice(endpoint_pointer.as_const())?
                     .get(first_endpoint + endpoint)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(atom_list)?[position] = value;
+                *heap.slice_mut(atom_list)?
+                    .get_mut(position)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
                 position += 1;
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(atom_list)?[start] =
+            *heap.slice_mut(atom_list)?
+                .get_mut(start)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? =
                 position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
             let pointer_index = atom_count + index;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let pointers = heap.slice_mut(pointer_list)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if pointer_index >= pointers.len() {
                 inchi_free(heap, atom_list)?;
                 inchi_free(heap, pointer_list)?;
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             pointers[pointer_index] = atom_list.offset(start as i64)?;
         }
     }
 
-    panic!("INCHI-AUDIT-0164: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.record_contiguous_neighbor_layout(pointer_list, atom_list, row_count, row_count)?;
 
     Ok(pointer_list)
@@ -2290,7 +2480,6 @@ pub(crate) fn FreeNeighList(
     // END INCHI C FUNCTION: FreeNeighList
 
     if !pointer_list.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_list = heap.slice(pointer_list.as_const())?[0];
         if !atom_list.is_null() {
             inchi_free(heap, atom_list)?;
@@ -2370,11 +2559,11 @@ pub(crate) fn BreakAllTies(
     */
     // END INCHI C FUNCTION: BreakAllTies
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    let capacity = usize::try_from(num_max).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Native uses num_max only inside each missing-slot malloc
+    // arm, and num_atoms at memcpy after the NULL failure gate. Existing
+    // buffers do not admit unused capacity. Preserve reached Rust conversion
+    // errors and source allocation/publication/child order. O(1) admission,
+    // no new allocation/scan; checked and whole-sort costs remain OPEN.
     let (previous_rank, previous_atom_number) = {
         let stack = heap.slice(pRankStack.as_const())?;
         (
@@ -2384,25 +2573,22 @@ pub(crate) fn BreakAllTies(
     };
 
     for slot in 2..=3_usize {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let current = *heap
             .slice(pRankStack.as_const())?
             .get(slot)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if current.is_null() {
-            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
-            let allocated = match heap.allocate(vec![0_u16; capacity]) {
+            let capacity = usize::try_from(num_max)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let allocated = match inchi_calloc::<AT_RANK>(heap, capacity as u64, 2) {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
                 Err(error) => return Err(error),
             };
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(pRankStack)?[slot] = allocated;
         }
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let (new_rank, new_atom_number) = {
         let stack = heap.slice(pRankStack.as_const())?;
         (
@@ -2414,31 +2600,18 @@ pub(crate) fn BreakAllTies(
         return Ok(CT_OUT_OF_RAM);
     }
 
+    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let copy_prefix = |heap: &mut SourceHeap,
                        destination: SourceMutPointer<AT_RANK>,
                        source: SourceMutPointer<AT_RANK>|
      -> Result<(), SourceHeapError> {
         if destination == source {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(source.as_const())?.len() < count {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
             return Ok(());
         }
-        panic!("INCHI-AUDIT-0171: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.with_slice_mut_and_heap(destination, |destination, heap| {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let source = heap
-                .slice(source.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let destination = destination
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            destination.copy_from_slice(source);
-            Ok(())
-        })
+        heap.copy_nonoverlapping_prefix(destination, source.as_const(), count, false)
     };
     copy_prefix(heap, new_atom_number, previous_atom_number)?;
     copy_prefix(heap, new_rank, previous_rank)?;
@@ -2447,7 +2620,6 @@ pub(crate) fn BreakAllTies(
     let mut number_of_ranks = 1_i32;
     let mut index = 1_i32;
     while index < num_atoms {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let (previous_atom, current_atom) = {
             let atom_numbers = heap.slice(new_atom_number.as_const())?;
             let previous_index = usize::try_from(index.wrapping_sub(1))
@@ -2463,7 +2635,6 @@ pub(crate) fn BreakAllTies(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             )
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let tied = {
             let ranks = heap.slice(new_rank.as_const())?;
             *ranks
@@ -2474,7 +2645,6 @@ pub(crate) fn BreakAllTies(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
         };
         if tied {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(new_rank)?[usize::from(previous_atom)] = index as AT_RANK;
             number_of_ranks = DifferentiateRanks2(
                 heap,
@@ -2534,29 +2704,43 @@ int * iisort( int *list, int num )
     if number <= 1 {
         return Ok(list);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let number =
         usize::try_from(number).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let values = heap.slice_mut(list)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if number > values.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    for index in 1..number {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    iisort_slice(&mut values[..number]);
+    Ok(list)
+}
+
+#[inline]
+pub(super) fn iisort_slice(values: &mut [i32]) {
+    // BEGIN INCHI C FUNCTION BODY: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:1017..1029 iisort
+    //     for (i = 1; i < num; i++)
+    //     {
+    //         int tmp = list[i];
+    //         int j = i - 1;
+    //         while (j >= 0 && list[j] > tmp)
+    //         {
+    //             list[j + 1] = list[j];
+    //             j--;
+    //         }
+    //         list[j + 1] = tmp;
+    //     }
+    // END INCHI C FUNCTION BODY: iisort
+    // INCHI✔️❗: One canonical stable insertion loop for heap-backed and
+    // embedded arrays. Same comparison/store order, O(N^2)/O(1), no allocation
+    // or cloning. Bounds and whole-call costs remain independently OPEN.
+    for index in 1..values.len() {
         let temporary = values[index];
         let mut previous = index;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         while previous > 0 && values[previous - 1] > temporary {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             values[previous] = values[previous - 1];
             previous -= 1;
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         values[previous] = temporary;
     }
-    Ok(list)
 }
 
 #[cfg(test)]
@@ -4200,5 +4384,682 @@ mod tests {
             heap.slice(pointer_list.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
+    }
+}
+
+#[cfg(test)]
+mod chem_elem_lex_regressions {
+    use super::CompChemElemLex;
+    use crate::source_types::SourceHeapError;
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/chem_elem_lex/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/chem_elem_lex/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/chem_elem_lex/manifest.json"
+    ));
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(1099511628211)
+        })
+    }
+    fn decode(value: &str) -> Vec<u8> {
+        if value == "-" {
+            return Vec::new();
+        }
+        assert_eq!(value.len() % 2, 0);
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
+            .collect()
+    }
+    #[inline(never)]
+    fn full_consumer(a: &[u8], b: &[u8]) -> Result<i32, SourceHeapError> {
+        CompChemElemLex(a, b)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0x8e8ae9dfdce07a2c);
+        assert_eq!(fingerprint(EXPECTED), 0xe5aeaa8e727051b1);
+        assert_eq!(fingerprint(MANIFEST), 0xef2085ee8822adaa);
+        assert_eq!(INPUTS.lines().count(), 330711);
+        assert_eq!(EXPECTED.lines().count(), 330711);
+        let mut calls = 0;
+        let mut panics = 0;
+        let mut ok = 0;
+        let mut errors = 0;
+        let mut native_ids = 0;
+        for (id, (input, expected)) in INPUTS.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<_> = input.split_whitespace().collect();
+            let e: Vec<_> = expected.split_whitespace().collect();
+            assert_eq!(w.len(), 7);
+            assert_eq!(e.len(), 6);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(&e[4..], &w[5..]);
+            let a = decode(w[5]);
+            let b = decode(w[6]);
+            let original_a = a.clone();
+            let original_b = b.clone();
+            let offa: usize = w[3].parse().unwrap();
+            let offb: usize = w[4].parse().unwrap();
+            let left = &a[offa..];
+            let right = if w[2] == "1" { &a[offb..] } else { &b[offb..] };
+            let admitted = left.len() >= 2 && right.len() >= 2;
+            assert_eq!(admitted, w[1] == "1");
+            assert_eq!(admitted, e[1] == "O");
+            native_ids += usize::from(admitted);
+            let wanted = if admitted {
+                let value = e[2].parse::<i32>().unwrap();
+                assert_eq!(value.signum(), e[3].parse::<i32>().unwrap());
+                Ok(value)
+            } else {
+                assert_eq!(&e[2..4], &["PointerOutOfBounds", "0"]);
+                Err(SourceHeapError::PointerOutOfBounds)
+            };
+            for repeat in 0..2 {
+                let actual = std::panic::catch_unwind(|| {
+                    if full {
+                        full_consumer(left, right)
+                    } else {
+                        CompChemElemLex(left, right)
+                    }
+                });
+                calls += 1;
+                match actual {
+                    Ok(result) => {
+                        assert_eq!(result, wanted, "ID{id}/repeat{repeat}/full{full}");
+                        ok += usize::from(result.is_ok());
+                        errors += usize::from(result.is_err());
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if text
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            std::panic::resume_unwind(payload);
+                        }
+                    }
+                }
+                assert_eq!(a, original_a, "whole left ID{id}");
+                assert_eq!(b, original_b, "whole right ID{id}");
+            }
+        }
+        assert_eq!(native_ids, 328130);
+        assert_eq!(calls, 661422);
+        println!(
+            "chem_elem_lex full={full} calls={calls} ok={ok} errors={errors} exact0159panics={panics} differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, errors, panics), (656260, 5162, 0));
+    }
+    #[test]
+    fn exact_unsigned_return_and_storage() {
+        check(false);
+    }
+    #[test]
+    fn full_consumer_and_short_slice_errors() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod typed_insertion_sort_regressions {
+    use super::insertions_sort_typed;
+    use crate::source_types::T_GROUP;
+    use std::{
+        cell::RefCell,
+        panic::{AssertUnwindSafe, catch_unwind},
+        rc::Rc,
+    };
+    const QUARANTINE: &str =
+        "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md";
+    fn script(mode: usize, ordinal: usize, left: u16, right: u16) -> i32 {
+        match mode {
+            0 => i32::from(left) - i32::from(right),
+            1 => i32::from(right) - i32::from(left),
+            2 => 1,
+            3 => 0,
+            4 => {
+                if ordinal % 2 == 0 {
+                    1
+                } else {
+                    -1
+                }
+            }
+            5 => [i32::MAX, 0, i32::MIN][ordinal % 3],
+            6 => [1, 1, 0, -1, i32::MAX, i32::MIN][ordinal % 6],
+            _ => panic!("bad script"),
+        }
+    }
+    fn record(seed: u32, index: u32) -> T_GROUP {
+        T_GROUP {
+            num: std::array::from_fn(|j| (seed * 257 + index * 131 + j as u32 * 37) as u16),
+            num_DA: std::array::from_fn(|j| {
+                65535u32
+                    .wrapping_sub(seed * 127)
+                    .wrapping_sub(index * 71)
+                    .wrapping_sub(j as u32 * 13) as u16
+            }),
+            iWeight: i64::from(seed) * 1000000 + i64::from(index) * 7919 - 123456789,
+            nGroupNumber: (seed * 257 + index) as u16,
+            nNumEndpoints: (seed * 251 + index * 17) as u16,
+            nFirstEndpointAtNoPos: 65535u32.wrapping_sub(seed * 193).wrapping_sub(index * 19)
+                as u16,
+        }
+    }
+    #[derive(Debug)]
+    struct Owned {
+        id: usize,
+        key: u16,
+        payload: Box<[u64; 8]>,
+        drops: Rc<RefCell<Vec<usize>>>,
+    }
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            self.drops.borrow_mut().push(self.id);
+        }
+    }
+    #[derive(Debug, PartialEq)]
+    struct OwnedObservation {
+        returned: Option<i32>,
+        panic: Option<String>,
+        state: Vec<(usize, u16, [u64; 8])>,
+        trace: Vec<(usize, u16, [u64; 8], usize, u16, [u64; 8])>,
+        drops_before: Vec<usize>,
+        drops_after: Vec<usize>,
+    }
+    fn owned_observation(keys: &[u16], mode: usize, panic_ordinal: usize) -> OwnedObservation {
+        let drops = Rc::new(RefCell::new(Vec::new()));
+        let mut backing: Vec<_> = keys
+            .iter()
+            .enumerate()
+            .map(|(id, &key)| Owned {
+                id,
+                key,
+                payload: Box::new(std::array::from_fn(|j| (id * 131 + j * 37) as u64)),
+                drops: drops.clone(),
+            })
+            .collect();
+        let mut trace = Vec::new();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            insertions_sort_typed(&mut backing[..], |a: &Owned, b: &Owned| {
+                trace.push((a.id, a.key, *a.payload, b.id, b.key, *b.payload));
+                if trace.len() == panic_ordinal {
+                    panic!("controlled callback ordinal {panic_ordinal}");
+                }
+                script(mode, trace.len() - 1, a.key, b.key)
+            })
+        }));
+        let (returned, panic) = match result {
+            Ok(n) => (Some(n), None),
+            Err(p) => (
+                None,
+                Some(
+                    p.downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+                        .expect("exact callback panic"),
+                ),
+            ),
+        };
+        let state = backing.iter().map(|v| (v.id, v.key, *v.payload)).collect();
+        let drops_before = drops.borrow().clone();
+        assert!(drops_before.is_empty());
+        drop(backing);
+        let drops_after = drops.borrow().clone();
+        let mut sorted = drops_after.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..keys.len()).collect::<Vec<_>>());
+        OwnedObservation {
+            returned,
+            panic,
+            state,
+            trace,
+            drops_before,
+            drops_after,
+        }
+    }
+
+    fn panic_message(p: &(dyn std::any::Any + Send)) -> &str {
+        p.downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| p.downcast_ref::<&str>().copied())
+            .expect("string panic payload")
+    }
+    fn observe(
+        result: std::thread::Result<String>,
+        expected: &str,
+        ok: &mut usize,
+        panics: &mut usize,
+    ) {
+        match result {
+            Ok(actual) => {
+                assert_eq!(actual, expected);
+                *ok += 1;
+            }
+            Err(p) => {
+                if panic_message(p.as_ref()) == QUARANTINE {
+                    *panics += 1;
+                } else {
+                    std::panic::resume_unwind(p);
+                }
+            }
+        }
+    }
+    #[test]
+    fn exact_state_callbacks_stability_and_unwind() {
+        let inputs = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/inchi/expected/official/typed_insertion_sort/inputs.txt"
+        ));
+        let expected = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/inchi/expected/official/typed_insertion_sort/expected.txt"
+        ));
+        let manifest = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/inchi/expected/official/typed_insertion_sort/manifest.json"
+        ));
+        assert!(
+            manifest.contains("1279371aec44f49c85592cb602fec4aa67342f900e81c02b675e8c3c4ae6d007")
+        );
+        let identity = |bytes: &[u8]| {
+            bytes.iter().fold(14695981039346656037_u64, |hash, &byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(1099511628211)
+            })
+        };
+        assert_eq!(identity(inputs.as_bytes()), 4514884733519847501_u64);
+        assert_eq!(identity(expected.as_bytes()), 3708333329924247028_u64);
+        assert_eq!(inputs.lines().count(), 22257);
+        assert_eq!(expected.lines().count(), 46152);
+        let mut expected = expected.lines();
+        let (mut calls, mut ok, mut panics) = (0, 0, 0);
+        for (id, line) in inputs.lines().enumerate() {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(fields.len(), 7);
+            assert_eq!(fields[0].parse::<usize>().unwrap(), id);
+            let n = fields[1].parse::<usize>().unwrap();
+            let offset = fields[2].parse::<usize>().unwrap();
+            let suffix = fields[3].parse::<usize>().unwrap();
+            let seed = fields[4].parse::<u32>().unwrap();
+            let mode = fields[5].parse::<usize>().unwrap();
+            let keys: Vec<u16> = if n == 0 {
+                assert_eq!(fields[6], "-");
+                vec![]
+            } else {
+                fields[6].split(',').map(|s| s.parse().unwrap()).collect()
+            };
+            assert_eq!(keys.len(), n);
+            for _repeat in 0..2 {
+                let expected_line = expected.next().unwrap();
+                let parts: Vec<_> = expected_line.split('|').collect();
+                assert_eq!(parts.len(), 3);
+                let header: Vec<_> = parts[0].split_whitespace().collect();
+                assert_eq!(header[0], "N");
+                assert_eq!(header[1].parse::<usize>().unwrap(), id);
+                let expected_swaps = header[2].parse::<i32>().unwrap();
+                let expected_calls = header[3].parse::<usize>().unwrap();
+                let order: Vec<usize> = parts[1].split(',').map(|s| s.parse().unwrap()).collect();
+                let trace: Vec<(usize, usize, i32)> = parts[2]
+                    .split(';')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        let f: Vec<_> = s.split(',').collect();
+                        assert_eq!(f.len(), 3);
+                        (
+                            f[0].parse().unwrap(),
+                            f[1].parse().unwrap(),
+                            f[2].parse().unwrap(),
+                        )
+                    })
+                    .collect();
+                assert_eq!(trace.len(), expected_calls);
+                let mut backing: Vec<_> = (0..offset + n + suffix)
+                    .map(|j| record(seed, j as u32))
+                    .collect();
+                for j in 0..n {
+                    backing[offset + j].nGroupNumber = keys[j];
+                }
+                let before = backing.clone();
+                assert_eq!(order.len(), before.len());
+                let mut callback_count = 0;
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    insertions_sort_typed(&mut backing[offset..offset + n], |a, b| {
+                        let (left, right, expected_result) = trace[callback_count];
+                        assert_eq!(a, &before[left]);
+                        assert_eq!(b, &before[right]);
+                        let actual = script(mode, callback_count, a.nGroupNumber, b.nGroupNumber);
+                        assert_eq!(actual, expected_result);
+                        callback_count += 1;
+                        actual
+                    })
+                }));
+                match result {
+                    Ok(swaps) => {
+                        assert_eq!(swaps, expected_swaps);
+                        assert_eq!(callback_count, expected_calls);
+                        for (j, &index) in order.iter().enumerate() {
+                            assert_eq!(&backing[j], &before[index]);
+                        }
+                        ok += 1;
+                    }
+                    Err(p) => {
+                        if panic_message(p.as_ref()) == QUARANTINE {
+                            assert_eq!(callback_count, 0);
+                            assert_eq!(backing, before);
+                            panics += 1;
+                        } else {
+                            std::panic::resume_unwind(p);
+                        }
+                    }
+                }
+                assert_eq!(&backing[..offset], &before[..offset]);
+                assert_eq!(&backing[offset + n..], &before[offset + n..]);
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 44514);
+        for repeat in 0..2 {
+            for n in [0, 1, 2, 3, 4, 7, 16] {
+                for mode in 0..7 {
+                    let line = expected.next().unwrap();
+                    let label = format!("D zst {repeat} {n} {mode} original ");
+                    let value = line.strip_prefix(&label).unwrap();
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let mut v = vec![(); n];
+                        let mut trace = Vec::new();
+                        let result = insertions_sort_typed(&mut v, |_, _| {
+                            let r = script(mode, trace.len(), 0, 0);
+                            trace.push(r);
+                            r
+                        });
+                        format!("{:?}", (result, trace))
+                    }));
+                    observe(result, value, &mut ok, &mut panics);
+                    calls += 1;
+                }
+            }
+            for keys in [
+                &[2, 1, 2, 0, 1, 0][..],
+                &[0, 0, 0],
+                &[3, 2, 1, 0],
+                &[],
+                &[1],
+            ] {
+                for mode in 0..7 {
+                    for ordinal in 1..22 {
+                        let line = expected.next().unwrap();
+                        let label = format!("D owned {repeat} {keys:?} {mode} {ordinal} original ");
+                        let value = line.strip_prefix(&label).unwrap();
+                        let observed = owned_observation(keys, mode, ordinal);
+                        if observed.panic.as_deref() == Some(QUARANTINE) {
+                            assert!(observed.trace.is_empty());
+                            assert!(observed.drops_before.is_empty());
+                            assert_eq!(
+                                observed
+                                    .state
+                                    .iter()
+                                    .map(|v| (v.0, v.1))
+                                    .collect::<Vec<_>>(),
+                                keys.iter()
+                                    .enumerate()
+                                    .map(|(i, &v)| (i, v))
+                                    .collect::<Vec<_>>()
+                            );
+                            panics += 1;
+                        } else {
+                            assert_eq!(format!("{observed:?}"), value);
+                            ok += 1;
+                        }
+                        calls += 1;
+                    }
+                }
+                for mode in 0..7 {
+                    let line = expected.next().unwrap();
+                    let label = format!("D primitive {repeat} {keys:?} {mode} original ");
+                    let value = line.strip_prefix(&label).unwrap();
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let mut v = keys.to_vec();
+                        let mut trace = Vec::new();
+                        let result = insertions_sort_typed(&mut v, |a, b| {
+                            let r = script(mode, trace.len(), *a, *b);
+                            trace.push((*a, *b, r));
+                            r
+                        });
+                        format!("{:?}", (result, v, trace))
+                    }));
+                    observe(result, value, &mut ok, &mut panics);
+                    calls += 1;
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 46152);
+        assert_eq!(ok + panics, calls);
+        println!(
+            "typed insertion calls={calls} completed={ok} exact0159panics={panics} unexpected_panics=0 differences=0 full_records_callbacks_partial_state_drop"
+        );
+        assert_eq!(
+            panics, 0,
+            "production quarantine is RED, not expected-failure acceptance"
+        );
+    }
+}
+
+#[cfg(test)]
+mod byte_swap_regressions {
+    use super::inchi_swap;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[test]
+    fn complete_forward_overlap_and_checked_admission() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/byte_swap");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut state_differences,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<u64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(f.len(), 8);
+            assert_eq!(f[0], id as u64);
+            let (n, a, b, w, seed, left, right) = (
+                usize::try_from(f[1]).unwrap(),
+                usize::try_from(f[2]).unwrap(),
+                usize::try_from(f[3]).unwrap(),
+                usize::try_from(f[4]).unwrap(),
+                f[5],
+                u8::try_from(f[6]).unwrap(),
+                u8::try_from(f[7]).unwrap(),
+            );
+            let want: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+            assert_eq!(want.len(), 3);
+            assert_eq!(want[0].parse::<usize>().unwrap(), id);
+            assert_eq!(want[2].len(), 512);
+            let want_bytes: Vec<u8> = (0..256)
+                .map(|j| u8::from_str_radix(&want[2][j * 2..j * 2 + 2], 16).unwrap())
+                .collect();
+            for _rep in 0..2 {
+                let mut bytes: [u8; 256] = std::array::from_fn(|j| (seed + j as u64 * 37) as u8);
+                bytes[0] = left;
+                bytes[1] = right;
+                let before = bytes;
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| inchi_swap(&mut bytes[..n], a, b, w))) {
+                    Ok(Ok(())) => {
+                        completed += 1;
+                        differences += usize::from(want[1] != "Ok");
+                        state_differences += usize::from(bytes.as_slice() != want_bytes.as_slice());
+                    }
+                    Ok(Err(e)) => {
+                        bounds += 1;
+                        differences += usize::from(
+                            e != SourceHeapError::PointerOutOfBounds
+                                || want[1] != "PointerOutOfBounds",
+                        );
+                        state_differences += usize::from(bytes.as_slice() != want_bytes.as_slice());
+                    }
+                    Err(payload) => {
+                        state_differences += usize::from(bytes != before);
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantine += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "BYTE_SWAP COUNTS calls={calls} completed={completed} bounds={bounds} audit159={quarantine} unexpected={unexpected} differences={differences} state_differences={state_differences}"
+        );
+        assert_eq!(calls, 177936);
+        assert_eq!(
+            (quarantine, unexpected, differences, state_differences),
+            (0, 0, 0, 0)
+        );
+        assert_eq!((completed, bounds), (177704, 232));
+    }
+}
+
+#[cfg(test)]
+mod neighbor_rank_equality_regressions {
+    use super::CompNeighborsRanksCountEql;
+    use crate::source_types::{
+        CANON_GLOBALS, SourceConstPointer, SourceHeapError, SourceMutPointer,
+    };
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn globals(counter: i32) -> CANON_GLOBALS {
+        CANON_GLOBALS {
+            m_pNeighList_RankForSort: SourceConstPointer::null(),
+            m_pAtomInvariant2ForSort: SourceConstPointer::null(),
+            m_pNeighborsForSort: SourceConstPointer::null(),
+            m_pn_RankForSort: SourceConstPointer::null(),
+            m_nMaxAtNeighRankForSort: 0x19,
+            m_nNumCompNeighborsRanksCountEql: counter,
+            m_bBit: SourceMutPointer::null(),
+            m_bBitInitialized: -37,
+            m_num_bit: 91,
+        }
+    }
+    #[test]
+    fn complete_neighbor_rank_counter_values_bounds_and_wrapping() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/neighbor_rank_equality");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(f.len(), 8);
+            assert_eq!(f[0].parse::<usize>().unwrap(), id);
+            assert!(matches!(f[1], "N" | "E"));
+            let first: u16 = f[2].parse().unwrap();
+            let second: u16 = f[3].parse().unwrap();
+            let counter: i32 = f[4].parse().unwrap();
+            let len: usize = f[5].parse().unwrap();
+            assert!(len <= 4);
+            let left: u16 = f[6].parse().unwrap();
+            let right: u16 = f[7].parse().unwrap();
+            let want: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+            assert_eq!(want.len(), 3);
+            assert!(matches!(want[0], "O" | "B"));
+            let want_ret: i32 = want[1].parse().unwrap();
+            let want_count: i32 = want[2].parse().unwrap();
+            for _rep in 0..2 {
+                let ranks = [first, second, first ^ 0x55aa, second ^ 0xaa55];
+                let before = ranks;
+                let mut g = globals(counter);
+                let mut old = g.clone();
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| {
+                    CompNeighborsRanksCountEql(left, right, &ranks[..len], &mut g)
+                })) {
+                    Ok(Ok(ret)) => {
+                        completed += 1;
+                        differences += usize::from(
+                            want[0] != "O"
+                                || ret != want_ret
+                                || g.m_nNumCompNeighborsRanksCountEql != want_count,
+                        );
+                    }
+                    Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                        bounds += 1;
+                        differences += usize::from(
+                            want[0] != "B" || g.m_nNumCompNeighborsRanksCountEql != counter,
+                        );
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantine += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                        changes += usize::from(g.m_nNumCompNeighborsRanksCountEql != counter);
+                    }
+                }
+                old.m_nNumCompNeighborsRanksCountEql = g.m_nNumCompNeighborsRanksCountEql;
+                changes += usize::from(g != old || ranks != before);
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "NEIGHBOR_RANK_EQUALITY COUNTS calls={calls} completed={completed} bounds={bounds} audit159={quarantine} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 483900);
+        assert_eq!((quarantine, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
     }
 }

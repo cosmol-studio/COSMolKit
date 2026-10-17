@@ -1,3 +1,8 @@
+use crate::source::base::ichi_io::{SourceLineBuffer, SourceLineCursor, source_read_line};
+use crate::source::base::readinch::{find_token_borrowed_line, load_borrowed_line};
+use crate::source::base::ichierr::SourceTextTarget;
+use crate::source::base::util::allocate_model_payload;
+use crate::source::base::ichierr::add_error_message_bytes;
 use crate::source::api::inchi_dll::parse_options_string;
 use crate::source::base::ichi_io::{
     inchi_ios_close, inchi_ios_eprint, inchi_ios_gets, inchi_ios_getsTab, inchi_ios_getsTab1,
@@ -7,7 +12,7 @@ use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichiparm::ReadCommandLineParms;
 use crate::source::base::mol2atom::FreeOrigAtData;
-use crate::source::base::readinch::{FindToken, FreeInchi_Stereo0D, LoadLine};
+use crate::source::base::readinch::{FreeInchi_Stereo0D, LoadLine, find_token_bytes};
 use crate::source::base::runichi4::FreeAllINChIArrays;
 use crate::source::base::util::{inchi_calloc, inchi_free, inchi_malloc, lrtrim, mystrncpy};
 use crate::source_types::{
@@ -50,7 +55,6 @@ fn source_strtol_decimal(bytes: &[i8], start: usize) -> (i64, usize) {
         cursor += 1;
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let negative = match bytes.get(cursor).map(|byte| *byte as u8) {
         Some(b'-') => {
             cursor += 1;
@@ -76,7 +80,6 @@ fn source_strtol_decimal(bytes: &[i8], start: usize) -> (i64, usize) {
         .filter(u8::is_ascii_digit)
     {
         let digit = u64::from(digit - b'0');
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         match magnitude
             .checked_mul(10)
             .and_then(|value| value.checked_add(digit))
@@ -104,84 +107,72 @@ fn source_strtol_decimal(bytes: &[i8], start: usize) -> (i64, usize) {
     (value, cursor)
 }
 
-fn source_strtod_decimal(bytes: &[i8], start: usize) -> (f64, usize) {
-    let mut cursor = start;
-    while bytes
-        .get(cursor)
-        .is_some_and(|byte| matches!(*byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'))
-    {
-        cursor += 1;
-    }
-    let number_start = cursor;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    if matches!(bytes.get(cursor).map(|byte| *byte as u8), Some(b'+' | b'-')) {
-        cursor += 1;
-    }
-    panic!("INCHI-AUDIT-0385: suspected source divergence; see dev/audits/inchi/findings.md");
-    let integer_start = cursor;
-    while bytes
-        .get(cursor)
-        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-    {
-        cursor += 1;
-    }
-    let mut has_digits = cursor != integer_start;
-    if bytes.get(cursor).map(|byte| *byte as u8) == Some(b'.') {
-        cursor += 1;
-        let fraction_start = cursor;
-        while bytes
-            .get(cursor)
-            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-        {
-            cursor += 1;
-        }
-        has_digits |= cursor != fraction_start;
-    }
-    if !has_digits {
-        return (0.0, start);
-    }
-    if matches!(bytes.get(cursor).map(|byte| *byte as u8), Some(b'e' | b'E')) {
-        let exponent_mark = cursor;
-        cursor += 1;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        if matches!(bytes.get(cursor).map(|byte| *byte as u8), Some(b'+' | b'-')) {
-            cursor += 1;
-        }
-        let exponent_start = cursor;
-        while bytes
-            .get(cursor)
-            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-        {
-            cursor += 1;
-        }
-        if cursor == exponent_start {
-            cursor = exponent_mark;
-        }
-    }
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let text: String = bytes[number_start..cursor]
-        .iter()
-        .map(|byte| *byte as u8 as char)
-        .collect();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    (text.parse::<f64>().unwrap_or(0.0), cursor)
+fn source_strtod_coordinate(
+    bytes: &[i8],
+    start: usize,
+    source_errno: &mut i32,
+) -> Result<(f64, usize), SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c1349/2603
+    //                                     xyz = strtod( p, &q );
+    // INCHI✔️❗: Native has no decimal-only prefilter. Use the ONE canonical
+    // floating lexer for decimal/hex/inf/nan/end/errno, with its independent
+    // conversion/backend quarantines retained. The actual gets/LoadLine line
+    // is NUL terminated; its producer and cursor are unchanged. No pre-scan,
+    // owned token, silent parse fallback, allocation, copy, new unsafe or FFI.
+    // INCHI-PERF-FLOAT-LEXICAL-ADMISSION: fixed checked transport remains OPEN.
+    // Historical decimal-only projection comments, superseded by C541:
+    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c:1349 decimal conversion operand
+    //                                     xyz = strtod( p, &q );
+    // END VERBATIM SOURCE FRAGMENT: decimal conversion operand
+    // INCHI❗❗: Borrow recognized ASCII decimal token, no String allocation/copy.
+    // Grammar/endpoint/fallback behavior is unchanged and retained under0385.
+    // INCHI-PERF-DECIMAL-TOKEN-BORROW: conversion/validation costs remain OPEN.
+    let suffix = bytes.get(start..).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let (value, consumed) = crate::source::base::ichiparm::source_strtod_terminated_bytes_with_end(
+        suffix, source_errno,
+    )?;
+    let end = start.checked_add(consumed).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    Ok((value, end))
 }
 
 fn source_find_bytes(haystack: &[i8], needle: &[u8]) -> Option<usize> {
+    // BEGIN INCHI C FUNCTION: third_party/musl/src/string/strstr.c strstr
+    // INCHI✔️❗: Bounded first-occurrence contract; callers retain C-string admission.
+    /*
+char *strstr(const char *h, const char *n)
+{
+	/* Return immediately on empty needle */
+	if (!n[0]) return (char *)h;
+
+	/* Use faster algorithms for short needles */
+	h = strchr(h, *n);
+	if (!h || !n[1]) return (char *)h;
+	if (!h[1]) return 0;
+	if (!n[2]) return twobyte_strstr((void *)h, (void *)n);
+	if (!h[2]) return 0;
+	if (!n[3]) return threebyte_strstr((void *)h, (void *)n);
+	if (!h[3]) return 0;
+	if (!n[4]) return fourbyte_strstr((void *)h, (void *)n);
+
+	return twoway_strstr((void *)h, (void *)n);
+}
+    */
+    // END INCHI C FUNCTION: strstr
+    // INCHI source inchi_dll_b.c:724:
+    //                     else if ((q = strstr( p, sStructHdrPlnNoLblVal ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❗: One shared first-match search for all six consumers, including
+    // bounded accumulated sections. Signed bytes are reinterpreted without a
+    // copy; empty needle remains0, absent/overlong needle remainsNone. Borrowed
+    // Finder construction/search uses O(N+M) time/O(1) scratch/no allocation,
+    // replacing O(N*M) windows. Libc dispatch/preprocessing constants remain
+    // OPEN INCHI-PERF-BOUNDED-SEARCH; no whole parser performance acceptance.
     if needle.is_empty() {
         return Some(0);
     }
-    panic!("INCHI-AUDIT-0364: suspected source divergence; see dev/audits/inchi/findings.md");
-    haystack.windows(needle.len()).position(|window| {
-        window
-            .iter()
-            .zip(needle)
-            .all(|(left, right)| *left as u8 == *right)
-    })
+    memchr::memmem::Finder::new(needle).find(bytemuck::cast_slice(haystack))
 }
 
 fn source_starts_with(haystack: &[i8], needle: &[u8]) -> bool {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     haystack.len() >= needle.len()
         && haystack[..needle.len()]
             .iter()
@@ -190,11 +181,30 @@ fn source_starts_with(haystack: &[i8], needle: &[u8]) -> bool {
 }
 
 fn source_c_string(bytes: &[i8]) -> Result<&[i8], SourceHeapError> {
-    panic!("INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md");
     let length = bytes
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
+    Ok(&bytes[..length])
+}
+
+fn source_produced_prefix(bytes: &[i8], length: i32) -> Result<&[i8], SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichi_io.c407..410
+    //         lrtrim(szLine, &length);
+    //     } while (!length);
+    //
+    //     return length;
+    // INCHI✔️❗: Private successful gets/getsTab1 producers already established
+    // the first-NUL length. LoadLine transports that length with its cursor.
+    // Reuse it without rescanning, retaining checked bounds/termination;
+    // O(1), no allocation/clone. Whole-parser costs remain OPEN (C500).
+    let length = usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let terminator = bytes
+        .get(length)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if *terminator != 0 {
+        return Err(SourceHeapError::MissingNulTerminator);
+    }
     Ok(&bytes[..length])
 }
 
@@ -206,12 +216,7 @@ pub(crate) fn add_source_error(
     let Some(error_buffer) = error_buffer else {
         return Ok(());
     };
-    panic!("INCHI-AUDIT-0345: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut source: Vec<i8> = message.bytes().map(|byte| byte as i8).collect();
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    source.push(0);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    AddErrorMessage(Some(heap.slice_mut(error_buffer)?), Some(&source))?;
+    add_error_message_bytes(Some(heap.slice_mut(error_buffer)?), message.as_bytes())?;
     Ok(())
 }
 
@@ -236,7 +241,6 @@ pub(crate) fn FreeInchi_Atom(
     if atom_slot.is_null() {
         return Ok(());
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_free(heap, *atom_slot)?;
     *atom_slot = SourceMutPointer::null();
     Ok(())
@@ -254,8 +258,13 @@ pub(crate) fn CreateInchiAtom(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CreateInchiAtom
 
-    panic!("INCHI-AUDIT-0158: suspected source divergence; see dev/audits/inchi/findings.md");
-    inchi_calloc(heap, num_atoms as u64, SOURCE_SIZEOF_INCHI_ATOM)
+    // INCHI✔️❗: Native calloc size overflow is NULL, projected through the
+    // existing AllocationFailed Result/caller branch. No extra allocation,
+    // scan or clone; allocator/default/arena whole-call cost remains OPEN.
+    inchi_calloc(heap, num_atoms as u64, SOURCE_SIZEOF_INCHI_ATOM).map_err(|error| match error {
+        SourceHeapError::AllocationSizeOverflow => SourceHeapError::AllocationFailed,
+        error => error,
+    })
 }
 
 #[rustfmt::skip]
@@ -263,7 +272,7 @@ pub(crate) fn CreateInchiAtom(
 pub(crate) fn PrepareToMakeINCHI(
     heap: &mut SourceHeap,
     sd: &mut STRUCT_DATA,
-    ip: &mut INPUT_PARMS,
+    ip: SourceMutPointer<INPUT_PARMS>,
     orig_inp_data: &mut ORIG_ATOM_DATA,
     prep_inp_data: &mut [ORIG_ATOM_DATA; INCHI_NUM as usize],
     p_inchi: &mut [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
@@ -390,7 +399,6 @@ ret:
     // INCHI✔️❌: INPUT_MOLFILE resolves to tagInputType_INPUT_MOLFILE.
     // END INCHI ACTIVE MACRO CONFIGURATION: PrepareToMakeINCHI
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let moltext_length = heap
         .slice(moltext)?
         .iter()
@@ -398,11 +406,11 @@ ret:
         .ok_or(SourceHeapError::MissingNulTerminator)?;
 
     let mut quasi_options = SourceMutPointer::null();
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut parsed_arguments = vec![SourceArgvPointer::Null; INCHI_MAX_NUM_ARG as usize + 1];
+    // INCHI✔️❌: Native argv[33]; unchanged tokenizer max32 yields argc<=31.
+    // Two expanded typed stack tables retain a larger fixed footprint (C078 OPEN).
+    let mut parsed_arguments = [SourceArgvPointer::Null; INCHI_MAX_NUM_ARG as usize + 1];
     let quasi_argc;
     if !options.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let option_length = heap
             .slice(options)?
             .iter()
@@ -414,12 +422,23 @@ ret:
             Err(error) => return Err(error),
         };
         if !quasi_options.is_null() {
-            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            let copied = heap.slice(options)?[..=option_length].to_vec();
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.slice_mut(quasi_options)?[..=option_length].copy_from_slice(&copied);
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = options;
+                let copy_count = (heap.slice(copy_source)?[..=option_length]).len();
+                let copy_destination = quasi_options;
+                {
+                    let copy_target = &mut (heap.slice_mut(copy_destination)?[..=option_length]);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                }
+            }
         }
     }
     if !quasi_options.is_null() {
@@ -460,57 +479,51 @@ ret:
     inp_file.s.nUsedLength = moltext_length.wrapping_add(1) as i32;
     inp_file.f = SourceMutPointer::null();
 
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *sd = STRUCT_DATA::default();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
-    *ip = INPUT_PARMS::default();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
+    *heap.slice_mut(ip)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)? = INPUT_PARMS::default();
     *orig_inp_data = ORIG_ATOM_DATA::default();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *prep_inp_data = std::array::from_fn(|_| ORIG_ATOM_DATA::default());
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *p_inchi = std::array::from_fn(|_| SourceMutPointer::null());
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *p_inchi_aux = std::array::from_fn(|_| SourceMutPointer::null());
 
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let sdf_value = heap.allocate_model_storage(vec![0_i8; MAX_SDF_VALUE as usize + 1])?;
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let empty_argument = heap.allocate_model_storage(vec![0_i8])?;
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut argv = Vec::with_capacity(quasi_argc as usize);
-    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
-    for argument in parsed_arguments.iter().take(quasi_argc as usize) {
-        argv.push(match *argument {
-            SourceArgvPointer::EmptyLiteral => empty_argument.as_const(),
+    let sdf_value = allocate_model_payload(heap, std::iter::repeat_n(0_i8, MAX_SDF_VALUE as usize + 1))?;
+    let mut argv = [SourceConstPointer::null(); INCHI_MAX_NUM_ARG as usize + 1];
+    for (index, argument) in parsed_arguments
+        .iter().take(quasi_argc as usize).enumerate()
+    {
+        argv[index] = match *argument {
+            // Native argv[0] is unused; all consumers below start at index1.
+            // This private placeholder never escapes as a string pointer.
+            SourceArgvPointer::EmptyLiteral => SourceConstPointer::null(),
             SourceArgvPointer::Command(pointer) => pointer.as_const(),
             SourceArgvPointer::Null => SourceConstPointer::null(),
-        });
+        };
     }
+    let argv = &argv[..quasi_argc as usize];
     let mut display_time = 0_u64;
     let command_result = ReadCommandLineParms(
         heap,
         quasi_argc,
-        &argv,
+        argv,
         ip,
         sdf_value,
         &mut display_time,
         bRELEASE_VERSION as i32,
         Some(plog),
     );
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    heap.free(empty_argument)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.free(sdf_value)?;
     let command_result = command_result?;
     if command_result < 0 {
         return Ok(MOL2INCHI_BAD_COMMAND_LINE as i32);
     }
 
-    ip.nInputType = tagInputType_INPUT_MOLFILE;
-    ip.bNoStructLabels = 1;
-    ip.pSdfLabel = SourceMutPointer::null();
-    ip.pSdfValue = SourceMutPointer::null();
+    {
+        let ip = heap.slice_mut(ip)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        ip.nInputType = tagInputType_INPUT_MOLFILE;
+        ip.bNoStructLabels = 1;
+        ip.pSdfLabel = SourceMutPointer::null();
+        ip.pSdfValue = SourceMutPointer::null();
+    }
 
     let mut retcode = 0_i32;
     if inchi_strbuf_init(
@@ -521,21 +534,13 @@ ret:
     )? <= 0
     {
         if !plog.s.pStr.is_null() {
-            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-            let format = heap.allocate_model_storage(
-                b"Cannot allocate output string buffer. Terminating\n\0"
-                    .iter()
-                    .map(|byte| *byte as i8)
-                    .collect(),
-            )?;
-            let print_result = inchi_ios_eprint(
+            let format = crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"Cannot allocate output string buffer. Terminating\n\0"));
+            let print_result = crate::source::base::ichi_io::inchi_ios_eprint_format(
                 heap,
                 Some(plog),
-                format.as_const(),
+                format,
                 &SourceVaList::default(),
             );
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-            heap.free(format)?;
             print_result?;
         }
         retcode = MOL2INCHI_NO_RAM as i32;
@@ -620,29 +625,19 @@ int PostMakeINCHICleanup( struct tagCANON_GLOBALS *pCG,
     // INCHI✔️❌: plog, inp_file, and moltext are intentionally not closed or freed by this function.
     // END INCHI ACTIVE MACRO CONFIGURATION: PostMakeINCHICleanup
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeAllINChIArrays(heap, p_inchi, p_inchi_aux, &mut sd.num_components)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeOrigAtData(heap, Some(orig_inp_data))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeOrigAtData(heap, Some(&mut prep_inp_data[0]))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeOrigAtData(heap, Some(&mut prep_inp_data[1]))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_ios_close(heap, Some(pout))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_ios_close(heap, Some(pprb))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_strbuf_close(heap, Some(strbuf))?;
-    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
     for path in ip.path.iter_mut().take(MAX_NUM_PATHS as usize) {
         if !path.is_null() {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             inchi_free(heap, path.as_mut())?;
             *path = SourceConstPointer::null();
         }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     SetBitFree(heap, canonical_globals)?;
     Ok(0)
 }
@@ -660,11 +655,8 @@ pub(crate) fn FreeInchi_Input(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: FreeInchi_Input
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeInchi_Atom(heap, Some(&mut input.atom))?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeInchi_Stereo0D(heap, Some(&mut input.stereo0D))?;
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *input = inchi_Input::default();
     Ok(())
 }
@@ -675,36 +667,41 @@ pub(crate) fn is_in_the_slist(
     mut path_length: i32,
 ) -> Result<Option<usize>, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:531 is_in_the_slist
-    // INCHI✔️❌: S_SHORT *is_in_the_slist( S_SHORT *pathAtom, S_SHORT nNextAtom, int nPathLen )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     for (; nPathLen && *pathAtom != nNextAtom; nPathLen--, pathAtom++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         ;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return nPathLen ? pathAtom : NULL;
-    // INCHI✔️❌: }
+    // INCHI✔️❗: S_SHORT *is_in_the_slist( S_SHORT *pathAtom, S_SHORT nNextAtom, int nPathLen )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     for (; nPathLen && *pathAtom != nNextAtom; nPathLen--, pathAtom++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         ;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return nPathLen ? pathAtom : NULL;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: is_in_the_slist
+    // Behavior: count is nonzero (including negative); match precedes decrement.
+    // Rust-only null/bounds/overflow errors retain their reached order.
+    // Complexity: O(reached prefix) time, O(1) space, no allocation or clone.
+    // Cost: checked access/Result overhead unresolved; human authorizes removal
+    // with INCHI-PERF-F0085 retained for final performance review.
 
     if path_length == 0 {
         return Ok(None);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
     let path_atom = path_atom.ok_or(SourceHeapError::NullPointer)?;
     let mut position = 0_usize;
     while path_length != 0 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
         let current = *path_atom
             .get(position)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if current == next_atom {
             return Ok(Some(position));
         }
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
         path_length = path_length
             .checked_sub(1)
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+
         position = position
             .checked_add(1)
             .ok_or(SourceHeapError::PointerOffsetOverflow)?;
@@ -714,27 +711,34 @@ pub(crate) fn is_in_the_slist(
 
 pub(crate) fn is_element_a_metal(element: &[i8]) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:543 is_element_a_metal
-    // INCHI✔️✔️: int is_element_a_metal( char szEl[] )
-    // INCHI✔️✔️: {
-    // INCHI✔️✔️:     static const char szMetals[] = "K;V;Y;W;U;"
-    // INCHI✔️✔️:         "Li;Be;Na;Mg;Al;Ca;Sc;Ti;Cr;Mn;Fe;Co;Ni;Cu;Zn;Ga;Rb;Sr;Zr;"
-    // INCHI✔️✔️:         "Nb;Mo;Tc;Ru;Rh;Pd;Ag;Cd;In;Sn;Sb;Cs;Ba;La;Ce;Pr;Nd;Pm;Sm;"
-    // INCHI✔️✔️:         "Eu;Gd;Tb;Dy;Ho;Er;Tm;Yb;Lu;Hf;Ta;Re;Os;Ir;Pt;Au;Hg;Tl;Pb;"
-    // INCHI✔️✔️:         "Bi;Po;Fr;Ra;Ac;Th;Pa;Np;Pu;Am;Cm;Bk;Cf;Es;Fm;Md;No;Lr;Rf;";
-    // INCHI✔️✔️:     const int len = (int) strlen( szEl );
-    // INCHI✔️✔️:     const char *p;
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     if (0 < len && len <= 2 &&
-    // INCHI✔️✔️:          isalpha( UCINT szEl[0] ) && isupper( szEl[0] ) &&
-    // INCHI✔️✔️:          ( p = strstr( szMetals, szEl ) ) && p[len] == ';')
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:         return 1; /*return AtType_Metal;*/
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     return 0;
-    // INCHI✔️✔️: }
+    // INCHI✔️❗: int is_element_a_metal( char szEl[] )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     static const char szMetals[] = "K;V;Y;W;U;"
+    // INCHI✔️❗:         "Li;Be;Na;Mg;Al;Ca;Sc;Ti;Cr;Mn;Fe;Co;Ni;Cu;Zn;Ga;Rb;Sr;Zr;"
+    // INCHI✔️❗:         "Nb;Mo;Tc;Ru;Rh;Pd;Ag;Cd;In;Sn;Sb;Cs;Ba;La;Ce;Pr;Nd;Pm;Sm;"
+    // INCHI✔️❗:         "Eu;Gd;Tb;Dy;Ho;Er;Tm;Yb;Lu;Hf;Ta;Re;Os;Ir;Pt;Au;Hg;Tl;Pb;"
+    // INCHI✔️❗:         "Bi;Po;Fr;Ra;Ac;Th;Pa;Np;Pu;Am;Cm;Bk;Cf;Es;Fm;Md;No;Lr;Rf;";
+    // INCHI✔️❗:     const int len = (int) strlen( szEl );
+    // INCHI✔️❗:     const char *p;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (0 < len && len <= 2 &&
+    // INCHI✔️❗:          isalpha( UCINT szEl[0] ) && isupper( szEl[0] ) &&
+    // INCHI✔️❗:          ( p = strstr( szMetals, szEl ) ) && p[len] == ';')
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:
+    // INCHI✔️❗:         return 1; /*return AtType_Metal;*/
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return 0;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: is_element_a_metal
+    // Behavior: configured C-locale classification; first substring then semicolon.
+    // Keep full NUL admission and exact existing missing-terminator error.
+    // A true length >2 cannot succeed even if its C int cast wraps: the full
+    // needle then exceeds this fixed table, so native strstr cannot match.
+    // Complexity: O(input length + fixed table), O(1) space, no allocation.
+    // Cost: libc versus safe-window/Result cost unresolved (INCHI-PERF-F0086);
+    // human authorizes guard removal while retaining the performance review.
 
     const METALS: &[u8] = b"K;V;Y;W;U;\
 Li;Be;Na;Mg;Al;Ca;Sc;Ti;Cr;Mn;Fe;Co;Ni;Cu;Zn;Ga;Rb;Sr;Zr;\
@@ -742,7 +746,6 @@ Nb;Mo;Tc;Ru;Rh;Pd;Ag;Cd;In;Sn;Sb;Cs;Ba;La;Ce;Pr;Nd;Pm;Sm;\
 Eu;Gd;Tb;Dy;Ho;Er;Tm;Yb;Lu;Hf;Ta;Re;Os;Ir;Pt;Au;Hg;Tl;Pb;\
 Bi;Po;Fr;Ra;Ac;Th;Pa;Np;Pu;Am;Cm;Bk;Cf;Es;Fm;Md;No;Lr;Rf;";
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let length = element
         .iter()
         .position(|byte| *byte == 0)
@@ -756,14 +759,12 @@ Bi;Po;Fr;Ra;Ac;Th;Pa;Np;Pu;Am;Cm;Bk;Cf;Es;Fm;Md;No;Lr;Rf;";
         return Ok(0);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let position = METALS.windows(length).position(|candidate| {
         candidate
             .iter()
             .zip(&element[..length])
             .all(|(candidate, needle)| *candidate == *needle as u8)
     });
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(i32::from(position.is_some_and(|position| {
         METALS.get(position + length) == Some(&b';')
     })))
@@ -3310,7 +3311,2611 @@ pub(crate) fn InchiToInchiAtom(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: InchiToInchiAtom
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: Temporary actual destination views only; no inferred origin,
+    // new identity, allocation, scan or clone. Same canonical algorithm below;
+    // C513 whole-call costs OPEN; all independent quarantines remain.
+    inchi_to_atom_with_targets(
+        heap, input, stereo0d_slot, stereo0d_count, do_not_add_h, _ab_parity_unknown,
+        input_type, atom_slot, maximum_atom_count, dimensions, bond_count,
+        &mut SourceTextTarget::Pointer(sdf_label), &mut SourceTextTarget::Pointer(sdf_value),
+        id, input_atom_flags, error, &mut SourceTextTarget::Pointer(error_text))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn inchi_to_atom_with_targets(
+    heap: &mut SourceHeap,
+    input: Option<&mut INCHI_IOSTREAM>,
+    mut stereo0d_slot: Option<&mut SourceMutPointer<inchi_Stereo0D>>,
+    mut stereo0d_count: Option<&mut i32>,
+    do_not_add_h: i32,
+    _ab_parity_unknown: i32,
+    input_type: INPUT_TYPE,
+    mut atom_slot: Option<&mut SourceMutPointer<inchi_Atom>>,
+    maximum_atom_count: i32,
+    dimensions: Option<&mut i32>,
+    bond_count: Option<&mut i32>,
+    sdf_label: &mut SourceTextTarget<'_>,
+    sdf_value: &mut SourceTextTarget<'_>,
+    mut id: Option<&mut i64>,
+    mut input_atom_flags: Option<&mut INCHI_MODE>,
+    error: Option<&mut i32>,
+    error_text: &mut SourceTextTarget<'_>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:582 InchiToInchiAtom
+    // INCHI✔❌: int InchiToInchiAtom( INCHI_IOSTREAM *inp_file,
+    // INCHI✔❌:                       inchi_Stereo0D **stereo0D,
+    // INCHI✔❌:                       int *num_stereo0D,
+    // INCHI✔❌:                       int bDoNotAddH,
+    // INCHI✔❌:                       int vABParityUnknown,
+    // INCHI✔❌:                       INPUT_TYPE nInputType,
+    // INCHI✔❌:                       inchi_Atom **at,
+    // INCHI✔❌:                       int max_num_at,
+    // INCHI✔❌:                       int *num_dimensions,
+    // INCHI✔❌:                       int *num_bonds,
+    // INCHI✔❌:                       char *pSdfLabel,
+    // INCHI✔❌:                       char *pSdfValue,
+    // INCHI✔❌:                       long *Id,
+    // INCHI✔❌:                       INCHI_MODE *pInpAtomFlags,
+    // INCHI✔❌:                       int *err,
+    // INCHI✔❌:                       char *pStrErr )
+    // INCHI✔❌: {
+    // INCHI✔❌:     int      num_atoms = 0, bFindNext = 0, len = 0, bHeaderRead, bItemIsOver, bErrorMsg, bRestoreInfo;; /* djb-rwth: removing redundant variables; initialising variables -- updated 28/09/2025 */
+    // INCHI✔❌:     int      bFatal = 0, num_struct = 0;
+    // INCHI✔❌:     int      i, k, k2, res, bond_type, bond_stereo1, bond_stereo2, bond_char, neigh, bond_parity, bond_parityNM;
+    // INCHI✔❌:     int      bTooLongLine, res2, bTooLongLine2, pos, hlen, hk;
+    // INCHI✔❌:     long     longID;
+    // INCHI✔❌:     char     *p, *q, *s, parity;
+    // INCHI✔❌:     int      b2D = 0, b3D = 0, b23D, nNumBonds = 0, bNonZeroXYZ, bNonMetal;
+    // INCHI✔❌:     int      len_stereo0D = 0, max_len_stereo0D = 0;
+    // INCHI✔❌:     inchi_Stereo0D  *atom_stereo0D = NULL;
+    // INCHI✔❌:     inchi_Atom      *atom = NULL;
+    // INCHI✔❌:     MOL_COORD       *pszCoord = NULL;
+    // INCHI✔❌:     INCHI_MODE InpAtomFlags = 0; /* 0 or FLAG_INP_AT_NONCHIRAL or FLAG_INP_AT_CHIRAL */
+    // INCHI✔❌:     static const char szIsoH[] = "hdt";
+    // INCHI✔❌:     /* plain tags */
+    // INCHI✔❌:     static const char sStructHdrPln[] = "Structure:";
+    // INCHI✔❌:     static const char sStructHdrPlnNoLblVal[] = " is missing";
+    // INCHI✔❌:     static char sStructHdrPlnAuxStart[64] = ""; /*"$1.1Beta/";*/
+    // INCHI✔❌:     static int  lenStructHdrPlnAuxStart = 0;
+    // INCHI✔❌:     static const char sStructHdrPlnRevAt[] = "/rA:";
+    // INCHI✔❌:     static const char sStructHdrPlnRevBn[] = "/rB:";
+    // INCHI✔❌:     static const char sStructHdrPlnRevXYZ[] = "/rC:";
+    // INCHI✔❌:     const  char *sToken;
+    // INCHI✔❌:     int  lToken;
+    // INCHI✔❌:
+    // INCHI✔❌:     if (!lenStructHdrPlnAuxStart)
+    // INCHI✔❌:     {
+    // INCHI✔❌:         lenStructHdrPlnAuxStart = sprintf( sStructHdrPlnAuxStart, "AuxInfo=" );
+    // INCHI✔❌:     }
+    // INCHI✔❌:
+    // INCHI✔❌:     if (at)
+    // INCHI✔❌:     {
+    // INCHI✔❌:
+    // INCHI✔❌:         if (*at && max_num_at)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             memset( *at, 0, max_num_at * sizeof( **at ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         if (stereo0D && num_stereo0D)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (*stereo0D && *num_stereo0D)
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 max_len_stereo0D = *num_stereo0D;
+    // INCHI✔❌:                 memset( *stereo0D, 0, max_len_stereo0D * sizeof( **stereo0D ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 max_len_stereo0D = 0;
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }
+    // INCHI✔❌:     }
+    // INCHI✔❌:     else  /* if ( at )  */
+    // INCHI✔❌:     {
+    // INCHI✔❌:         bFindNext = 1;
+    // INCHI✔❌:     }
+    // INCHI✔❌:
+    // INCHI✔❌:     bHeaderRead = bErrorMsg = bRestoreInfo = 0;
+    // INCHI✔❌:     *num_dimensions = *num_bonds = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:     /*************************************************************/
+    // INCHI✔❌:     /*   extract reversibility info from plain text INChI format */
+    // INCHI✔❌:     /*************************************************************/
+    // INCHI✔❌:
+    // INCHI✔❌:     if (nInputType == INPUT_INCHI_PLAIN)
+    // INCHI✔❌:     {
+    // INCHI✔❌:
+    // INCHI✔❌:         bHeaderRead = hk = 0; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:
+    // INCHI✔❌:         while (0 < ( res = inchi_ios_getsTab(szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine ) ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:
+    // INCHI✔❌:             /********************* find and interpret structure header ************/
+    // INCHI✔❌:             if (!bTooLongLine &&
+    // INCHI✔❌:                 ( hlen = sizeof( sStructHdrPln ) - 1, !memcmp(szLine_i2ia, sStructHdrPln, hlen ) ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 p = szLine_i2ia + hlen;
+    // INCHI✔❌:                 longID = 0;
+    // INCHI✔❌:                 num_atoms = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* structure number */
+    // INCHI✔❌:                 longID = strtol( p, &q, 10 );
+    // INCHI✔❌:                 if (q && q[0] == '.' && q[1] == ' ')
+    // INCHI✔❌:                     p = q + 2;
+    // INCHI✔❌:                 p = p + strspn( p, " \n\r" );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (pSdfLabel)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pSdfLabel[0] = '\0';
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (pSdfValue)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pSdfValue[0] = '\0';
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (*p)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* has label name */
+    // INCHI✔❌:
+    // INCHI✔❌:                     /*p ++;*/
+    // INCHI✔❌:                     if ((q = strchr( p, '=' ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* '=' separates label name from the value */
+    // INCHI✔❌:                         len = inchi_min( q - p + 1, MAX_SDF_HEADER - 1 );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (pSdfLabel)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             mystrncpy( pSdfLabel, p, len );
+    // INCHI✔❌:                             lrtrim( pSdfLabel, &len );
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = q + 1;
+    // INCHI✔❌:                         q = p + (int) strlen( p );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (q - p > 0)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             len = inchi_min( q - p + 1, MAX_SDF_VALUE - 1 );
+    // INCHI✔❌:                             if (pSdfValue)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 mystrncpy( pSdfValue, p, len );
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             p = q; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     else if ((q = strstr( p, sStructHdrPlnNoLblVal ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         len = inchi_min( q - p + 1, MAX_SDF_HEADER - 1 );
+    // INCHI✔❌:                         if (pSdfLabel)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             mystrncpy( pSdfLabel, p, len );
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         p = q + 1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (Id)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     *Id = longID;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 bHeaderRead = 1;
+    // INCHI✔❌:                 bErrorMsg = bRestoreInfo = 0;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else if (!memcmp(szLine_i2ia, sStructHdrPlnAuxStart, lenStructHdrPlnAuxStart ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 /* found the header of the AuxInfo, read AuxInfo head of the line */
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!bHeaderRead)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     longID = 0;
+    // INCHI✔❌:                     if (Id)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         *Id = longID;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     if (pSdfLabel)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         pSdfLabel[0] = '\0';
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     if (pSdfValue)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         pSdfValue[0] = '\0';
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 bHeaderRead = 0; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* check for empty "AuxInfo=ver//" */
+    // INCHI✔❌:
+    // INCHI✔❌:                 p = strchr(szLine_i2ia + lenStructHdrPlnAuxStart, '/' );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (p && p[1] == '/' && ( !p[2] || '\n' == p[2] ))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /***************** search for atoms block (plain) **********************/
+    // INCHI✔❌:
+    // INCHI✔❌:                 p = szLine_i2ia;
+    // INCHI✔❌:                 sToken = sStructHdrPlnRevAt;
+    // INCHI✔❌:                 lToken = sizeof( sStructHdrPlnRevAt ) - 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* search for sToken in the line; load next segments of the line if sToken has not found */
+    // INCHI✔❌:
+    // INCHI✔❌:                 p = FindToken( inp_file, &bTooLongLine, sToken, lToken,
+    // INCHI✔❌:                     szLine_i2ia, sizeof(szLine_i2ia), p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!p)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Missing atom data" );
+    // INCHI✔❌:                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* atoms block started */
+    // INCHI✔❌:
+    // INCHI✔❌:                     i = 0;
+    // INCHI✔❌:                     res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                     bItemIsOver = ( s = strchr( p, '/' ) ) || !bTooLongLine;
+    // INCHI✔❌:
+    // INCHI✔❌:                     while (1)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = LoadLine( inp_file, &bTooLongLine, &bItemIsOver, &s,
+    // INCHI✔❌:                             szLine_i2ia, sizeof(szLine_i2ia), INCHI_LINE_ADD, p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (!i)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             /* allocate atom */
+    // INCHI✔❌:                             num_atoms = strtol( p, &q, 10 );
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (!num_atoms || !q || !*q)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 num_atoms = 0; /* no atom data */
+    // INCHI✔❌:                                 goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             p = q;
+    // INCHI✔❌:
+    // INCHI✔❌:                             /* Molfile chirality flag */
+    // INCHI✔❌:                             switch (*p)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 case 'c':
+    // INCHI✔❌:                                     InpAtomFlags |= FLAG_INP_AT_CHIRAL;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 'n':
+    // INCHI✔❌:                                     InpAtomFlags |= FLAG_INP_AT_NONCHIRAL;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (at && *at)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 if (num_atoms > max_num_at)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     inchi_free( *at );
+    // INCHI✔❌:                                     *at = NULL;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 else
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     memset( *at, 0, max_num_at * sizeof( **at ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                                     atom = *at;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (!at || !*at)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:
+    // INCHI✔❌:                                 atom = CreateInchiAtom( num_atoms + 1 );
+    // INCHI✔❌:
+    // INCHI✔❌:                                 if (!atom)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     num_atoms = INCHI_INP_FATAL_RET; /* was -1; error */
+    // INCHI✔❌:                                     *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                                     TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (stereo0D && *stereo0D)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 if (num_atoms > max_len_stereo0D)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     FreeInchi_Stereo0D( stereo0D );
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 else
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     memset( *stereo0D, 0, max_len_stereo0D * sizeof( **stereo0D ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                                     atom_stereo0D = *stereo0D;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (!stereo0D || !*stereo0D)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 max_len_stereo0D = num_atoms + 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 atom_stereo0D = CreateInchi_Stereo0D( max_len_stereo0D );
+    // INCHI✔❌:
+    // INCHI✔❌:                                 if (!atom_stereo0D)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     num_atoms = INCHI_INP_FATAL_RET; /* fatal error: cannot allocate */
+    // INCHI✔❌:                                     *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                                     TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                                     /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:                                     inchi_free(atom);
+    // INCHI✔❌:                                     atom = NULL;
+    // INCHI✔❌:                                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* element, first char */
+    // INCHI✔❌:                         if (!isalpha( UCINT *p ) || !isupper( UCINT *p ) || i >= num_atoms)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             break; /* end of atoms block */
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         atom[i].elname[0] = *p++;
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* element, second char */
+    // INCHI✔❌:                         if (isalpha( UCINT *p ) && islower( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             atom[i].elname[1] = *p++;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* bonds' valence + number of non-isotopic H */
+    // INCHI✔❌:                         if (isdigit( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             AT_BONDS_VAL( atom, i ) = (char) strtol( p, &q, 10 );
+    // INCHI✔❌:                             if (!AT_BONDS_VAL( atom, i ))
+    // INCHI✔❌:                                 AT_BONDS_VAL( atom, i ) = ISOLATED_ATOM; /* same convention as in MOLfile, found zero bonds valence */
+    // INCHI✔❌:                             p = q;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* charge */
+    // INCHI✔❌:                         atom[i].charge = ( *p == '+' ) ? 1 : ( *p == '-' ) ? -1 : 0;
+    // INCHI✔❌:                         if (atom[i].charge)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             if (isdigit( UCINT *p ))
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 atom[i].charge *= (S_CHAR) ( strtol( p, &q, 10 ) & CHAR_MASK );
+    // INCHI✔❌:                                 p = q;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* radical */
+    // INCHI✔❌:                         if (*p == '.')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             if (isdigit( UCINT *p ))
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 atom[i].radical = (S_CHAR) strtol( p, &q, 10 );
+    // INCHI✔❌:                                 p = q;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* isotopic mass */
+    // INCHI✔❌:                         if (*p == 'i')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             if (isdigit( UCINT *p ))
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 int mw = strtol( p, &q, 10 );
+    // INCHI✔❌:                                 p = q;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 atom[i].isotopic_mass = mw;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* parity */
+    // INCHI✔❌:                         switch (*p)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             case 'o':
+    // INCHI✔❌:                                 parity = INCHI_PARITY_ODD;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'e':
+    // INCHI✔❌:                                 parity = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'u':
+    // INCHI✔❌:                                 parity = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case '?':
+    // INCHI✔❌:                                 parity = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             default:
+    // INCHI✔❌:                                 parity = 0;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (parity)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].central_atom = i;
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].parity = parity;
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].type = INCHI_StereoType_Tetrahedral;
+    // INCHI✔❌:                             len_stereo0D++;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* isotopic h, d, t */
+    // INCHI✔❌:                         for (k = 0; k < NUM_H_ISOTOPES; k++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             if (*p == szIsoH[k])
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 NUM_ISO_Hk( atom, i, k ) = 1;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 if (isdigit( UCINT *p ))
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     NUM_ISO_Hk( atom, i, k ) = (char) strtol( p, &q, 10 );
+    // INCHI✔❌:                                     p = q;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         i++;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!bItemIsOver || i != num_atoms || (s && p != s)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong number of atoms" );
+    // INCHI✔❌:                         /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:                         inchi_free(atom);
+    // INCHI✔❌:                         atom = NULL;
+    // INCHI✔❌:                         goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /***************** search for bonds block (plain) and read it *****************/
+    // INCHI✔❌:
+    // INCHI✔❌:                 /*p = szLine;*/
+    // INCHI✔❌:                 sToken = sStructHdrPlnRevBn;
+    // INCHI✔❌:                 lToken = sizeof( sStructHdrPlnRevBn ) - 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* search for sToken in the line; load next segments of the line if sToken has not found */
+    // INCHI✔❌:
+    // INCHI✔❌:                 p = FindToken( inp_file, &bTooLongLine, sToken, lToken,
+    // INCHI✔❌:                     szLine_i2ia, sizeof(szLine_i2ia), p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!p)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Missing bonds data" );
+    // INCHI✔❌:                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* bonds block started */
+    // INCHI✔❌:
+    // INCHI✔❌:                     i = 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                     res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:
+    // INCHI✔❌:                     bItemIsOver = ( s = strchr( p, '/' ) ) || !bTooLongLine;
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (1 == num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* needed because the next '/' may be still out of szLine */
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = LoadLine( inp_file, &bTooLongLine, &bItemIsOver, &s,
+    // INCHI✔❌:                             szLine_i2ia, sizeof(szLine_i2ia), INCHI_LINE_ADD, p, &res );
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     while (i < num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = LoadLine( inp_file, &bTooLongLine, &bItemIsOver, &s,
+    // INCHI✔❌:                             szLine_i2ia, sizeof(szLine_i2ia), INCHI_LINE_ADD, p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (i >= num_atoms || (s && p >= s)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             break; /* end of bonds (plain) */
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* bond, first char */
+    // INCHI✔❌:                         if (*p == ';')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             i++;
+    // INCHI✔❌:                             continue;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (!isalpha( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Wrong bonds data" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         bond_char = *p++;
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* bond parity */
+    // INCHI✔❌:                         switch (*p)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             case '-':
+    // INCHI✔❌:                                 bond_parity = INCHI_PARITY_ODD;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case '+':
+    // INCHI✔❌:                                 bond_parity = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'u':
+    // INCHI✔❌:                                 bond_parity = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case '?':
+    // INCHI✔❌:                                 bond_parity = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             default:
+    // INCHI✔❌:                                 bond_parity = 0;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (bond_parity)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             switch (*p)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 case '-':
+    // INCHI✔❌:                                     bond_parityNM = INCHI_PARITY_ODD;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case '+':
+    // INCHI✔❌:                                     bond_parityNM = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 'u':
+    // INCHI✔❌:                                     bond_parityNM = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case '?':
+    // INCHI✔❌:                                     bond_parityNM = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 default:
+    // INCHI✔❌:                                     bond_parityNM = 0;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             bond_parityNM = 0;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* neighbor of the current atom */
+    // INCHI✔❌:                         if (!isdigit( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Wrong bonds data" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         neigh = (int) strtol( p, &q, 10 ) - 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (i >= num_atoms || neigh >= num_atoms)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Bond to nonexistent atom" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = q;
+    // INCHI✔❌:                         bond_stereo1 = bond_stereo2 = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* bond type & 2D stereo */
+    // INCHI✔❌:                         switch (bond_char)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             case 'v':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1EITHER;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2EITHER;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'V':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2EITHER;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1EITHER;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'w':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_DOUBLE;
+    // INCHI✔❌:                                 bond_stereo1 =
+    // INCHI✔❌:                                     bond_stereo2 = INCHI_BOND_STEREO_DOUBLE_EITHER;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 's':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'd':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_DOUBLE;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 't':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_TRIPLE;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'a':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_ALTERN;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'p':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1UP;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2UP;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'P':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2UP;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1UP;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'n':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1DOWN;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2DOWN;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'N':
+    // INCHI✔❌:                                 bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                 bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2DOWN;
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1DOWN;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             default:
+    // INCHI✔❌:                                 num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                                 *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                                 TREAT_ERR( *err, 0, "Wrong bond type" );
+    // INCHI✔❌:                                 goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         k = AT_NUM_BONDS( atom[i] )++;
+    // INCHI✔❌:
+    // INCHI✔❌:                         atom[i].bond_type[k] = bond_type;
+    // INCHI✔❌:                         atom[i].bond_stereo[k] = bond_stereo1;
+    // INCHI✔❌:                         atom[i].neighbor[k] = (ATOM_NUMBER) neigh;
+    // INCHI✔❌:
+    // INCHI✔❌:                         k2 = AT_NUM_BONDS( atom[neigh] )++;
+    // INCHI✔❌:                         atom[neigh].bond_type[k2] = bond_type;
+    // INCHI✔❌:                         atom[neigh].bond_stereo[k2] = bond_stereo2;
+    // INCHI✔❌:                         atom[neigh].neighbor[k2] = (ATOM_NUMBER) i;
+    // INCHI✔❌:
+    // INCHI✔❌:                         bond_parity |= ( bond_parityNM << SB_PARITY_SHFT );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (bond_parity)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             if (max_len_stereo0D <= len_stereo0D)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 /* realloc atom_Stereo0D */
+    // INCHI✔❌:
+    // INCHI✔❌:                                 inchi_Stereo0D *new_atom_stereo0D = CreateInchi_Stereo0D( max_len_stereo0D + num_atoms );
+    // INCHI✔❌:
+    // INCHI✔❌:                                 if (!new_atom_stereo0D)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     num_atoms = INCHI_INP_FATAL_RET; /* fatal error: cannot allocate */
+    // INCHI✔❌:                                     *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                                     TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 memcpy(new_atom_stereo0D, atom_stereo0D, len_stereo0D * sizeof(*atom_stereo0D));
+    // INCHI✔❌:                                 FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:                                 atom_stereo0D = new_atom_stereo0D;
+    // INCHI✔❌:                                 max_len_stereo0D += num_atoms;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             /* (a) i may be allene endpoint and     neigh = allene middle point or
+    // INCHI✔❌:                                 (b) i may be allene middle point and neigh = allene endpoint
+    // INCHI✔❌:                                 !!!!! CURRENTLY ONLY (b) IS ALLOWED !!!!!
+    // INCHI✔❌:                             */
+    // INCHI✔❌:
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].neighbor[1] = neigh; /* neigh < i */
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].neighbor[2] = i;
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].parity = bond_parity;
+    // INCHI✔❌:                             atom_stereo0D[len_stereo0D].type = INCHI_StereoType_DoubleBond; /* incl allenes & cumulenes */
+    // INCHI✔❌:                             len_stereo0D++;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!bItemIsOver || i != num_atoms || (s && p != s)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong number of bonds" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /***************** search for coordinates block (plain) **********************/
+    // INCHI✔❌:                 /*p = szLine;*/
+    // INCHI✔❌:
+    // INCHI✔❌:                 sToken = sStructHdrPlnRevXYZ;
+    // INCHI✔❌:                 lToken = sizeof( sStructHdrPlnRevXYZ ) - 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* search for sToken in the line; load next segments of the line if sToken has not found */
+    // INCHI✔❌:
+    // INCHI✔❌:                 p = FindToken( inp_file, &bTooLongLine, sToken, lToken,
+    // INCHI✔❌:                     szLine_i2ia, sizeof(szLine_i2ia), p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!p)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Missing atom coordinates data" );
+    // INCHI✔❌:                     goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* coordinates block started */
+    // INCHI✔❌:                     if ((pszCoord = (MOL_COORD*) inchi_malloc( inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         memset( pszCoord, ' ', inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     else
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_FATAL_RET; /* allocation error */
+    // INCHI✔❌:                         *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     i = 0;
+    // INCHI✔❌:                     res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                     bItemIsOver = ( s = strchr( p, '/' ) ) || !bTooLongLine;
+    // INCHI✔❌:
+    // INCHI✔❌:                     while (i < num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                         p = LoadLine( inp_file, &bTooLongLine, &bItemIsOver, &s,
+    // INCHI✔❌:                             szLine_i2ia, sizeof(szLine_i2ia), INCHI_LINE_ADD, p, &res );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (i >= num_atoms || (s && p >= s)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             break; /* end of bonds (plain) */
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* coord, first char */
+    // INCHI✔❌:                         if (*p == ';')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             for (k = 0; k < NUM_COORD; k++)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             i++;
+    // INCHI✔❌:                             continue;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         for (k = 0; k < 3; k++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             double xyz;
+    // INCHI✔❌:                             bNonZeroXYZ = 0;
+    // INCHI✔❌:                             if (*p == ';')
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                 xyz = 0.0;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             else
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 if (*p == ',')
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     /* empty */
+    // INCHI✔❌:                                     pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                     xyz = 0.0;
+    // INCHI✔❌:                                     p++;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 else
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     xyz = strtod( p, &q );
+    // INCHI✔❌:                                     bNonZeroXYZ = fabs( xyz ) > MIN_BOND_LENGTH;
+    // INCHI✔❌:                                     if (q != NULL)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         memcpy( pszCoord[i] + LEN_COORD*(long long)k, p, q - p ); /* djb-rwth: cast operator added */
+    // INCHI✔❌:                                         if (*q == ',')
+    // INCHI✔❌:                                             q++;
+    // INCHI✔❌:                                         p = q;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     else
+    // INCHI✔❌:                                         pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             switch (k)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 case 0:
+    // INCHI✔❌:                                     atom[i].x = xyz;
+    // INCHI✔❌:                                     b2D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 1:
+    // INCHI✔❌:                                     atom[i].y = xyz;
+    // INCHI✔❌:                                     b2D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 2:
+    // INCHI✔❌:                                     b3D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     atom[i].z = xyz;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (*p == ';')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++; /* end of this triple of coordinates */
+    // INCHI✔❌:                             i++;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error in input data: atoms, bonds & coord must be present together */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Wrong atom coordinates data" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!bItemIsOver || (s && p != s) || i != num_atoms) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong number of coordinates" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 } /* end of coordinates */
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* set special valences and implicit H (xml) */
+    // INCHI✔❌:
+    // INCHI✔❌:                 b23D = b2D | b3D;
+    // INCHI✔❌:                 b2D = b3D = 0; /* djb-rwth: ignoring LLVM warning: values used */
+    // INCHI✔❌:                 if (at)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     if (!*at)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         int a1, a2, n1, n2, valence;
+    // INCHI✔❌:                         int chem_bonds_valence;
+    // INCHI✔❌:                         int    nX = 0, nY = 0, nZ = 0, nXYZ;
+    // INCHI✔❌:                         *at = atom;
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* special valences */
+    // INCHI✔❌:
+    // INCHI✔❌:                         for (bNonMetal = 0; bNonMetal < 1; bNonMetal++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:
+    // INCHI✔❌:                             for (a1 = 0; a1 < num_atoms; a1++)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:
+    // INCHI✔❌:                                 int num_bond_type[MAX_INPUT_BOND_TYPE - MIN_INPUT_BOND_TYPE + 1];
+    // INCHI✔❌:
+    // INCHI✔❌:                                 memset( num_bond_type, 0, sizeof( num_bond_type ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:
+    // INCHI✔❌:                                 valence = AT_BONDS_VAL( atom, a1 ); /*  save atom valence if available */
+    // INCHI✔❌:                                 AT_BONDS_VAL( atom, a1 ) = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:                                 nX = nY = nZ = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 for (n1 = 0; n1 < AT_NUM_BONDS( atom[a1] ); n1++)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     bond_type = atom[a1].bond_type[n1] - MIN_INPUT_BOND_TYPE;
+    // INCHI✔❌:                                     if (bond_type < 0 || bond_type > MAX_INPUT_BOND_TYPE - MIN_INPUT_BOND_TYPE)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bond_type = 0;
+    // INCHI✔❌:                                         TREAT_ERR( *err, 0, "Unknown bond type in InChI aux assigned as a single bond" );
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     num_bond_type[bond_type] ++;
+    // INCHI✔❌:                                     nNumBonds++;
+    // INCHI✔❌:                                     if (b23D)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         neigh = atom[a1].neighbor[n1];
+    // INCHI✔❌:                                         nX |= ( fabs( atom[a1].x - atom[neigh].x ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                         nY |= ( fabs( atom[a1].y - atom[neigh].y ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                         nZ |= ( fabs( atom[a1].z - atom[neigh].z ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 chem_bonds_valence = 0;
+    // INCHI✔❌:                                 for (n1 = 0; MIN_INPUT_BOND_TYPE + n1 <= 3 && MIN_INPUT_BOND_TYPE + n1 <= MAX_INPUT_BOND_TYPE; n1++)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     chem_bonds_valence += ( MIN_INPUT_BOND_TYPE + n1 ) * num_bond_type[n1];
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 if (MIN_INPUT_BOND_TYPE <= INCHI_BOND_TYPE_ALTERN && INCHI_BOND_TYPE_ALTERN <= MAX_INPUT_BOND_TYPE &&
+    // INCHI✔❌:                                     ( n2 = num_bond_type[INCHI_BOND_TYPE_ALTERN - MIN_INPUT_BOND_TYPE] ))
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:
+    // INCHI✔❌:                                     /* accept input aromatic bonds for now */
+    // INCHI✔❌:
+    // INCHI✔❌:                                     switch (n2)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         case 2:
+    // INCHI✔❌:                                             chem_bonds_valence += 3;  /* =A- */
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         case 3:
+    // INCHI✔❌:                                             chem_bonds_valence += 4;  /* =A< */
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         default:
+    // INCHI✔❌:                                             /*  if 1 or >= 4 aromatic bonds then replace such bonds with single bonds */
+    // INCHI✔❌:                                             for (n1 = 0; n1 < AT_NUM_BONDS( atom[a1] ); n1++)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 if (atom[a1].bond_type[n1] == INCHI_BOND_TYPE_ALTERN)
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     ATOM_NUMBER *p1;
+    // INCHI✔❌:                                                     a2 = atom[a1].neighbor[n1];
+    // INCHI✔❌:                                                     p1 = IN_NEIGH_LIST( atom[a2].neighbor, (ATOM_NUMBER) a1, AT_NUM_BONDS( atom[a2] ) );
+    // INCHI✔❌:                                                     if (p1)
+    // INCHI✔❌:                                                     {
+    // INCHI✔❌:                                                         atom[a1].bond_type[n1] =
+    // INCHI✔❌:                                                             atom[a2].bond_type[p1 - atom[a2].neighbor] = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                                     }
+    // INCHI✔❌:                                                     else
+    // INCHI✔❌:                                                     {
+    // INCHI✔❌:                                                         *err = -2;  /*  Program error */
+    // INCHI✔❌:                                                         TREAT_ERR( *err, 0, "Program error interpreting InChI aux" );
+    // INCHI✔❌:                                                         num_atoms = INCHI_INP_FATAL_RET;
+    // INCHI✔❌:                                                         goto bypass_end_of_INChI_plain; /*  no structure */
+    // INCHI✔❌:                                                     }
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                                             chem_bonds_valence += n2;
+    // INCHI✔❌:                                             *err |= 32; /*  Unrecognized aromatic bond(s) replaced with single */
+    // INCHI✔❌:                                             TREAT_ERR( *err, 0, "Atom has 1 or more than 3 aromatic bonds" );
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 /********************************
+    // INCHI✔❌:                                     *
+    // INCHI✔❌:                                     *  Set number of hydrogen atoms
+    // INCHI✔❌:                                     */
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     int num_iso_H;
+    // INCHI✔❌:                                     num_iso_H = atom[a1].num_iso_H[1] + atom[a1].num_iso_H[2] + atom[a1].num_iso_H[3];
+    // INCHI✔❌:                                     if (valence == ISOLATED_ATOM)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         atom[a1].num_iso_H[0] = 0;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     else
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         if (valence && valence >= chem_bonds_valence)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             atom[a1].num_iso_H[0] = valence - chem_bonds_valence;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         else
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             if (valence || bDoNotAddH)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom[a1].num_iso_H[0] = 0;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 if (!bDoNotAddH)
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     atom[a1].num_iso_H[0] = -1; /* auto add H */
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         nNumBonds /= 2;
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (b23D && nNumBonds)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             nXYZ = nX + nY + nZ;
+    // INCHI✔❌:                             b2D = ( nXYZ > 0 );
+    // INCHI✔❌:                             b3D = ( nXYZ == 3 );
+    // INCHI✔❌:                             *num_dimensions = b3D ? 3 : b2D ? 2 : 0;
+    // INCHI✔❌:                             *num_bonds = nNumBonds;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /*======= 0D parities =================================*/
+    // INCHI✔❌:                         if (len_stereo0D > 0 && atom_stereo0D && stereo0D)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             *stereo0D = atom_stereo0D;
+    // INCHI✔❌:                             *num_stereo0D = len_stereo0D;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:                             *num_stereo0D = len_stereo0D = 0;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         for (i = 0; i < len_stereo0D; i++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             ATOM_NUMBER *p1, *p2;
+    // INCHI✔❌:                             int     sb_ord_from_a1 = -1, sb_ord_from_a2 = -1, bEnd1 = 0, bEnd2 = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                             switch (atom_stereo0D[i].type)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:
+    // INCHI✔❌:                                 case INCHI_StereoType_Tetrahedral:
+    // INCHI✔❌:                                     a1 = atom_stereo0D[i].central_atom;
+    // INCHI✔❌:                                     if (atom_stereo0D[i].parity && ( AT_NUM_BONDS( atom[a1] ) == 3 || AT_NUM_BONDS( atom[a1] ) == 4 ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         int ii, kk = 0;
+    // INCHI✔❌:                                         if (AT_NUM_BONDS( atom[a1] ) == 3)
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[kk++] = a1;
+    // INCHI✔❌:                                         for (ii = 0; ii < AT_NUM_BONDS( atom[a1] ); ii++)
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[kk++] = atom[a1].neighbor[ii];
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 case INCHI_StereoType_DoubleBond:
+    // INCHI✔❌: #define MAX_CHAIN_LEN 20
+    // INCHI✔❌:                                     a1 = atom_stereo0D[i].neighbor[1];
+    // INCHI✔❌:                                     a2 = atom_stereo0D[i].neighbor[2];
+    // INCHI✔❌:                                     p1 = IN_NEIGH_LIST( atom[a1].neighbor, (ATOM_NUMBER) a2, AT_NUM_BONDS( atom[a1] ) );
+    // INCHI✔❌:                                     p2 = IN_NEIGH_LIST( atom[a2].neighbor, (ATOM_NUMBER) a1, AT_NUM_BONDS( atom[a2] ) );
+    // INCHI✔❌:                                     if (!p1 || !p2)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         atom_stereo0D[i].type = INCHI_StereoType_None;
+    // INCHI✔❌:                                         atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[0] =
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[3] = -1;
+    // INCHI✔❌:                                         *err |= 64; /* Error in cumulene stereo */
+    // INCHI✔❌:                                         TREAT_ERR( *err, 0, "0D stereobond not recognized" );
+    // INCHI✔❌:                                         break;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     /* streobond, allene, or cumulene */
+    // INCHI✔❌:
+    // INCHI✔❌:                                     sb_ord_from_a1 = p1 - atom[a1].neighbor;
+    // INCHI✔❌:                                     sb_ord_from_a2 = p2 - atom[a2].neighbor;
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (AT_NUM_BONDS( atom[a1] ) == 2 &&
+    // INCHI✔❌:                                             atom[a1].bond_type[0] + atom[a1].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                             0 == inchi_NUMH2( atom, a1 ) &&
+    // INCHI✔❌:                                             ( AT_NUM_BONDS( atom[a2] ) != 2 ||
+    // INCHI✔❌:                                                 atom[a2].bond_type[0] + atom[a2].bond_type[1] != 2 * INCHI_BOND_TYPE_DOUBLE ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bEnd2 = 1; /* a2 is the end-atom, a1 is middle atom */
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (AT_NUM_BONDS( atom[a2] ) == 2 &&
+    // INCHI✔❌:                                             atom[a2].bond_type[0] + atom[a2].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                             0 == inchi_NUMH2( atom, a2 ) &&
+    // INCHI✔❌:                                             ( AT_NUM_BONDS( atom[a1] ) != 2 ||
+    // INCHI✔❌:                                                 atom[a1].bond_type[0] + atom[a1].bond_type[1] != 2 * INCHI_BOND_TYPE_DOUBLE ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bEnd1 = 1; /* a1 is the end-atom, a2 is middle atom */
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (bEnd2 + bEnd1 == 1)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         /* allene or cumulene */
+    // INCHI✔❌:
+    // INCHI✔❌:                                         ATOM_NUMBER  chain[MAX_CHAIN_LEN + 1], prev, cur, next;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         if (bEnd2 && !bEnd1)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             cur = a1;
+    // INCHI✔❌:                                             a1 = a2;
+    // INCHI✔❌:                                             a2 = cur;
+    // INCHI✔❌:                                             sb_ord_from_a1 = sb_ord_from_a2;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                                         sb_ord_from_a2 = -1;
+    // INCHI✔❌:                                         cur = a1;
+    // INCHI✔❌:                                         next = a2;
+    // INCHI✔❌:                                         len = 0;
+    // INCHI✔❌:                                         chain[len++] = cur;
+    // INCHI✔❌:                                         chain[len++] = next;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         while (len < MAX_CHAIN_LEN)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             /* arbitrary very high upper limit to prevent infinite loop */
+    // INCHI✔❌:
+    // INCHI✔❌:                                             prev = cur;
+    // INCHI✔❌:                                             cur = next;
+    // INCHI✔❌:                                                 /* follow double bond path && avoid going back */
+    // INCHI✔❌:                                             if (AT_NUM_BONDS( atom[cur] ) == 2 &&
+    // INCHI✔❌:                                                     atom[cur].bond_type[0] + atom[cur].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                                     0 == inchi_NUMH2( atom, cur ))
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 next = atom[cur].neighbor[atom[cur].neighbor[0] == prev];
+    // INCHI✔❌:                                                 chain[len++] = next;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 break;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         if (len > 2 &&
+    // INCHI✔❌:                                             ( p2 = IN_NEIGH_LIST( atom[cur].neighbor, (ATOM_NUMBER) prev, AT_NUM_BONDS( atom[cur] ) ) ))
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             sb_ord_from_a2 = p2 - atom[cur].neighbor;
+    // INCHI✔❌:                                             a2 = cur;
+    // INCHI✔❌:                                             /* by design we need to pick up the first non-stereo-bond-neighbor as "sn"-atom */
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[0] = atom[a1].neighbor[sb_ord_from_a1 == 0];
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[1] = a1;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[2] = a2;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[3] = atom[a2].neighbor[sb_ord_from_a2 == 0];
+    // INCHI✔❌:
+    // INCHI✔❌:                                             if (len % 2)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].central_atom = chain[len / 2];
+    // INCHI✔❌:                                                 atom_stereo0D[i].type = INCHI_StereoType_Allene;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         else
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             /* error */
+    // INCHI✔❌:                                             atom_stereo0D[i].type = INCHI_StereoType_None;
+    // INCHI✔❌:                                             atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[0] =
+    // INCHI✔❌:                                                 atom_stereo0D[i].neighbor[3] = -1;
+    // INCHI✔❌:                                             *err |= 64; /* Error in cumulene stereo */
+    // INCHI✔❌:                                             TREAT_ERR( *err, 0, "Cumulene stereo not recognized (0D)" );
+    // INCHI✔❌:                                         }
+    // INCHI✔❌: #undef MAX_CHAIN_LEN
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     else
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         /****** a normal possibly stereogenic bond -- not an allene or cumulene *******/
+    // INCHI✔❌:                                         /* by design we need to pick up the first non-stereo-bond-neighbor as "sn"-atom */
+    // INCHI✔❌:                                         sb_ord_from_a1 = p1 - atom[a1].neighbor;
+    // INCHI✔❌:                                         sb_ord_from_a2 = p2 - atom[a2].neighbor;
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[0] = atom[a1].neighbor[p1 == atom[a1].neighbor];
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[3] = atom[a2].neighbor[p2 == atom[a2].neighbor];
+    // INCHI✔❌:                                         atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (atom_stereo0D[i].type != INCHI_StereoType_None &&
+    // INCHI✔❌:                                             sb_ord_from_a1 >= 0 && sb_ord_from_a2 >= 0 &&
+    // INCHI✔❌:                                             ATOM_PARITY_WELL_DEF( SB_PARITY_2( atom_stereo0D[i].parity ) ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         /* Detected well-defined disconnected stereo
+    // INCHI✔❌:                                             * locate first non-metal neighbors */
+    // INCHI✔❌:
+    // INCHI✔❌:                                         int    a, n, j, /* k,*/ sb_ord, cur_neigh, min_neigh;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         for (k = 0; k < 2; k++)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             a = k ? atom_stereo0D[i].neighbor[2] : atom_stereo0D[i].neighbor[1];
+    // INCHI✔❌:                                             sb_ord = k ? sb_ord_from_a2 : sb_ord_from_a1;
+    // INCHI✔❌:                                             min_neigh = num_atoms;
+    // INCHI✔❌:                                             for (n = j = 0; j < AT_NUM_BONDS( atom[a] ); j++)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 cur_neigh = atom[a].neighbor[j];
+    // INCHI✔❌:                                                 if (j != sb_ord && !IS_METAL_ATOM( atom, cur_neigh ))
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     min_neigh = inchi_min( cur_neigh, min_neigh );
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             if (min_neigh < num_atoms)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].neighbor[k ? 3 : 0] = min_neigh;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 TREAT_ERR( *err, 0, "Cannot find non-metal stereobond neighor (0D)" );
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         /* end of 0D parities extraction */
+    // INCHI✔❌: /*exit_cycle:;*/
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (pInpAtomFlags)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* save chirality flag */
+    // INCHI✔❌:                         *pInpAtomFlags |= InpAtomFlags;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else if (atom)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     inchi_free( atom );
+    // INCHI✔❌:                     atom = NULL;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (pszCoord)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     inchi_free( pszCoord );
+    // INCHI✔❌:                     pszCoord = NULL;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 goto bypass_end_of_INChI_plain;
+    // INCHI✔❌:                 /*return num_atoms;*/
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         if (atom_stereo0D)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:         /* end of structure reading cycle */
+    // INCHI✔❌:
+    // INCHI✔❌:         if (res <= 0)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (*err == INCHI_INP_ERROR_ERR)
+    // INCHI✔❌:                 return num_atoms;
+    // INCHI✔❌:
+    // INCHI✔❌:             *err = INCHI_INP_EOF_ERR;
+    // INCHI✔❌:             return INCHI_INP_EOF_RET; /* no more data */
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:     bypass_end_of_INChI_plain:
+    // INCHI✔❌:
+    // INCHI✔❌:             /* cleanup */
+    // INCHI✔❌:         if (num_atoms == INCHI_INP_ERROR_RET || num_atoms == INCHI_INP_FATAL_RET)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (atom_stereo0D) /* djb-rwth: fixing coverity ID #500395 */
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 if (stereo0D && *stereo0D == atom_stereo0D)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     *stereo0D = NULL;
+    // INCHI✔❌:                     *num_stereo0D = 0;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 FreeInchi_Stereo0D(&atom_stereo0D);
+    // INCHI✔❌:             }
+    // INCHI✔❌:
+    // INCHI✔❌:             if (atom) /* djb-rwth: fixing coverity ID #499615 */
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 inchi_free(atom);
+    // INCHI✔❌:                 atom = NULL;
+    // INCHI✔❌:             }
+    // INCHI✔❌:
+    // INCHI✔❌:             if (pszCoord) /* djb-rwth: fixing coverity ID #500397 */
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 inchi_free(pszCoord);
+    // INCHI✔❌:                 pszCoord = NULL;
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         while (bTooLongLine &&
+    // INCHI✔❌:                 0 < inchi_ios_getsTab1(szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:             ;
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:
+    // INCHI✔❌:         /* cleanup
+    // INCHI✔❌:         if (at && !*at)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (atom)
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 inchi_free( atom );
+    // INCHI✔❌:
+    // INCHI✔❌:             }
+    // INCHI✔❌:             if (pszCoord)
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 inchi_free( pszCoord );
+    // INCHI✔❌:                 pszCoord = NULL;
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }*/
+    // INCHI✔❌:
+    // INCHI✔❌:         return num_atoms;
+    // INCHI✔❌:     }
+    // INCHI✔❌:
+    // INCHI✔❌:     /***********************************************************/
+    // INCHI✔❌:     /*   extract reversibility info from xml text INChI format */
+    // INCHI✔❌:     /*                                                         */
+    // INCHI✔❌:     /*   OBSOLETE CODE because InChI output in XML             */
+    // INCHI✔❌:     /*      does not exist anymore. Unsupported.               */
+    // INCHI✔❌:     /*                                                         */
+    // INCHI✔❌:     /***********************************************************/
+    // INCHI✔❌:
+    // INCHI✔❌:     if (nInputType == INPUT_INCHI_XML)
+    // INCHI✔❌:     {
+    // INCHI✔❌:
+    // INCHI✔❌:         /* xml tags */
+    // INCHI✔❌:
+    // INCHI✔❌:         static const char sStructHdrXml[] = "<structure";
+    // INCHI✔❌:         static const char sStructHdrXmlEnd[] = "</structure";
+    // INCHI✔❌:         static const char sStructHdrXmlNumber[] = "number=\"";
+    // INCHI✔❌:         static const char sStructHdrXmlIdName[] = "id.name=\"";
+    // INCHI✔❌:         static const char sStructHdrXmlIdValue[] = "id.value=\"";
+    // INCHI✔❌:         static const char sStructMsgXmlErr[] = "<message type=\"error (no InChI)\" value=\"";
+    // INCHI✔❌:         static const char sStructMsgXmlErrFatal[] = "<message type=\"fatal (aborted)\" value=\"";
+    // INCHI✔❌:         static const char sStructRevXmlRevHdr[] = "<reversibility>";
+    // INCHI✔❌:         static const char sStructRevXmlRevAt[] = "<atoms>";
+    // INCHI✔❌:         static const char sStructRevXmlRevAtEnd[] = "</atoms>";
+    // INCHI✔❌:         static const char sStructRevXmlRevBn[] = "<bonds>";
+    // INCHI✔❌:         static const char sStructRevXmlRevBnEnd[] = "</bonds>";
+    // INCHI✔❌:         static const char sStructRevXmlRevXYZ[] = "<xyz>";
+    // INCHI✔❌:         static const char sStructRevXmlRevXYZEnd[] = "</xyz>";
+    // INCHI✔❌:         static const char sStructAuxXml[] = "<identifier.auxiliary-info";
+    // INCHI✔❌:         static const char sStructAuxXmlEnd[] = "</identifier.auxiliary-info";
+    // INCHI✔❌:         int         bInTheAuxInfo = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:         while (0 < ( res = inchi_ios_gets(szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine ) ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:             /********************* find and interpret structure header ************/
+    // INCHI✔❌:
+    // INCHI✔❌:             if (!memcmp(szLine_i2ia, sStructHdrXml, sizeof( sStructHdrXml ) - 1 ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 num_struct = 1;
+    // INCHI✔❌:                 p = szLine_i2ia + sizeof( sStructHdrXml ) - 1;
+    // INCHI✔❌:                 longID = 0;
+    // INCHI✔❌:                 num_atoms = 0;
+    // INCHI✔❌:                 /* structure number */
+    // INCHI✔❌:                 if ((q = strstr( p, sStructHdrXmlNumber ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     p = q + sizeof( sStructHdrXmlNumber ) - 1;
+    // INCHI✔❌:                     longID = strtol( p, &q, 10 );
+    // INCHI✔❌:                     if (q && *q == '\"')
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         p = q + 1;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (pSdfLabel)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pSdfLabel[0] = '\0';
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (pSdfValue)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pSdfValue[0] = '\0';
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 /* pSdfLabel */
+    // INCHI✔❌:                 if ((q = strstr( p, sStructHdrXmlIdName ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     p = q + sizeof( sStructHdrXmlIdName ) - 1;
+    // INCHI✔❌:                     q = strchr( p, '\"' );
+    // INCHI✔❌:                     if (q)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         len = inchi_min( q - p + 1, MAX_SDF_HEADER - 1 );
+    // INCHI✔❌:                         if (pSdfLabel)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             mystrncpy( pSdfLabel, p, len );
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         p = q + 1;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 /* pSdfValue */
+    // INCHI✔❌:                 if ((q = strstr( p, sStructHdrXmlIdValue ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     p = q + sizeof( sStructHdrXmlIdValue ) - 1;
+    // INCHI✔❌:                     q = strchr( p, '\"' );
+    // INCHI✔❌:                     if (q)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         len = inchi_min( q - p + 1, MAX_SDF_VALUE - 1 );
+    // INCHI✔❌:                         if (pSdfValue)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             mystrncpy( pSdfValue, p, len );
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         p = q + 1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (Id)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     *Id = longID;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 bHeaderRead = 1;
+    // INCHI✔❌:                 bErrorMsg = bRestoreInfo = 0;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else if ( (bHeaderRead && !memcmp(szLine_i2ia, sStructMsgXmlErr, sizeof(sStructMsgXmlErr) - 1) ) ||
+    // INCHI✔❌:                     (bHeaderRead && !memcmp(szLine_i2ia, sStructMsgXmlErrFatal, sizeof(sStructMsgXmlErrFatal) - 1) ) ) /* djb-rwth: fixed incorrectly written operators */
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 /* djb-rwth: remaining block from the above condition */
+    // INCHI✔❌:                 if (bHeaderRead && !memcmp(szLine_i2ia, sStructMsgXmlErr, sizeof(sStructMsgXmlErr) - 1))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     bFatal = 0;
+    // INCHI✔❌:                     len = sizeof(sStructMsgXmlErr) - 1;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (bHeaderRead && !memcmp(szLine_i2ia, sStructMsgXmlErrFatal, sizeof(sStructMsgXmlErrFatal) - 1))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     bFatal = 1;
+    // INCHI✔❌:                     len = sizeof(sStructMsgXmlErrFatal) - 1;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 p = szLine_i2ia + len;
+    // INCHI✔❌:                 q = strchr( p, '\"' );
+    // INCHI✔❌:                 if (q && !bFindNext)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     int c;
+    // INCHI✔❌:                     bErrorMsg = 1;
+    // INCHI✔❌:                     pStrErr[0] = '\0';
+    // INCHI✔❌:                     c = *q;
+    // INCHI✔❌:                     *q = '\0';
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, p );
+    // INCHI✔❌:                     *q = c;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 *err = bFatal ? INCHI_INP_FATAL_ERR : INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                 num_atoms = bFatal ? INCHI_INP_FATAL_RET : INCHI_INP_ERROR_RET;
+    // INCHI✔❌:                 goto bypass_end_of_INChI;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else if (bHeaderRead && !memcmp(szLine_i2ia, sStructAuxXml, sizeof( sStructAuxXml ) - 1 ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 bInTheAuxInfo = 1;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else if (bHeaderRead && !memcmp(szLine_i2ia, sStructAuxXmlEnd, sizeof( sStructAuxXmlEnd ) - 1 ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                 num_atoms = INCHI_INP_ERROR_RET;
+    // INCHI✔❌:                 TREAT_ERR( *err, 0, "Missing reversibility info" );
+    // INCHI✔❌:                 goto bypass_end_of_INChI; /* reversibility info not found */
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else if (bHeaderRead && bInTheAuxInfo && !memcmp(szLine_i2ia, sStructRevXmlRevHdr, sizeof( sStructRevXmlRevHdr ) - 1 ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 /***********************  atoms xml ***************************/
+    // INCHI✔❌:                 num_struct = 1;
+    // INCHI✔❌:                 res = inchi_ios_gets(szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+    // INCHI✔❌:                 if (res <= 0)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_EOF_RET; /* no data, probably end of file */
+    // INCHI✔❌:                     *err = INCHI_INP_EOF_ERR;
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (memcmp(szLine_i2ia, sStructRevXmlRevAt, sizeof( sStructRevXmlRevAt ) - 1 ))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     bHeaderRead = 0; /* invalid reversibility info; look for another header */
+    // INCHI✔❌:                     continue;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 /* read (the head of) the atoms line */
+    // INCHI✔❌:                 res = inchi_ios_gets(szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+    // INCHI✔❌:                 if (res <= 0)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_EOF_RET; /* no data */
+    // INCHI✔❌:                     *err = INCHI_INP_EOF_ERR;
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 p = szLine_i2ia;
+    // INCHI✔❌:                 num_atoms = strtol( p, &q, 10 );
+    // INCHI✔❌:                 if (!num_atoms || !q || !*q)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_EOF_RET; /* no atom data */
+    // INCHI✔❌:                     *err = INCHI_INP_EOF_ERR;
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 p = q;
+    // INCHI✔❌:                 /* Molfile chirality flag */
+    // INCHI✔❌:                 switch (*p)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     case 'c':
+    // INCHI✔❌:                         InpAtomFlags |= FLAG_INP_AT_CHIRAL;
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         break;
+    // INCHI✔❌:                     case 'n':
+    // INCHI✔❌:                         InpAtomFlags |= FLAG_INP_AT_NONCHIRAL;
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         break;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (at && *at)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     if (num_atoms > max_num_at)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         inchi_free( *at );
+    // INCHI✔❌:                         *at = NULL;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     else
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         memset( *at, 0, max_num_at * sizeof( **at ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                         atom = *at;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (!at || !*at)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     atom = CreateInchiAtom( num_atoms + 1 );
+    // INCHI✔❌:                     if (!atom)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_FATAL_RET; /* fatal error: cannot allocate */
+    // INCHI✔❌:                         *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (stereo0D && *stereo0D)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     if (num_atoms > max_len_stereo0D)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         FreeInchi_Stereo0D( stereo0D );
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     else
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         memset( *stereo0D, 0, max_len_stereo0D * sizeof( **stereo0D ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                         atom_stereo0D = *stereo0D;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (!stereo0D || !*stereo0D)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     max_len_stereo0D = num_atoms + 1;
+    // INCHI✔❌:                     atom_stereo0D = CreateInchi_Stereo0D( max_len_stereo0D );
+    // INCHI✔❌:                     if (!atom_stereo0D)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_FATAL_RET; /* fatal error: cannot allocate */
+    // INCHI✔❌:                         *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                         /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:                         inchi_free(atom);
+    // INCHI✔❌:                         atom = NULL;
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 i = 0;
+    // INCHI✔❌:                 bItemIsOver = 0;
+    // INCHI✔❌:                 res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* read all atoms xml */
+    // INCHI✔❌:                 while (i < num_atoms)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pos = p - szLine_i2ia;
+    // INCHI✔❌:                     if (!bItemIsOver && ( int )sizeof(szLine_i2ia) - res + pos > ( int )sizeof(szNextLine_i2ia))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* load next line if possible */
+    // INCHI✔❌:                         res2 = inchi_ios_gets( szNextLine_i2ia, sizeof(szNextLine_i2ia) - 1, inp_file, &bTooLongLine2 );
+    // INCHI✔❌:                         if (res2 > 0 && memcmp( szNextLine_i2ia, sStructRevXmlRevAtEnd, sizeof( sStructRevXmlRevAtEnd ) - 1 ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             if (pos)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 res -= pos;  /* number of chars left to process in szLine */
+    // INCHI✔❌:                                 memmove(szLine_i2ia, p, res * sizeof(szLine_i2ia[0] ) ); /* move them to the start of the line */
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             memcpy(szLine_i2ia + res, szNextLine_i2ia, ( (long long)res2 + 1 ) * sizeof(szNextLine_i2ia[0] ) ); /* djb-rwth: cast operator added */
+    // INCHI✔❌:                             res += res2;
+    // INCHI✔❌:                             szLine_i2ia[res] = '\0';
+    // INCHI✔❌:                             bTooLongLine = bTooLongLine2;
+    // INCHI✔❌:                             p = szLine_i2ia;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             bItemIsOver = 1;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* element, first char */
+    // INCHI✔❌:                     if (!isalpha( UCINT *p ) || !isupper( UCINT *p ) || i >= num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         bHeaderRead = 0; /* wrong atom data */ /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* was 0, error */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;     /* 40 */
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong atoms data" );
+    // INCHI✔❌:                         /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:                         inchi_free(atom);
+    // INCHI✔❌:                         atom = NULL;
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     atom[i].elname[0] = *p++;
+    // INCHI✔❌:                     /* element, second char */
+    // INCHI✔❌:                     if (isalpha( UCINT *p ) && islower( UCINT *p ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         atom[i].elname[1] = *p++;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* bonds' valence */
+    // INCHI✔❌:                     if (isdigit( UCINT *p ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         AT_BONDS_VAL( atom, i ) = (char) strtol( p, &q, 10 );
+    // INCHI✔❌:                         if (!AT_BONDS_VAL( atom, i ))
+    // INCHI✔❌:                             AT_BONDS_VAL( atom, i ) = ISOLATED_ATOM; /* same convention as in MOLfile, found zero bonds valence */
+    // INCHI✔❌:                         p = q;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     /* charge */
+    // INCHI✔❌:                     atom[i].charge = ( *p == '+' ) ? 1 : ( *p == '-' ) ? -1 : 0;
+    // INCHI✔❌:                     if (atom[i].charge)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         if (isdigit( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             atom[i].charge *= (S_CHAR) ( strtol( p, &q, 10 ) & CHAR_MASK );
+    // INCHI✔❌:                             p = q;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* radical */
+    // INCHI✔❌:                     if (*p == '.')
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         if (isdigit( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             atom[i].radical = (S_CHAR) strtol( p, &q, 10 );
+    // INCHI✔❌:                             p = q;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* isotopic mass */
+    // INCHI✔❌:                     if (*p == 'i')
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         if (isdigit( UCINT *p ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             int mw = strtol( p, &q, 10 );
+    // INCHI✔❌:                             p = q;
+    // INCHI✔❌:
+    // INCHI✔❌:                             atom[i].isotopic_mass = mw;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* parity */
+    // INCHI✔❌:                     switch (*p)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         case 'o':
+    // INCHI✔❌:                             parity = INCHI_PARITY_ODD;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'e':
+    // INCHI✔❌:                             parity = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'u':
+    // INCHI✔❌:                             parity = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case '?':
+    // INCHI✔❌:                             parity = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         default:
+    // INCHI✔❌:                             parity = 0;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     if (parity)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].central_atom = i;
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].parity = parity;
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].type = INCHI_StereoType_Tetrahedral;
+    // INCHI✔❌:                         len_stereo0D++;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* isotopic h, d, t */
+    // INCHI✔❌:                     for (k = 0; k < NUM_H_ISOTOPES; k++)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         if (*p == szIsoH[k])
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             NUM_ISO_Hk( atom, i, k ) = 1;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             if (isdigit( UCINT *p ))
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 NUM_ISO_Hk( atom, i, k ) = (char) strtol( p, &q, 10 );
+    // INCHI✔❌:                                 p = q;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     i++;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!bItemIsOver || p - szLine_i2ia != res || i != num_atoms)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Wrong number of atoms" );
+    // INCHI✔❌:                     /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:                     inchi_free(atom);
+    // INCHI✔❌:                     atom = NULL;
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /********************** bonds xml ****************************/
+    // INCHI✔❌:
+    // INCHI✔❌:                 res = inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+    // INCHI✔❌:                 if (res <= 0)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = 0; /* no data */
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 if (memcmp( szLine_i2ia, sStructRevXmlRevBn, sizeof( sStructRevXmlRevBn ) - 1 ))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     bHeaderRead = 0; /* invalid reversibility info; look for another header */
+    // INCHI✔❌:                     continue;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* read (the head of) the xml bonds line */
+    // INCHI✔❌:
+    // INCHI✔❌:                 res = inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (res <= 0)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET; /* was 0; error: no data -- eof? */
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 i = 1;
+    // INCHI✔❌:                 bItemIsOver = 0;
+    // INCHI✔❌:                 res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                 p = szLine_i2ia;
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!memcmp( szLine_i2ia, sStructRevXmlRevBnEnd, sizeof( sStructRevXmlRevBnEnd ) - 1 ))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* empty bonds section */
+    // INCHI✔❌:                     res = 0;
+    // INCHI✔❌:                     bItemIsOver = 1;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* read all bonds (xml), starting from atom 1 (not 0) */
+    // INCHI✔❌:
+    // INCHI✔❌:                 while (i < num_atoms)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     pos = p - szLine_i2ia;
+    // INCHI✔❌:                     if (!bItemIsOver &&
+    // INCHI✔❌:                         ( int )sizeof(szLine_i2ia) - res + pos > ( int )sizeof(szNextLine_i2ia))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* load next line if possible */
+    // INCHI✔❌:
+    // INCHI✔❌:                         res2 = inchi_ios_gets( szNextLine_i2ia, sizeof(szNextLine_i2ia) - 1, inp_file, &bTooLongLine2 );
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (res2 > 0 && memcmp( szNextLine_i2ia, sStructRevXmlRevBnEnd, sizeof( sStructRevXmlRevBnEnd ) - 1 ))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             if (pos)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 res -= pos;  /* number of chars left to process in szLine */
+    // INCHI✔❌:                                 memmove(szLine_i2ia, p, res * sizeof(szLine_i2ia[0] ) ); /* move them to the start of the line */
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             memcpy( szLine_i2ia + res, szNextLine_i2ia, ( (long long)res2 + 1 ) * sizeof(szNextLine_i2ia[0] ) ); /* djb-rwth: cast operator added */
+    // INCHI✔❌:                             res += res2;
+    // INCHI✔❌:                             szLine_i2ia[res] = '\0';
+    // INCHI✔❌:                             bTooLongLine = bTooLongLine2;
+    // INCHI✔❌:                             p = szLine_i2ia;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                             bItemIsOver = 1;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (i >= num_atoms)
+    // INCHI✔❌:                         break;
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* bond, first char */
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (*p == ';')
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         p++;
+    // INCHI✔❌:                         i++;
+    // INCHI✔❌:                         continue;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!isalpha( UCINT *p ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error in input data */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong bonds data" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     bond_char = *p++;
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* bond parity */
+    // INCHI✔❌:
+    // INCHI✔❌:                     switch (*p)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         case '-':
+    // INCHI✔❌:                             bond_parity = INCHI_PARITY_ODD;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case '+':
+    // INCHI✔❌:                             bond_parity = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'u':
+    // INCHI✔❌:                             bond_parity = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case '?':
+    // INCHI✔❌:                             bond_parity = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         default:
+    // INCHI✔❌:                             bond_parity = 0;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (bond_parity)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         switch (*p)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             case '-':
+    // INCHI✔❌:                                 bond_parityNM = INCHI_PARITY_ODD;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case '+':
+    // INCHI✔❌:                                 bond_parityNM = INCHI_PARITY_EVEN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case 'u':
+    // INCHI✔❌:                                 bond_parityNM = INCHI_PARITY_UNKNOWN;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             case '?':
+    // INCHI✔❌:                                 bond_parityNM = INCHI_PARITY_UNDEFINED;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                             default:
+    // INCHI✔❌:                                 bond_parityNM = 0;
+    // INCHI✔❌:                                 break;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     else
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         bond_parityNM = 0;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* neighbor of the current atom */
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!isdigit( UCINT *p ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error in input data */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong bonds data" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     neigh = (int) strtol( p, &q, 10 ) - 1;
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (i >= num_atoms || neigh >= num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error in input data */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Bond to nonexistent atom" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                     p = q;
+    // INCHI✔❌:                     bond_stereo1 = bond_stereo2 = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* bond type & 2D stereo */
+    // INCHI✔❌:                     switch (bond_char)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         case 'v':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1EITHER;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2EITHER;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'V':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2EITHER;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1EITHER;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'w':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_DOUBLE;
+    // INCHI✔❌:                             bond_stereo1 =
+    // INCHI✔❌:                                 bond_stereo2 = INCHI_BOND_STEREO_DOUBLE_EITHER;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 's':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'd':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_DOUBLE;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 't':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_TRIPLE;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'a':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_ALTERN;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'p':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1UP;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2UP;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'P':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2UP;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1UP;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'n':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_1DOWN;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_2DOWN;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         case 'N':
+    // INCHI✔❌:                             bond_type = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                             bond_stereo1 = INCHI_BOND_STEREO_SINGLE_2DOWN;
+    // INCHI✔❌:                             bond_stereo2 = INCHI_BOND_STEREO_SINGLE_1DOWN;
+    // INCHI✔❌:                             break;
+    // INCHI✔❌:                         default:
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Wrong bond type" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     k = AT_NUM_BONDS( atom[i] )++;
+    // INCHI✔❌:                     atom[i].bond_type[k] = bond_type;
+    // INCHI✔❌:                     atom[i].bond_stereo[k] = bond_stereo1;
+    // INCHI✔❌:                     atom[i].neighbor[k] = (ATOM_NUMBER) neigh;
+    // INCHI✔❌:
+    // INCHI✔❌:                     k2 = AT_NUM_BONDS( atom[neigh] )++;
+    // INCHI✔❌:                     atom[neigh].bond_type[k2] = bond_type;
+    // INCHI✔❌:                     atom[neigh].bond_stereo[k2] = bond_stereo2;
+    // INCHI✔❌:                     atom[neigh].neighbor[k2] = (ATOM_NUMBER) i;
+    // INCHI✔❌:
+    // INCHI✔❌:                     bond_parity |= ( bond_parityNM << SB_PARITY_SHFT );
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (bond_parity)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         if (max_len_stereo0D <= len_stereo0D)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             /* realloc atom_Stereo0D */
+    // INCHI✔❌:
+    // INCHI✔❌:                             inchi_Stereo0D *new_atom_stereo0D = CreateInchi_Stereo0D( max_len_stereo0D + num_atoms );
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (!new_atom_stereo0D)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 num_atoms = INCHI_INP_FATAL_RET; /* fatal error: cannot allocate */
+    // INCHI✔❌:                                 *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                                 TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                                 goto bypass_end_of_INChI;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             memcpy( new_atom_stereo0D, atom_stereo0D, len_stereo0D * sizeof( *atom_stereo0D ) );
+    // INCHI✔❌:                             FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:                             atom_stereo0D = new_atom_stereo0D;
+    // INCHI✔❌:                             max_len_stereo0D += num_atoms;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         /* (a) i may be allene endpoint and     neigh = allene middle point or
+    // INCHI✔❌:                             (b) i may be allene middle point and neigh = allene endpoint
+    // INCHI✔❌:                             !!!!! CURRENTLY ONLY (b) IS ALLOWED !!!!!
+    // INCHI✔❌:                         */
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].neighbor[1] = neigh; /* neigh < i */
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].neighbor[2] = i;
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].parity = bond_parity;
+    // INCHI✔❌:                         atom_stereo0D[len_stereo0D].type = INCHI_StereoType_DoubleBond; /* incl allenes & cumulenes */
+    // INCHI✔❌:                         len_stereo0D++;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (!bItemIsOver || p - szLine_i2ia != res || i != num_atoms)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_atoms = INCHI_INP_ERROR_RET; /* error in input data */
+    // INCHI✔❌:                     *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Wrong number of bonds" );
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /********************** coordinates xml ****************************/
+    // INCHI✔❌:
+    // INCHI✔❌:                 pszCoord = (MOL_COORD*) inchi_malloc( inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) );
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (pszCoord)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     memset( pszCoord, ' ', inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:                     res = inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (res <= 0 ||
+    // INCHI✔❌:                             /* compare the header */
+    // INCHI✔❌:                             memcmp( szLine_i2ia, sStructRevXmlRevXYZ, sizeof( sStructRevXmlRevXYZ ) - 1 ) ||
+    // INCHI✔❌:                             /* read (the head of) the coordinates (xml) line */
+    // INCHI✔❌:                             0 >= ( res = inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine ) ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error in input data: atoms, bonds & coord must be present together */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Missing atom coordinates data" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     i = 0;
+    // INCHI✔❌:                     bItemIsOver = 0;
+    // INCHI✔❌:                     res2 = bTooLongLine2 = -1; /* djb-rwth: ignoring LLVM warning: value used */
+    // INCHI✔❌:                     p = szLine_i2ia;
+    // INCHI✔❌:                     if (!memcmp( szLine_i2ia, sStructRevXmlRevXYZEnd, sizeof( sStructRevXmlRevXYZEnd ) - 1 ))
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* empty bonds section */
+    // INCHI✔❌:                         res = 0;
+    // INCHI✔❌:                         bItemIsOver = 1;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     /* read all coordinates (xml), starting from atom 1 (not 0) */
+    // INCHI✔❌:
+    // INCHI✔❌:                     while (i < num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         pos = p - szLine_i2ia;
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (!bItemIsOver &&
+    // INCHI✔❌:                             ( int )sizeof(szLine_i2ia) - res + pos > ( int )sizeof(szNextLine_i2ia))
+    // INCHI✔❌:                         {
+    // INCHI✔❌:
+    // INCHI✔❌:                             /* load next line if possible */
+    // INCHI✔❌:
+    // INCHI✔❌:                             res2 = inchi_ios_gets( szNextLine_i2ia, sizeof(szNextLine_i2ia) - 1, inp_file, &bTooLongLine2 );
+    // INCHI✔❌:
+    // INCHI✔❌:                             if (res2 > 0 && memcmp( szNextLine_i2ia, sStructRevXmlRevXYZEnd, sizeof( sStructRevXmlRevXYZEnd ) - 1 ))
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 if (pos)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     res -= pos;  /* number of chars left to process in szLine */
+    // INCHI✔❌:                                     memmove(szLine_i2ia, p, res * sizeof(szLine_i2ia[0] ) ); /* move them to the start of the line */
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 memcpy(szLine_i2ia + res, szNextLine_i2ia, ( (long long)res2 + 1 ) * sizeof( szNextLine_i2ia[0] ) ); /* djb-rwth: cast operator added */
+    // INCHI✔❌:                                 res += res2;
+    // INCHI✔❌:                                 szLine_i2ia[res] = '\0';
+    // INCHI✔❌:                                 bTooLongLine = bTooLongLine2;
+    // INCHI✔❌:                                 p = szLine_i2ia;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             else
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 bItemIsOver = 1;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* coord, first char */
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (*p == ';')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             for (k = 0; k < NUM_COORD; k++)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             p++;
+    // INCHI✔❌:                             i++;
+    // INCHI✔❌:                             continue;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         for (k = 0; k < 3; k++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             double xyz;
+    // INCHI✔❌:                             bNonZeroXYZ = 0;
+    // INCHI✔❌:                             if (*p == ';')
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                 xyz = 0.0;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             else if (*p == ',')
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 /* empty */
+    // INCHI✔❌:                                 pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                 xyz = 0.0;
+    // INCHI✔❌:                                 p++;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                             else
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 xyz = strtod( p, &q );
+    // INCHI✔❌:                                 bNonZeroXYZ = fabs( xyz ) > MIN_BOND_LENGTH;
+    // INCHI✔❌:                                 if (q != NULL)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     memcpy( pszCoord[i] + LEN_COORD*(long long)k, p, q - p ); /* djb-rwth: cast operator added */
+    // INCHI✔❌:                                     if (*q == ',')
+    // INCHI✔❌:                                         q++;
+    // INCHI✔❌:                                     p = q;
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                                 else
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     pszCoord[i][LEN_COORD*k + 4] = '0';
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:
+    // INCHI✔❌:                             switch (k)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 case 0:
+    // INCHI✔❌:                                     atom[i].x = xyz;
+    // INCHI✔❌:                                     b2D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 1:
+    // INCHI✔❌:                                     atom[i].y = xyz;
+    // INCHI✔❌:                                     b2D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                                 case 2:
+    // INCHI✔❌:                                     b3D |= bNonZeroXYZ;
+    // INCHI✔❌:                                     atom[i].z = xyz;
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (*p == ';')
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             p++;  /* end of this triple of coordinates */
+    // INCHI✔❌:                             i++;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             num_atoms = INCHI_INP_ERROR_RET; /* error in input data: atoms, bonds & coord must be present together */
+    // INCHI✔❌:                             *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                             TREAT_ERR( *err, 0, "Wrong atom coordinates data" );
+    // INCHI✔❌:                             goto bypass_end_of_INChI;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (!bItemIsOver || p - szLine_i2ia != res || i != num_atoms)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         num_atoms = INCHI_INP_ERROR_RET; /* error in input data: atoms, bonds & coord must be present together */
+    // INCHI✔❌:                         *err = INCHI_INP_ERROR_ERR;
+    // INCHI✔❌:                         TREAT_ERR( *err, 0, "Wrong number of coordinates" );
+    // INCHI✔❌:                         goto bypass_end_of_INChI;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     /* allocation failed */
+    // INCHI✔❌:                     num_atoms = INCHI_INP_FATAL_RET;
+    // INCHI✔❌:                     *err = INCHI_INP_FATAL_ERR;
+    // INCHI✔❌:                     TREAT_ERR( *err, 0, "Out of RAM" );
+    // INCHI✔❌:                     goto bypass_end_of_INChI;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 /* set special valences and implicit H (xml) */
+    // INCHI✔❌:
+    // INCHI✔❌:                 b23D = b2D | b3D;
+    // INCHI✔❌:                 b2D = b3D = 0; /* djb-rwth: ignoring LLVM warning: values used */
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (at)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     if (!*at)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         int a1, a2, n1, n2, valence;
+    // INCHI✔❌:                         int chem_bonds_valence;
+    // INCHI✔❌:                         int    nX = 0, nY = 0, nZ = 0, nXYZ;
+    // INCHI✔❌:                         *at = atom;
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* special valences */
+    // INCHI✔❌:                         for (bNonMetal = 0; bNonMetal < 1 /*2*/; bNonMetal++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             for (a1 = 0; a1 < num_atoms; a1++)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:                                 int num_bond_type[MAX_INPUT_BOND_TYPE - MIN_INPUT_BOND_TYPE + 1];
+    // INCHI✔❌:
+    // INCHI✔❌:                                 memset( num_bond_type, 0, sizeof( num_bond_type ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔❌:
+    // INCHI✔❌:                                 valence = AT_BONDS_VAL( atom, a1 ); /*  save atom valence if available */
+    // INCHI✔❌:                                 AT_BONDS_VAL( atom, a1 ) = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 nX = nY = nZ = 0;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 for (n1 = 0; n1 < AT_NUM_BONDS( atom[a1] ); n1++)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     bond_type = atom[a1].bond_type[n1] - MIN_INPUT_BOND_TYPE;
+    // INCHI✔❌:                                     if (bond_type < 0 || bond_type > MAX_INPUT_BOND_TYPE - MIN_INPUT_BOND_TYPE)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bond_type = 0; /* cannot happen */
+    // INCHI✔❌:                                         TREAT_ERR( *err, 0, "Unknown bond type in InChI aux assigned as a single bond" );
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     num_bond_type[bond_type] ++;
+    // INCHI✔❌:                                     nNumBonds++;
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (b23D)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         neigh = atom[a1].neighbor[n1];
+    // INCHI✔❌:                                         nX |= ( fabs( atom[a1].x - atom[neigh].x ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                         nY |= ( fabs( atom[a1].y - atom[neigh].y ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                         nZ |= ( fabs( atom[a1].z - atom[neigh].z ) > MIN_BOND_LENGTH );
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 chem_bonds_valence = 0;
+    // INCHI✔❌:                                 for (n1 = 0; MIN_INPUT_BOND_TYPE + n1 <= 3 && MIN_INPUT_BOND_TYPE + n1 <= MAX_INPUT_BOND_TYPE; n1++)
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     chem_bonds_valence += ( MIN_INPUT_BOND_TYPE + n1 ) * num_bond_type[n1];
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 if (MIN_INPUT_BOND_TYPE <= INCHI_BOND_TYPE_ALTERN &&
+    // INCHI✔❌:                                         INCHI_BOND_TYPE_ALTERN <= MAX_INPUT_BOND_TYPE &&
+    // INCHI✔❌:                                         ( n2 = num_bond_type[INCHI_BOND_TYPE_ALTERN - MIN_INPUT_BOND_TYPE] ))
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:
+    // INCHI✔❌:                                     /* accept input aromatic bonds for now */
+    // INCHI✔❌:
+    // INCHI✔❌:                                     switch (n2)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         case 2:
+    // INCHI✔❌:                                             chem_bonds_valence += 3;  /* =A- */
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:                                         case 3:
+    // INCHI✔❌:                                             chem_bonds_valence += 4;  /* =A< */
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:                                         default:
+    // INCHI✔❌:                                             /*  if 1 or >= 4 aromatic bonds then replace such bonds with single bonds */
+    // INCHI✔❌:                                             for (n1 = 0; n1 < AT_NUM_BONDS( atom[a1] ); n1++)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 if (atom[a1].bond_type[n1] == INCHI_BOND_TYPE_ALTERN)
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     ATOM_NUMBER *p1;
+    // INCHI✔❌:                                                     a2 = atom[a1].neighbor[n1];
+    // INCHI✔❌:                                                     p1 = IN_NEIGH_LIST( atom[a2].neighbor, (ATOM_NUMBER) a1, AT_NUM_BONDS( atom[a2] ) );
+    // INCHI✔❌:                                                     if (p1)
+    // INCHI✔❌:                                                     {
+    // INCHI✔❌:                                                         atom[a1].bond_type[n1] =
+    // INCHI✔❌:                                                             atom[a2].bond_type[p1 - atom[a2].neighbor] = INCHI_BOND_TYPE_SINGLE;
+    // INCHI✔❌:                                                     }
+    // INCHI✔❌:                                                     else
+    // INCHI✔❌:                                                     {
+    // INCHI✔❌:                                                         *err = -2;  /*  Program error */
+    // INCHI✔❌:                                                         TREAT_ERR( *err, 0, "Program error interpreting InChI aux" );
+    // INCHI✔❌:                                                         num_atoms = 0;
+    // INCHI✔❌:                                                         goto bypass_end_of_INChI; /*  no structure */
+    // INCHI✔❌:                                                     }
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             chem_bonds_valence += n2;
+    // INCHI✔❌:                                             *err |= 32; /*  Unrecognized aromatic bond(s) replaced with single */
+    // INCHI✔❌:                                             TREAT_ERR( *err, 0, "Atom has 1 or more than 3 aromatic bonds" );
+    // INCHI✔❌:                                             break;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                                 /*************************************************************************************
+    // INCHI✔❌:                                     *
+    // INCHI✔❌:                                     *  Set number of hydrogen atoms
+    // INCHI✔❌:                                     */
+    // INCHI✔❌:                                 {
+    // INCHI✔❌:                                     int num_iso_H;
+    // INCHI✔❌:                                     num_iso_H = atom[a1].num_iso_H[1] + atom[a1].num_iso_H[2] + atom[a1].num_iso_H[3];
+    // INCHI✔❌:                                     if (valence == ISOLATED_ATOM)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         atom[a1].num_iso_H[0] = 0;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     else
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         if (valence && valence >= chem_bonds_valence)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             atom[a1].num_iso_H[0] = valence - chem_bonds_valence;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         else
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             if (valence || bDoNotAddH)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom[a1].num_iso_H[0] = 0;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 if (!bDoNotAddH)
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     atom[a1].num_iso_H[0] = -1; /* auto add H */
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                 }
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         nNumBonds /= 2;
+    // INCHI✔❌:
+    // INCHI✔❌:                         if (b23D && nNumBonds)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             nXYZ = nX + nY + nZ;
+    // INCHI✔❌:                             b2D = ( nXYZ > 0 );
+    // INCHI✔❌:                             b3D = ( nXYZ == 3 );
+    // INCHI✔❌:                             *num_dimensions = b3D ? 3 : b2D ? 2 : 0;
+    // INCHI✔❌:                             *num_bonds = nNumBonds;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /*======= 0D parities =================================*/
+    // INCHI✔❌:                         if (len_stereo0D > 0 && atom_stereo0D && stereo0D)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             *stereo0D = atom_stereo0D;
+    // INCHI✔❌:                             *num_stereo0D = len_stereo0D;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:                         else
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:                             *num_stereo0D = len_stereo0D = 0;
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         for (i = 0; i < len_stereo0D; i++)
+    // INCHI✔❌:                         {
+    // INCHI✔❌:                             ATOM_NUMBER *p1, *p2;
+    // INCHI✔❌:                             int     sb_ord_from_a1 = -1, sb_ord_from_a2 = -1, bEnd1 = 0, bEnd2 = 0;
+    // INCHI✔❌:                             switch (atom_stereo0D[i].type)
+    // INCHI✔❌:                             {
+    // INCHI✔❌:
+    // INCHI✔❌:                                 case INCHI_StereoType_Tetrahedral:
+    // INCHI✔❌:                                     a1 = atom_stereo0D[i].central_atom;
+    // INCHI✔❌:                                     if (atom_stereo0D[i].parity &&
+    // INCHI✔❌:                                         ( AT_NUM_BONDS( atom[a1] ) == 3 || AT_NUM_BONDS( atom[a1] ) == 4 ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         int ii, kk = 0;
+    // INCHI✔❌:                                         if (AT_NUM_BONDS( atom[a1] ) == 3)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[kk++] = a1;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         for (ii = 0; ii < AT_NUM_BONDS( atom[a1] ); ii++)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[kk++] = atom[a1].neighbor[ii];
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:
+    // INCHI✔❌:                                 case INCHI_StereoType_DoubleBond:
+    // INCHI✔❌:
+    // INCHI✔❌: #define MAX_CHAIN_LEN 20
+    // INCHI✔❌:
+    // INCHI✔❌:                                     a1 = atom_stereo0D[i].neighbor[1];
+    // INCHI✔❌:                                     a2 = atom_stereo0D[i].neighbor[2];
+    // INCHI✔❌:                                     p1 = IN_NEIGH_LIST( atom[a1].neighbor, (ATOM_NUMBER) a2, AT_NUM_BONDS( atom[a1] ) );
+    // INCHI✔❌:                                     p2 = IN_NEIGH_LIST( atom[a2].neighbor, (ATOM_NUMBER) a1, AT_NUM_BONDS( atom[a2] ) );
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (!p1 || !p2)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         atom_stereo0D[i].type = INCHI_StereoType_None;
+    // INCHI✔❌:                                         atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[0] =
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[3] = -1;
+    // INCHI✔❌:                                         *err |= 64; /* Error in cumulene stereo */
+    // INCHI✔❌:                                         TREAT_ERR( *err, 0, "0D stereobond not recognized" );
+    // INCHI✔❌:                                         break;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     /* streobond, allene, or cumulene */
+    // INCHI✔❌:
+    // INCHI✔❌:                                     sb_ord_from_a1 = p1 - atom[a1].neighbor;
+    // INCHI✔❌:                                     sb_ord_from_a2 = p2 - atom[a2].neighbor;
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (AT_NUM_BONDS( atom[a1] ) == 2 &&
+    // INCHI✔❌:                                             atom[a1].bond_type[0] + atom[a1].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                             0 == inchi_NUMH2( atom, a1 ) &&
+    // INCHI✔❌:                                             ( AT_NUM_BONDS( atom[a2] ) != 2 ||
+    // INCHI✔❌:                                                 atom[a2].bond_type[0] + atom[a2].bond_type[1] != 2 * INCHI_BOND_TYPE_DOUBLE ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bEnd2 = 1; /* a2 is the end-atom, a1 is middle atom */
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     if (AT_NUM_BONDS( atom[a2] ) == 2 &&
+    // INCHI✔❌:                                             atom[a2].bond_type[0] + atom[a2].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                             0 == inchi_NUMH2( atom, a2 ) &&
+    // INCHI✔❌:                                             ( AT_NUM_BONDS( atom[a1] ) != 2 ||
+    // INCHI✔❌:                                                 atom[a1].bond_type[0] + atom[a1].bond_type[1] != 2 * INCHI_BOND_TYPE_DOUBLE ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         bEnd1 = 1; /* a1 is the end-atom, a2 is middle atom */
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (bEnd2 + bEnd1 == 1)
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:                                         /* allene or cumulene */
+    // INCHI✔❌:                                         ATOM_NUMBER  chain[MAX_CHAIN_LEN + 1], prev, cur, next;
+    // INCHI✔❌:                                         if (bEnd2 && !bEnd1)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             cur = a1;
+    // INCHI✔❌:                                             a1 = a2;
+    // INCHI✔❌:                                             a2 = cur;
+    // INCHI✔❌:                                             sb_ord_from_a1 = sb_ord_from_a2;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                                         sb_ord_from_a2 = -1;
+    // INCHI✔❌:                                         cur = a1;
+    // INCHI✔❌:                                         next = a2;
+    // INCHI✔❌:                                         len = 0;
+    // INCHI✔❌:                                         chain[len++] = cur;
+    // INCHI✔❌:                                         chain[len++] = next;
+    // INCHI✔❌:
+    // INCHI✔❌:                                         while (len < MAX_CHAIN_LEN)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             /* arbitrary very high upper limit to prevent infinite loop */
+    // INCHI✔❌:
+    // INCHI✔❌:                                             prev = cur;
+    // INCHI✔❌:                                             cur = next;
+    // INCHI✔❌:                                                 /* follow double bond path && avoid going back */
+    // INCHI✔❌:                                             if (AT_NUM_BONDS( atom[cur] ) == 2 &&
+    // INCHI✔❌:                                                     atom[cur].bond_type[0] + atom[cur].bond_type[1] == 2 * INCHI_BOND_TYPE_DOUBLE &&
+    // INCHI✔❌:                                                     0 == inchi_NUMH2( atom, cur ))
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 next = atom[cur].neighbor[atom[cur].neighbor[0] == prev];
+    // INCHI✔❌:                                                 chain[len++] = next;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                                 break;
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                                         if (len > 2 &&
+    // INCHI✔❌:                                             ( p2 = IN_NEIGH_LIST( atom[cur].neighbor, (ATOM_NUMBER) prev, AT_NUM_BONDS( atom[cur] ) ) ))
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             sb_ord_from_a2 = p2 - atom[cur].neighbor;
+    // INCHI✔❌:                                             a2 = cur;
+    // INCHI✔❌:
+    // INCHI✔❌:                                             /* by design we need to pick up the first non-stereo-bond-neighbor as "sn"-atom */
+    // INCHI✔❌:
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[0] = atom[a1].neighbor[sb_ord_from_a1 == 0];
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[1] = a1;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[2] = a2;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[3] = atom[a2].neighbor[sb_ord_from_a2 == 0];
+    // INCHI✔❌:
+    // INCHI✔❌:                                             if (len % 2)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].central_atom = chain[len / 2];
+    // INCHI✔❌:                                                 atom_stereo0D[i].type = INCHI_StereoType_Allene;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                         else
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             /* error */
+    // INCHI✔❌:                                             atom_stereo0D[i].type = INCHI_StereoType_None;
+    // INCHI✔❌:                                             atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                             atom_stereo0D[i].neighbor[0] =
+    // INCHI✔❌:                                                 atom_stereo0D[i].neighbor[3] = -1;
+    // INCHI✔❌:                                             *err |= 64; /* Error in cumulene stereo */
+    // INCHI✔❌:                                             TREAT_ERR( *err, 0, "Cumulene stereo not recognized (0D)" );
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:
+    // INCHI✔❌: #undef MAX_CHAIN_LEN
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:                                     else
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                                         /****** a normal possibly stereogenic bond -- not an allene or cumulene *******/
+    // INCHI✔❌:                                         /* by design we need to pick up the first non-stereo-bond-neighbor as "sn"-atom */
+    // INCHI✔❌:
+    // INCHI✔❌:                                         sb_ord_from_a1 = p1 - atom[a1].neighbor;
+    // INCHI✔❌:                                         sb_ord_from_a2 = p2 - atom[a2].neighbor;
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[0] = atom[a1].neighbor[p1 == atom[a1].neighbor];
+    // INCHI✔❌:                                         atom_stereo0D[i].neighbor[3] = atom[a2].neighbor[p2 == atom[a2].neighbor];
+    // INCHI✔❌:                                         atom_stereo0D[i].central_atom = NO_ATOM;
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     if (atom_stereo0D[i].type != INCHI_StereoType_None &&
+    // INCHI✔❌:                                             sb_ord_from_a1 >= 0 && sb_ord_from_a2 >= 0 &&
+    // INCHI✔❌:                                             ATOM_PARITY_WELL_DEF( SB_PARITY_2( atom_stereo0D[i].parity ) ))
+    // INCHI✔❌:                                     {
+    // INCHI✔❌:
+    // INCHI✔❌:                                         /* Detected well-defined disconnected stereo
+    // INCHI✔❌:                                             * locate first non-metal neighbors */
+    // INCHI✔❌:
+    // INCHI✔❌:                                         int    a, n, j, /* k,*/ sb_ord, cur_neigh, min_neigh; /* djb-rwth: removing redundant variables */
+    // INCHI✔❌:                                         for (k = 0; k < 2; k++)
+    // INCHI✔❌:                                         {
+    // INCHI✔❌:                                             a = k ? atom_stereo0D[i].neighbor[2] : atom_stereo0D[i].neighbor[1];
+    // INCHI✔❌:                                             sb_ord = k ? sb_ord_from_a2 : sb_ord_from_a1;
+    // INCHI✔❌:                                             min_neigh = num_atoms;
+    // INCHI✔❌:                                             for (n = j = 0; j < AT_NUM_BONDS( atom[a] ); j++) /* djb-rwth: removing redundant code */
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 cur_neigh = atom[a].neighbor[j];
+    // INCHI✔❌:                                                 if (j != sb_ord && !IS_METAL_ATOM( atom, cur_neigh ))
+    // INCHI✔❌:                                                 {
+    // INCHI✔❌:                                                     min_neigh = inchi_min( cur_neigh, min_neigh );
+    // INCHI✔❌:                                                 }
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             if (min_neigh < num_atoms)
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 atom_stereo0D[i].neighbor[k ? 3 : 0] = min_neigh;
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                             else
+    // INCHI✔❌:                                             {
+    // INCHI✔❌:                                                 TREAT_ERR( *err, 0, "Cannot find non-metal stereobond neighor (0D)" );
+    // INCHI✔❌:                                             }
+    // INCHI✔❌:                                         }
+    // INCHI✔❌:                                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                                     break;
+    // INCHI✔❌:                             }
+    // INCHI✔❌:                         }
+    // INCHI✔❌:
+    // INCHI✔❌:                         /* end of 0D parities extraction */
+    // INCHI✔❌: /*exit_cycle:;*/
+    // INCHI✔❌:                     }
+    // INCHI✔❌:
+    // INCHI✔❌:                     if (pInpAtomFlags)
+    // INCHI✔❌:                     {
+    // INCHI✔❌:                         /* save chirality flag */
+    // INCHI✔❌:                         *pInpAtomFlags |= InpAtomFlags;
+    // INCHI✔❌:                     }
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 else if (atom)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     inchi_free( atom );
+    // INCHI✔❌:                     atom = NULL;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:
+    // INCHI✔❌:                 if (pszCoord)
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     inchi_free( pszCoord );
+    // INCHI✔❌:                 }
+    // INCHI✔❌:                 goto bypass_end_of_INChI;
+    // INCHI✔❌:                 /*return num_atoms;*/
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         if (atom_stereo0D)
+    // INCHI✔❌:             FreeInchi_Stereo0D(&atom_stereo0D);
+    // INCHI✔❌:
+    // INCHI✔❌:         /* end of struct. reading cycle, code never used? */
+    // INCHI✔❌:
+    // INCHI✔❌:         if (res <= 0)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (*err == INCHI_INP_ERROR_ERR)
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 return num_atoms;
+    // INCHI✔❌:             }
+    // INCHI✔❌:
+    // INCHI✔❌:             *err = INCHI_INP_EOF_ERR;
+    // INCHI✔❌:             return INCHI_INP_EOF_RET; /* no more data */
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:     bypass_end_of_INChI:
+    // INCHI✔❌:
+    // INCHI✔❌:         /* cleanup */
+    // INCHI✔❌:         if (num_atoms == INCHI_INP_ERROR_RET && atom_stereo0D)
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (stereo0D && *stereo0D == atom_stereo0D)
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 *stereo0D = NULL;
+    // INCHI✔❌:                 *num_stereo0D = 0;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             FreeInchi_Stereo0D( &atom_stereo0D );
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         if (!memcmp( szLine_i2ia, sStructHdrXmlEnd, sizeof( sStructHdrXmlEnd ) - 1 ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:             num_struct--;
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         if (!memcmp( szLine_i2ia, sStructHdrXml, sizeof( sStructHdrXml ) - 1 ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:             num_struct++;
+    // INCHI✔❌:         }
+    // INCHI✔❌:
+    // INCHI✔❌:         while (num_struct > 0 && 0 < inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine ))
+    // INCHI✔❌:         {
+    // INCHI✔❌:             if (!memcmp( szLine_i2ia, sStructHdrXmlEnd, sizeof( sStructHdrXmlEnd ) - 1 ))
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 num_struct--;
+    // INCHI✔❌:             }
+    // INCHI✔❌:             else
+    // INCHI✔❌:             {
+    // INCHI✔❌:                 if (!memcmp( szLine_i2ia, sStructHdrXml, sizeof( sStructHdrXml ) - 1 ))
+    // INCHI✔❌:                 {
+    // INCHI✔❌:                     num_struct++;
+    // INCHI✔❌:                 }
+    // INCHI✔❌:             }
+    // INCHI✔❌:         }
+    // INCHI✔❌:         return num_atoms;
+    // INCHI✔❌:     }
+    // INCHI✔❌:
+    // INCHI✔❌:     /* djb-rwth: avoiding memory leak */
+    // INCHI✔❌:     inchi_free(atom);
+    // INCHI✔❌:     return num_atoms;
+    // INCHI✔❌: }
+    // END INCHI C FUNCTION: InchiToInchiAtom
+
+    // Historical inline source evidence moved intact by C538; former
+    // staging/status explanations below are superseded by the live algorithm.
+                    // VERBATIM SOURCE FRAGMENT: readinch.c508..509
+                    //             *res -= pos;
+                    //             memmove(szLine, p, (long long)*res + 1); /* djb-rwth: cast operator added */
+                    // INCHI✔️❗: LoadLine preserves res as the line's NUL offset,
+                    // including no-refill/empty/EOF paths; use the returned cursor.
+                    // O(1) admission, no additional scan/allocation (C500).
+                            // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2006..2013
+                            //                 p = szLine_i2ia;
+                            //                 num_atoms = strtol( p, &q, 10 );
+                            //                 if (!num_atoms || !q || !*q)
+                            //                 {
+                            //                     num_atoms = INCHI_INP_EOF_RET; /* no atom data */
+                            //                     *err = INCHI_INP_EOF_ERR;
+                            //                     goto bypass_end_of_INChI;
+                            //                 }
+                            // INCHI✔️❗: C465 admit the first record before any
+                            // additional atom lines; reuse count/end after staging.
+                            // No full NUL scan/copy, O(prefix)/O(1) scalar state;
+                            // checked arena/whole-parser costs remain OPEN.
+                        // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2091
+                        //                         if (res2 > 0 && memcmp( szNextLine_i2ia, sStructRevXmlRevAtEnd, sizeof( sStructRevXmlRevAtEnd ) - 1 ))
+                        // INCHI✔️❗: Fixed closing-tag comparison precedes body NUL
+                        // admission. The successful gets producer terminates the private
+                        // full-size line; raw prefix is identical without an unused scan.
+                        // Body staging and XML chronology remain independently guarded;
+                        // no allocation/clone, O(tag), whole parser cost remains OPEN.
+                    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2263
+                    //                 if (!memcmp( szLine_i2ia, sStructRevXmlRevBnEnd, sizeof( sStructRevXmlRevBnEnd ) - 1 ))
+                    // INCHI✔️❗: Fixed closing-tag comparison precedes body NUL
+                    // admission. The successful gets producer terminates the private
+                    // full-size line; raw prefix is identical without an unused scan.
+                    // Body staging and XML chronology remain independently guarded;
+                    // no allocation/clone, O(tag), whole parser cost remains OPEN.
+
+            // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2509..2514
+            //                 pszCoord = (MOL_COORD*) inchi_malloc( inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) );
+            // 
+            //                 if (pszCoord)
+            //                 {
+            //                     memset( pszCoord, ' ', inchi_max( num_atoms, 1 ) * sizeof( MOL_COORD ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+            //                     res = inchi_ios_gets( szLine_i2ia, sizeof(szLine_i2ia) - 1, inp_file, &bTooLongLine );
+            // INCHI✔️❗: C466 same one allocation/fill before XML header gets;
+            // Plain missing-coordinate exit still precedes it. O(N) fill, no
+            // extra buffer/scan; safe arena/whole-parser cost remains OPEN.
+                    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2532
+                    //                     if (!memcmp( szLine_i2ia, sStructRevXmlRevXYZEnd, sizeof( sStructRevXmlRevXYZEnd ) - 1 ))
+                    // INCHI✔️❗: Fixed closing-tag comparison precedes body NUL
+                    // admission. The successful gets producer terminates the private
+                    // full-size line; raw prefix is identical without an unused scan.
+                    // Body staging and XML chronology remain independently guarded;
+                    // no allocation/clone, O(tag), whole parser cost remains OPEN.
+
     let input = input.ok_or(SourceHeapError::NullPointer)?;
     let dimensions = dimensions.ok_or(SourceHeapError::NullPointer)?;
     let bond_count = bond_count.ok_or(SourceHeapError::NullPointer)?;
@@ -3327,7 +5932,6 @@ pub(crate) fn InchiToInchiAtom(
     {
         let maximum = usize::try_from(maximum_atom_count)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(*slot)?
             .get_mut(..maximum)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3346,7 +5950,6 @@ pub(crate) fn InchiToInchiAtom(
             initial_stereo_capacity = *count;
             let capacity =
                 usize::try_from(*count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(*slot)?
                 .get_mut(..capacity)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3354,15 +5957,18 @@ pub(crate) fn InchiToInchiAtom(
         }
     }
 
-    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let line = heap.allocate_model_storage(vec![0_i8; INCHI_LINE_LEN as usize])?;
-    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let next_line = heap.allocate_model_storage(vec![0_i8; INCHI_LINE_ADD as usize])?;
-    panic!("INCHI-AUDIT-0345: suspected source divergence; see dev/audits/inchi/findings.md");
-    let atom_token =
-        heap.allocate_model_storage(b"/rA:\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
+    // Source globals retain their actual contents across calls. A prior
+    // Rust quarantine panic may poison the mutex; recover those same bytes,
+    // never clear/replace the source state or convert a chemistry error.
+    let mut source_lines = AUXINFO_LINES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (line, next_line) = &mut *source_lines;
+    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c617
+    //     static const char sStructHdrPlnRevAt[] = "/rA:";
+    // INCHI✔️❗: Borrow the exact five-byte literal with its real NUL;
+    // no modeled token allocation, ID, copy or free. The original pointer
+    // FindToken interface remains; both projections share one algorithm.
+    // O(1) literal storage; shared dispatch/whole-parser costs remain OPEN.
+    let atom_token = &[b'/' as i8, b'r' as i8, b'A' as i8, b':' as i8, 0];
 
     let operation = (|| -> Result<i32, SourceHeapError> {
         let mut working_atom = SourceMutPointer::<inchi_Atom>::null();
@@ -3372,24 +5978,134 @@ pub(crate) fn InchiToInchiAtom(
         let mut working_stereo_capacity = 0_i32;
         let mut xml_structure_depth = 0_i32;
         let mut too_long = 0_i32;
+        let mut parsed_flags = 0_u64;
+        let mut stereo_length = 0_usize;
+        let mut section_result = 0_i32;
+        let mut section_over = 0_i32;
+        let mut section_end: Option<i64> = None;
+        let mut section_cursor = 0_usize;
+        let mut section_tag: &[u8] = b"</atoms>";
+
+        // INCHI✔️❗: Source799..806,1002..1009,1260..1267 and XML
+        // 2080..2110 select each read before parsing the next item. Preserve
+        // their cursor/end/error chronology with actual allocated records;
+        // no section Vec or record copyback. C538 cost remains OPEN.
+        macro_rules! drain_plain_line {
+            () => {{
+                while too_long != 0
+                    && aux_read_line(heap, line, INCHI_LINE_LEN as i32 - 1,
+                        input, &mut too_long, true, false,)? > 0
+                {}
+            }};
+        }
+
+        macro_rules! load_item {
+            ($cursor:expr) => {{
+                // INCHI✔️❗: Native799..806/1042..1055/1309..1315 and
+                // 2080..2110/2274..2296/2542..2573. One reached refill,
+                // only the unconsumed fixed-window suffix is moved. C538 OPEN.
+                if input_type == tagInputType_INPUT_INCHI_PLAIN {
+                    let p = load_borrowed_line(heap, input, &mut too_long, &mut section_over,
+                        &mut section_end, line, INCHI_LINE_LEN as i32,
+                        INCHI_LINE_ADD as i32, $cursor as i64,
+                        &mut section_result)?;
+                    $cursor = usize::try_from(p)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                } else if section_over == 0
+                    && i64::from(INCHI_LINE_LEN) - i64::from(section_result)
+                        + $cursor as i64 > i64::from(INCHI_LINE_ADD)
+                {
+                    let mut next_too_long = -1_i32;
+                    let loaded = aux_read_line(heap, next_line, INCHI_LINE_ADD as i32 - 1,
+                        input, &mut next_too_long, false, true,)?;
+                    if loaded > 0 && !source_starts_with(&next_line[..], section_tag) {
+                        if $cursor != 0 {
+                            let retained = section_result.checked_sub(i32::try_from($cursor)
+                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?)
+                                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                            let count = usize::try_from(retained)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let bytes = &mut line[..];
+                            let end = $cursor.checked_add(count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            if end > bytes.len() { return Err(SourceHeapError::PointerOutOfBounds); }
+                            bytes.copy_within($cursor..end, 0);
+                            section_result = retained;
+                        }
+                        let destination = usize::try_from(section_result)
+                            .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+                        let count = loaded as usize + 1;
+                        let source = next_line.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        line.get_mut(destination..).and_then(|bytes| bytes.get_mut(..count))
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?.copy_from_slice(source);
+                        section_result = section_result.checked_add(loaded)
+                            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                        *line.get_mut(section_result as usize)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+                        too_long = next_too_long;
+                        $cursor = 0;
+                    } else { section_over = 1; }
+                }
+            }};
+        }
+
+        macro_rules! plain_section {
+            ($token:expr) => {{
+                let p = find_token_borrowed_line(heap, input, &mut too_long, $token, 4,
+                    line, INCHI_LINE_LEN as i32, section_cursor as i64,
+                    &mut section_result)?;
+                if let Some(p) = p {
+                    section_cursor = usize::try_from(p)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    section_end = crate::source::base::util::source_c_string_delimiter(
+                        &line[..], section_cursor, b'/' as i8)?.map(|offset| offset as i64);
+                    section_over = i32::from(section_end.is_some() || too_long == 0);
+                    true
+                } else { false }
+            }};
+        }
 
         macro_rules! drain_xml_structure {
             () => {{
-                panic!("INCHI-AUDIT-0402: suspected source divergence; see dev/audits/inchi/findings.md");
+                // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c3069..3077
+                //         if (!memcmp( szLine_i2ia, sStructHdrXmlEnd, sizeof( sStructHdrXmlEnd ) - 1 ))
+                //         {
+                //             num_struct--;
+                //         }
+                // 
+                //         if (!memcmp( szLine_i2ia, sStructHdrXml, sizeof( sStructHdrXml ) - 1 ))
+                //         {
+                //             num_struct++;
+                //         }
+                // INCHI✔️❗: C464 inspect the current header before any gets.
+                // Two independent prefix tests, O(tag)/O(1), no buffer or scan;
+                // checked-arena/whole-parser costs remain OPEN.
+                {
+                    let content = &line[..];
+                    if source_starts_with(content, b"</structure") {
+                        xml_structure_depth -= 1;
+                    }
+                    if source_starts_with(content, b"<structure") {
+                        xml_structure_depth += 1;
+                    }
+                }
                 while xml_structure_depth > 0 {
-                    let result = inchi_ios_gets(
+                    let result = aux_read_line(
                         heap,
                         line,
                         INCHI_LINE_LEN as i32 - 1,
                         input,
                         &mut too_long,
-                    )?;
+                     false, true,)?;
                     if result <= 0 {
                         break;
                     }
-                    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let content = source_c_string(heap.slice(line.as_const())?)?;
+                    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c3081
+                    //             if (!memcmp( szLine_i2ia, sStructHdrXmlEnd, sizeof( sStructHdrXmlEnd ) - 1 ))
+                    // INCHI✔️❗: Both XML tags use bounded memcmp on the
+                    // private fixed262144-byte line, no full C-string scan.
+                    // Borrow only; loop/depth/0402 ordering remains protected.
+                    // O(tag length), no allocation/clone; whole costs OPEN.
+                    let content = &line[..];
                     if source_starts_with(content, b"</structure") {
                         xml_structure_depth -= 1;
                     } else if source_starts_with(content, b"<structure") {
@@ -3401,9 +6117,33 @@ pub(crate) fn InchiToInchiAtom(
 
         macro_rules! fail_input {
             ($status:expr, $code:expr, $message:expr) => {{
+                fail_input!($status, $code, $message, false)
+            }};
+            ($status:expr, $code:expr, $message:expr, $xml_free_atom:expr) => {{
                 let status = $status as i32;
                 *error = $code as i32;
-                add_source_error(heap, error_text, $message)?;
+                error_text.append_bytes(heap, ($message).as_bytes())?;
+                // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c2111..2120
+                //                     if (!isalpha( UCINT *p ) || !isupper( UCINT *p ) || i >= num_atoms)
+                //                     {
+                //                         bHeaderRead = 0; /* wrong atom data */ /* djb-rwth: ignoring LLVM warning: value used */
+                //                         num_atoms = INCHI_INP_ERROR_RET; /* was 0, error */
+                //                         *err = INCHI_INP_ERROR_ERR;     /* 40 */
+                //                         TREAT_ERR( *err, 0, "Wrong atoms data" );
+                //                         /* djb-rwth: avoiding memory leak */
+                //                         inchi_free(atom);
+                //                         atom = NULL;
+                //                         goto bypass_end_of_INChI;
+                // INCHI✔️❗: C464 only source-selected atom-error sites free
+                // atom before bypass's stereo cleanup; no message heuristic.
+                // Preserve the existing readable snapshot of a freed caller.
+                // O(1) stores/free, checked/whole-parser cost remains OPEN.
+                if input_type == tagInputType_INPUT_INCHI_XML && $xml_free_atom {
+                    if !working_atom.is_null() && !working_atom_is_caller {
+                        inchi_free(heap, working_atom)?;
+                    }
+                    working_atom = SourceMutPointer::null();
+                }
                 let source_cleans_work = (input_type == tagInputType_INPUT_INCHI_PLAIN
                     && (status == INCHI_INP_ERROR_RET || status == INCHI_INP_FATAL_RET as i32))
                     || (input_type == tagInputType_INPUT_INCHI_XML
@@ -3422,20 +6162,37 @@ pub(crate) fn InchiToInchiAtom(
                     }
                     // Preserve the freed caller allocation as a readable snapshot of C's
                     // dangling output pointer; SourceHeap cannot expose use-after-free.
-                    if !working_atom.is_null() && !working_atom_is_caller {
-                        panic!("INCHI-AUDIT-0409: suspected source divergence; see dev/audits/inchi/findings.md");
+                    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c3057..3067
+                    // 
+                    //         /* cleanup */
+                    //         if (num_atoms == INCHI_INP_ERROR_RET && atom_stereo0D)
+                    //         {
+                    //             if (stereo0D && *stereo0D == atom_stereo0D)
+                    //             {
+                    //                 *stereo0D = NULL;
+                    //                 *num_stereo0D = 0;
+                    //             }
+                    //             FreeInchi_Stereo0D( &atom_stereo0D );
+                    //         }
+                    // INCHI✔️❗: XML bypass ends cleanup after stereo; retain
+                    // unpublished atom/coordinate storage exactly as native.
+                    // Plain error/fatal cleanup stays source-selected below.
+                    // No extra allocation/free/scan; whole-parser cost OPEN.
+                    if input_type == tagInputType_INPUT_INCHI_PLAIN
+                        && !working_atom.is_null() && !working_atom_is_caller
+                    {
                         inchi_free(heap, working_atom)?;
                         working_atom = SourceMutPointer::null();
                     }
-                    if !working_coordinates.is_null() {
-                        panic!("INCHI-AUDIT-0409: suspected source divergence; see dev/audits/inchi/findings.md");
+                    if input_type == tagInputType_INPUT_INCHI_PLAIN
+                        && !working_coordinates.is_null()
+                    {
                         inchi_free(heap, working_coordinates)?;
                         working_coordinates = SourceMutPointer::null();
                     }
                 }
-                if input_type == tagInputType_INPUT_INCHI_XML {
-                    drain_xml_structure!();
-                }
+                if input_type == tagInputType_INPUT_INCHI_XML { drain_xml_structure!(); }
+                else { drain_plain_line!(); }
                 return Ok(status);
             }};
         }
@@ -3444,28 +6201,20 @@ pub(crate) fn InchiToInchiAtom(
         let mut xml_last_atom_count = 0_i32;
 
         'structure_attempt: loop {
-            let mut atom_section = Vec::<i8>::new();
-            let mut bond_section = Vec::<i8>::new();
-            let mut coordinate_section = Vec::<i8>::new();
-            let mut coordinate_requires_exact_end = false;
-            let mut plain_coordinate_section_ended = false;
             let mut found_structure = false;
-            let mut xml_sections_pending = false;
-            let mut xml_coordinates_pending = false;
-            let mut plain_after_atom_section = None::<Vec<i8>>;
-            let mut plain_coordinates_missing = false;
-            let mut plain_spanned_buffers = false;
+            let mut source_atom_count = 0_i64;
+            let mut atom_cursor = 0_usize;
 
             if input_type == tagInputType_INPUT_INCHI_PLAIN {
                 let mut header_read = false;
                 loop {
-                    let mut result = inchi_ios_getsTab(
+                    let mut result = aux_read_line(
                         heap,
                         line,
                         INCHI_LINE_LEN as i32 - 1,
                         input,
                         &mut too_long,
-                    )?;
+                     true, true,)?;
                     if result <= 0 {
                         if *error == INCHI_INP_ERROR_ERR as i32 {
                             return Ok(0);
@@ -3474,10 +6223,20 @@ pub(crate) fn InchiToInchiAtom(
                         return Ok(INCHI_INP_EOF_RET as i32);
                     }
 
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let current = source_c_string(heap.slice(line.as_const())?)?.to_vec();
+                    // VERBATIM SOURCE FRAGMENT: ichi_io.c410
+                    //     return length;
+                    // INCHI✔️❗: gets/getsTab returns the already-trimmed first-NUL
+                    // length. Private line is untouched since that return; reuse it
+                    // rather than scanning the whole header again. O(1) length
+                    // projection; independent model/global costs remain OPEN.
+                    let current_length = usize::try_from(result)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️❗: Actual fresh modeled line is distinct from
+                    // earlier output destinations. Borrow only to the next
+                    // mutation, then reborrow unchanged bytes; no header Vec.
+                    // Native global581 identity stays0353; C524 cost OPEN.
+                    let current = line
+                        .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if too_long == 0 && source_starts_with(&current, b"Structure:") {
                         let mut cursor = b"Structure:".len();
                         let (long_id, end) = source_strtol_decimal(&current, cursor);
@@ -3494,21 +6253,11 @@ pub(crate) fn InchiToInchiAtom(
                         {
                             cursor += 1;
                         }
-                        if let Some(label) = sdf_label {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(label)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
-                        if let Some(value) = sdf_value {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(value)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
-                        if cursor < current.len() {
+                        sdf_label.clear(heap)?;
+                        sdf_value.clear(heap)?;
+                        let current = line
+                            .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if cursor < current_length {
                             if let Some(equal_relative) = current[cursor..]
                                 .iter()
                                 .position(|byte| *byte == b'=' as i8)
@@ -3516,31 +6265,21 @@ pub(crate) fn InchiToInchiAtom(
                                 let equal = cursor + equal_relative;
                                 let mut length =
                                     (equal - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
-                                if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(cursor as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
-                                    let mut trimmed_length = i32::try_from(length)
+                                if sdf_label.has_target() {
+                                    sdf_label.copy_from_bytes(heap, line.get(cursor..).ok_or(SourceHeapError::PointerOutOfBounds)?, length as u32)?;
+                                    let _ = i32::try_from(length)
                                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                                    lrtrim(heap, label, Some(&mut trimmed_length))?;
+                                    let trimmed_length = sdf_label.trim(heap)?;
                                     length = usize::try_from(trimmed_length)
                                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                                     let _ = length;
                                 }
                                 let value_start = equal + 1;
-                                if value_start < current.len() {
-                                    let length = (current.len() - value_start + 1)
+                                if value_start < current_length {
+                                    let length = (current_length - value_start + 1)
                                         .min(MAX_SDF_VALUE as usize - 1);
-                                    if let Some(value) = sdf_value {
-                                        mystrncpy(
-                                            heap,
-                                            value,
-                                            line.offset(value_start as i64)?.as_const(),
-                                            length as u32,
-                                        )?;
+                                    if sdf_value.has_target() {
+                                        sdf_value.copy_from_bytes(heap, line.get(value_start..).ok_or(SourceHeapError::PointerOutOfBounds)?, length as u32)?;
                                     }
                                 }
                             } else if let Some(missing_relative) =
@@ -3549,13 +6288,8 @@ pub(crate) fn InchiToInchiAtom(
                                 let missing = cursor + missing_relative;
                                 let length =
                                     (missing - cursor + 1).min(MAX_SDF_HEADER as usize - 1);
-                                if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(cursor as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                if sdf_label.has_target() {
+                                    sdf_label.copy_from_bytes(heap, line.get(cursor..).ok_or(SourceHeapError::PointerOutOfBounds)?, length as u32)?;
                                 }
                             }
                         }
@@ -3573,21 +6307,11 @@ pub(crate) fn InchiToInchiAtom(
                         if let Some(id) = id.as_deref_mut() {
                             *id = 0;
                         }
-                        if let Some(label) = sdf_label {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(label)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
-                        if let Some(value) = sdf_value {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(value)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
+                        sdf_label.clear(heap)?;
+                        sdf_value.clear(heap)?;
                     }
+                    let current = line
+                        .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if let Some(slash) = current[b"AuxInfo=".len()..]
                         .iter()
                         .position(|byte| *byte == b'/' as i8)
@@ -3597,42 +6321,43 @@ pub(crate) fn InchiToInchiAtom(
                             .get(slash + 2)
                             .is_none_or(|byte| *byte == b'\n' as i8)
                     {
+                        drain_plain_line!();
                         return Ok(0);
                     }
 
-                    let mut cursor = FindToken(
+                    let token_cursor = find_token_borrowed_line(
                         heap,
                         input,
                         &mut too_long,
-                        atom_token.as_const(),
+                        atom_token,
                         4,
                         line,
                         INCHI_LINE_LEN as i32,
-                        line,
+                        0,
                         &mut result,
                     )?;
-                    if cursor.is_null() {
+                    let Some(mut cursor) = token_cursor else {
                         fail_input!(
                             INCHI_INP_ERROR_RET,
                             INCHI_INP_ERROR_ERR,
                             "Missing atom data"
                         );
-                    }
+                    };
 
                     let slash = {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let bytes = source_c_string(heap.slice(cursor.as_const())?)?;
-                        bytes
-                            .iter()
-                            .position(|byte| *byte == b'/' as i8)
-                            .map(|position| cursor.offset(position as i64))
-                            .transpose()?
-                            .unwrap_or(SourceMutPointer::null())
+                        // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c799
+                        //                     bItemIsOver = ( s = strchr( p, '/' ) ) || !bTooLongLine;
+                        // INCHI✔️❗: One existing reached delimiter query,
+                        // stopping at first slash or NUL; no suffix preflight.
+                        // Original cursor/error/LoadLine state stays unchanged.
+                        // O(reached bytes), O(1), no allocation; cost OPEN.
+                        let start = usize::try_from(cursor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        crate::source::base::util::source_c_string_delimiter(&line[..], start, b'/' as i8)?
+                            .map(|position| position as i64)
                     };
                     let mut slash = slash;
-                    let mut item_is_over = i32::from(!slash.is_null() || too_long == 0);
-                    cursor = LoadLine(
+                    let mut item_is_over = i32::from(slash.is_some() || too_long == 0);
+                    cursor = load_borrowed_line(
                         heap,
                         input,
                         &mut too_long,
@@ -3644,36 +6369,12 @@ pub(crate) fn InchiToInchiAtom(
                         cursor,
                         &mut result,
                     )?;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    atom_section
-                        .extend_from_slice(source_c_string(heap.slice(cursor.as_const())?)?);
-
-                    plain_spanned_buffers = too_long != 0;
-                    while too_long != 0 {
-                        let loaded = inchi_ios_getsTab1(
-                            heap,
-                            next_line,
-                            INCHI_LINE_ADD as i32 - 1,
-                            input,
-                            &mut too_long,
-                        )?;
-                        if loaded < 0 {
-                            break;
-                        }
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        atom_section
-                            .extend_from_slice(source_c_string(heap.slice(next_line.as_const())?)?);
-                    }
-
-                    if let Some(bond_marker) = source_find_bytes(&atom_section, b"/rB:") {
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        plain_after_atom_section = Some(atom_section[bond_marker + 4..].to_vec());
-                        atom_section.truncate(bond_marker);
-                    } else if let Some(section_end) =
-                        atom_section.iter().position(|byte| *byte == b'/' as i8)
-                    {
-                        atom_section.truncate(section_end);
-                    }
+                    section_result = result;
+                    section_end = slash;
+                    section_over = item_is_over;
+                    atom_cursor = usize::try_from(cursor)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    (source_atom_count, atom_cursor) = source_strtol_decimal(&line[..], atom_cursor);
                     found_structure = true;
                     break;
                 }
@@ -3681,13 +6382,13 @@ pub(crate) fn InchiToInchiAtom(
                 let mut header_read = false;
                 let mut in_aux_info = false;
                 loop {
-                    let result = inchi_ios_gets(
+                    let result = aux_read_line(
                         heap,
                         line,
                         INCHI_LINE_LEN as i32 - 1,
                         input,
                         &mut too_long,
-                    )?;
+                     false, true,)?;
                     if result <= 0 {
                         if !working_stereo.is_null() {
                             let stereo_is_exposed = stereo0d_slot
@@ -3707,27 +6408,27 @@ pub(crate) fn InchiToInchiAtom(
                         *error = INCHI_INP_EOF_ERR as i32;
                         return Ok(INCHI_INP_EOF_RET as i32);
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let current = source_c_string(heap.slice(line.as_const())?)?.to_vec();
+                    // VERBATIM SOURCE FRAGMENT: ichi_io.c410
+                    //     return length;
+                    // INCHI✔️❗: gets/getsTab returns the already-trimmed first-NUL
+                    // length. Private line is untouched since that return; reuse it
+                    // rather than scanning the whole header again. O(1) length
+                    // projection; independent model/global costs remain OPEN.
+                    let current_length = usize::try_from(result)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️❗: Actual fresh modeled line is distinct from
+                    // earlier output destinations. Borrow only to the next
+                    // mutation, then reborrow unchanged bytes; no header Vec.
+                    // Native global581 identity stays0353; C524 cost OPEN.
+                    let current = line
+                        .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if source_starts_with(&current, b"<structure") {
                         xml_last_atom_count = 0;
                         xml_structure_depth = 1;
-                        if let Some(label) = sdf_label {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(label)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
-                        if let Some(value) = sdf_value {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            *heap
-                                .slice_mut(value)?
-                                .first_mut()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                        }
+                        sdf_label.clear(heap)?;
+                        sdf_value.clear(heap)?;
+                        let current = line
+                            .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut cursor = b"<structure".len();
                         let mut long_id = 0_i64;
                         if let Some(relative) = source_find_bytes(&current[cursor..], b"number=\"")
@@ -3746,17 +6447,14 @@ pub(crate) fn InchiToInchiAtom(
                             {
                                 let end = start + end_relative;
                                 let length = (end - start + 1).min(MAX_SDF_HEADER as usize - 1);
-                                if let Some(label) = sdf_label {
-                                    mystrncpy(
-                                        heap,
-                                        label,
-                                        line.offset(start as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                if sdf_label.has_target() {
+                                    sdf_label.copy_from_bytes(heap, line.get(start..).ok_or(SourceHeapError::PointerOutOfBounds)?, length as u32)?;
                                 }
                                 cursor = end + 1;
                             }
                         }
+                        let current = line
+                            .get(..current_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
                         if let Some(relative) =
                             source_find_bytes(&current[cursor..], b"id.value=\"")
                         {
@@ -3767,13 +6465,8 @@ pub(crate) fn InchiToInchiAtom(
                             {
                                 let end = start + end_relative;
                                 let length = (end - start + 1).min(MAX_SDF_VALUE as usize - 1);
-                                if let Some(value) = sdf_value {
-                                    mystrncpy(
-                                        heap,
-                                        value,
-                                        line.offset(start as i64)?.as_const(),
-                                        length as u32,
-                                    )?;
+                                if sdf_value.has_target() {
+                                    sdf_value.copy_from_bytes(heap, line.get(start..).ok_or(SourceHeapError::PointerOutOfBounds)?, length as u32)?;
                                 }
                             }
                         }
@@ -3802,18 +6495,24 @@ pub(crate) fn InchiToInchiAtom(
                                 .iter()
                                 .position(|byte| *byte == b'\"' as i8)
                         {
-                            if let Some(error_text) = error_text {
-                                *heap
-                                    .slice_mut(error_text)?
-                                    .first_mut()
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-                            }
-                            panic!("INCHI-AUDIT-0347: suspected source divergence; see dev/audits/inchi/findings.md");
-                            let message: String = current[prefix_length..prefix_length + end]
-                                .iter()
-                                .map(|byte| *byte as u8 as char)
-                                .collect();
-                            add_source_error(heap, error_text, &message)?;
+                            error_text.clear(heap)?;
+                            // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c1961..1965
+                            //                     pStrErr[0] = '\0';
+                            //                     c = *q;
+                            //                     *q = '\0';
+                            //                     TREAT_ERR( *err, 0, p );
+                            //                     *q = c;
+                            // INCHI✔️❗: Borrow exact raw bytes up to the quote;
+                            // canonical implicit NUL replaces the temporary
+                            // quote overwrite, without Unicode re-encoding or
+                            // owned message storage. First NUL still ends it.
+                            // Actual fresh line is distinct from destinations;
+                            // admit destination first, then borrow the prefix
+                            // through the same canonical append. O(1) view,
+                            // no buffer/clone; C524 whole-parser costs OPEN.
+                            let message = line.get(prefix_length..prefix_length + end)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            error_text.append_bytes(heap, bytemuck::cast_slice(message))?;
                         }
                         *error = if fatal {
                             INCHI_INP_FATAL_ERR as i32
@@ -3845,52 +6544,35 @@ pub(crate) fn InchiToInchiAtom(
                         continue;
                     }
 
-                    let result = inchi_ios_gets(
+                    let result = aux_read_line(
                         heap,
                         line,
                         INCHI_LINE_LEN as i32 - 1,
                         input,
                         &mut too_long,
-                    )?;
+                     false, true,)?;
                     if result <= 0 {
                         *error = INCHI_INP_EOF_ERR as i32;
+                        drain_xml_structure!();
                         return Ok(INCHI_INP_EOF_RET as i32);
                     }
-                    if !source_starts_with(
-                        source_c_string(heap.slice(line.as_const())?)?,
-                        b"<atoms>",
-                    ) {
+                    if !source_starts_with(&line[..], b"<atoms>") {
                         header_read = false;
                         continue;
                     }
-                    let mut read_atom_data = false;
-                    loop {
-                        let result = inchi_ios_gets(
-                            heap,
-                            line,
-                            INCHI_LINE_LEN as i32 - 1,
-                            input,
-                            &mut too_long,
-                        )?;
-                        if result <= 0 {
-                            if !read_atom_data {
-                                *error = INCHI_INP_EOF_ERR as i32;
-                                return Ok(INCHI_INP_EOF_RET as i32);
-                            }
-                            break;
-                        }
-                        read_atom_data = true;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let content = source_c_string(heap.slice(line.as_const())?)?;
-                        if source_starts_with(content, b"</atoms>") {
-                            break;
-                        }
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        atom_section.extend_from_slice(content);
+                    let result = aux_read_line(heap, line, INCHI_LINE_LEN as i32 - 1,
+                        input, &mut too_long, false, true,)?;
+                    if result <= 0 {
+                        *error = INCHI_INP_EOF_ERR as i32;
+                        drain_xml_structure!();
+                        return Ok(INCHI_INP_EOF_RET as i32);
                     }
+                    (source_atom_count, atom_cursor) = source_strtol_decimal(&line[..], 0);
+                    section_result = result;
+                    section_over = 0;
+                    section_end = None;
+                    section_tag = b"</atoms>";
                     found_structure = true;
-                    xml_sections_pending = true;
                     break;
                 }
             }
@@ -3900,16 +6582,20 @@ pub(crate) fn InchiToInchiAtom(
                 return Ok(0);
             }
 
-            let (source_atom_count, mut atom_cursor) = source_strtol_decimal(&atom_section, 0);
             let atom_count_i32 = source_atom_count as i32;
             if input_type == tagInputType_INPUT_INCHI_XML {
                 xml_last_atom_count = atom_count_i32;
             }
-            if atom_count_i32 == 0 || atom_cursor >= atom_section.len() {
+            if atom_count_i32 == 0 || *line.get(atom_cursor).ok_or(SourceHeapError::PointerOutOfBounds)? == 0 {
                 if input_type == tagInputType_INPUT_INCHI_XML {
-                    panic!("INCHI-AUDIT-0406: suspected source divergence; see dev/audits/inchi/findings.md");
+                    // INCHI✔️❗: native2008..2012 same EOF bypass, no TREAT_ERR.
+                    // First-record admission above prevents ordinary empty data
+                    // from consuming staged later rows. Plain remains zero.
                     *error = INCHI_INP_EOF_ERR as i32;
+                    drain_xml_structure!();
+                    return Ok(INCHI_INP_EOF_RET as i32);
                 }
+                drain_plain_line!();
                 return Ok(0);
             }
             if atom_count_i32 < 0 {
@@ -3921,6 +6607,17 @@ pub(crate) fn InchiToInchiAtom(
             }
             let atom_count = usize::try_from(atom_count_i32)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            match line.get(atom_cursor).map(|byte| *byte as u8) {
+                Some(b'c') => {
+                    parsed_flags |= u64::from(FLAG_INP_AT_CHIRAL);
+                    atom_cursor += 1;
+                }
+                Some(b'n') => {
+                    parsed_flags |= u64::from(FLAG_INP_AT_NONCHIRAL);
+                    atom_cursor += 1;
+                }
+                _ => {}
+            }
             let reuse_caller_atoms = atom_slot
                 .as_deref()
                 .is_some_and(|slot| !slot.is_null() && atom_count_i32 <= maximum_atom_count);
@@ -3943,7 +6640,6 @@ pub(crate) fn InchiToInchiAtom(
                 } else {
                     let maximum = usize::try_from(maximum_atom_count)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(*slot)?
                         .get_mut(..maximum)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3981,7 +6677,6 @@ pub(crate) fn InchiToInchiAtom(
                 } else {
                     let capacity = usize::try_from(source_initial_stereo_capacity)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(*slot)?
                         .get_mut(..capacity)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -4010,250 +6705,148 @@ pub(crate) fn InchiToInchiAtom(
                 };
             }
 
-            let mut parsed_atoms = Vec::new();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            if parsed_atoms.try_reserve_exact(atom_count + 1).is_err() {
-                fail_input!(
-                    INCHI_INP_FATAL_RET as i32,
-                    INCHI_INP_FATAL_ERR,
-                    "Out of RAM"
-                );
-            }
-            parsed_atoms.resize_with(atom_count + 1, inchi_Atom::default);
-            let mut parsed_stereo = Vec::<inchi_Stereo0D>::new();
-            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-            if parsed_stereo.try_reserve_exact(atom_count + 1).is_err() {
-                fail_input!(
-                    INCHI_INP_FATAL_RET as i32,
-                    INCHI_INP_FATAL_ERR,
-                    "Out of RAM"
-                );
-            }
-            let mut parsed_flags = 0_u64;
-            match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
-                Some(b'c') => {
-                    parsed_flags |= u64::from(FLAG_INP_AT_CHIRAL);
-                    atom_cursor += 1;
+            let mut atom_index = 0_usize;
+            loop {
+                if input_type == tagInputType_INPUT_INCHI_XML && atom_index >= atom_count { break; }
+                if input_type == tagInputType_INPUT_INCHI_XML || atom_index != 0 { load_item!(atom_cursor); }
+                let first = *line.get(atom_cursor)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+                if !first.is_ascii_uppercase() || atom_index >= atom_count {
+                    if input_type == tagInputType_INPUT_INCHI_XML {
+                        fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong atoms data", true);
+                    }
+                    break;
                 }
-                Some(b'n') => {
-                    parsed_flags |= u64::from(FLAG_INP_AT_NONCHIRAL);
+                heap.with_slice_mut_and_optional_slices::<_, i8, _, _>(working_atom, None,
+                    Some(working_stereo), |parsed_atoms, _line, stereo| {
+                    let atom_section = &line[..];
+                    let parsed_stereo = stereo.ok_or(SourceHeapError::NullPointer)?;
+                    parsed_atoms[atom_index].elname[0] = first as i8;
                     atom_cursor += 1;
-                }
-                _ => {}
-            }
-
-            for atom_index in 0..atom_count {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let Some(first) = atom_section.get(atom_cursor).map(|byte| *byte as u8) else {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        if input_type == tagInputType_INPUT_INCHI_XML {
-                            "Wrong atoms data"
-                        } else {
-                            "Wrong number of atoms"
+                    if atom_section
+                        .get(atom_cursor)
+                        .map(|byte| *byte as u8)
+                        .is_some_and(|byte| byte.is_ascii_alphabetic() && byte.is_ascii_lowercase())
+                    {
+                        parsed_atoms[atom_index].elname[1] = atom_section[atom_cursor];
+                        atom_cursor += 1;
+                    }
+                    if atom_section
+                        .get(atom_cursor)
+                        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
+                    {
+                        let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
+                        parsed_atoms[atom_index].num_iso_H[0] = value as i8;
+                        if parsed_atoms[atom_index].num_iso_H[0] == 0 {
+                            parsed_atoms[atom_index].num_iso_H[0] = -15;
                         }
-                    );
-                };
-                if !first.is_ascii_alphabetic() || !first.is_ascii_uppercase() {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        if input_type == tagInputType_INPUT_INCHI_XML {
-                            "Wrong atoms data"
-                        } else {
-                            "Wrong number of atoms"
-                        }
-                    );
-                }
-                parsed_atoms[atom_index].elname[0] = first as i8;
-                atom_cursor += 1;
-                if atom_section
-                    .get(atom_cursor)
-                    .map(|byte| *byte as u8)
-                    .is_some_and(|byte| byte.is_ascii_alphabetic() && byte.is_ascii_lowercase())
-                {
-                    parsed_atoms[atom_index].elname[1] = atom_section[atom_cursor];
-                    atom_cursor += 1;
-                }
-                if atom_section
-                    .get(atom_cursor)
-                    .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-                {
-                    let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
-                    parsed_atoms[atom_index].num_iso_H[0] = value as i8;
-                    if parsed_atoms[atom_index].num_iso_H[0] == 0 {
-                        parsed_atoms[atom_index].num_iso_H[0] = -15;
-                    }
-                    atom_cursor = end;
-                }
-                let charge_sign = match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
-                    Some(b'+') => 1_i32,
-                    Some(b'-') => -1_i32,
-                    _ => 0,
-                };
-                parsed_atoms[atom_index].charge = charge_sign as i8;
-                if charge_sign != 0 {
-                    atom_cursor += 1;
-                    if atom_section
-                        .get(atom_cursor)
-                        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-                    {
-                        let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
-                        let magnitude = (value & i64::from(CHAR_MASK)) as i8;
-                        parsed_atoms[atom_index].charge =
-                            (charge_sign * i32::from(magnitude)) as i8;
                         atom_cursor = end;
                     }
-                }
-                if atom_section.get(atom_cursor) == Some(&(b'.' as i8)) {
-                    atom_cursor += 1;
-                    if atom_section
-                        .get(atom_cursor)
-                        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-                    {
-                        let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
-                        parsed_atoms[atom_index].radical = value as i8;
-                        atom_cursor = end;
-                    }
-                }
-                if atom_section.get(atom_cursor) == Some(&(b'i' as i8)) {
-                    atom_cursor += 1;
-                    if atom_section
-                        .get(atom_cursor)
-                        .is_some_and(|byte| (*byte as u8).is_ascii_digit())
-                    {
-                        let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
-                        parsed_atoms[atom_index].isotopic_mass = value as i16;
-                        atom_cursor = end;
-                    }
-                }
-                let parity = match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
-                    Some(b'o') => tagINCHIStereoParity0D_INCHI_PARITY_ODD as i8,
-                    Some(b'e') => tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i8,
-                    Some(b'u') => tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i8,
-                    Some(b'?') => tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i8,
-                    _ => 0,
-                };
-                if parity != 0 {
-                    atom_cursor += 1;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-                    parsed_stereo.push(inchi_Stereo0D {
-                        central_atom: atom_index as i16,
-                        parity,
-                        type_: tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8,
-                        ..inchi_Stereo0D::default()
-                    });
-                    let stereo_index = parsed_stereo.len() - 1;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(working_stereo)?[stereo_index] =
-                        parsed_stereo[stereo_index].clone();
-                }
-                for (isotope, marker) in b"hdt".iter().enumerate() {
-                    if atom_section.get(atom_cursor).map(|byte| *byte as u8) == Some(*marker) {
-                        parsed_atoms[atom_index].num_iso_H[isotope + 1] = 1;
+                    let charge_sign = match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
+                        Some(b'+') => 1_i32,
+                        Some(b'-') => -1_i32,
+                        _ => 0,
+                    };
+                    parsed_atoms[atom_index].charge = charge_sign as i8;
+                    if charge_sign != 0 {
                         atom_cursor += 1;
                         if atom_section
                             .get(atom_cursor)
                             .is_some_and(|byte| (*byte as u8).is_ascii_digit())
                         {
                             let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
-                            parsed_atoms[atom_index].num_iso_H[isotope + 1] = value as i8;
+                            let magnitude = (value & i64::from(CHAR_MASK)) as i8;
+                            parsed_atoms[atom_index].charge =
+                                (charge_sign * i32::from(magnitude)) as i8;
                             atom_cursor = end;
                         }
                     }
-                }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(working_atom)?[atom_index] = parsed_atoms[atom_index].clone();
-            }
-            if atom_cursor != atom_section.len() {
-                panic!("INCHI-AUDIT-0403: suspected source divergence; see dev/audits/inchi/findings.md");
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of atoms"
-                );
-            }
-
-            if input_type == tagInputType_INPUT_INCHI_PLAIN {
-                let Some(remaining) = plain_after_atom_section.take() else {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        "Missing bonds data"
-                    );
-                };
-                if let Some(coordinate_marker) = source_find_bytes(&remaining, b"/rC:") {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    bond_section.extend_from_slice(&remaining[..coordinate_marker]);
-                    let coordinates = &remaining[coordinate_marker + 4..];
-                    let coordinate_end = coordinates.iter().position(|byte| *byte == b'/' as i8);
-                    plain_coordinate_section_ended = coordinate_end.is_some();
-                    coordinate_requires_exact_end =
-                        coordinate_end.is_some() || plain_spanned_buffers;
-                    let coordinate_end = coordinate_end.unwrap_or(coordinates.len());
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    coordinate_section.extend_from_slice(&coordinates[..coordinate_end]);
-                } else {
-                    let bond_end = remaining
-                        .iter()
-                        .position(|byte| *byte == b'/' as i8)
-                        .unwrap_or(remaining.len());
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    bond_section.extend_from_slice(&remaining[..bond_end]);
-                    plain_coordinates_missing = true;
-                }
-            }
-
-            if xml_sections_pending {
-                let result =
-                    inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
-                if result <= 0 {
-                    return Ok(0);
-                }
-                if !source_starts_with(source_c_string(heap.slice(line.as_const())?)?, b"<bonds>") {
-                    continue 'structure_attempt;
-                }
-                let mut read_bond_data = false;
-                loop {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
-                    if result <= 0 {
-                        if !read_bond_data {
-                            fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "");
+                    if atom_section.get(atom_cursor) == Some(&(b'.' as i8)) {
+                        atom_cursor += 1;
+                        if atom_section
+                            .get(atom_cursor)
+                            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
+                        {
+                            let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
+                            parsed_atoms[atom_index].radical = value as i8;
+                            atom_cursor = end;
                         }
-                        break;
                     }
-                    read_bond_data = true;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let content = source_c_string(heap.slice(line.as_const())?)?;
-                    if source_starts_with(content, b"</bonds>") {
-                        break;
+                    if atom_section.get(atom_cursor) == Some(&(b'i' as i8)) {
+                        atom_cursor += 1;
+                        if atom_section
+                            .get(atom_cursor)
+                            .is_some_and(|byte| (*byte as u8).is_ascii_digit())
+                        {
+                            let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
+                            parsed_atoms[atom_index].isotopic_mass = value as i16;
+                            atom_cursor = end;
+                        }
                     }
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    bond_section.extend_from_slice(content);
+                    let parity = match atom_section.get(atom_cursor).map(|byte| *byte as u8) {
+                        Some(b'o') => tagINCHIStereoParity0D_INCHI_PARITY_ODD as i8,
+                        Some(b'e') => tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i8,
+                        Some(b'u') => tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i8,
+                        Some(b'?') => tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED as i8,
+                        _ => 0,
+                    };
+                    if parity != 0 {
+                        atom_cursor += 1;
+                        let stereo = parsed_stereo.get_mut(stereo_length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        stereo.central_atom = atom_index as i16;
+                        stereo.parity = parity;
+                        stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8;
+                        stereo_length += 1;
+                    }
+                    for (isotope, marker) in b"hdt".iter().enumerate() {
+                        if atom_section.get(atom_cursor).map(|byte| *byte as u8) == Some(*marker) {
+                            parsed_atoms[atom_index].num_iso_H[isotope + 1] = 1;
+                            atom_cursor += 1;
+                            if atom_section
+                                .get(atom_cursor)
+                                .is_some_and(|byte| (*byte as u8).is_ascii_digit())
+                            {
+                                let (value, end) = source_strtol_decimal(&atom_section, atom_cursor);
+                                parsed_atoms[atom_index].num_iso_H[isotope + 1] = value as i8;
+                                atom_cursor = end;
+                            }
+                        }
+                    }
+                    Ok(())
+                })?;
+                atom_index += 1;
+            }
+            section_cursor = atom_cursor;
+            if section_over == 0 || atom_index != atom_count
+                || (input_type == tagInputType_INPUT_INCHI_PLAIN && section_end.is_some()
+                    && section_cursor as i64 != section_end.ok_or(SourceHeapError::NullPointer)?)
+                || (input_type == tagInputType_INPUT_INCHI_XML && section_cursor as i64 != i64::from(section_result))
+            {
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong number of atoms", true);
+            }
+            if input_type == tagInputType_INPUT_INCHI_PLAIN {
+                if !plain_section!(&[b'/' as i8,b'r' as i8,b'B' as i8,b':' as i8,0]) {
+                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Missing bonds data");
                 }
-                xml_coordinates_pending = true;
+                if atom_count == 1 { load_item!(section_cursor); }
+            } else {
+                let result = aux_read_line(heap, line, INCHI_LINE_LEN as i32 - 1,input,&mut too_long, false, true,)?;
+                if result <= 0 { drain_xml_structure!(); return Ok(0); }
+                if !source_starts_with(&line[..], b"<bonds>") { continue 'structure_attempt; }
+                section_result = aux_read_line(heap,line,INCHI_LINE_LEN as i32 - 1,input,&mut too_long, false, true,)?;
+                if section_result <= 0 { fail_input!(INCHI_INP_ERROR_RET,INCHI_INP_ERROR_ERR, ""); }
+                section_cursor=0; section_over=0; section_tag=b"</bonds>";
+                if source_starts_with(&line[..],section_tag) { section_result=0;section_over=1; }
             }
 
             let mut current_atom = 1_usize;
-            let mut cursor = 0_usize;
+            let mut cursor = section_cursor;
             while current_atom < atom_count {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                if cursor >= bond_section.len() {
-                    if input_type == tagInputType_INPUT_INCHI_XML {
-                        fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong bonds data");
-                    }
-                    break;
-                }
+                load_item!(cursor);
+                if input_type == tagInputType_INPUT_INCHI_PLAIN && section_end.is_some()
+                    && cursor as i64 >= section_end.ok_or(SourceHeapError::NullPointer)? { break; }
+                let bond_section = &line[..];
                 if bond_section.get(cursor) == Some(&(b';' as i8)) {
                     cursor += 1;
                     current_atom += 1;
@@ -4300,7 +6893,6 @@ pub(crate) fn InchiToInchiAtom(
                 let (neighbor_number, end) = source_strtol_decimal(&bond_section, cursor);
                 cursor = end;
                 let neighbor = (neighbor_number as i32).wrapping_sub(1);
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if neighbor < 0 || neighbor as usize >= atom_count {
                     fail_input!(
                         INCHI_INP_ERROR_RET,
@@ -4351,34 +6943,31 @@ pub(crate) fn InchiToInchiAtom(
                     ),
                     _ => fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong bond type"),
                 };
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let current_order = usize::try_from(parsed_atoms[current_atom].num_bonds)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                if current_order >= parsed_atoms[current_atom].neighbor.len() {
-                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong bonds data");
-                }
-                parsed_atoms[current_atom].neighbor[current_order] = neighbor as i16;
-                parsed_atoms[current_atom].bond_type[current_order] = bond_type;
-                parsed_atoms[current_atom].bond_stereo[current_order] = stereo1;
-                parsed_atoms[current_atom].num_bonds += 1;
-                let neighbor_order = usize::try_from(parsed_atoms[neighbor].num_bonds)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                if neighbor_order >= parsed_atoms[neighbor].neighbor.len() {
-                    fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR, "Wrong bonds data");
-                }
-                parsed_atoms[neighbor].neighbor[neighbor_order] = current_atom as i16;
-                parsed_atoms[neighbor].bond_type[neighbor_order] = bond_type;
-                parsed_atoms[neighbor].bond_stereo[neighbor_order] = stereo2;
-                parsed_atoms[neighbor].num_bonds += 1;
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(working_atom)?[current_atom] = parsed_atoms[current_atom].clone();
-                if neighbor != current_atom {
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(working_atom)?[neighbor] = parsed_atoms[neighbor].clone();
-                }
+                let valid_degree = heap.with_slice_mut_and_heap_mut(working_atom, |parsed_atoms, _heap| {
+                    let current_order = usize::try_from(parsed_atoms[current_atom].num_bonds)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    if current_order >= parsed_atoms[current_atom].neighbor.len() {
+                        return Ok(false);
+                    }
+                    parsed_atoms[current_atom].neighbor[current_order] = neighbor as i16;
+                    parsed_atoms[current_atom].bond_type[current_order] = bond_type;
+                    parsed_atoms[current_atom].bond_stereo[current_order] = stereo1;
+                    parsed_atoms[current_atom].num_bonds += 1;
+                    let neighbor_order = usize::try_from(parsed_atoms[neighbor].num_bonds)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    if neighbor_order >= parsed_atoms[neighbor].neighbor.len() {
+                        return Ok(false);
+                    }
+                    parsed_atoms[neighbor].neighbor[neighbor_order] = current_atom as i16;
+                    parsed_atoms[neighbor].bond_type[neighbor_order] = bond_type;
+                    parsed_atoms[neighbor].bond_stereo[neighbor_order] = stereo2;
+                    parsed_atoms[neighbor].num_bonds += 1;
+                    Ok(true)
+                })?;
+                if !valid_degree { fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR,"Wrong bonds data"); }
                 let combined_parity = bond_parity | (bond_parity_nonmetal << SB_PARITY_SHFT);
                 if combined_parity != 0 {
-                    if working_stereo_capacity <= parsed_stereo.len() as i32 {
+                    if working_stereo_capacity <= stereo_length as i32 {
                         let new_capacity = working_stereo_capacity
                             .checked_add(atom_count_i32)
                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -4392,150 +6981,142 @@ pub(crate) fn InchiToInchiAtom(
                             }
                             Err(error) => return Err(error),
                         };
-                        let existing = parsed_stereo.len();
+                        let existing = stereo_length;
                         if existing != 0 {
-                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            let prior = heap.slice(working_stereo.as_const())?[..existing].to_vec();
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            heap.slice_mut(replacement)?[..existing].clone_from_slice(&prior);
+                            {
+                                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                                // reached bounds/errors and modeled overlap without a payload Vec.
+                                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                                let copy_source = working_stereo.as_const();
+                                let copy_count = (heap.slice(copy_source)?[..existing]).len();
+                                let copy_destination = replacement;
+                                {
+                                    let copy_target = &mut (heap.slice_mut(copy_destination)?[..existing]);
+                                    assert_eq!(copy_target.len(), copy_count);
+                                }
+                                if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                                    // These closed callers copy fixed records/scalars with fieldwise Clone.
+                                    // Direction preserves the previous snapshot values on modeled overlap.
+                                    let difference = copy_destination.difference(copy_source.as_mut())?;
+                                    let separation = usize::try_from(difference.unsigned_abs())
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    if difference >= 0 {
+                                        let values = heap.slice_mut(copy_source.as_mut())?;
+                                        for index in (0..copy_count).rev() {
+                                            values[separation + index] = values[index].clone();
+                                        }
+                                    } else {
+                                        let values = heap.slice_mut(copy_destination)?;
+                                        for index in 0..copy_count {
+                                            values[index] = values[separation + index].clone();
+                                        }
+                                    }
+                                } else {
+                                    heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                                }
+                            }
                         }
                         FreeInchi_Stereo0D(heap, Some(&mut working_stereo))?;
                         working_stereo = replacement;
                         working_stereo_capacity = new_capacity;
                     }
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-                    parsed_stereo.push(inchi_Stereo0D {
-                        neighbor: [0, neighbor as i16, current_atom as i16, 0],
-                        parity: combined_parity as i8,
-                        type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
-                        ..inchi_Stereo0D::default()
-                    });
-                    let stereo_index = parsed_stereo.len() - 1;
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    heap.slice_mut(working_stereo)?[stereo_index] =
-                        parsed_stereo[stereo_index].clone();
+                    let stereo = heap.slice_mut(working_stereo)?.get_mut(stereo_length)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    stereo.neighbor[1] = neighbor as i16;
+                    stereo.neighbor[2] = current_atom as i16;
+                    stereo.parity = combined_parity as i8;
+                    stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8;
+                    stereo_length += 1;
                 }
             }
-            if current_atom != atom_count || cursor != bond_section.len() {
-                panic!("INCHI-AUDIT-0404: suspected source divergence; see dev/audits/inchi/findings.md");
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of bonds"
-                );
+            section_cursor=cursor;
+            if section_over == 0 || current_atom != atom_count
+                || (input_type == tagInputType_INPUT_INCHI_PLAIN && section_end.is_some()
+                    && cursor as i64 != section_end.ok_or(SourceHeapError::NullPointer)?)
+                || (input_type == tagInputType_INPUT_INCHI_XML && cursor as i64 != i64::from(section_result)) {
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR,"Wrong number of bonds");
             }
-
-            if plain_coordinates_missing {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Missing atom coordinates data"
-                );
+            if input_type == tagInputType_INPUT_INCHI_PLAIN
+                && !plain_section!(&[b'/' as i8,b'r' as i8,b'C' as i8,b':' as i8,0]) {
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR,"Missing atom coordinates data");
             }
-
-            if xml_coordinates_pending {
-                panic!("INCHI-AUDIT-0407: suspected source divergence; see dev/audits/inchi/findings.md");
-                let result =
-                    inchi_ios_gets(heap, line, INCHI_LINE_LEN as i32 - 1, input, &mut too_long)?;
-                if result <= 0
-                    || !source_starts_with(source_c_string(heap.slice(line.as_const())?)?, b"<xyz>")
-                {
-                    fail_input!(
-                        INCHI_INP_ERROR_RET,
-                        INCHI_INP_ERROR_ERR,
-                        "Missing atom coordinates data"
-                    );
-                }
-                let mut read_coordinate_data = false;
-                loop {
-                    let result = inchi_ios_gets(
-                        heap,
-                        line,
-                        INCHI_LINE_LEN as i32 - 1,
-                        input,
-                        &mut too_long,
-                    )?;
-                    if result <= 0 {
-                        if !read_coordinate_data {
-                            fail_input!(
-                                INCHI_INP_ERROR_RET,
-                                INCHI_INP_ERROR_ERR,
-                                "Missing atom coordinates data"
-                            );
-                        }
-                        break;
-                    }
-                    read_coordinate_data = true;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let content = source_c_string(heap.slice(line.as_const())?)?;
-                    if source_starts_with(content, b"</xyz>") {
-                        break;
-                    }
-                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                    coordinate_section.extend_from_slice(content);
-                }
-                coordinate_requires_exact_end = true;
-            }
-
-            working_coordinates = match heap.allocate(vec![[b' ' as i8; 32]; atom_count.max(1)]) {
-                Ok(pointer) => pointer,
-                Err(SourceHeapError::AllocationFailed) => {
-                    fail_input!(INCHI_INP_FATAL_RET, INCHI_INP_FATAL_ERR, "Out of RAM")
-                }
-                Err(error) => return Err(error),
+            working_coordinates=match heap.allocate(vec![[b' ' as i8;32];atom_count.max(1)]) {
+                Ok(p)=>p,
+                Err(SourceHeapError::AllocationFailed)=>fail_input!(INCHI_INP_FATAL_RET,INCHI_INP_FATAL_ERR,"Out of RAM"),
+                Err(e)=>return Err(e),
             };
+            if input_type == tagInputType_INPUT_INCHI_XML {
+                let result=aux_read_line(heap,line,INCHI_LINE_LEN as i32-1,input,&mut too_long, false, true,)?;
+                if result<=0 || !source_starts_with(&line[..],b"<xyz>") {
+                    fail_input!(INCHI_INP_ERROR_RET,INCHI_INP_ERROR_ERR,"Missing atom coordinates data");
+                }
+                section_result=aux_read_line(heap,line,INCHI_LINE_LEN as i32-1,input,&mut too_long, false, true,)?;
+                if section_result<=0 { fail_input!(INCHI_INP_ERROR_RET,INCHI_INP_ERROR_ERR,"Missing atom coordinates data"); }
+                section_cursor=0;section_over=0;section_tag=b"</xyz>";
+                if source_starts_with(&line[..],section_tag) {section_result=0;section_over=1;}
+            }
 
             let mut has_xy = false;
             let mut has_z = false;
-            cursor = 0;
+            cursor = section_cursor;
             let mut parsed_coordinate_count = 0_usize;
-            for (atom_index, atom) in parsed_atoms.iter_mut().take(atom_count).enumerate() {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                if plain_coordinate_section_ended && cursor >= coordinate_section.len() {
-                    break;
+            for atom_index in 0..atom_count {
+                load_item!(cursor);
+                if input_type == tagInputType_INPUT_INCHI_PLAIN && section_end.is_some()
+                    && cursor as i64 >= section_end.ok_or(SourceHeapError::NullPointer)? {break;}
+                if line.get(cursor)==Some(&(b';' as i8)) {
+                    cursor+=1;parsed_coordinate_count+=1;continue;
                 }
-                if coordinate_section.get(cursor) == Some(&(b';' as i8)) {
-                    cursor += 1;
-                    parsed_coordinate_count += 1;
-                    continue;
-                }
-                for coordinate in 0..3 {
-                    let (value, end) = if coordinate_section.get(cursor) == Some(&(b';' as i8)) {
-                        (0.0, cursor)
-                    } else if coordinate_section.get(cursor) == Some(&(b',' as i8)) {
-                        panic!("INCHI-AUDIT-0405: suspected source divergence; see dev/audits/inchi/findings.md");
-                        (0.0, cursor + 1)
-                    } else {
-                        source_strtod_decimal(&coordinate_section, cursor)
-                    };
-                    cursor = end;
-                    let nonzero = value.abs() > 1.0e-6;
-                    match coordinate {
-                        0 => {
-                            atom.x = value;
-                            has_xy |= nonzero;
+                let mut coordinate_errno = heap.source_errno();
+                let coordinate_result = heap.with_slice_mut_and_heap_mut(working_atom,
+                    |atoms,_heap| {
+                    let coordinate_section = &line[..];
+                    let atom=atoms.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    for coordinate in 0..3 {
+                        // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c1340..1345
+                        //                                 if (*p == ',')
+                        //                                 {
+                        //                                     /* empty */
+                        //                                     pszCoord[i][LEN_COORD*k + 4] = '0';
+                        //                                     xyz = 0.0;
+                        //                                     p++;
+                        // INCHI✔️❗: C466 empty comma advances once; numeric branch
+                        // alone may skip a following comma. O(1) scalar/no buffer;
+                        // numeric/backend/whole-parser costs remain OPEN.
+                        let current = coordinate_section.get(cursor).copied();
+                        let empty_comma = current == Some(b',' as i8);
+                        let (value, end) = if current == Some(b';' as i8) {
+                            (0.0, cursor)
+                        } else if empty_comma {
+                            (0.0, cursor + 1)
+                        } else {
+                            source_strtod_coordinate(&coordinate_section, cursor, &mut coordinate_errno)?
+                        };
+                        cursor = end;
+                        let nonzero = value.abs() > 1.0e-6;
+                        match coordinate {
+                            0 => {
+                                atom.x = value;
+                                has_xy |= nonzero;
+                            }
+                            1 => {
+                                atom.y = value;
+                                has_xy |= nonzero;
+                            }
+                            _ => {
+                                atom.z = value;
+                                has_z |= nonzero;
+                            }
                         }
-                        1 => {
-                            atom.y = value;
-                            has_xy |= nonzero;
-                        }
-                        _ => {
-                            atom.z = value;
-                            has_z |= nonzero;
+                        if !empty_comma && coordinate_section.get(cursor) == Some(&(b',' as i8)) {
+                            cursor += 1;
                         }
                     }
-                    if coordinate_section.get(cursor) == Some(&(b',' as i8)) {
-                        cursor += 1;
-                    }
-                }
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                heap.slice_mut(working_atom)?[atom_index] = atom.clone();
-                if coordinate_section.get(cursor) != Some(&(b';' as i8)) {
+                    Ok(())
+                });
+                heap.set_source_errno(coordinate_errno);
+                coordinate_result?;
+                if line.get(cursor) != Some(&(b';' as i8)) {
                     fail_input!(
                         INCHI_INP_ERROR_RET,
                         INCHI_INP_ERROR_ERR,
@@ -4545,396 +7126,372 @@ pub(crate) fn InchiToInchiAtom(
                 cursor += 1;
                 parsed_coordinate_count += 1;
             }
-            if (plain_coordinate_section_ended && parsed_coordinate_count != atom_count)
-                || (coordinate_requires_exact_end && cursor != coordinate_section.len())
-            {
-                fail_input!(
-                    INCHI_INP_ERROR_RET,
-                    INCHI_INP_ERROR_ERR,
-                    "Wrong number of coordinates"
-                );
+            if section_over == 0 || parsed_coordinate_count != atom_count
+                || (input_type == tagInputType_INPUT_INCHI_PLAIN && section_end.is_some()
+                    && cursor as i64 != section_end.ok_or(SourceHeapError::NullPointer)?)
+                || (input_type == tagInputType_INPUT_INCHI_XML && cursor as i64 != i64::from(section_result)) {
+                fail_input!(INCHI_INP_ERROR_RET, INCHI_INP_ERROR_ERR,"Wrong number of coordinates");
             }
 
-            panic!("INCHI-AUDIT-0410: suspected source divergence; see dev/audits/inchi/findings.md");
             if !reuse_caller_atoms && !find_next_only {
-                let coordinates_present = has_xy || has_z;
-                let mut counted_bonds = 0_i32;
-                let mut last_x = 0_i32;
-                let mut last_y = 0_i32;
-                let mut last_z = 0_i32;
-                for atom_index in 0..atom_count {
-                    let mut bond_type_counts = [0_i32; 4];
-                    let valence = i32::from(parsed_atoms[atom_index].num_iso_H[0]);
-                    parsed_atoms[atom_index].num_iso_H[0] = 0;
-                    last_x = 0;
-                    last_y = 0;
-                    last_z = 0;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let local_bond_count = usize::try_from(parsed_atoms[atom_index].num_bonds)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    for order in 0..local_bond_count {
-                        let mut index = i32::from(parsed_atoms[atom_index].bond_type[order])
-                            - MIN_INPUT_BOND_TYPE as i32;
-                        if index < 0
-                            || index > MAX_INPUT_BOND_TYPE as i32 - MIN_INPUT_BOND_TYPE as i32
-                        {
-                            index = 0;
-                            add_source_error(
-                                heap,
-                                error_text,
-                                "Unknown bond type in InChI aux assigned as a single bond",
-                            )?;
-                        }
-                        bond_type_counts[index as usize] += 1;
-                        counted_bonds += 1;
-                        if coordinates_present {
-                            let neighbor =
-                                usize::try_from(parsed_atoms[atom_index].neighbor[order])
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            last_x |= i32::from(
-                                (parsed_atoms[atom_index].x - parsed_atoms[neighbor].x).abs()
-                                    > 1.0e-6,
-                            );
-                            last_y |= i32::from(
-                                (parsed_atoms[atom_index].y - parsed_atoms[neighbor].y).abs()
-                                    > 1.0e-6,
-                            );
-                            last_z |= i32::from(
-                                (parsed_atoms[atom_index].z - parsed_atoms[neighbor].z).abs()
-                                    > 1.0e-6,
-                            );
-                        }
-                    }
-                    let mut chemical_valence = 0_i32;
-                    for bond_type in MIN_INPUT_BOND_TYPE..=3.min(MAX_INPUT_BOND_TYPE) {
-                        chemical_valence += bond_type as i32
-                            * bond_type_counts[(bond_type - MIN_INPUT_BOND_TYPE) as usize];
-                    }
-                    let aromatic_index =
-                        tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i32 - MIN_INPUT_BOND_TYPE as i32;
-                    if aromatic_index >= 0 && aromatic_index < bond_type_counts.len() as i32 {
-                        let aromatic_count = bond_type_counts[aromatic_index as usize];
-                        match aromatic_count {
-                            0 => {}
-                            2 => chemical_valence += 3,
-                            3 => chemical_valence += 4,
-                            count => {
-                                for order in 0..local_bond_count {
-                                    if parsed_atoms[atom_index].bond_type[order]
-                                        == tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i8
-                                    {
-                                        let neighbor = usize::try_from(
-                                            parsed_atoms[atom_index].neighbor[order],
-                                        )
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                        let neighbor_count =
-                                            parsed_atoms[neighbor].num_bonds as i32;
-                                        let reciprocal = is_in_the_slist(
-                                            Some(&parsed_atoms[neighbor].neighbor),
-                                            atom_index as i16,
-                                            neighbor_count,
-                                        )?;
-                                        let Some(reciprocal) = reciprocal else {
-                                            *error = -2;
-                                            add_source_error(
-                                                heap,
-                                                error_text,
-                                                "Program error interpreting InChI aux",
-                                            )?;
-                                            return Ok(INCHI_INP_FATAL_RET as i32);
-                                        };
-                                        parsed_atoms[atom_index].bond_type[order] =
-                                            tagINCHIBondType_INCHI_BOND_TYPE_SINGLE as i8;
-                                        parsed_atoms[neighbor].bond_type[reciprocal] =
-                                            tagINCHIBondType_INCHI_BOND_TYPE_SINGLE as i8;
-                                    }
-                                }
-                                chemical_valence += count;
-                                *error |= 32;
-                                add_source_error(
-                                    heap,
-                                    error_text,
-                                    "Atom has 1 or more than 3 aromatic bonds",
-                                )?;
-                            }
-                        }
-                    }
-                    parsed_atoms[atom_index].num_iso_H[0] = if valence == -15 {
-                        0
-                    } else if valence != 0 && valence >= chemical_valence {
-                        (valence - chemical_valence) as i8
-                    } else if valence != 0 || do_not_add_h != 0 {
-                        0
-                    } else {
-                        -1
-                    };
-                }
-                counted_bonds /= 2;
-                if coordinates_present && counted_bonds != 0 {
-                    let coordinate_axes = last_x + last_y + last_z;
-                    *dimensions = if coordinate_axes == 3 {
-                        3
-                    } else if coordinate_axes > 0 {
-                        2
-                    } else {
-                        0
-                    };
-                    *bond_count = counted_bonds;
-                }
+                *atom_slot.as_deref_mut().ok_or(SourceHeapError::NullPointer)?=working_atom;
+                let post_status=heap.with_slice_mut_and_heap_mut(working_atom, |parsed_atoms, heap| {
 
-                panic!("INCHI-AUDIT-0408: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-                for stereo in &mut parsed_stereo {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    match u32::try_from(stereo.type_).unwrap_or(0) {
-                        tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral => {
-                            let center = usize::try_from(stereo.central_atom)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let neighbors = parsed_atoms[center].num_bonds as usize;
-                            if stereo.parity != 0 && matches!(neighbors, 3 | 4) {
-                                let mut output = 0;
-                                if neighbors == 3 {
-                                    stereo.neighbor[output] = center as i16;
-                                    output += 1;
-                                }
-                                for neighbor in parsed_atoms[center].neighbor.iter().take(neighbors)
-                                {
-                                    stereo.neighbor[output] = *neighbor;
-                                    output += 1;
-                                }
-                            }
-                        }
-                        tagINCHIStereoType0D_INCHI_StereoType_DoubleBond => {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                            let mut first = usize::try_from(stereo.neighbor[1])
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let mut second = usize::try_from(stereo.neighbor[2])
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let first_order = is_in_the_slist(
-                                Some(&parsed_atoms[first].neighbor),
-                                second as i16,
-                                parsed_atoms[first].num_bonds as i32,
-                            )?;
-                            let second_order = is_in_the_slist(
-                                Some(&parsed_atoms[second].neighbor),
-                                first as i16,
-                                parsed_atoms[second].num_bonds as i32,
-                            )?;
-                            let (Some(mut first_order), Some(mut second_order)) =
-                                (first_order, second_order)
-                            else {
-                                stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_None as i8;
-                                stereo.central_atom = NO_ATOM as i16;
-                                stereo.neighbor[0] = -1;
-                                stereo.neighbor[3] = -1;
-                                *error |= 64;
-                                add_source_error(heap, error_text, "0D stereobond not recognized")?;
-                                continue;
-                            };
-                            let inchi_num_h2 = |atom: &inchi_Atom| {
-                                panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
-                                i32::from(atom.num_iso_H[0].max(0))
-                                    + atom.num_iso_H[1..]
-                                        .iter()
-                                        .map(|value| i32::from(*value))
-                                        .sum::<i32>()
-                            };
-                            let first_middle = parsed_atoms[first].num_bonds == 2
-                                && i32::from(parsed_atoms[first].bond_type[0])
-                                    + i32::from(parsed_atoms[first].bond_type[1])
-                                    == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
-                                && inchi_num_h2(&parsed_atoms[first]) == 0
-                                && (parsed_atoms[second].num_bonds != 2
-                                    || i32::from(parsed_atoms[second].bond_type[0])
-                                        + i32::from(parsed_atoms[second].bond_type[1])
-                                        != 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32);
-                            let second_middle = parsed_atoms[second].num_bonds == 2
-                                && i32::from(parsed_atoms[second].bond_type[0])
-                                    + i32::from(parsed_atoms[second].bond_type[1])
-                                    == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
-                                && inchi_num_h2(&parsed_atoms[second]) == 0
-                                && (parsed_atoms[first].num_bonds != 2
-                                    || i32::from(parsed_atoms[first].bond_type[0])
-                                        + i32::from(parsed_atoms[first].bond_type[1])
-                                        != 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32);
-                            if first_middle ^ second_middle {
-                                if first_middle {
-                                    std::mem::swap(&mut first, &mut second);
-                                    first_order = second_order;
-                                }
-                                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-                                let mut chain = [0_i16; 21];
-                                let mut length = 0_usize;
-                                let mut current = first;
-                                let mut next = second;
-                                chain[length] = current as i16;
-                                length += 1;
-                                chain[length] = next as i16;
-                                length += 1;
-                                let mut previous = current;
-                                while length < 20 {
-                                    previous = current;
-                                    current = next;
-                                    if parsed_atoms[current].num_bonds == 2
-                                        && i32::from(parsed_atoms[current].bond_type[0])
-                                            + i32::from(parsed_atoms[current].bond_type[1])
-                                            == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
-                                        && inchi_num_h2(&parsed_atoms[current]) == 0
-                                    {
-                                        let order = usize::from(
-                                            parsed_atoms[current].neighbor[0] == previous as i16,
-                                        );
-                                        next = parsed_atoms[current].neighbor[order] as usize;
-                                        chain[length] = next as i16;
-                                        length += 1;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                                let final_order = if length > 2 {
-                                    is_in_the_slist(
-                                        Some(&parsed_atoms[current].neighbor),
-                                        previous as i16,
-                                        parsed_atoms[current].num_bonds as i32,
-                                    )?
-                                } else {
-                                    None
-                                };
-                                if let Some(order) = final_order {
-                                    second_order = order;
-                                    second = current;
-                                    stereo.neighbor[0] =
-                                        parsed_atoms[first].neighbor[usize::from(first_order == 0)];
-                                    stereo.neighbor[1] = first as i16;
-                                    stereo.neighbor[2] = second as i16;
-                                    stereo.neighbor[3] = parsed_atoms[second].neighbor
-                                        [usize::from(second_order == 0)];
-                                    if length % 2 == 1 {
-                                        stereo.central_atom = chain[length / 2];
-                                        stereo.type_ =
-                                            tagINCHIStereoType0D_INCHI_StereoType_Allene as i8;
-                                    } else {
-                                        stereo.central_atom = NO_ATOM as i16;
-                                    }
-                                } else {
-                                    stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_None as i8;
-                                    stereo.central_atom = NO_ATOM as i16;
-                                    stereo.neighbor[0] = -1;
-                                    stereo.neighbor[3] = -1;
-                                    *error |= 64;
-                                    add_source_error(
-                                        heap,
-                                        error_text,
-                                        "Cumulene stereo not recognized (0D)",
-                                    )?;
-                                }
-                            } else {
-                                stereo.neighbor[0] =
-                                    parsed_atoms[first].neighbor[usize::from(first_order == 0)];
-                                stereo.neighbor[3] =
-                                    parsed_atoms[second].neighbor[usize::from(second_order == 0)];
-                                stereo.central_atom = NO_ATOM as i16;
-                            }
-
-                            let second_parity = (i32::from(stereo.parity) >> SB_PARITY_SHFT)
-                                & SB_PARITY_MASK as i32;
-                            if stereo.type_ != tagINCHIStereoType0D_INCHI_StereoType_None as i8
-                                && (AB_MIN_WELL_DEFINED_PARITY as i32
-                                    ..=AB_MAX_WELL_DEFINED_PARITY as i32)
-                                    .contains(&second_parity)
+                    let coordinates_present = has_xy || has_z;
+                    let mut counted_bonds = 0_i32;
+                    let mut last_x = 0_i32;
+                    let mut last_y = 0_i32;
+                    let mut last_z = 0_i32;
+                    for atom_index in 0..atom_count {
+                        let mut bond_type_counts = [0_i32; 4];
+                        let valence = i32::from(parsed_atoms[atom_index].num_iso_H[0]);
+                        parsed_atoms[atom_index].num_iso_H[0] = 0;
+                        last_x = 0;
+                        last_y = 0;
+                        last_z = 0;
+                        let local_bond_count = usize::try_from(parsed_atoms[atom_index].num_bonds)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                        for order in 0..local_bond_count {
+                            let mut index = i32::from(parsed_atoms[atom_index].bond_type[order])
+                                - MIN_INPUT_BOND_TYPE as i32;
+                            if index < 0
+                                || index > MAX_INPUT_BOND_TYPE as i32 - MIN_INPUT_BOND_TYPE as i32
                             {
-                                for endpoint in 0..2 {
-                                    let atom_index = if endpoint == 0 {
-                                        stereo.neighbor[1]
-                                    } else {
-                                        stereo.neighbor[2]
-                                    } as usize;
-                                    let stereo_order = if endpoint == 0 {
-                                        first_order
-                                    } else {
-                                        second_order
-                                    };
-                                    let mut minimum = atom_count;
-                                    for order in 0..parsed_atoms[atom_index].num_bonds as usize {
-                                        let neighbor =
-                                            parsed_atoms[atom_index].neighbor[order] as usize;
-                                        if order != stereo_order
-                                            && is_element_a_metal(&parsed_atoms[neighbor].elname)?
-                                                == 0
+                                index = 0;
+                                error_text.append_bytes(heap, ("Unknown bond type in InChI aux assigned as a single bond").as_bytes())?;
+                            }
+                            bond_type_counts[index as usize] += 1;
+                            counted_bonds += 1;
+                            if coordinates_present {
+                                let neighbor =
+                                    usize::try_from(parsed_atoms[atom_index].neighbor[order])
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                last_x |= i32::from(
+                                    (parsed_atoms[atom_index].x - parsed_atoms[neighbor].x).abs()
+                                        > 1.0e-6,
+                                );
+                                last_y |= i32::from(
+                                    (parsed_atoms[atom_index].y - parsed_atoms[neighbor].y).abs()
+                                        > 1.0e-6,
+                                );
+                                last_z |= i32::from(
+                                    (parsed_atoms[atom_index].z - parsed_atoms[neighbor].z).abs()
+                                        > 1.0e-6,
+                                );
+                            }
+                        }
+                        let mut chemical_valence = 0_i32;
+                        for bond_type in MIN_INPUT_BOND_TYPE..=3.min(MAX_INPUT_BOND_TYPE) {
+                            chemical_valence += bond_type as i32
+                                * bond_type_counts[(bond_type - MIN_INPUT_BOND_TYPE) as usize];
+                        }
+                        let aromatic_index =
+                            tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i32 - MIN_INPUT_BOND_TYPE as i32;
+                        if aromatic_index >= 0 && aromatic_index < bond_type_counts.len() as i32 {
+                            let aromatic_count = bond_type_counts[aromatic_index as usize];
+                            match aromatic_count {
+                                0 => {}
+                                2 => chemical_valence += 3,
+                                3 => chemical_valence += 4,
+                                count => {
+                                    for order in 0..local_bond_count {
+                                        if parsed_atoms[atom_index].bond_type[order]
+                                            == tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as i8
                                         {
-                                            minimum = minimum.min(neighbor);
+                                            let neighbor = usize::try_from(
+                                                parsed_atoms[atom_index].neighbor[order],
+                                            )
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                            let neighbor_count =
+                                                parsed_atoms[neighbor].num_bonds as i32;
+                                            let reciprocal = is_in_the_slist(
+                                                Some(&parsed_atoms[neighbor].neighbor),
+                                                atom_index as i16,
+                                                neighbor_count,
+                                            )?;
+                                            let Some(reciprocal) = reciprocal else {
+                                                *error = -2;
+                                                error_text.append_bytes(heap, ("Program error interpreting InChI aux").as_bytes())?;
+                                                return Ok(Some(INCHI_INP_FATAL_RET as i32));
+                                            };
+                                            parsed_atoms[atom_index].bond_type[order] =
+                                                tagINCHIBondType_INCHI_BOND_TYPE_SINGLE as i8;
+                                            parsed_atoms[neighbor].bond_type[reciprocal] =
+                                                tagINCHIBondType_INCHI_BOND_TYPE_SINGLE as i8;
                                         }
                                     }
-                                    if minimum < atom_count {
-                                        stereo.neighbor[if endpoint == 0 { 0 } else { 3 }] =
-                                            minimum as i16;
-                                    } else {
-                                        add_source_error(
-                                            heap,
-                                            error_text,
-                                            "Cannot find non-metal stereobond neighor (0D)",
-                                        )?;
-                                    }
+                                    chemical_valence += count;
+                                    *error |= 32;
+                                    error_text.append_bytes(heap, ("Atom has 1 or more than 3 aromatic bonds").as_bytes())?;
                                 }
                             }
                         }
-                        _ => {}
+                        parsed_atoms[atom_index].num_iso_H[0] = if valence == -15 {
+                            0
+                        } else if valence != 0 && valence >= chemical_valence {
+                            (valence - chemical_valence) as i8
+                        } else if valence != 0 || do_not_add_h != 0 {
+                            0
+                        } else {
+                            -1
+                        };
                     }
-                }
+                    counted_bonds /= 2;
+                    if coordinates_present && counted_bonds != 0 {
+                        let coordinate_axes = last_x + last_y + last_z;
+                        *dimensions = if coordinate_axes == 3 {
+                            3
+                        } else if coordinate_axes > 0 {
+                            2
+                        } else {
+                            0
+                        };
+                        *bond_count = counted_bonds;
+                    }
 
+                    // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c1555..1566
+                    //                         if (len_stereo0D > 0 && atom_stereo0D && stereo0D)
+                    //                         {
+                    //                             *stereo0D = atom_stereo0D;
+                    //                             *num_stereo0D = len_stereo0D;
+                    //                         }
+                    //                         else
+                    //                         {
+                    //                             FreeInchi_Stereo0D( &atom_stereo0D );
+                    //                             *num_stereo0D = len_stereo0D = 0;
+                    //                         }
+                    // 
+                    //                         for (i = 0; i < len_stereo0D; i++)
+                    // INCHI✔️❗: C466 absent output frees/discards stereo before
+                    // parity processing; fixed primitive records have no payload.
+                    // O(1) clear/free, no extra traversal; whole costs remain OPEN.
+                    if stereo0d_slot.is_none() {
+                        FreeInchi_Stereo0D(heap, Some(&mut working_stereo))?;
+                        stereo_length=0;
+                        if let Some(count) = stereo0d_count.as_deref_mut() {
+                            *count = 0;
+                        }
+                    }
+                    // INCHI✔️❗: Original0162 Step5690 is the same absent-output
+                    // extra-loop witness as0408. C466 now clears its scalar rows
+                    // above, so None skips; Some must run the original loop below.
+                    // Retire only that residual gate, not parity/staging guards.
+                    // No added work/buffer; C516 whole-parser costs remain OPEN.
+                    if stereo_length>0 {
+                        if let Some(slot)=stereo0d_slot.as_deref_mut() {*slot=working_stereo;}
+                        if let Some(count)=stereo0d_count.as_deref_mut() {*count=stereo_length as i32;}
+                    } else {
+                        if !working_stereo.is_null() {FreeInchi_Stereo0D(heap,Some(&mut working_stereo))?;}
+                        if let Some(count)=stereo0d_count.as_deref_mut() {*count=0;}
+                    }
+                    if stereo_length>0 {
+                        heap.with_slice_mut_and_heap_mut(working_stereo, |records,heap| {
+                            let records=records.get_mut(..stereo_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            for stereo in records {
+                                match u32::try_from(stereo.type_).unwrap_or(0) {
+                                    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral => {
+                                        let center = usize::try_from(stereo.central_atom)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        let neighbors = parsed_atoms[center].num_bonds as usize;
+                                        if stereo.parity != 0 && matches!(neighbors, 3 | 4) {
+                                            let mut output = 0;
+                                            if neighbors == 3 {
+                                                stereo.neighbor[output] = center as i16;
+                                                output += 1;
+                                            }
+                                            for neighbor in parsed_atoms[center].neighbor.iter().take(neighbors)
+                                            {
+                                                stereo.neighbor[output] = *neighbor;
+                                                output += 1;
+                                            }
+                                        }
+                                    }
+                                    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond => {
+                                        let mut first = usize::try_from(stereo.neighbor[1])
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        let mut second = usize::try_from(stereo.neighbor[2])
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        let first_order = is_in_the_slist(
+                                            Some(&parsed_atoms[first].neighbor),
+                                            second as i16,
+                                            parsed_atoms[first].num_bonds as i32,
+                                        )?;
+                                        let second_order = is_in_the_slist(
+                                            Some(&parsed_atoms[second].neighbor),
+                                            first as i16,
+                                            parsed_atoms[second].num_bonds as i32,
+                                        )?;
+                                        let (Some(mut first_order), Some(mut second_order)) =
+                                            (first_order, second_order)
+                                        else {
+                                            stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_None as i8;
+                                            stereo.central_atom = NO_ATOM as i16;
+                                            stereo.neighbor[0] = -1;
+                                            stereo.neighbor[3] = -1;
+                                            *error |= 64;
+                                            error_text.append_bytes(heap, ("0D stereobond not recognized").as_bytes())?;
+                                            continue;
+                                        };
+                                        let inchi_num_h2 = |atom: &inchi_Atom| {
+                                            i32::from(atom.num_iso_H[0].max(0))
+                                                + atom.num_iso_H[1..]
+                                                    .iter()
+                                                    .map(|value| i32::from(*value))
+                                                    .sum::<i32>()
+                                        };
+                                        let first_middle = parsed_atoms[first].num_bonds == 2
+                                            && i32::from(parsed_atoms[first].bond_type[0])
+                                                + i32::from(parsed_atoms[first].bond_type[1])
+                                                == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
+                                            && inchi_num_h2(&parsed_atoms[first]) == 0
+                                            && (parsed_atoms[second].num_bonds != 2
+                                                || i32::from(parsed_atoms[second].bond_type[0])
+                                                    + i32::from(parsed_atoms[second].bond_type[1])
+                                                    != 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32);
+                                        let second_middle = parsed_atoms[second].num_bonds == 2
+                                            && i32::from(parsed_atoms[second].bond_type[0])
+                                                + i32::from(parsed_atoms[second].bond_type[1])
+                                                == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
+                                            && inchi_num_h2(&parsed_atoms[second]) == 0
+                                            && (parsed_atoms[first].num_bonds != 2
+                                                || i32::from(parsed_atoms[first].bond_type[0])
+                                                    + i32::from(parsed_atoms[first].bond_type[1])
+                                                    != 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32);
+                                        if first_middle ^ second_middle {
+                                            if first_middle {
+                                                std::mem::swap(&mut first, &mut second);
+                                                first_order = second_order;
+                                            }
+                                            let mut chain = [0_i16; 21];
+                                            let mut length = 0_usize;
+                                            let mut current = first;
+                                            let mut next = second;
+                                            chain[length] = current as i16;
+                                            length += 1;
+                                            chain[length] = next as i16;
+                                            length += 1;
+                                            let mut previous = current;
+                                            while length < 20 {
+                                                previous = current;
+                                                current = next;
+                                                if parsed_atoms[current].num_bonds == 2
+                                                    && i32::from(parsed_atoms[current].bond_type[0])
+                                                        + i32::from(parsed_atoms[current].bond_type[1])
+                                                        == 2 * tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
+                                                    && inchi_num_h2(&parsed_atoms[current]) == 0
+                                                {
+                                                    let order = usize::from(
+                                                        parsed_atoms[current].neighbor[0] == previous as i16,
+                                                    );
+                                                    next = parsed_atoms[current].neighbor[order] as usize;
+                                                    chain[length] = next as i16;
+                                                    length += 1;
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                            let final_order = if length > 2 {
+                                                is_in_the_slist(
+                                                    Some(&parsed_atoms[current].neighbor),
+                                                    previous as i16,
+                                                    parsed_atoms[current].num_bonds as i32,
+                                                )?
+                                            } else {
+                                                None
+                                            };
+                                            if let Some(order) = final_order {
+                                                second_order = order;
+                                                second = current;
+                                                stereo.neighbor[0] =
+                                                    parsed_atoms[first].neighbor[usize::from(first_order == 0)];
+                                                stereo.neighbor[1] = first as i16;
+                                                stereo.neighbor[2] = second as i16;
+                                                stereo.neighbor[3] = parsed_atoms[second].neighbor
+                                                    [usize::from(second_order == 0)];
+                                                if length % 2 == 1 {
+                                                    stereo.central_atom = chain[length / 2];
+                                                    stereo.type_ =
+                                                        tagINCHIStereoType0D_INCHI_StereoType_Allene as i8;
+                                                } else {
+                                                    stereo.central_atom = NO_ATOM as i16;
+                                                }
+                                            } else {
+                                                stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_None as i8;
+                                                stereo.central_atom = NO_ATOM as i16;
+                                                stereo.neighbor[0] = -1;
+                                                stereo.neighbor[3] = -1;
+                                                *error |= 64;
+                                                error_text.append_bytes(heap, ("Cumulene stereo not recognized (0D)").as_bytes())?;
+                                            }
+                                        } else {
+                                            stereo.neighbor[0] =
+                                                parsed_atoms[first].neighbor[usize::from(first_order == 0)];
+                                            stereo.neighbor[3] =
+                                                parsed_atoms[second].neighbor[usize::from(second_order == 0)];
+                                            stereo.central_atom = NO_ATOM as i16;
+                                        }
+
+                                        let second_parity = (i32::from(stereo.parity) >> SB_PARITY_SHFT)
+                                            & SB_PARITY_MASK as i32;
+                                        if stereo.type_ != tagINCHIStereoType0D_INCHI_StereoType_None as i8
+                                            && (AB_MIN_WELL_DEFINED_PARITY as i32
+                                                ..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                                                .contains(&second_parity)
+                                        {
+                                            for endpoint in 0..2 {
+                                                let atom_index = if endpoint == 0 {
+                                                    stereo.neighbor[1]
+                                                } else {
+                                                    stereo.neighbor[2]
+                                                } as usize;
+                                                let stereo_order = if endpoint == 0 {
+                                                    first_order
+                                                } else {
+                                                    second_order
+                                                };
+                                                let mut minimum = atom_count;
+                                                for order in 0..parsed_atoms[atom_index].num_bonds as usize {
+                                                    let neighbor =
+                                                        parsed_atoms[atom_index].neighbor[order] as usize;
+                                                    if order != stereo_order
+                                                        && is_element_a_metal(&parsed_atoms[neighbor].elname)?
+                                                            == 0
+                                                    {
+                                                        minimum = minimum.min(neighbor);
+                                                    }
+                                                }
+                                                if minimum < atom_count {
+                                                    stereo.neighbor[if endpoint == 0 { 0 } else { 3 }] =
+                                                        minimum as i16;
+                                                } else {
+                                                    error_text.append_bytes(heap, ("Cannot find non-metal stereobond neighor (0D)").as_bytes())?;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        Ok(())
+                    })?;
+                    }
+                    Ok(None)
+                })?;
+                if let Some(status)=post_status {return Ok(status);}
+            }
+
+            // VERBATIM SOURCE FRAGMENT: inchi_dll_b.c1751..1755
+            //                     if (pInpAtomFlags)
+            //                     {
+            //                         /* save chirality flag */
+            //                         *pInpAtomFlags |= InpAtomFlags;
+            //                     }
+            // INCHI✔️❗: C466 native if(at), outside fresh-only processing.
+            // One scalar OR for fresh/reused output, no scan/allocation;
+            // whole-parser/check cost remains OPEN.
+            if !find_next_only {
                 if let Some(flags) = input_atom_flags.as_deref_mut() {
                     *flags |= parsed_flags;
-                }
-            }
-
-            if let Some(slot) = atom_slot.as_deref_mut() {
-                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let target = heap.slice_mut(working_atom)?;
-                let target = target
-                    .get_mut(..parsed_atoms.len())
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                target.clone_from_slice(&parsed_atoms);
-                if slot.is_null() {
-                    *slot = working_atom;
-                }
-            }
-
-            if !find_next_only {
-                if reuse_caller_atoms {
-                    if let Some(slot) = stereo0d_slot.as_deref_mut()
-                        && !slot.is_null()
-                        && *slot == working_stereo
-                        && !parsed_stereo.is_empty()
-                    {
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(working_stereo)?
-                            .get_mut(..parsed_stereo.len())
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone_from_slice(&parsed_stereo);
-                    }
-                } else {
-                    if let Some(count) = stereo0d_count.as_deref_mut() {
-                        *count = 0;
-                    }
-                    if !parsed_stereo.is_empty()
-                        && let Some(slot) = stereo0d_slot.as_deref_mut()
-                    {
-                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        heap.slice_mut(working_stereo)?
-                            .get_mut(..parsed_stereo.len())
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone_from_slice(&parsed_stereo);
-                        *slot = working_stereo;
-                        if let Some(count) = stereo0d_count.as_deref_mut() {
-                            *count = parsed_stereo.len() as i32;
-                        }
-                    } else if !working_stereo.is_null() {
-                        FreeInchi_Stereo0D(heap, Some(&mut working_stereo))?;
-                    }
                 }
             }
 
@@ -4946,25 +7503,34 @@ pub(crate) fn InchiToInchiAtom(
                 inchi_free(heap, working_coordinates)?;
                 working_coordinates = SourceMutPointer::null();
             }
-            if input_type == tagInputType_INPUT_INCHI_XML {
-                drain_xml_structure!();
-            }
-
+            if input_type == tagInputType_INPUT_INCHI_XML { drain_xml_structure!(); }
+            else { drain_plain_line!(); }
             return Ok(atom_count_i32);
         }
     })();
 
-    let line_cleanup = inchi_free(heap, line);
-    let next_line_cleanup = inchi_free(heap, next_line);
-    let token_cleanup = inchi_free(heap, atom_token);
-    let cleanup = line_cleanup
-        .and(next_line_cleanup)
-        .and(token_cleanup)
-        .map(|_| ());
-    match operation {
-        Ok(status) => cleanup.map(|_| status),
-        Err(error) => Err(error),
-    }
+    operation
+}
+
+// VERBATIM SOURCE: inchi_dll_b.c579..581
+// /* djb-rwth: placed as global variables to avoid function buffer issues */
+// char szLine_i2ia[INCHI_LINE_LEN], szNextLine_i2ia[INCHI_LINE_ADD];
+// INCHI✔️❗: Actual fixed static-duration buffers, zero-initialized once.
+// Serialize source-global writes safely, retaining partial/EOF/tail contents;
+// no arena ID, dynamic model/loan, heap allocation or repeated full zero fill.
+// Native concurrent writes race; no callback recursively enters this parser.
+// INCHI-PERF-AUXINFO-FIXED-LINES: lock/checked constants remain OPEN.
+static AUXINFO_LINES: std::sync::Mutex<([i8; INCHI_LINE_LEN as usize], [i8; INCHI_LINE_ADD as usize])> =
+    std::sync::Mutex::new(([0; INCHI_LINE_LEN as usize], [0; INCHI_LINE_ADD as usize]));
+
+#[allow(clippy::too_many_arguments)]
+fn aux_read_line(
+    heap: &mut SourceHeap, line: &mut [i8], len: i32,
+    input: &mut INCHI_IOSTREAM, too_long: &mut i32, tabs: bool, repeat_empty: bool,
+) -> Result<i32, SourceHeapError> {
+    let mut target = SourceLineBuffer::Borrowed(line);
+    source_read_line(heap, &mut target, SourceLineCursor::Relative(0), len, input,
+        too_long, tabs, repeat_empty)
 }
 
 #[cfg(test)]
@@ -4997,7 +7563,8 @@ mod tests {
 
         assert_eq!(
             CreateInchiAtom(&mut heap, -1),
-            Err(SourceHeapError::AllocationSizeOverflow)
+            // Native calloc(SIZE_MAX, 120) fails; retain the caller's OOM projection.
+            Err(SourceHeapError::AllocationFailed)
         );
     }
 
@@ -5045,10 +7612,11 @@ mod tests {
             let (pout, remainder) = streams.split_at_mut(1);
             let (plog, remainder) = remainder.split_at_mut(1);
             let (pprb, inp_file) = remainder.split_at_mut(1);
+            let sdf_parameter_owner_ip = heap.allocate_model_storage(vec![ip]).unwrap();
             let result = PrepareToMakeINCHI(
                 heap,
                 &mut sd,
-                &mut ip,
+                sdf_parameter_owner_ip,
                 &mut original,
                 &mut prepared,
                 &mut inchi,
@@ -5061,6 +7629,7 @@ mod tests {
                 options,
                 &mut strbuf,
             );
+            let ip = heap.slice(sdf_parameter_owner_ip.as_const()).unwrap()[0].clone();
             (
                 result, sd, ip, original, prepared, inchi, aux, streams, strbuf,
             )
@@ -6568,5 +9137,129 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
                 official_c_oracle_record(case_id, text.as_bytes(), input_type, file_mode, config);
             assert_eq!(official, &rust, "exact field mismatch for {case_id}");
         }
+    }
+}
+
+#[cfg(test)]
+mod slist_search_regressions {
+    use super::is_in_the_slist;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[test]
+    fn complete_signed_short_first_match_count_errors_and_immutable_backing() {
+        let inputs =
+            include_str!("../../../../../testdata/inchi/expected/official/slist_search/inputs.txt");
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/slist_search/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 528377);
+        assert_eq!(expected.lines().count(), 528377);
+        let (
+            mut calls,
+            mut completed,
+            mut nulls,
+            mut bounds,
+            mut overflow,
+            mut audits,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (
+            0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize,
+        );
+        for (id, (input, expected)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let parts: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(parts.len(), 9);
+            assert_eq!(parts[0].parse::<usize>().unwrap(), id);
+            let present: u32 = parts[1].parse().unwrap();
+            let length: usize = parts[2].parse().unwrap();
+            let count: i32 = parts[3].parse().unwrap();
+            let needle: i16 = parts[4].parse().unwrap();
+            let word: u32 = parts[5].parse().unwrap();
+            let mask: u32 = parts[6].parse().unwrap();
+            let seed: u32 = parts[7].parse().unwrap();
+            assert!(present <= 1 && length <= 8);
+            let words: [i16; 10] = std::array::from_fn(|i| {
+                if mask & (1 << i) != 0 {
+                    needle
+                } else {
+                    (word + i as u32 * 4099 + seed * 257) as i16
+                }
+            });
+            let before = words;
+            for _repeat in 0..2 {
+                calls += 1;
+                let actual = match catch_unwind(AssertUnwindSafe(|| {
+                    is_in_the_slist(
+                        if present == 1 {
+                            Some(&words[..length])
+                        } else {
+                            None
+                        },
+                        needle,
+                        count,
+                    )
+                })) {
+                    Ok(Ok(Some(i))) => {
+                        completed += 1;
+                        Some(("OK", i as i64))
+                    }
+                    Ok(Ok(None)) => {
+                        completed += 1;
+                        Some(("OK", -1))
+                    }
+                    Ok(Err(SourceHeapError::NullPointer)) => {
+                        nulls += 1;
+                        Some(("NULL", -1))
+                    }
+                    Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                        bounds += 1;
+                        Some(("BOUNDS", -1))
+                    }
+                    Ok(Err(SourceHeapError::SourceIntegerOverflow)) => {
+                        overflow += 1;
+                        Some(("OVERFLOW", -1))
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                        None
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audits += 1
+                        } else {
+                            unexpected += 1
+                        }
+                        None
+                    }
+                };
+                changes += usize::from(words != before);
+                if let Some((tag, index)) = actual {
+                    use std::fmt::Write;
+                    let mut output = format!("{tag} {index} ");
+                    for word in words {
+                        write!(output, "{:04x}", word as u16).unwrap()
+                    }
+                    differences += usize::from(output != expected);
+                }
+            }
+        }
+        eprintln!(
+            "SLIST_SEARCH COUNTS calls={calls} completed={completed} nulls={nulls} bounds={bounds} overflow={overflow} audits={audits} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 1056754);
+        assert_eq!((audits, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(
+            (completed, nulls, bounds, overflow),
+            (988742, 57248, 7754, 3010)
+        );
     }
 }

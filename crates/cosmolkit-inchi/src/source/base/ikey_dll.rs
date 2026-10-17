@@ -4,7 +4,9 @@ use crate::source::base::ikey_base26::{
     get_xtra_hash_minor_hex,
 };
 use crate::source::base::sha2::sha2_csum;
-use crate::source::base::util::{extract_inchi_substring, inchi_calloc, inchi_free};
+use crate::source::base::util::{
+    SourceSubstringInput, extract_inchi_substring_input, inchi_calloc, inchi_free,
+};
 use crate::source_types::{
     INCHIKEY_EMPTY_INPUT, INCHIKEY_INVALID_INCHI, INCHIKEY_INVALID_INCHI_PREFIX,
     INCHIKEY_INVALID_STD_INCHI, INCHIKEY_NOT_ENOUGH_MEMORY, INCHIKEY_OK, SourceConstPointer,
@@ -13,7 +15,6 @@ use crate::source_types::{
 
 fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
     let mut index = start;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let negative = match bytes.get(index).copied() {
         Some(b'-') => {
             index += 1;
@@ -32,7 +33,6 @@ fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
     } else {
         i64::MAX as u64
     };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     while let Some(digit) = bytes
         .get(index)
         .copied()
@@ -60,6 +60,24 @@ fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
         value as i64
     };
     signed as i32
+}
+
+pub(crate) enum SourceKeyOutput<'a> {
+    Pointer(SourceMutPointer<i8>),
+    Borrowed(&'a mut [i8]),
+}
+
+impl SourceKeyOutput<'_> {
+    fn is_null(&self) -> bool {
+        matches!(self, Self::Pointer(pointer) if pointer.is_null())
+    }
+
+    fn bytes_mut<'b>(&'b mut self, heap: &'b mut SourceHeap) -> Result<&'b mut [i8], SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.slice_mut(*pointer),
+            Self::Borrowed(bytes) => Ok(bytes),
+        }
+    }
 }
 
 #[rustfmt::skip]
@@ -481,26 +499,531 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     // INCHI✔️❌: SourceHeap checked access and byte-buffer modeling add known overhead.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetINCHIKeyFromINCHI
 
+    // BEGIN INCHI VERBATIM SOURCE: ikey_base26.c:1307..1322/1328..1343
+    // INCHI✔️❗: void get_xtra_hash_major_hex( const unsigned char *a, char* szXtra )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     unsigned char c;
+    // INCHI✔️❗:     int i, j, start_byte = 8;
+    // INCHI✔️❗: #ifndef FIX_BASE26_ENC_BUG
+    // INCHI✔️❗:     c = a[start_byte] & 0xfe;  /* 1111 1110  */
+    // INCHI✔️❗: #else
+    // INCHI✔️❗:     c = a[start_byte] & 0x7f;  /* 0111 1111  */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:     j = sprintf(szXtra, "%02x", c);
+    // INCHI✔️❗:     for (i = start_byte + 1; i < 32; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         j += sprintf(szXtra + j, "%02x", a[i]);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
+    // INCHI✔️❗: 
+    // INCHI✔️❗: void get_xtra_hash_minor_hex( const unsigned char *a, char* szXtra )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     unsigned char c;
+    // INCHI✔️❗:     int i, j, start_byte = 4;
+    // INCHI✔️❗: #ifndef FIX_BASE26_ENC_BUG
+    // INCHI✔️❗:     c = a[start_byte] & 0xe0;  /* 1110 0000  */
+    // INCHI✔️❗: #else
+    // INCHI✔️❗:     c = a[start_byte] & 0x07;  /* 0000 0111  */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:     j = sprintf(szXtra, "%02x", c);
+    // INCHI✔️❗:     for (i = start_byte + 1; i < 32; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         j += sprintf(szXtra + j, "%02x", a[i]);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
+    // END INCHI VERBATIM SOURCE: direct extension helper bodies
+    // INCHI✔️❗: Both native extension helpers now write the original caller
+    // storage directly. The safe i8/u8 byte view retains every bit, offset and
+    // caller alias; major completes before minor. Exact 49/57-byte prefixes
+    // include NUL and leave tails untouched. No extra array, clear or copy.
+    // O(1) fixed output work/scratch; checked arena admission constants remain
+    // INCHI-PERF-KEY-DIRECT-EXTENSIONS OPEN, not whole-owner cost acceptance.
+
+    get_inchi_key_from_input(
+        heap, SourceSubstringInput::Pointer(szINCHISource), xtra1, xtra2,
+        SourceKeyOutput::Pointer(szINCHIKey), SourceKeyOutput::Pointer(szXtra1),
+        SourceKeyOutput::Pointer(szXtra2),
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn get_inchi_key_from_input(
+    heap: &mut SourceHeap,
+    szINCHISource: SourceSubstringInput<'_>,
+    xtra1: i32,
+    xtra2: i32,
+    mut szINCHIKey: SourceKeyOutput<'_>,
+    mut szXtra1: SourceKeyOutput<'_>,
+    mut szXtra2: SourceKeyOutput<'_>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ikey_dll.c:113 GetINCHIKeyFromINCHI
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+        EXPIMP_TEMPLATE INCHI_API
+        int INCHI_DECL GetINCHIKeyFromINCHI( const char* szINCHISource,
+                                             const int xtra1,
+                                             const int xtra2,
+                                             char* szINCHIKey,
+                                             char* szXtra1,
+                                             char* szXtra2 )
+        {
+            int ret = INCHIKEY_OK;
+            int ret1 = INCHIKEY_OK;
+            int cn;
+            size_t slen, i, j, jproto = 0, ncp, pos_slash1 = 0;
+            char *str = NULL, *smajor = NULL, *sminor = NULL,
+                *sproto = NULL, *stmp = NULL, tmp[MINOUTLENGTH];
+            unsigned char
+                digest_major[32], digest_minor[32];
+
+            char flagstd = 'S', /* standard key */
+                flagnonstd = 'N', /* non-standard key */
+                flagexptl = 'B', /* experimental ('beta') key */
+                flagver = 'A', /* InChI v. 1 */
+                flagproto = 'N'; /* no [de]protonization , by default */
+            int  nprotons;
+            /*
+            Protonization encoding:
+            N 0
+            O +1 P +2 Q +3 R +4 S +5 T +6 U +7 V +8 W +9 X +10 Y +11 Z +12
+            M -1 L-2 K -3 J -4 I -5 H -6 G -7 F -8 E -9 D -10 C -11 B -12
+            A < -12 or > +12
+            */
+            static const char *pplus = "OPQRSTUVWXYZ";
+            static const char *pminus = "MLKJIHGFEDCB";
+            int is_stdinchi = 0;    /* 0 -  non-standard,
+                                       1    standard
+                                      -1    experimental ('beta') */
+
+
+
+            if (NULL != szXtra1) /* Software version 1.06 added check to fix bug with NULL szXtra, thanks to WDI */
+            {
+                szXtra1[0] = '\0';
+            }
+            if (NULL != szXtra2)
+            {
+                szXtra2[0] = '\0';
+            }
+
+            /* Check if input is a valid InChI string */
+
+            /* .. non-empty */
+            if (szINCHISource == NULL)
+            {
+                return INCHIKEY_EMPTY_INPUT;
+            }
+
+            slen = strlen( szINCHISource );
+
+            /* .. has valid prefix */
+            if (slen < LEN_INCHI_STRING_PREFIX + 3)
+            {
+                return INCHIKEY_INVALID_INCHI_PREFIX;
+            }
+            if (memcmp( szINCHISource, INCHI_STRING_PREFIX, LEN_INCHI_STRING_PREFIX ))
+            {
+                return INCHIKEY_INVALID_INCHI_PREFIX;
+            }
+
+            /* .. has InChI version 1 */
+            /* if (!isdigit(szINCHISource[LEN_INCHI_STRING_PREFIX]) )  */
+            if (szINCHISource[LEN_INCHI_STRING_PREFIX] != '1')
+                return INCHIKEY_INVALID_INCHI_PREFIX;
+
+            /* .. optionally has a 'standard' flag character */
+            pos_slash1 = LEN_INCHI_STRING_PREFIX + 1;
+            if (szINCHISource[pos_slash1] == 'S')
+            {
+                /* Standard InChI ==> standard InChIKey */
+                is_stdinchi = 1;
+                pos_slash1++;
+            }
+            else if (szINCHISource[pos_slash1] == 'B')
+            {
+                /* v. 1.05 Experimental ('beta') InChI ==> corresponding InChIKey */
+                is_stdinchi = -1;
+                pos_slash1++;
+            }
+
+            /* .. has trailing slash in the right place */
+            if (szINCHISource[pos_slash1] != '/')
+            {
+                return INCHIKEY_INVALID_INCHI_PREFIX;
+            }
+
+            /* .. the rest of source string contains at least one a..Z0.9 or slash */
+            if (!isalnum( szINCHISource[pos_slash1 + 1] ))
+            {
+                int valid_empty_inchi = szINCHISource[pos_slash1 + 1] == '/';
+                int allowed_and_valid_err_inchi = 0;
+                if (!valid_empty_inchi)
+                {
+                    allowed_and_valid_err_inchi = szINCHISource[pos_slash1 + 1] == '?';
+                    if (!allowed_and_valid_err_inchi)
+                    {
+                        return INCHIKEY_INVALID_INCHI;
+                    }
+                }
+            }
+
+            /* Ok. Will use a local copy of the source. */
+
+            extract_inchi_substring( &str, szINCHISource, slen );
+            if (NULL == str)
+            {
+                ret = INCHIKEY_NOT_ENOUGH_MEMORY;
+                goto fin;
+            }
+            slen = strlen( str );
+
+
+            /* Make buffers. */
+            smajor = (char*) inchi_calloc( slen + 1, sizeof( char ) );
+            if (NULL == smajor)
+            {
+                ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin;
+            }
+            sminor = (char*) inchi_calloc( 2 * slen + 2, sizeof( char ) ); /* we may double the length ... */
+            if (NULL == sminor)
+            {
+                ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin;
+            }
+            stmp = (char*) inchi_calloc( slen + 1, sizeof( char ) );
+            if (NULL == stmp)
+            {
+                ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin;
+            }
+            sproto = (char*) inchi_calloc( slen + 1, sizeof( char ) );
+            if (NULL == sproto)
+            {
+                ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin;
+            }
+
+            szINCHIKey[0] = '\0';
+
+            /* Extract the major block */
+            smajor[0] = '\0';
+            for (j = pos_slash1 + 1; j < slen - 1; j++)
+            {
+                if (str[j] == '/')
+                {
+                    cn = str[j + 1];
+                    switch (cn)
+                    {
+                        /* anything allowed from a major part */
+                        case 'c':
+                        case 'h':
+                        case 'q':   continue;
+
+                        /* "/p"; protons now go to to special string, not to minor hash */
+                        case 'p':
+                            jproto = j;
+                            continue;
+
+                /* "/f",  "/r" : may not occur in stdInChI */
+                        case 'f':
+                        case 'r':
+                            if (is_stdinchi==1)
+                            {
+                                ret = INCHIKEY_INVALID_STD_INCHI;
+                                goto fin;
+                            }
+                            break;
+
+                /* anything allowed from a minor part */
+                        default:
+                            break;
+                    }
+                    break;
+                }
+            }
+            j++;
+            if (j == slen)
+            {
+                j++;
+            }
+            else
+            {
+                j--;
+            }
+
+            if (jproto)
+            {
+                ncp = jproto - pos_slash1 - 1;
+            }
+            else
+            {
+                ncp = j - pos_slash1 - 1;
+            }
+
+
+            /* Trim 'InChI=1[S]/' */
+            memcpy(smajor, str + pos_slash1 + 1, ncp * sizeof(str[0]));
+            smajor[ncp] = '\0';
+
+
+            /* Treat protonization */
+            if (jproto)
+            {
+                /* 2009-01-07 fix bug/typo: assigned incorrect length to the protonation segment of
+                   source string ( was sproto[ncp]='\0'; should be sproto[lenproto]='\0'; )  */
+                int lenproto = j - (int) jproto;
+                if (lenproto < 3)
+                {
+                    /* empty "/p", should not occur */
+                    ret = INCHIKEY_INVALID_INCHI;
+                    goto fin;
+                }
+
+                memcpy(sproto, str + pos_slash1 + ncp + 1, lenproto * sizeof(str[0]));   
+                sproto[lenproto] = '\0';
+
+                nprotons = strtol( sproto + 2, NULL, 10 );
+
+                if (nprotons > 0)
+                {
+                    if (nprotons > 12)
+                    {
+                        flagproto = 'A';
+                    }
+                    else
+                    {
+                        flagproto = pplus[nprotons - 1];
+                    }
+                }
+                else if (nprotons < 0)
+                {
+                    if (nprotons < -12)
+                    {
+                        flagproto = 'A';
+                    }
+                    else
+                    {
+                        flagproto = pminus[-nprotons - 1];
+                    }
+                }
+                else
+                {
+                    /* should never occur */
+                    ret = INCHIKEY_INVALID_STD_INCHI;
+                    goto fin;
+                }
+            }
+
+            /* Extract the minor block. */
+
+            if (j != slen + 1)    /* check that something exists at right.*/
+            {
+                ncp = slen - j;
+                memcpy(sminor, str + j, (ncp) * sizeof(str[0]));
+                sminor[ncp] = '\0';
+            }
+            else
+            {
+                sminor[0] = '\0';
+            }
+
+
+#if INCHIKEY_DEBUG
+            ITRACE_( "Source:  {%-s}\n", str );
+            ITRACE_( "SMajor:  {%-s}\n", smajor );
+            ITRACE_( "SMinor:  {%-s}\n", sminor );
+            ITRACE_( "SProto:  {%-s}\n", sproto );
+#endif
+
+            /* Compute and compose the InChIKey string. */
+
+            /* Major hash sub-string. */
+            for (i = 0; i < 32; i++)
+            {
+                digest_major[i] = 0;
+            }
+
+            sha2_csum( (unsigned char *) smajor, (int) strlen( smajor ), digest_major );
+
+            sprintf(tmp, "%-.3s%-.3s%-.3s%-.3s%-.2s",
+                base26_triplet_1(digest_major), base26_triplet_2(digest_major),
+                base26_triplet_3(digest_major), base26_triplet_4(digest_major),
+                base26_dublet_for_bits_56_to_64(digest_major));
+            strcat(szINCHIKey, tmp);
+#if (INCHIKEY_DEBUG>1)
+            fprint_digest( stderr, "Major hash, full SHA-256", digest_major );
+#endif
+
+
+            /* Minor hash sub-string. */
+            for (i = 0; i < 32; i++)
+            {
+                digest_minor[i] = 0;
+            }
+            slen = strlen( sminor );
+            if (( slen > 0 ) && ( slen < 255 ))
+            {
+                strcpy(stmp, sminor);
+                strcpy(sminor + slen, stmp);
+            }
+
+            sha2_csum( (unsigned char *) sminor, (int) strlen( sminor ), digest_minor );
+
+#if (INCHIKEY_DEBUG>1)
+            fprint_digest( stderr, "Minor hash, full SHA-256", digest_minor );
+#endif
+
+            strcat(szINCHIKey, "-");
+            sprintf(tmp, "%-.3s%-.3s%-.2s",
+                base26_triplet_1(digest_minor),
+                base26_triplet_2(digest_minor),
+                base26_dublet_for_bits_28_to_36(digest_minor));
+            strcat(szINCHIKey, tmp);
+            /* Append a standard/non-standard flag */
+            slen = strlen( szINCHIKey );
+            if (is_stdinchi == 1)
+            {
+                szINCHIKey[slen] = flagstd;
+            }
+            else if (is_stdinchi == -1)
+            {
+                szINCHIKey[slen] = flagexptl;
+            }
+            else
+            {
+                szINCHIKey[slen] = flagnonstd;
+            }
+
+            /* Append InChI v.1 flag */
+            szINCHIKey[slen + 1] = flagver;
+
+            /* Append dash  */
+            szINCHIKey[slen + 2] = '-';
+
+            /* Append protonization flag */
+            szINCHIKey[slen + 3] = flagproto;
+            szINCHIKey[slen + 4] = '\0';
+
+
+#if INCHIKEY_DEBUG
+            ITRACE_( "szINCHIKey:  {%-s}\n", szINCHIKey );
+#endif
+
+            /* Hash extensions */
+            if (xtra1 && szXtra1)
+            {
+                get_xtra_hash_major_hex( digest_major, szXtra1 );
+#if INCHIKEY_DEBUG
+                fprintf( stderr, "XHash1=%-s\n", szXtra1 );
+                fprintf( stderr, "j=%-d\n", j );
+#endif
+            }
+            if (xtra2 && szXtra2)
+            {
+                get_xtra_hash_minor_hex( digest_minor, szXtra2 );
+#if INCHIKEY_DEBUG
+                fprintf( stderr, "XHash2=%-s\n", szXtra2 );
+                fprintf( stderr, "j=%-d\n", j );
+#endif
+            }
+
+
+        fin:
+            /* djb-rwth: fixing GH issue #87 (thanks to Ricardo Rodriguez) and oss-fuzz issue #66746 */
+            if (NULL != str)
+            {
+                inchi_free( str );
+            }
+            if (NULL != smajor)
+            {
+                inchi_free( smajor );
+            }
+            if (NULL != sminor)
+            {
+                inchi_free( sminor );
+                sminor = NULL;
+            }
+            if (NULL != stmp)
+            {
+                inchi_free( stmp );
+            }
+            if (NULL != sproto)
+            {
+                inchi_free( sproto );
+            }
+            if (( ret == INCHIKEY_OK ) && ( ret1 != INCHIKEY_OK ))
+            {
+                ret = ret1;
+            }
+
+            return ret;
+        }
+            */
+    // END INCHI C FUNCTION: GetINCHIKeyFromINCHI
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetINCHIKeyFromINCHI
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; INCHIKEY_DEBUG=0.
+    // INCHI✔️❌: inchi_calloc and inchi_free are active allocation macros; libc strlen,
+    // INCHI✔️❌: memcmp, memcpy, isalnum, strtol, sprintf, strcat, and strcpy behavior is active.
+    // INCHI✔️❌: SourceHeap checked access and byte-buffer modeling add known overhead.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetINCHIKeyFromINCHI
+
+    // BEGIN INCHI VERBATIM SOURCE: ikey_base26.c:1307..1322/1328..1343
+    // INCHI✔️❗: void get_xtra_hash_major_hex( const unsigned char *a, char* szXtra )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     unsigned char c;
+    // INCHI✔️❗:     int i, j, start_byte = 8;
+    // INCHI✔️❗: #ifndef FIX_BASE26_ENC_BUG
+    // INCHI✔️❗:     c = a[start_byte] & 0xfe;  /* 1111 1110  */
+    // INCHI✔️❗: #else
+    // INCHI✔️❗:     c = a[start_byte] & 0x7f;  /* 0111 1111  */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:     j = sprintf(szXtra, "%02x", c);
+    // INCHI✔️❗:     for (i = start_byte + 1; i < 32; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         j += sprintf(szXtra + j, "%02x", a[i]);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
+    // INCHI✔️❗: 
+    // INCHI✔️❗: void get_xtra_hash_minor_hex( const unsigned char *a, char* szXtra )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     unsigned char c;
+    // INCHI✔️❗:     int i, j, start_byte = 4;
+    // INCHI✔️❗: #ifndef FIX_BASE26_ENC_BUG
+    // INCHI✔️❗:     c = a[start_byte] & 0xe0;  /* 1110 0000  */
+    // INCHI✔️❗: #else
+    // INCHI✔️❗:     c = a[start_byte] & 0x07;  /* 0000 0111  */
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:     j = sprintf(szXtra, "%02x", c);
+    // INCHI✔️❗:     for (i = start_byte + 1; i < 32; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         j += sprintf(szXtra + j, "%02x", a[i]);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
+    // END INCHI VERBATIM SOURCE: direct extension helper bodies
+    // INCHI✔️❗: Both native extension helpers now write the original caller
+    // storage directly. The safe i8/u8 byte view retains every bit, offset and
+    // caller alias; major completes before minor. Exact 49/57-byte prefixes
+    // include NUL and leave tails untouched. No extra array, clear or copy.
+    // O(1) fixed output work/scratch; checked arena admission constants remain
+    // INCHI-PERF-KEY-DIRECT-EXTENSIONS OPEN, not whole-owner cost acceptance.
+
+    // INCHI✔️❗: Temporary views preserve reached pointer admissions and
+    // aliases. Borrowed adapter buffers stay disjoint stack arrays; one
+    // original hash algorithm/native allocation sequence, cost OPEN.
     if !szXtra1.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice_mut(szXtra1)?[0] = 0;
+        szXtra1.bytes_mut(heap)?[0] = 0;
     }
     if !szXtra2.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice_mut(szXtra2)?[0] = 0;
+        szXtra2.bytes_mut(heap)?[0] = 0;
     }
     if szINCHISource.is_null() {
         return Ok(INCHIKEY_EMPTY_INPUT as i32);
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let source_length = heap
-        .slice(szINCHISource)?
+    let source_length = szINCHISource
+        .bytes(heap)?
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let source = heap.slice(szINCHISource)?;
+    let source = szINCHISource.bytes(heap)?;
     if source_length < 9
         || source[..6]
             != [
@@ -532,20 +1055,14 @@ pub(crate) fn GetINCHIKeyFromINCHI(
         return Ok(INCHIKEY_INVALID_INCHI as i32);
     }
 
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut str_pointer = SourceMutPointer::null();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut smajor = SourceMutPointer::null();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sminor = SourceMutPointer::null();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut stmp = SourceMutPointer::null();
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sproto = SourceMutPointer::null();
     let mut ret = INCHIKEY_OK as i32;
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    match extract_inchi_substring(heap, &mut str_pointer, szINCHISource, source_length as u64) {
+    match extract_inchi_substring_input(heap, &mut str_pointer, szINCHISource, source_length as u64) {
         Ok(()) => {}
         Err(SourceHeapError::AllocationFailed) => ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32,
         Err(error) => return Err(error),
@@ -555,39 +1072,33 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     }
     let mut slen = 0_usize;
     if ret == INCHIKEY_OK as i32 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         slen = heap
             .slice(str_pointer.as_const())?
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let allocate = |result: Result<SourceMutPointer<u8>, SourceHeapError>| match result {
             Ok(pointer) => Ok(pointer),
             Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
             Err(error) => Err(error),
         };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         smajor = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
         if smajor.is_null() {
             ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
         }
         if ret == INCHIKEY_OK as i32 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             sminor = allocate(inchi_calloc(heap, (2 * slen + 2) as u64, 1))?;
             if sminor.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
             }
         }
         if ret == INCHIKEY_OK as i32 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             stmp = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
             if stmp.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
             }
         }
         if ret == INCHIKEY_OK as i32 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             sproto = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
             if sproto.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
@@ -596,14 +1107,11 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     }
 
     if ret == INCHIKEY_OK as i32 {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        heap.slice_mut(szINCHIKey)?[0] = 0;
+        szINCHIKey.bytes_mut(heap)?[0] = 0;
         let mut jproto = 0_usize;
         let mut j = pos_slash1 + 1;
         while j < slen - 1 {
-            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(str_pointer.as_const())?[j] == b'/' as i8 {
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 match heap.slice(str_pointer.as_const())?[j + 1] as u8 {
                     b'c' | b'h' | b'q' => {
                         j += 1;
@@ -637,12 +1145,9 @@ pub(crate) fn GetINCHIKeyFromINCHI(
             };
             {
                 for index in 0..major_length {
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let byte = heap.slice(str_pointer.as_const())?[pos_slash1 + 1 + index] as u8;
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(smajor)?[index] = byte;
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(smajor)?[major_length] = 0;
             }
 
@@ -654,15 +1159,11 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 } else {
                     {
                         for index in 0..proto_length {
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let byte = heap.slice(str_pointer.as_const())?[jproto + index] as u8;
-                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(sproto)?[index] = byte;
                         }
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sproto)?[proto_length] = 0;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let nprotons =
                         source_strtol_decimal(&heap.slice(sproto.as_const())?[..proto_length], 2);
                     flagproto = match nprotons {
@@ -681,33 +1182,26 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 let minor_length = if j != slen + 1 { slen - j } else { 0 };
                 {
                     for index in 0..minor_length {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(str_pointer.as_const())?[j + index] as u8;
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sminor)?[index] = byte;
                     }
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(sminor)?[minor_length] = 0;
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let major_length = heap
                     .slice(smajor.as_const())?
                     .iter()
                     .position(|byte| *byte == 0)
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 let mut digest_major = [0_u8; 32];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 sha2_csum(
                     &heap.slice(smajor.as_const())?[..major_length],
                     major_length as i32,
                     &mut digest_major,
                 );
 
-                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut key = [0_u8; 28];
                 let mut key_index = 0_usize;
-                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                 for encoded in [
                     base26_triplet_1(&digest_major).as_slice(),
                     base26_triplet_2(&digest_major).as_slice(),
@@ -719,7 +1213,6 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                     key_index += encoded.len();
                 }
 
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minor_length = heap
                     .slice(sminor.as_const())?
                     .iter()
@@ -727,26 +1220,20 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 if minor_length > 0 && minor_length < 255 {
                     for index in 0..=minor_length {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(sminor.as_const())?[index];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(stmp)?[index] = byte;
                     }
                     for index in 0..=minor_length {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(stmp.as_const())?[index];
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sminor)?[minor_length + index] = byte;
                     }
                 }
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let hashed_minor_length = heap
                     .slice(sminor.as_const())?
                     .iter()
                     .position(|byte| *byte == 0)
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 let mut digest_minor = [0_u8; 32];
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 sha2_csum(
                     &heap.slice(sminor.as_const())?[..hashed_minor_length],
                     hashed_minor_length as i32,
@@ -755,7 +1242,6 @@ pub(crate) fn GetINCHIKeyFromINCHI(
 
                 key[key_index] = b'-';
                 key_index += 1;
-                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                 for encoded in [
                     base26_triplet_1(&digest_minor).as_slice(),
                     base26_triplet_2(&digest_minor).as_slice(),
@@ -773,56 +1259,46 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 key[key_index + 2] = b'-';
                 key[key_index + 3] = flagproto;
                 key[key_index + 4] = 0;
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                for (destination, source) in heap.slice_mut(szINCHIKey)?.iter_mut().zip(key.iter())
+                for (destination, source) in szINCHIKey.bytes_mut(heap)?.iter_mut().zip(key.iter())
                 {
                     *destination = *source as i8;
                 }
 
                 if xtra1 != 0 && !szXtra1.is_null() {
-                    panic!("INCHI-AUDIT-0344: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let mut xtra = [0_u8; 49];
-                    get_xtra_hash_major_hex(&digest_major, &mut xtra);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    for (destination, source) in
-                        heap.slice_mut(szXtra1)?.iter_mut().zip(xtra.iter())
-                    {
-                        *destination = *source as i8;
-                    }
+                    let output = szXtra1.bytes_mut(heap)?
+                        .get_mut(..49)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    get_xtra_hash_major_hex(
+                        &digest_major,
+                        bytemuck::cast_slice_mut::<i8, u8>(output),
+                    );
                 }
                 if xtra2 != 0 && !szXtra2.is_null() {
-                    panic!("INCHI-AUDIT-0344: suspected source divergence; see dev/audits/inchi/findings.md");
-                    let mut xtra = [0_u8; 57];
-                    get_xtra_hash_minor_hex(&digest_minor, &mut xtra);
-                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                    for (destination, source) in
-                        heap.slice_mut(szXtra2)?.iter_mut().zip(xtra.iter())
-                    {
-                        *destination = *source as i8;
-                    }
+                    let output = szXtra2.bytes_mut(heap)?
+                        .get_mut(..57)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    get_xtra_hash_minor_hex(
+                        &digest_minor,
+                        bytemuck::cast_slice_mut::<i8, u8>(output),
+                    );
                 }
             }
         }
     }
 
     if !str_pointer.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, str_pointer)?;
     }
     if !smajor.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, smajor)?;
     }
     if !sminor.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, sminor)?;
     }
     if !stmp.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, stmp)?;
     }
     if !sproto.is_null() {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, sproto)?;
     }
     Ok(ret)

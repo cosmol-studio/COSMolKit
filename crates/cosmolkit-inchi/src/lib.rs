@@ -1,8 +1,8 @@
 //! Reusable Rust source-port boundary for the IUPAC InChI engine.
 //!
 //! The crate exposes the four audited toolkit-neutral scalar InChI operations.
-//! It is independent of `cosmolkit-core`, RDKit, Python, and external
-//! executables so completed functionality can be reused by other Rust projects.
+//! It reuses `cosmolkit-core` periodic valence metadata and has no native RDKit,
+//! Python, or external-executable dependency.
 //!
 //! See `dev/archive/plans/rdkit_inchi_full_port_plan.md` in the workspace for
 //! the required source inventory, marker, and parity contract.
@@ -192,40 +192,21 @@ fn structure_error(operation: &'static str, error: InchiToMolError) -> InchiErro
     }
 }
 
-fn nul_terminated_options(options: Option<&[u8]>) -> Result<Option<Vec<u8>>, InchiError> {
-    let Some(options) = options else {
-        return Ok(None);
-    };
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut terminated = options.to_vec();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    terminated.try_reserve(1).map_err(|_| InchiError {
-        operation: "mol_to_inchi",
-        kind: InchiErrorKind::AllocationFailed,
-        detail: "AllocationFailed".to_owned(),
-    })?;
-    terminated.push(0);
-    Ok(Some(terminated))
-}
-
 /// Generates an InChI from the toolkit-neutral molecular graph.
 pub fn mol_to_inchi(
     toolkit: &mut impl MolToInchiToolkit,
     molecule: &InchiMolecule,
     options: Option<&[u8]>,
 ) -> Result<MolToInchiOutput, InchiError> {
-    let options = nul_terminated_options(options)?;
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiGenerationEngine::new(&mut heap);
     let mut return_values = source::rdkit::inchi::ExtraInchiReturnValues::default();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let output = source::rdkit::inchi::mol_to_inchi(
+    let output = source::rdkit::inchi::mol_to_inchi_with_options(
         &mut engine,
         toolkit,
         molecule,
         &mut return_values,
-        options.as_deref(),
+        options.map(source::rdkit::inchi::GenerationOptions::Bytes),
     )
     .map_err(|error| generation_error("mol_to_inchi", error))?;
     Ok(MolToInchiOutput {
@@ -246,22 +227,16 @@ pub fn mol_to_inchi_key(
     molecule: &InchiMolecule,
     options: Option<&[u8]>,
 ) -> Result<MolToInchiKeyOutput, InchiError> {
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let options = nul_terminated_options(options).map_err(|mut error| {
-        error.operation = "mol_to_inchi_key";
-        error
-    })?;
     let mut generation_heap = SourceHeap::default();
     let mut key_heap = SourceHeap::default();
     let mut generation_engine = SourceInchiGenerationEngine::new(&mut generation_heap);
     let mut key_engine = SourceInchiKeyEngine::new(&mut key_heap);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let output = source::rdkit::inchi::mol_to_inchi_key(
+    let output = source::rdkit::inchi::mol_to_inchi_key_with_options(
         &mut generation_engine,
         &mut key_engine,
         toolkit,
         molecule,
-        options.as_deref(),
+        options.map(source::rdkit::inchi::GenerationOptions::Bytes),
     )
     .map_err(|error| match error {
         MolToInchiKeyError::MolToInchi(error) => generation_error("mol_to_inchi_key", error),
@@ -277,7 +252,6 @@ pub fn mol_to_inchi_key(
 pub fn inchi_to_inchi_key(inchi: &[u8]) -> Result<InchiToInchiKeyOutput, InchiError> {
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiKeyEngine::new(&mut heap);
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let output = source::rdkit::inchi::inchi_to_inchi_key(&mut engine, inchi)
         .map_err(|error| key_error("inchi_to_inchi_key", error))?;
     Ok(InchiToInchiKeyOutput {
@@ -296,7 +270,6 @@ pub fn mol_from_inchi(
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiStructureEngine::new(&mut heap);
     let mut return_values = source::rdkit::inchi::ExtraInchiReturnValues::default();
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let output = source::rdkit::inchi::inchi_to_mol(
         &mut engine,
         toolkit,

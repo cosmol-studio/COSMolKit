@@ -1,222 +1,94 @@
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
     AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer,
-    StableSourceConstSlice, StableSourceSlice, inp_ATOM, qInt,
+    inp_ATOM, qInt,
 };
 
-struct RingSearchWorkspace {
-    atom: StableSourceConstSlice<inp_ATOM>,
-    queue: StableSourceSlice<QUEUE>,
-    values: StableSourceSlice<qInt>,
-    atom_level: StableSourceSlice<AT_RANK>,
-    source: StableSourceSlice<S_CHAR>,
+// Scalar stack arguments match the native BFS callers without allocating
+// SourceHeap slots for QueueAdd/QueueGet's local qInt variables.
+fn ring_queue_add(
+    heap: &mut SourceHeap,
+    q: SourceMutPointer<QUEUE>,
+    value: qInt,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE: ichiring.c QueueAdd QUEUE_QINT=1
+    // INCHI✔️❗: int QueueAdd( QUEUE *q, QINT_TYPE *Val )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     if (q && Val && q->nLength < q->nTotLength)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         q->Val[( q->nFirst + q->nLength ) % q->nTotLength] = *Val;
+    // INCHI✔️❗:         q->nLength++;
+    // INCHI✔️❗:         return q->nLength;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     return -1;
+    // INCHI✔️❗: }
+    // INCHI✔️❌: C326; fixed scalar accesses, no clone/allocation/preflight.
+    // Safe arena admission constants remain OPEN in performance notes.
+    if q.is_null() {
+        return Ok(-1);
+    }
+    let queue = heap.slice(q.as_const())?.first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if queue.nLength >= queue.nTotLength {
+        return Ok(-1);
+    }
+    let destination = queue.nFirst.wrapping_add(queue.nLength)
+        .checked_rem(queue.nTotLength)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let values = queue.Val;
+    *heap.slice_mut(values.offset(i64::from(destination))?)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+    let queue = heap.slice_mut(q)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    queue.nLength = queue.nLength.wrapping_add(1);
+    Ok(queue.nLength)
 }
 
-impl RingSearchWorkspace {
-    fn new(
-        heap: &mut SourceHeap,
-        atom: SourceMutPointer<inp_ATOM>,
-        q: SourceMutPointer<QUEUE>,
-        n_atom_level: SourceMutPointer<AT_RANK>,
-        source: SourceMutPointer<S_CHAR>,
-    ) -> Result<Self, SourceHeapError> {
-        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-        let queue_value = heap
-            .slice(q.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone();
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let writable_ids = [
-            q.allocation_identity(),
-            queue_value.Val.allocation_identity(),
-            n_atom_level.allocation_identity(),
-            source.allocation_identity(),
-        ];
-        if writable_ids.iter().any(Option::is_none)
-            || writable_ids
-                .iter()
-                .enumerate()
-                .any(|(index, id)| writable_ids[..index].contains(id))
-            || writable_ids.contains(&atom.allocation_identity())
-        {
-            return Err(SourceHeapError::PointerAllocationMismatch);
-        }
-
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let total = usize::try_from(queue_value.nTotLength)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let first =
-            usize::try_from(queue_value.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let length = usize::try_from(queue_value.nLength)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        if total == 0 || first >= total || length > total {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-
-        // SAFETY: the five source arrays have distinct allocation identities,
-        // and GetMinRingSize neither frees nor resizes them. The source graph
-        // contract makes every active neighbor and queued atom an index into
-        // atom[], nAtomLevel[], and cSource[].
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atom = unsafe { heap.stable_slice(atom.as_const())? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let queue = unsafe { heap.stable_slice_mut(q)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let values = unsafe { heap.stable_slice_mut(queue_value.Val)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let atom_level = unsafe { heap.stable_slice_mut(n_atom_level)? };
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-        let source = unsafe { heap.stable_slice_mut(source)? };
-        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-        if values.len() < total || atom.len() < atom_level.len() || source.len() < atom_level.len()
-        {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-
-        Ok(Self {
-            atom,
-            queue,
-            values,
-            atom_level,
-            source,
-        })
+fn ring_queue_get(
+    heap: &mut SourceHeap,
+    q: SourceMutPointer<QUEUE>,
+) -> Result<Option<qInt>, SourceHeapError> {
+    // VERBATIM SOURCE: ichiring.c QueueGet QUEUE_QINT=1
+    // INCHI✔️❗: int QueueGet( QUEUE *q, QINT_TYPE *Val )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     if (q && Val && q->nLength > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         *Val = q->Val[q->nFirst];
+    // INCHI✔️❗:         /* new: do not allow to overwrite the retrieved value */
+    // INCHI✔️❗:         q->nFirst = ( q->nFirst == q->nTotLength - 1 ) ? 0 : q->nFirst + 1;
+    // INCHI✔️❗:         q->nLength--;
+    // INCHI✔️❗:         /* -- old --
+    // INCHI✔️❗:         if ( -- q->nLength ) {
+    // INCHI✔️❗:             q->nFirst = (q->nFirst == q->nTotLength - 1)? 0 : q->nFirst + 1;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         */
+    // INCHI✔️❗:         return q->nLength;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: 
+    // INCHI✔️❗:     return -1;
+    // INCHI✔️❗: }
+    // INCHI✔️❌: C326; local qInt receives the value before queue stores.
+    // No whole-record clone/buffer; checked admission cost remains OPEN.
+    if q.is_null() {
+        return Ok(None);
     }
-
-    #[inline(always)]
-    unsafe fn queue(&self) -> &QUEUE {
-        // SAFETY: construction requires the QUEUE allocation to contain one item.
-        unsafe { self.queue.get_unchecked(0) }
+    let queue = heap.slice(q.as_const())?.first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if queue.nLength <= 0 {
+        return Ok(None);
     }
-
-    #[inline(always)]
-    unsafe fn queue_mut(&mut self) -> &mut QUEUE {
-        // SAFETY: construction requires the QUEUE allocation to contain one item.
-        unsafe { self.queue.get_unchecked_mut(0) }
-    }
-
-    #[inline(always)]
-    unsafe fn queue_get(&mut self, value: &mut qInt) -> i32 {
-        let queue = unsafe { self.queue() };
-        if queue.nLength <= 0 {
-            return -1;
-        }
-        let first = queue.nFirst as usize;
-        let total = queue.nTotLength;
-        // SAFETY: the source QUEUE invariants validated at construction and
-        // preserved below keep nFirst within the allocated circular buffer.
-        *value = *unsafe { self.values.get_unchecked(first) };
-        let queue = unsafe { self.queue_mut() };
-        queue.nFirst = if queue.nFirst == total.wrapping_sub(1) {
-            0
-        } else {
-            queue.nFirst.wrapping_add(1)
-        };
-        queue.nLength = queue.nLength.wrapping_sub(1);
-        queue.nLength
-    }
-
-    #[inline(always)]
-    unsafe fn queue_add(&mut self, value: qInt) -> i32 {
-        let queue = unsafe { self.queue() };
-        if queue.nLength >= queue.nTotLength {
-            return -1;
-        }
-        let destination = queue.nFirst.wrapping_add(queue.nLength) % queue.nTotLength;
-        let length = queue.nLength.wrapping_add(1);
-        // SAFETY: the source QUEUE invariants make the modulo result a valid
-        // circular-buffer index.
-        *unsafe { self.values.get_unchecked_mut(destination as usize) } = value;
-        unsafe { self.queue_mut() }.nLength = length;
-        length
-    }
-}
-
-fn get_min_ring_size_with_workspace(
-    workspace: &mut RingSearchWorkspace,
-    n_max_ring_size: AT_RANK,
-) -> i32 {
-    let mut n_min_ring_size = (MAX_ATOMS + 1) as AT_RANK;
-    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
-    let mut at_no: qInt = 0;
-
-    loop {
-        // SAFETY: RingSearchWorkspace validates and exclusively owns the queue.
-        let q_len = unsafe { workspace.queue() }.nLength;
-        if q_len == 0 {
-            break;
-        }
-        for _i in 0..q_len {
-            // SAFETY: the workspace maintains the source QUEUE invariants.
-            if unsafe { workspace.queue_get(&mut at_no) } >= 0 {
-                let iat_no = usize::from(at_no);
-                // SAFETY: queued atom numbers obey the source graph-array contract.
-                let n_cur_level =
-                    unsafe { workspace.atom_level.get_unchecked(iat_no) }.wrapping_add(1);
-                if 2 * i32::from(n_cur_level) > i32::from(n_max_ring_size) + 4 {
-                    if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
-                        return if n_min_ring_size >= n_max_ring_size {
-                            0
-                        } else {
-                            i32::from(n_min_ring_size)
-                        };
-                    }
-                    return 0;
-                }
-
-                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                let current_source = *unsafe { workspace.source.get_unchecked(iat_no) };
-                // SAFETY: iat_no is a queued source atom index. Each read is
-                // kept as a scalar so queue mutation does not extend a borrow
-                // across the independent atom allocation.
-                let valence = i32::from(unsafe { workspace.atom.get_unchecked(iat_no) }.valence);
-                for j in 0..valence {
-                    let next = unsafe { workspace.atom.get_unchecked(iat_no) }.neighbor[j as usize]
-                        as qInt;
-                    let inext = usize::from(next);
-                    // SAFETY: active inp_ATOM neighbors obey the source graph contract.
-                    let next_level = *unsafe { workspace.atom_level.get_unchecked(inext) };
-                    if next_level == 0 {
-                        // SAFETY: the workspace maintains the source QUEUE invariants.
-                        if unsafe { workspace.queue_add(next) } >= 0 {
-                            *unsafe { workspace.atom_level.get_unchecked_mut(inext) } = n_cur_level;
-                            *unsafe { workspace.source.get_unchecked_mut(inext) } = current_source;
-                        } else {
-                            return -1;
-                        }
-                    } else {
-                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-                        let next_source = *unsafe { workspace.source.get_unchecked(inext) };
-                        if i32::from(next_level) + 1 >= i32::from(n_cur_level)
-                            && next_source != current_source
-                        {
-                            if next_source == -1 {
-                                return -1;
-                            }
-                            let n_ring_size = next_level.wrapping_add(n_cur_level).wrapping_sub(2);
-                            if n_ring_size < n_min_ring_size {
-                                n_min_ring_size = n_ring_size;
-                            }
-                        }
-                    }
-                }
-            } else {
-                return -1;
-            }
-        }
-    }
-
-    if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
-        return if n_min_ring_size >= n_max_ring_size {
-            0
-        } else {
-            i32::from(n_min_ring_size)
-        };
-    }
-    0
+    let value = *heap.slice(queue.Val.offset(i64::from(queue.nFirst))?.as_const())?
+        .first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let queue = heap.slice_mut(q)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    queue.nFirst = if queue.nFirst == queue.nTotLength.wrapping_sub(1) {
+        0
+    } else {
+        queue.nFirst.wrapping_add(1)
+    };
+    queue.nLength = queue.nLength.wrapping_sub(1);
+    Ok(Some(value))
 }
 
 #[allow(non_snake_case)]
@@ -257,7 +129,6 @@ pub(crate) fn QueueCreate(
         return Ok(SourceMutPointer::null());
     }
 
-    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = match inchi_calloc::<QUEUE>(heap, 1, 24) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
@@ -275,7 +146,6 @@ pub(crate) fn QueueCreate(
         }
     };
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_value = heap
         .slice_mut(queue)?
         .first_mut()
@@ -311,7 +181,6 @@ pub(crate) fn QueueAdd(
     if q.is_null() || Val.is_null() {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -320,25 +189,20 @@ pub(crate) fn QueueAdd(
     if queue.nLength >= queue.nTotLength {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if queue.nTotLength == 0 {
         return Err(SourceHeapError::SourceIntegerOverflow);
     }
     let destination = queue.nFirst.wrapping_add(queue.nLength) % queue.nTotLength;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let destination =
         usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = *heap
         .slice(Val.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(queue.Val)?
         .get_mut(destination)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_mut = heap
         .slice_mut(q)?
         .first_mut()
@@ -380,7 +244,6 @@ pub(crate) fn QueueGet(
     if q.is_null() || Val.is_null() {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -389,19 +252,15 @@ pub(crate) fn QueueGet(
     if queue.nLength <= 0 {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = usize::try_from(queue.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = *heap
         .slice(queue.Val.as_const())?
         .get(first)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(Val)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_mut = heap
         .slice_mut(q)?
         .first_mut()
@@ -440,20 +299,21 @@ pub(crate) fn QueueGetAny(
     */
     // END INCHI C FUNCTION: QueueGetAny
 
-    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    // INCHI✔️❗: native && bypasses q entirely for a negative ordinal.
+    // Borrow the fixed record until the source value is read, then write Val.
+    // O(1), no record clone/allocation; checked-access cost stays unresolved.
+    if ord < 0 {
+        return Ok(-1);
+    }
     let queue = heap
         .slice(q.as_const())?
         .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    if 0 <= ord && ord < queue.nTotLength {
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if ord < queue.nTotLength {
         let value = *heap
             .slice(queue.Val.as_const())?
             .get(usize::try_from(ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(Val)?
             .first_mut()
@@ -490,7 +350,6 @@ pub(crate) fn QueueReinit(
     if q.is_null() {
         return Ok(-1);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice_mut(q)?
         .first_mut()
@@ -525,7 +384,6 @@ pub(crate) fn QueueLength(
     if q.is_null() {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(heap
         .slice(q.as_const())?
         .first()
@@ -559,7 +417,6 @@ pub(crate) fn QueueWrittenLength(
     if q.is_null() {
         return Ok(0);
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -666,23 +523,73 @@ pub(crate) fn GetMinRingSize(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetMinRingSize
 
-    if q.is_null() {
-        return Ok(0);
+    // INCHI✔️❌: C326; source-reached scalar accesses replace whole-array
+    // workspace admission. Reads observe preceding writes on shared rank
+    // storage; empty queues and cutoffs do not admit unused atom/source data.
+    // O(source BFS work), O(1) scratch, no allocations/clones/raw views.
+    // Checked arena/bounds constants remain OPEN in performance notes.
+    let mut minimum = (MAX_ATOMS + 1) as AT_RANK;
+    loop {
+        let length = QueueLength(heap, q)?;
+        if length == 0 {
+            break;
+        }
+        for _ in 0..length {
+            let Some(current) = ring_queue_get(heap, q)? else {
+                return Ok(-1);
+            };
+            let current_level = heap.slice(nAtomLevel.offset(i64::from(current))?.as_const())?
+                .first().ok_or(SourceHeapError::PointerOutOfBounds)?.wrapping_add(1);
+            if 2 * i32::from(current_level) > i32::from(nMaxRingSize) + 4 {
+                return Ok(if u32::from(minimum) < MAX_ATOMS + 1 && minimum < nMaxRingSize {
+                    i32::from(minimum)
+                } else {
+                    0
+                });
+            }
+            let current_atom = atom.offset(i64::from(current))?;
+            let valence = i32::from(heap.slice(current_atom.as_const())?.first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
+            for ordinal in 0..valence {
+                let next = *heap.slice(current_atom.as_const())?.first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?.neighbor
+                    .get(ordinal as usize).ok_or(SourceHeapError::PointerOutOfBounds)? as qInt;
+                let next_level_pointer = nAtomLevel.offset(i64::from(next))?;
+                let next_level = *heap.slice(next_level_pointer.as_const())?.first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if next_level == 0 {
+                    if ring_queue_add(heap, q, next)? < 0 {
+                        return Ok(-1);
+                    }
+                    *heap.slice_mut(next_level_pointer)?.first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = current_level;
+                    let current_source = *heap.slice(cSource.offset(i64::from(current))?.as_const())?
+                        .first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    *heap.slice_mut(cSource.offset(i64::from(next))?)?.first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = current_source;
+                } else if i32::from(next_level) + 1 >= i32::from(current_level) {
+                    let next_source = *heap.slice(cSource.offset(i64::from(next))?.as_const())?
+                        .first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let current_source = *heap.slice(cSource.offset(i64::from(current))?.as_const())?
+                        .first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if next_source != current_source {
+                        if next_source == -1 {
+                            return Ok(-1);
+                        }
+                        let ring_size = next_level.wrapping_add(current_level).wrapping_sub(2);
+                        if ring_size < minimum {
+                            minimum = ring_size;
+                        }
+                    }
+                }
+            }
+        }
     }
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let initial_length = heap
-        .slice(q.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .nLength;
-    if initial_length == 0 {
-        return Ok(0);
-    }
-    let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
-    Ok(get_min_ring_size_with_workspace(
-        &mut workspace,
-        nMaxRingSize,
-    ))
+    Ok(if u32::from(minimum) < MAX_ATOMS + 1 && minimum < nMaxRingSize {
+        i32::from(minimum)
+    } else {
+        0
+    })
 }
 
 #[allow(non_snake_case)]
@@ -754,66 +661,53 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_bond_in_Nmax_memb_ring
 
+    // INCHI✔️❌: C326; preserve source NULL-queue, signed start offset,
+    // seed/write/QueueAdd order and live queue-buffer/level aliasing.
+    // O(source BFS+cleanup), O(1) scratch, no whole-array preflight/allocation.
+    // Safe arena/bounds costs remain independently OPEN.
     if nMaxRingSize < 3 {
         return Ok(0);
     }
-
-    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let queue = heap
-        .slice_mut(q)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    queue.nFirst = 0;
-    queue.nLength = 0;
-
-    let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    let start = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
-    if start >= workspace.atom.len()
-        || start >= workspace.atom_level.len()
-        || start >= workspace.source.len()
-    {
-        return Err(SourceHeapError::PointerOutOfBounds);
+    let _ = QueueReinit(heap, q)?;
+    let start_level = nAtomLevel.offset(i64::from(at_no))?;
+    *heap.slice_mut(start_level)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = 1;
+    let start_source = cSource.offset(i64::from(at_no))?;
+    *heap.slice_mut(start_source)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = -1;
+    let start_atom = atom.offset(i64::from(at_no))?;
+    let valence = i32::from(heap.slice(start_atom.as_const())?.first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
+    for ordinal in 0..valence {
+        let next = *heap.slice(start_atom.as_const())?.first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?.neighbor
+            .get(ordinal as usize).ok_or(SourceHeapError::PointerOutOfBounds)? as qInt;
+        *heap.slice_mut(nAtomLevel.offset(i64::from(next))?)?.first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 2;
+        *heap.slice_mut(cSource.offset(i64::from(next))?)?.first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 1 + i8::from(ordinal == neigh_ord);
+        // Native intentionally ignores full/NULL queue failure while seeding.
+        let _ = ring_queue_add(heap, q, next)?;
     }
-    // SAFETY: start was checked against all three source arrays above.
-    *unsafe { workspace.atom_level.get_unchecked_mut(start) } = 1;
-    *unsafe { workspace.source.get_unchecked_mut(start) } = -1;
-
-    // SAFETY: start was checked against atom[] above.
-    let valence = i32::from(unsafe { workspace.atom.get_unchecked(start) }.valence);
-    for i in 0..valence {
-        let n = unsafe { workspace.atom.get_unchecked(start) }.neighbor[i as usize] as qInt;
-        let neighbor = usize::from(n);
-        // SAFETY: active inp_ATOM neighbors obey the source graph contract.
-        *unsafe { workspace.atom_level.get_unchecked_mut(neighbor) } = 2;
-        *unsafe { workspace.source.get_unchecked_mut(neighbor) } = 1 + i8::from(i == neigh_ord);
-        // SAFETY: the workspace maintains the source QUEUE invariants. The C
-        // caller intentionally ignores QueueAdd's return value here.
-        let _ = unsafe { workspace.queue_add(n) };
+    let minimum = GetMinRingSize(heap, atom, q, nAtomLevel, cSource, nMaxRingSize)?;
+    let written = QueueWrittenLength(heap, q)?;
+    for ordinal in 0..written {
+        let queue = heap.slice(q.as_const())?.first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if ordinal < queue.nTotLength {
+            let next = *heap.slice(queue.Val.offset(i64::from(ordinal))?.as_const())?
+                .first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *heap.slice_mut(nAtomLevel.offset(i64::from(next))?)?.first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+            *heap.slice_mut(cSource.offset(i64::from(next))?)?.first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+        }
     }
-
-    let n_min_ring_size = get_min_ring_size_with_workspace(&mut workspace, nMaxRingSize);
-    // SAFETY: the workspace owns a validated QUEUE.
-    let queue = unsafe { workspace.queue() };
-    let written = queue.nFirst.wrapping_add(queue.nLength);
-    let n_tot_len = if written > queue.nTotLength {
-        queue.nTotLength
-    } else {
-        written
-    };
-    for i in 0..n_tot_len {
-        // SAFETY: QueueWrittenLength bounds i by nTotLength, and construction
-        // validates the backing circular-buffer capacity.
-        let n = usize::from(*unsafe { workspace.values.get_unchecked(i as usize) });
-        *unsafe { workspace.atom_level.get_unchecked_mut(n) } = 0;
-        *unsafe { workspace.source.get_unchecked_mut(n) } = 0;
-    }
-    *unsafe { workspace.atom_level.get_unchecked_mut(start) } = 0;
-    *unsafe { workspace.source.get_unchecked_mut(start) } = 0;
-
-    Ok(n_min_ring_size)
+    *heap.slice_mut(start_level)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    *heap.slice_mut(start_source)?.first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    Ok(minimum)
 }
 
 pub(crate) fn is_atom_in_3memb_ring(
@@ -860,12 +754,9 @@ pub(crate) fn is_atom_in_3memb_ring(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_atom_in_3memb_ring
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     // SAFETY: this function is read-only and does not free or resize atom[].
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = unsafe { heap.stable_slice(atom.as_const())? };
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = atoms
         .get(start_index)
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -875,7 +766,6 @@ pub(crate) fn is_atom_in_3memb_ring(
     let valence = i32::from(start.valence);
     for i in 0..valence {
         let neighbor_index = usize::from(start.neighbor[i as usize]);
-        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -922,13 +812,11 @@ pub(crate) fn QueueDelete(
         return Ok(SourceMutPointer::null());
     }
 
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = heap
         .slice(q.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .Val;
-    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value_result = inchi_free(heap, value);
     let queue_result = inchi_free(heap, q);
     value_result?;
