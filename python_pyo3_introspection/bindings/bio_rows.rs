@@ -1,0 +1,397 @@
+use crate::bio_source_values::{
+    AltLocLabel, AtomSourceIds, EntityKind, EntitySourceIds, PdbSeqId, PolymerKind, ResidueKind,
+    ResidueSourceIds,
+};
+use crate::bio_values::{AtomName, BioRowSpan};
+use crate::chemical_values::{EnumValue, enum_value};
+use crate::elements::Element;
+use crate::residue_values::{ResidueInfoKind, ResidueInfoKindInput};
+use cosmolkit as ck;
+use pyo3::prelude::*;
+
+enum_value!(BioCalcFlag, { NotSet, NoHydrogen, Determined, Calculated, Dummy });
+// PyO3's tuple-enum IntoPyObject derive must expand on a normal Rust item;
+// placing these derive inputs inside macro_rules currently breaks hygiene.
+#[derive(FromPyObject, IntoPyObject)]
+pub enum BioCalcFlagInput {
+    Enum(BioCalcFlag),
+    Name(String),
+}
+#[derive(FromPyObject, IntoPyObject)]
+pub enum EntityKindInput {
+    Enum(EntityKind),
+    Name(String),
+}
+#[derive(FromPyObject, IntoPyObject)]
+pub enum PolymerKindInput {
+    Enum(PolymerKind),
+    Name(String),
+}
+macro_rules! enum_input {
+    ($input:ident, $value:ident) => {
+        impl $input {
+            fn into_rust(self) -> PyResult<ck::$value> {
+                match self {
+                    Self::Enum(value) => Ok(value.into()),
+                    Self::Name(name) => $value::from_name(&name).map(Into::into),
+                }
+            }
+        }
+    };
+}
+enum_input!(BioCalcFlagInput, BioCalcFlag);
+enum_input!(EntityKindInput, EntityKind);
+enum_input!(PolymerKindInput, PolymerKind);
+
+#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[derive(Clone, Copy)]
+pub struct BioSiftsUnpResidue {
+    pub(crate) inner: ck::BioSiftsUnpResidue,
+}
+#[pymethods]
+impl BioSiftsUnpResidue {
+    #[new]
+    #[pyo3(signature=(*, residue=ck::BioSiftsUnpResidue::default().residue(), accession_index=ck::BioSiftsUnpResidue::default().accession_index(), number=ck::BioSiftsUnpResidue::default().number()))]
+    fn new(residue: Option<u8>, accession_index: u8, number: u16) -> Self {
+        Self {
+            inner: ck::BioSiftsUnpResidue::new(residue, accession_index, number),
+        }
+    }
+    fn residue(&self) -> Option<u8> {
+        self.inner.residue()
+    }
+    fn accession_index(&self) -> u8 {
+        self.inner.accession_index()
+    }
+    fn number(&self) -> u16 {
+        self.inner.number()
+    }
+}
+
+#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct BioEntityDbRef {
+    pub(crate) inner: ck::BioEntityDbRef,
+}
+#[pymethods]
+impl BioEntityDbRef {
+    #[new]
+    #[pyo3(signature=(*, db_name=ck::BioEntityDbRef::default().db_name, accession_code=ck::BioEntityDbRef::default().accession_code, id_code=ck::BioEntityDbRef::default().id_code, isoform=ck::BioEntityDbRef::default().isoform, seq_begin=None, seq_end=None, db_begin=None, db_end=None, label_seq_begin=None, label_seq_end=None))]
+    fn new(
+        db_name: String,
+        accession_code: String,
+        id_code: String,
+        isoform: String,
+        seq_begin: Option<PdbSeqId>,
+        seq_end: Option<PdbSeqId>,
+        db_begin: Option<PdbSeqId>,
+        db_end: Option<PdbSeqId>,
+        label_seq_begin: Option<i32>,
+        label_seq_end: Option<i32>,
+    ) -> Self {
+        Self {
+            inner: ck::BioEntityDbRef {
+                db_name,
+                accession_code,
+                id_code,
+                isoform,
+                seq_begin: seq_begin
+                    .map(|value| value.inner)
+                    .unwrap_or_else(|| ck::BioEntityDbRef::default().seq_begin),
+                seq_end: seq_end
+                    .map(|value| value.inner)
+                    .unwrap_or_else(|| ck::BioEntityDbRef::default().seq_end),
+                db_begin: db_begin
+                    .map(|value| value.inner)
+                    .unwrap_or_else(|| ck::BioEntityDbRef::default().db_begin),
+                db_end: db_end
+                    .map(|value| value.inner)
+                    .unwrap_or_else(|| ck::BioEntityDbRef::default().db_end),
+                label_seq_begin,
+                label_seq_end,
+            },
+        }
+    }
+    #[getter]
+    fn db_name(&self) -> &str {
+        &self.inner.db_name
+    }
+    #[getter]
+    fn accession_code(&self) -> &str {
+        &self.inner.accession_code
+    }
+    #[getter]
+    fn id_code(&self) -> &str {
+        &self.inner.id_code
+    }
+    #[getter]
+    fn isoform(&self) -> &str {
+        &self.inner.isoform
+    }
+    #[getter]
+    fn seq_begin(&self) -> PdbSeqId {
+        PdbSeqId {
+            inner: self.inner.seq_begin,
+        }
+    }
+    #[getter]
+    fn seq_end(&self) -> PdbSeqId {
+        PdbSeqId {
+            inner: self.inner.seq_end,
+        }
+    }
+    #[getter]
+    fn db_begin(&self) -> PdbSeqId {
+        PdbSeqId {
+            inner: self.inner.db_begin,
+        }
+    }
+    #[getter]
+    fn db_end(&self) -> PdbSeqId {
+        PdbSeqId {
+            inner: self.inner.db_end,
+        }
+    }
+    #[getter]
+    fn label_seq_begin(&self) -> Option<i32> {
+        self.inner.label_seq_begin
+    }
+    #[getter]
+    fn label_seq_end(&self) -> Option<i32> {
+        self.inner.label_seq_end
+    }
+}
+
+#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct BioEntityRow {
+    pub(crate) inner: ck::BioEntityRow,
+}
+#[pymethods]
+impl BioEntityRow {
+    #[new]
+    fn new(
+        kind: EntityKindInput,
+        polymer_kind: PolymerKindInput,
+        reflects_microhetero: bool,
+        full_sequence: Vec<String>,
+        dbrefs: Vec<BioEntityDbRef>,
+        sifts_unp_accessions: Vec<String>,
+        subchains: Vec<String>,
+        source: &EntitySourceIds,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: ck::BioEntityRow::new(
+                kind.into_rust()?,
+                polymer_kind.into_rust()?,
+                reflects_microhetero,
+                full_sequence,
+                dbrefs.into_iter().map(|value| value.inner).collect(),
+                sifts_unp_accessions,
+                subchains,
+                source.inner.clone(),
+            ),
+        })
+    }
+    #[staticmethod]
+    fn first_mon(mon_list: &str) -> &str {
+        ck::BioEntityRow::first_mon(mon_list)
+    }
+    fn kind(&self) -> EntityKind {
+        self.inner.kind().into()
+    }
+    fn polymer_kind(&self) -> PolymerKind {
+        self.inner.polymer_kind().into()
+    }
+    fn reflects_microhetero(&self) -> bool {
+        self.inner.reflects_microhetero()
+    }
+    fn full_sequence(&self) -> Vec<String> {
+        self.inner.full_sequence().to_vec()
+    }
+    fn dbrefs(&self) -> Vec<BioEntityDbRef> {
+        self.inner
+            .dbrefs()
+            .iter()
+            .cloned()
+            .map(|inner| BioEntityDbRef { inner })
+            .collect()
+    }
+    fn sifts_unp_accessions(&self) -> Vec<String> {
+        self.inner.sifts_unp_accessions().to_vec()
+    }
+    fn subchains(&self) -> Vec<String> {
+        self.inner.subchains().to_vec()
+    }
+    fn source(&self) -> EntitySourceIds {
+        EntitySourceIds {
+            inner: self.inner.source().clone(),
+        }
+    }
+}
+
+#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct BioResidueRow {
+    pub(crate) inner: ck::BioResidueRow,
+}
+#[pymethods]
+impl BioResidueRow {
+    #[new]
+    #[pyo3(signature=(chain_id, atom_span, name, residue_info_kind, entity_kind, entity_id, het_flag, source, sifts_unp))]
+    fn new(
+        chain_id: u32,
+        atom_span: &BioRowSpan,
+        name: &str,
+        residue_info_kind: ResidueInfoKindInput,
+        entity_kind: EntityKindInput,
+        entity_id: Option<u32>,
+        het_flag: Option<u8>,
+        source: &ResidueSourceIds,
+        sifts_unp: BioSiftsUnpResidue,
+    ) -> PyResult<Self> {
+        let name = ck::ResidueName::from_ascii(name.as_bytes()).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("name is not a valid ResidueName")
+        })?;
+        let span = atom_span
+            .as_rust()
+            .map_err(crate::bio_errors::BioStructureError::from_rust)?;
+        Ok(Self {
+            inner: ck::BioResidueRow::new(
+                ck::BioChainId::new(chain_id),
+                span,
+                name,
+                residue_info_kind.into_rust()?,
+                entity_kind.into_rust()?,
+                entity_id.map(ck::BioEntityId::new),
+                het_flag,
+                source.inner.clone(),
+                sifts_unp.inner,
+            ),
+        })
+    }
+    fn chain_id(&self) -> u32 {
+        self.inner.chain_id().value()
+    }
+    fn atom_span(&self) -> PyResult<BioRowSpan> {
+        BioRowSpan::from_rust(self.inner.atom_span())
+            .map_err(crate::bio_errors::BioStructureError::from_rust)
+    }
+    fn name(&self) -> String {
+        self.inner.name().as_str().to_owned()
+    }
+    fn residue_info_kind(&self) -> ResidueInfoKind {
+        self.inner.residue_info_kind().into()
+    }
+    fn kind(&self) -> ResidueKind {
+        self.inner.kind().into()
+    }
+    fn entity_kind(&self) -> EntityKind {
+        self.inner.entity_kind().into()
+    }
+    fn entity_id(&self) -> Option<u32> {
+        self.inner.entity_id().map(|value| value.value())
+    }
+    fn het_flag(&self) -> Option<u8> {
+        self.inner.het_flag()
+    }
+    fn source(&self) -> ResidueSourceIds {
+        ResidueSourceIds {
+            inner: self.inner.source().clone(),
+        }
+    }
+    fn sifts_unp(&self) -> BioSiftsUnpResidue {
+        BioSiftsUnpResidue {
+            inner: self.inner.sifts_unp(),
+        }
+    }
+}
+
+#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct BioAtomRow {
+    pub(crate) inner: ck::BioAtomRow,
+}
+#[pymethods]
+impl BioAtomRow {
+    #[new]
+    #[pyo3(signature=(residue_id, name, element, isotope_mass_number, altloc, formal_charge, calc_flag, occupancy, b_iso, anisou, tls_group_id, fraction, source))]
+    fn new(
+        residue_id: u32,
+        name: &AtomName,
+        element: &Element,
+        isotope_mass_number: Option<u16>,
+        altloc: Option<AltLocLabel>,
+        formal_charge: i8,
+        calc_flag: BioCalcFlagInput,
+        occupancy: f64,
+        b_iso: f64,
+        anisou: [f64; 6],
+        tls_group_id: i16,
+        fraction: f64,
+        source: &AtomSourceIds,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: ck::BioAtomRow::new(
+                ck::BioResidueId::new(residue_id),
+                name.inner,
+                element.inner,
+                isotope_mass_number,
+                altloc.map(|value| value.inner),
+                formal_charge,
+                calc_flag.into_rust()?,
+                occupancy,
+                b_iso,
+                anisou,
+                tls_group_id,
+                fraction,
+                source.inner,
+            ),
+        })
+    }
+    fn residue_id(&self) -> u32 {
+        self.inner.residue_id().value()
+    }
+    fn name(&self) -> AtomName {
+        AtomName {
+            inner: self.inner.name(),
+        }
+    }
+    fn element(&self) -> Element {
+        Element {
+            inner: self.inner.element(),
+        }
+    }
+    fn isotope_mass_number(&self) -> Option<u16> {
+        self.inner.isotope_mass_number()
+    }
+    fn altloc(&self) -> Option<AltLocLabel> {
+        self.inner.altloc().map(|inner| AltLocLabel { inner })
+    }
+    fn formal_charge(&self) -> i8 {
+        self.inner.formal_charge()
+    }
+    fn calc_flag(&self) -> BioCalcFlag {
+        self.inner.calc_flag().into()
+    }
+    fn occupancy(&self) -> f64 {
+        self.inner.occupancy()
+    }
+    fn b_iso(&self) -> f64 {
+        self.inner.b_iso()
+    }
+    fn anisou(&self) -> Vec<f64> {
+        self.inner.anisou().to_vec()
+    }
+    fn tls_group_id(&self) -> i16 {
+        self.inner.tls_group_id()
+    }
+    fn fraction(&self) -> f64 {
+        self.inner.fraction()
+    }
+    fn source(&self) -> AtomSourceIds {
+        AtomSourceIds {
+            inner: *self.inner.source(),
+        }
+    }
+}

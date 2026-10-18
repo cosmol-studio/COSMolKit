@@ -1431,6 +1431,6 @@ mod tests {
 mod construction;
 
 pub use construction::{
-    ConformerOptimizer, ConformerOptimizerError, DistanceBoundsRead,
-    DistanceGeometryForceFieldParams, calc_chiral_volume_rows,
+    ConformerOptimizer, ConformerOptimizerCause, ConformerOptimizerError, DistGeomForceFieldError,
+    DistanceBoundsRead, DistanceGeometryForceFieldParams, calc_chiral_volume_rows,
 };

@@ -604,7 +604,7 @@ pub(super) fn parse_mmff_f64(cell: &str) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MmffParamTable {
+pub enum MmffParamTable {
     Def,
     Prop,
     Pbci,
@@ -622,7 +622,7 @@ pub(super) enum MmffParamTable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum MmffParamParseCause {
+pub enum MmffParamParseCause {
     InvalidUnsigned { cell: String },
     InvalidFloat { cell: String },
     MissingToken,
@@ -630,11 +630,28 @@ pub(super) enum MmffParamParseCause {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct MmffParamParseError {
+pub struct MmffParamParseError {
     pub(super) table: MmffParamTable,
     pub(super) line: usize,
     pub(super) column: usize,
     pub(super) cause: MmffParamParseCause,
+}
+
+impl MmffParamParseError {
+    /// The source parameter table, without exposing mutable parser state.
+    pub fn table(&self) -> MmffParamTable {
+        self.table
+    }
+    pub fn line(&self) -> usize {
+        self.line
+    }
+    pub fn column(&self) -> usize {
+        self.column
+    }
+    /// Structured parsing detail; this value is not an `Error::source`.
+    pub fn cause(&self) -> &MmffParamParseCause {
+        &self.cause
+    }
 }
 
 impl fmt::Display for MmffParamParseError {

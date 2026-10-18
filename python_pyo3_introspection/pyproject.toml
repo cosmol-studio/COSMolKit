@@ -6,6 +6,14 @@ build-backend = "maturin"
 name = "fixed-python-projection"
 version = "0.0.0"
 requires-python = ">=3.12"
+dependencies = ["numpy"]
 
 [tool.maturin]
-module-name = "_native"
+module-name = "fixed_projection._native"
+python-source = "artifacts/smoke/package"
+# Generated Python sources are ignored by Git; include these package files explicitly.
+include = [
+    { path = "fixed_projection/__init__.py", format = "wheel" },
+    { path = "fixed_projection/__init__.pyi", format = "wheel" },
+    { path = "fixed_projection/py.typed", format = "wheel" },
+]

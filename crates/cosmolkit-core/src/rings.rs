@@ -253,8 +253,23 @@ impl RingInfo {
             return Err("persisted ring memberships do not match ring rows");
         }
         if let Some(d) = &decomposition {
+            // RingInfo::preallocate grows membership rows without touching
+            // dp_urfData. AddHs/MMFF can therefore retain the original graph
+            // beside a longer, empty membership suffix. Only a nonempty row
+            // outside that graph contradicts the stored decomposition.
+            // RDKit✔️✔️: void RingInfo::preallocate(unsigned int numAtoms, unsigned int numBonds) {
+            // RDKit✔️✔️:   d_atomMembers.resize(numAtoms);
+            // RDKit✔️✔️:   d_bondMembers.resize(numBonds);
+            // RDKit✔️✔️: }
+            // CK archive validation, not ring recomputation: one bounded
+            // membership-suffix scan, within the existing linear decode cost.
             if !self.initialized
-                || d.graph().node_count() < self.atom_members.len().max(1)
+                || d.graph().node_count() == 0
+                || self
+                    .atom_members
+                    .iter()
+                    .skip(d.graph().node_count())
+                    .any(|row| !row.is_empty())
                 || checked_relevant_cycle_count(d.relevant_cycle_count()).ok()
                     != self.relevant_cycle_count
                 || d.urf_count() != self.atom_ring_families.len()
@@ -5138,6 +5153,73 @@ mod source586_sssr_tests {
 #[cfg(test)]
 mod source_ring_snapshot_tests {
     use super::*;
+    #[test]
+    fn persisted_rdl_retains_original_graph_after_empty_membership_preallocation() {
+        fn triangle() -> PersistedRingDecomposition {
+            let mut graph = PersistedRingGraph::new(3);
+            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                graph.add_undirected_edge(a, b).unwrap();
+            }
+            PersistedRingDecomposition::calculate(graph).unwrap()
+        }
+        let d = triangle();
+        let mut rings = RingInfo::new(RingFindType::Sssr, 3, 3);
+        rings.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+        rings
+            .add_ring_family(d.urfs()[0].nodes(), &[0, 1, 2])
+            .unwrap();
+        rings.relevant_cycle_count = Some(1);
+        rings.preallocate(9, 9);
+        let atoms = rings.atom_members.clone();
+        let bonds = rings.bond_members.clone();
+        rings
+            .restore_persisted_state(Some(d), Some(atoms.clone()), Some(bonds.clone()))
+            .unwrap();
+        assert_eq!(rings.atom_row_count(), 9);
+        assert_eq!(rings.bond_row_count(), 9);
+        assert_eq!(
+            rings.persisted_decomposition().unwrap().graph().node_count,
+            3
+        );
+        assert_eq!(rings.persisted_atom_members(), atoms);
+        assert_eq!(rings.persisted_bond_members(), bonds);
+        assert_eq!(
+            rdl_state::relevant_cycles(rings.persisted_decomposition().unwrap()).count(),
+            1
+        );
+
+        let before = rings.clone();
+        let mut bad_members = atoms.clone();
+        bad_members[8].push(0);
+        assert!(
+            rings
+                .restore_persisted_state(Some(triangle()), Some(bad_members), Some(bonds.clone()))
+                .is_err()
+        );
+        assert_eq!(rings, before);
+        let mut bad_rings = rings.clone();
+        bad_rings.atom_rings.push(vec![AtomId::new(8)]);
+        bad_rings.atom_members[8].push(1);
+        assert!(
+            bad_rings
+                .restore_persisted_state(Some(triangle()), None, None)
+                .is_err()
+        );
+        let mut wrong_count = rings.clone();
+        wrong_count.relevant_cycle_count = Some(2);
+        assert!(
+            wrong_count
+                .restore_persisted_state(Some(triangle()), None, None)
+                .is_err()
+        );
+        let mut wrong_family = rings.clone();
+        wrong_family.atom_ring_families[0][0] = AtomId::new(8);
+        assert!(
+            wrong_family
+                .restore_persisted_state(Some(triangle()), None, None)
+                .is_err()
+        );
+    }
     #[test]
     fn all_modeled_source_cache_metadata_roundtrips_without_reconstruction() {
         let r = RingInfo::from_persisted_components(

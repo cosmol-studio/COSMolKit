@@ -23,7 +23,10 @@ pub(crate) fn enumerate_tautomers_impl(
             source.topology.bonds.len(),
         )
     });
-    let mut callback = CallbackAdapter { params };
+    let mut callback = CallbackAdapter {
+        params,
+        snapshot_coordinates: Default::default(),
+    };
     let result = cosmolkit_tautomer::enumerate_with_catalog(
         cosmolkit_tautomer::TautomerScoreView::new(source, &mut source_rings),
         &params.catalog,
@@ -67,7 +70,10 @@ pub(crate) fn canonical_tautomer_impl(params: &TautomerParams) -> Result<(), Ope
                 valence: cache.valence_assignment(),
                 rings: cache.valid_ring_info(),
             };
-            let mut callback = CallbackAdapter { params };
+            let mut callback = CallbackAdapter {
+                params,
+                snapshot_coordinates: Default::default(),
+            };
             let record = if params.finalize_selected {
                 cosmolkit_tautomer::finalize_canonical_candidate(source)
             } else {

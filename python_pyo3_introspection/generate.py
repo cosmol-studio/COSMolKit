@@ -20,12 +20,14 @@ Changes to the public __init__.pyi:
    metadata docstring from the public stub, not from native runtime __doc__.
    This is a handwritten annotation, not Rust type inference; there are no
    NumPy-specific type names or conversion rules in this generator.
-4. Split __getitem__ input/output unions into overloads: integer-like indexing
-   returns the item type (including None if declared); slicing returns the same
-   collection type. Preserve the official integer input protocol.
+4. Expand only explicit {"role": "indexing", "protocol": "integer_slice_self"}
+   declarations after validating the extracted integer-or-slice input and
+   item-or-self output. Unmarked __getitem__ declarations remain unchanged;
+   incompatible marked signatures fail generation. Preserve official types.
 5. Remove positional-only separators from property setters as a BasedPyright
-   workaround. Add typing imports and derive __all__ from the extension's public
-   exports by loading the extension.
+   workaround. Qualify property decorators as builtins.property so an actual
+   member named property cannot shadow the decorator. Add imports and derive
+   __all__ from the extension's public exports by loading the extension.
 
 Executable __init__.py:
 6. Re-export the existing native classes/functions without wrappers, replacement
@@ -37,8 +39,8 @@ importable _native name, and create py.typed. Do not modify the official stub or
 copy a second _native.pyi into the package. AST serialization rewrites the whole
 public stub's formatting rather than preserving its original source text.
 
-Indexing convention: integer-like | slice input and item | collection output.
-This is a contributor convention, not a claim to handle arbitrary indexing.
+Indexing semantics belong to the binding's explicit protocol declaration, not
+the method name or an inferred relationship between arbitrary union members.
 """
 from __future__ import annotations
 
@@ -97,9 +99,32 @@ def union_parts(node):
 
 
 def indexing_forms(owner, method):
-    inputs = union_parts(positional(method)[-1].annotation)
-    integer = next(node for node in inputs if ast.unparse(node) != "slice")
-    items = [node for node in union_parts(method.returns) if ast.unparse(node) != owner]
+    """Validate the declared integer/item and slice/self correspondence."""
+    context = f"{owner}.{method.name}: integer_slice_self"
+    if projection(method) != {"role": "indexing", "protocol": "integer_slice_self"}:
+        raise ValueError(f"{context} requires the explicit supported indexing declaration")
+    args = method.args
+    parameters = positional(method)
+    if (method.name != "__getitem__" or len(parameters) != 2
+            or parameters[0].arg != "self" or args.vararg or args.kwarg
+            or args.kwonlyargs or args.defaults):
+        raise ValueError(f"{context} requires exactly (self, index), without defaults or extra parameters")
+    if parameters[1].annotation is None or method.returns is None:
+        raise ValueError(f"{context} requires explicit input and return annotations")
+    inputs = union_parts(parameters[1].annotation)
+    names = {ast.unparse(node) for node in inputs}
+    integer_names = {"int", "SupportsIndex", "typing.SupportsIndex"}
+    if len(inputs) != 2 or "slice" not in names or len(names & integer_names) != 1:
+        raise ValueError(f"{context} input must be int/SupportsIndex | slice")
+    integer = next(node for node in inputs if ast.unparse(node) in integer_names)
+    outputs = union_parts(method.returns)
+    items = [node for node in outputs if ast.unparse(node) != owner]
+    if len(items) == len(outputs) or not items or len(outputs) - len(items) != 1:
+        raise ValueError(f"{context} return must contain an item type and exactly one {owner} branch")
+    if any(isinstance(node, ast.Name) and node.id in {"Any", "PyAny", "Incomplete", "object"}
+           or isinstance(node, ast.Attribute) and node.attr in {"Any", "PyAny", "Incomplete"}
+           for item in items for node in ast.walk(item)):
+        raise ValueError(f"{context} requires concrete item types")
     item_type = items[0]
     for node in items[1:]:
         item_type = ast.BinOp(left=item_type, op=ast.BitOr(), right=node)
@@ -108,8 +133,23 @@ def indexing_forms(owner, method):
         form = overload(method)
         positional(form)[-1].annotation = copy.deepcopy(input_type)
         form.returns = copy.deepcopy(output_type)
+        form.body = [ast.Expr(value=ast.Constant(value=Ellipsis))]
         forms.append(form)
     return forms
+
+
+def declared_indexing(tree):
+    """No declaration means no indexing rewrite, including nested classes."""
+    owners = {method: cls for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+              for method in cls.body if isinstance(method, ast.FunctionDef)}
+    for method in list(ast.walk(tree)):
+        if not isinstance(method, ast.FunctionDef) or projection(method).get("role") != "indexing":
+            continue
+        cls = owners.get(method)
+        if cls is None:
+            raise ValueError("indexing declarations require a class __getitem__ method")
+        at = cls.body.index(method)
+        cls.body[at:at + 1] = indexing_forms(cls.name, method)
 
 
 def declared_overloads(tree):
@@ -146,22 +186,24 @@ def generate(library: Path, official_stub: Path, output: Path):
     tree = PublicNames().visit(ast.parse(official_stub.read_text()))
     declared_overloads(tree)
     declared_return_types(tree)
+    declared_indexing(tree)
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
-    for owner, cls in classes.items():
-        body = cls.body
-        for method in list(body):
-            if isinstance(method, ast.FunctionDef) and method.name == "__getitem__":
-                at = body.index(method)
-                body[at:at + 1] = indexing_forms(owner, method)
     for cls in classes.values():
         for method in cls.body:
+            if isinstance(method, ast.FunctionDef):
+                method.decorator_list = [
+                    ast.Attribute(value=ast.Name(id="builtins", ctx=ast.Load()),
+                                  attr="property", ctx=ast.Load())
+                    if isinstance(tag, ast.Name) and tag.id == "property" else tag
+                    for tag in method.decorator_list
+                ]
             if isinstance(method, ast.FunctionDef) and any(isinstance(tag, ast.Attribute) and tag.attr == "setter" for tag in method.decorator_list):
                 # Work around BasedPyright's positional-only property-setter handling.
                 method.args.args = method.args.posonlyargs + method.args.args
                 method.args.posonlyargs = []
     exports = sorted(name for name in native.__all__ if not name.startswith("_"))
     tree.body = [node for node in tree.body if not isinstance(node, ast.Assign) or not any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
-    tree.body.insert(0, ast.Import(names=[ast.alias(name="typing")]))
+    tree.body.insert(0, ast.Import(names=[ast.alias(name="builtins"), ast.alias(name="typing")]))
     tree.body.append(ast.parse(f"__all__ = {exports!r}").body[0])
 
     package = output / "fixed_projection"

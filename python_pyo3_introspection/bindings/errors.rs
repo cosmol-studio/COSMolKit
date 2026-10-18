@@ -1,18 +1,17 @@
-use crate::error_framework::{error_projection, variant_pattern};
+use crate::error_framework::error_projection;
 use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::error::Error;
-error_projection!(SmilesError, SmilesErrorKind, ck::SmilesError, "smiles", {
-    Parse(_), Hydrogen(_), Sanitize(_), Stereo(_), Construction(_),
+error_projection!(AtomCodeExplanationError, AtomCodeExplanationErrorKind, ck::AtomCodeExplanationError, "fingerprint", {
+    UnknownChirality { code: u8 },
 });
+error_projection!(Coordinate3DReadError, Coordinate3DReadErrorKind, ck::Coordinate3DReadError, "coordinates", {
+    ConformerNotFound { conformer_id: usize, count: usize },
+});
+pub use crate::operation_errors::{SmilesError, SmilesErrorKind};
 
-error_projection!(MaccsFingerprintError, MaccsFingerprintErrorKind, ck::MaccsFingerprintError, "fingerprint", {
-    UnsupportedOption { option: &'static str, reason: &'static str },
-    MissingPattern { bit: usize },
-    Topology(_), Rings(_), Valence(_), Paths(_), Smarts(_), QueryCompile(_),
-    QueryContext(_), Match(_), Value(_),
-});
+pub use crate::maccs_errors::{MaccsFingerprintError, MaccsFingerprintErrorKind};
 
 error_projection!(FingerprintError, FingerprintErrorKind, ck::FingerprintError, "fingerprint", {
     EmptyFingerprint,

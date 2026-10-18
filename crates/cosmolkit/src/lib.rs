@@ -24,11 +24,36 @@ mod feature_gate_docs;
 pub mod binding_contract;
 #[cfg(feature = "cap-forcefields")]
 mod forcefields;
+#[cfg(feature = "cap-forcefields")]
+pub use cosmolkit_core::FragmentCoordinateViewError;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
-    AtomPairAtomInvariantsGenerator, AtomPairParams, Fingerprint, FingerprintAdditionalOutput,
-    FingerprintError, FingerprintJsonError, MorganParams, SparseBitFingerprint,
-    SparseCountFingerprint, SparseCountFingerprint32, TopologicalTorsionParams,
+    AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairParams, Fingerprint,
+    FingerprintAdditionalOutput, FingerprintError, FingerprintJsonError, FingerprintWorkerError,
+    MorganError, MorganParams, SparseBitFingerprint, SparseCountFingerprint,
+    SparseCountFingerprint32, TopologicalTorsionError, TopologicalTorsionParams,
+};
+#[cfg(all(feature = "cap-forcefields", not(target_family = "wasm")))]
+pub use cosmolkit_forcefields::DispatchedUffOptimizationError;
+#[cfg(feature = "cap-forcefields")]
+pub use cosmolkit_forcefields::{
+    AutomaticForceFieldConstructionError, ForceFieldConstructionError, MmffBuilderError,
+    MmffOptimizationError as MmffOptimizationSourceError, MmffOptimizationFailure,
+    NonbondedAssemblyError, NonbondedFragmentMappingError, OptimizationStageError,
+    SerialConformerOptimizationError, SerialCoordinateCountError, SerialResultCapacityError,
+    SerialUffOptimizationError, SingleConformerOptimizationError, UffConformerError,
+    UffEvaluationError, UffEvaluationFailure, UffPreparedOptimizationError, UffSingleError,
+    UffThreadCountError,
+};
+#[cfg(feature = "cap-forcefields")]
+pub use cosmolkit_forcefields::{
+    ForceFieldAngleIndexArgument, ForceFieldAngleRangeBound, ForceFieldBondIndexArgument,
+    ForceFieldIndexArgument, ForceFieldKernelError, ForceFieldTorsionIndexArgument,
+    MmffAngleLookupError, MmffOopLookupError, MmffParamError, MmffParamParseCause,
+    MmffParamParseError, MmffParamTable, MmffTorLookupError, MmffVdwParseError, UffBondMathError,
+    UffBuilderError, UffDefaultTorsionQueryError, UffInversionContributionError,
+    UffInversionIndexArgument, UffParamError, UffPreparedValenceField, UffTorsionBondQueryError,
+    UffTypingError, UffTypingInput,
 };
 #[cfg(feature = "cap-forcefields")]
 pub use forcefields::{
@@ -48,15 +73,28 @@ pub use ops::{
 mod descriptors;
 #[cfg(feature = "cap-depict")]
 mod drawing;
+#[cfg(feature = "cap-io")]
+pub use cosmolkit_core::{AttachmentExpansionError, BondDirectionStereoError};
+#[cfg(feature = "cap-depict")]
+pub use cosmolkit_core::{
+    DoubleLexicalReadError, DoubleLexicalReadErrorKind, SourceNumericStreamState,
+    UnsignedStreamArrayError,
+};
 #[cfg(feature = "cap-depict")]
 pub use cosmolkit_depict::{
     Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
-    Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError,
+    Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError, SvgParseError,
+    XmlParseError, XmlTextPos,
 };
 #[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::{
-    CrippenTotals, DescriptorError, LabuteAsaContributions, RotatableBondsOptions,
+    CrippenTotals, DescriptorError, DescriptorSearchCause, LabuteAsaContributions,
+    RotatableBondsOptions,
 };
+#[cfg(feature = "cap-io")]
+pub use cosmolkit_io::{MolPostError, MolProcessingError};
+#[cfg(feature = "cap-smiles")]
+pub use cosmolkit_smiles::FragmentWriteInputError;
 #[cfg(feature = "cap-descriptors")]
 pub use descriptors::DescriptorReadError;
 #[cfg(feature = "cap-depict")]
@@ -81,7 +119,7 @@ pub use cosmolkit_reaction::CxSmilesFields;
 pub use cosmolkit_reaction::SubstructMatchParams;
 #[cfg(feature = "cap-reaction")]
 pub use cosmolkit_reaction::{
-    ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
+    CxParseError, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
     ReactionInitializationError, ReactionModelError, ReactionParseError, ReactionParseParams,
     ReactionProductError, ReactionRole, ReactionRunError, ReactionRunParams,
     ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationError,
@@ -139,13 +177,20 @@ pub use search::{
 mod smiles;
 mod strict;
 #[cfg(feature = "cap-search")]
+pub use cosmolkit_core::WedgeError;
+#[cfg(feature = "cap-search")]
+pub use cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError;
+#[cfg(feature = "cap-search")]
 pub use cosmolkit_search::{
     AtomComparator as McsAtomComparator, BondComparator as McsBondComparator, CompiledQuery,
-    MatchError, MatchResult, McsAtomCompareParameters, McsBondCompareParameters,
-    McsCandidateMatchError as McsError, McsParameters, McsResult, QueryCompileError,
+    CxQueryLoweringError, MatchError, MatchResult, McsAtomCompareParameters,
+    McsBondCompareParameters, McsCandidateMatchError as McsError, McsError as SearchMcsError,
+    McsParameters, McsProgressError, McsResult, QueryCompileError, QueryMatchContextError,
     SmartsParseError, SmartsParseParams, SmartsWriteError, SmartsWriteParams, SubstructMatchError,
     SubstructMatchParams,
 };
+#[cfg(feature = "cap-search")]
+pub use cosmolkit_smiles::SmartsTraversalError;
 
 pub use binding_contract::conveniences::*;
 #[doc(hidden)]
@@ -193,8 +238,20 @@ pub use cosmolkit_core::{AromaticityError, AromaticityModel, AromaticityParams};
 #[cfg(feature = "cap-valence")]
 pub use cosmolkit_core::{ValenceModel, ValenceParams};
 // Detached metadata and its error are always-present model vocabulary.
+#[cfg(feature = "cap-smiles")]
+pub use cosmolkit_core::{
+    AdjustHsError, AtropisomerError, CanonicalRankError, CleanupError, ConjugationError,
+    DoubleBondStereoError, HybridizationError, LegacyStereoError, PathError, PeriodicTableError,
+    PropertyCacheError, PropertyIntReadError, PropertyUIntReadError, PropertyULongReadError,
+    RadicalError, RequiredPropertyStringError, RingDecomposerError, RingFindingError,
+    StereoOrderError, UIntLexicalReadError,
+};
 #[cfg(feature = "cap-transforms")]
-pub use cosmolkit_core::{AtomPositionParams, TransformError};
+pub use cosmolkit_core::{
+    AtomPathSubsetCopyError, AtomPositionParams, FullCopyComponentError, MoleculeFragmentsError,
+    MoleculeFragmentsFailure, OrderedFragmentBuildError, SelectedBondCopyError,
+    SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, TransformError,
+};
 #[cfg(feature = "cap-sanitize")]
 pub use cosmolkit_core::{
     ChemistryProblem, ChemistryProblemError, ChemistryProblemReport, SanitizeError,
@@ -210,6 +267,12 @@ pub use cosmolkit_core::{
     PotentialStereoParams, PotentialStereoSpecified, PotentialStereoType, RingStereoRelation,
     StereoError, StructureTagParams,
 };
+#[cfg(feature = "cap-smiles")]
+pub use cosmolkit_core::{
+    parser_helpers::ParserCarrierError, parser_stereo_order::ParserStereoOrderError,
+};
+#[cfg(feature = "cap-bio")]
+pub use cosmolkit_io::cif::{CifReadError, CifReadErrorKind};
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     BioMmcifReadError, BioMmcifReadStage, BioMmcifWriteError, BioMmcifWriteParams, BioPdbReadError,
@@ -224,7 +287,7 @@ pub use cosmolkit_model::{AtomMetadata, ValenceError};
 #[cfg(feature = "cap-smiles")]
 pub use cosmolkit_smiles::{
     CxCoordinateSelection, CxSmilesFields, CxSmilesWriteParams, RandomSmilesWriteParams,
-    SmilesParseParams, SmilesStereoError, SmilesWriteParams,
+    SmilesParseError, SmilesParseParams, SmilesStereoError, SmilesWriteParams,
 };
 #[cfg(feature = "cap-stereo")]
 pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError, StereoReadError};
@@ -377,6 +440,8 @@ pub use forcefields::{MmffEnergyGradient, MmffEvaluationParams};
 #[cfg(feature = "cap-tautomer")]
 mod tautomer;
 #[cfg(feature = "cap-tautomer")]
+pub use cosmolkit_tautomer::TautomerTransformError;
+#[cfg(feature = "cap-tautomer")]
 pub(crate) use ops::{CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess};
 #[cfg(feature = "cap-tautomer")]
 #[doc(hidden)]
@@ -398,8 +463,31 @@ pub use cosmolkit_fingerprints::{
 };
 #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
 pub use cosmolkit_io::PickleError;
+#[cfg(feature = "cap-bio")]
+pub use cosmolkit_io::{
+    AtomSiteIdentityField, CoordinateBlockSelectionError, MissingAtomSiteIdentityField,
+    MmcifAssemblyError, MmcifAtomSiteGroupingError, MmcifAtomSiteRowOutOfBounds,
+    MmcifAtomSiteScalarError, MmcifCcdRestoreError, MmcifCisPepError, MmcifConnectionError,
+    MmcifCrystalInfoError, MmcifEntityInfoError, MmcifHelixError, MmcifLabelAddressError,
+    MmcifModResError, MmcifOperationExprError, MmcifSequenceIdError, MmcifSheetError,
+    MmcifSiftsUnpError, MmcifTlsInfoError, PdbResidueKeyError,
+};
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
-pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
+pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams, PdbPostprocessError};
+#[cfg(feature = "cap-bio")]
+pub use cosmolkit_io::{
+    ChemCompAtomError, ChemCompModelError, JsonError, JsonErrorKind, MmjsonReadError,
+    MmjsonStructureError, MmjsonUnexpectedType, MmjsonValueError,
+};
+#[cfg(feature = "cap-bio")]
+pub use cosmolkit_io::{
+    PdbAtomFieldError, PdbChargeError, PdbCisPepRecordError, PdbConectError,
+    PdbConnectionFinalizationError, PdbCrystalError, PdbDbRefError, PdbHeaderError, PdbHelixError,
+    PdbInputFormatError, PdbLinkNameCounter, PdbLinkRecordError, PdbModResError,
+    PdbModelTransitionError, PdbMtrixError, PdbReaderCause, PdbRemark3Error, PdbRemark200Error,
+    PdbRemark350Error, PdbRemarkError, PdbRemarkFinalizationError, PdbRemarkMetadataError,
+    PdbSheetError, PdbSsbondRecordError, PdbSsbondResolutionError, PdbStructureFinalizationError,
+};
 #[cfg(feature = "cap-fingerprints")]
 pub use ops::AtomPairAtomCodeResult;
 #[cfg(feature = "cap-fingerprints")]
@@ -412,7 +500,7 @@ pub use ops::{UffEnergyGradient, UffEvaluationParams};
 #[cfg(feature = "cap-hashing")]
 mod molecular_hash;
 #[cfg(feature = "cap-hashing")]
-pub use cosmolkit_core::CipRankError;
+pub use cosmolkit_core::{CipRankError, ScaffoldError};
 #[cfg(feature = "cap-hashing")]
 pub use cosmolkit_fingerprints::MoleculeHashError;
 
@@ -444,8 +532,10 @@ mod topological_torsion_path;
 pub use cosmolkit_alignment::{
     AlignmentAtomMap, AlignmentError, AlignmentParameters, AlignmentResult, AlignmentTransform,
     AllConformerRmsdParameters, BestAlignmentParameters, ConformerAlignmentParameters,
-    ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters,
+    ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters, ThreadSelectionError,
 };
+#[cfg(feature = "cap-alignment")]
+pub use cosmolkit_core::ThreadCountError;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
     LAYERED_FINGERPRINT_MAX_LAYERS, LAYERED_FINGERPRINT_SUBSTRUCTURE_LAYERS,
@@ -465,7 +555,7 @@ pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};
 #[cfg(feature = "cap-fingerprints")]
 mod maccs_fingerprint;
 #[cfg(feature = "cap-fingerprints")]
-pub use cosmolkit_fingerprints::{MaccsFingerprintError, MaccsFingerprintParams};
+pub use cosmolkit_fingerprints::{AtomCodeError, MaccsFingerprintError, MaccsFingerprintParams};
 
 #[cfg(any(feature = "cap-conformer", feature = "cap-stereoisomers"))]
 mod conformer_projection;
@@ -474,6 +564,16 @@ mod conformer_projection;
 mod conformer;
 #[cfg(feature = "cap-conformer")]
 pub use conformer::{ConformerError, ConformerRunError, EmbedFailureCause, EmbedParams};
+#[cfg(feature = "cap-conformer")]
+pub use cosmolkit_conformer::{
+    BoundKind, BoundsMatrixError, BoundsQueryError, EmbedSeedError, GenerationError,
+    GenerationFailure, GraphBoundsError, MatrixAxis, PruningError,
+};
+#[cfg(feature = "cap-forcefields")]
+pub use cosmolkit_forcefields::{
+    ConformerOptimizerCause, ConformerOptimizerError, CrystalffTorsionPreferencesError,
+    DistGeomForceFieldError, MissingExplicitHydrogensError, UffBoundsCause, UffBoundsError,
+};
 
 #[cfg(feature = "cap-conformer")]
 pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
@@ -512,6 +612,8 @@ pub use cosmolkit_fingerprints::{
 
 #[cfg(feature = "cap-io")]
 mod molecular_io;
+#[cfg(feature = "cap-io")]
+pub use cosmolkit_io::SdfWriteError;
 #[cfg(feature = "cap-io")]
 mod property_text;
 #[cfg(feature = "cap-io")]

@@ -5,6 +5,7 @@
 //! operation context, or runtime cache state.
 
 mod alignment;
+pub use cosmolkit_ringdecomposer::RingDecomposerError;
 mod aromaticity;
 mod atropisomer;
 mod attachment_points;
@@ -64,7 +65,10 @@ pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
 /// Detached, source-ordered fragment extraction with explicit topology mappings.
 pub use fragments::{
-    MoleculeFragment, MoleculeFragmentsError, get_largest_molecule_fragment, get_molecule_fragments,
+    AtomPathSubsetCopyError, FullCopyComponentError, MoleculeFragment, MoleculeFragmentsError,
+    MoleculeFragmentsFailure, OrderedFragmentBuildError, SelectedBondCopyError,
+    SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, get_largest_molecule_fragment,
+    get_molecule_fragments,
 };
 pub use scaffolds::{
     ScaffoldError, ScaffoldResult, murcko_decompose, murcko_scaffold, net_scaffold,
@@ -117,7 +121,8 @@ pub use cip_ranks::{
     CipRankError, assign_atom_cip_ranks, assign_atom_cip_ranks_with_query_state,
     refine_atom_cip_ranks_from_invariants, refine_atom_cip_ranks_from_invariants_with_query_state,
 };
-pub(crate) use cleanup::{CleanupError, CleanupParams, cleanup};
+pub use cleanup::CleanupError;
+pub(crate) use cleanup::{CleanupParams, cleanup};
 
 pub use conjugation::{ConjugationError, assign_conjugation_flags};
 pub(crate) use conjugation::{assign_conjugation, atom_has_conjugated_bond};
@@ -135,7 +140,7 @@ pub use double_stereo::{
     translate_ez_to_cis_trans, with_double_bond_stereo_reference,
 };
 
-pub use hcount::{total_hydrogen_count, total_hydrogen_count_from_validated};
+pub use hcount::{AdjustHsError, total_hydrogen_count, total_hydrogen_count_from_validated};
 pub(crate) use hybridization::assign_hybridization;
 pub use hybridization::{
     HybridizationAssignment, HybridizationError, assign_hybridization_with_conjugation,
@@ -216,15 +221,14 @@ pub use rings::{
     symmetrized_sssr_with_existing, symmetrized_sssr_with_properties,
 };
 
+pub use sanitize::PropertyCacheError;
 pub use sanitize::{
     ChemistryProblem, ChemistryProblemError, ChemistryProblemReport, SanitizeAssignment,
     SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, detect_chemistry_problems,
     sanitize_owned_topology, sanitize_topology, sanitize_topology_with_query_state,
     source_sanitize_tautomer_product,
 };
-pub(crate) use sanitize::{
-    PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,
-};
+pub(crate) use sanitize::{PropertyCacheAssignment, PropertyCacheParams, assign_property_cache};
 
 pub use stereo_order::{
     StereoOrderError, TetrahedralLigand, TetrahedralRemap, atom_nonzero_degree,

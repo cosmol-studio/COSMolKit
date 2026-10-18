@@ -12,7 +12,7 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-enum ChemCompAtomError {
+pub enum ChemCompAtomError {
     MissingValue { row: usize, column: usize },
     NameOutsideCanonicalBoundary { row: usize, value: String },
     ChargeOutsideSourceDefinedRange { row: usize, value: String },
@@ -48,7 +48,7 @@ impl Error for ChemCompAtomError {
 }
 
 #[derive(Debug)]
-pub(super) enum ChemCompModelError {
+pub enum ChemCompModelError {
     NotChemComp,
     Table(CifReadError),
     Atom(ChemCompAtomError),

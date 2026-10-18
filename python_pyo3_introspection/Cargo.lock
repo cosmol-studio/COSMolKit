@@ -74,6 +74,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "castaway"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "cc"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -99,6 +108,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "compact_str"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79fcda08c33bb58b97008b2cdada6622500e949e060f5913361763121abd2416"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "static_assertions",
+ "zmij",
+]
+
+[[package]]
 name = "console"
 version = "0.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,14 +136,36 @@ dependencies = [
 name = "cosmolkit"
 version = "0.5.1-rc.4"
 dependencies = [
+ "cosmolkit-alignment",
  "cosmolkit-batch",
+ "cosmolkit-bio",
+ "cosmolkit-conformer",
  "cosmolkit-core",
+ "cosmolkit-depict",
+ "cosmolkit-descriptors",
  "cosmolkit-fingerprints",
+ "cosmolkit-forcefields",
+ "cosmolkit-inchi",
  "cosmolkit-io",
  "cosmolkit-macros",
  "cosmolkit-model",
+ "cosmolkit-reaction",
+ "cosmolkit-search",
  "cosmolkit-smiles",
  "cosmolkit-stereo",
+ "cosmolkit-tautomer",
+ "num-bigint",
+]
+
+[[package]]
+name = "cosmolkit-alignment"
+version = "0.5.1-rc.4"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-types",
+ "thiserror",
 ]
 
 [[package]]
@@ -133,6 +177,32 @@ dependencies = [
  "indicatif",
  "rayon",
  "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-bio"
+version = "0.5.1-rc.4"
+dependencies = [
+ "compact_str",
+ "cosmolkit-model",
+ "cosmolkit-types",
+ "serde",
+]
+
+[[package]]
+name = "cosmolkit-conformer"
+version = "0.5.1-rc.4"
+dependencies = [
+ "cosmolkit-alignment",
+ "cosmolkit-core",
+ "cosmolkit-forcefields",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "web-time",
 ]
 
 [[package]]
@@ -169,6 +239,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmolkit-descriptors"
+version = "0.5.1-rc.4"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "thiserror",
+]
+
+[[package]]
 name = "cosmolkit-fingerprints"
 version = "0.5.1-rc.4"
 dependencies = [
@@ -180,13 +260,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmolkit-io"
+name = "cosmolkit-forcefields"
 version = "0.5.1-rc.4"
 dependencies = [
  "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-inchi"
+version = "0.5.1-rc.4"
+dependencies = [
+ "bytemuck",
+ "hexf-parse",
+ "memchr",
+]
+
+[[package]]
+name = "cosmolkit-io"
+version = "0.5.1-rc.4"
+dependencies = [
+ "compact_str",
+ "cosmolkit-bio",
+ "cosmolkit-core",
  "cosmolkit-depict",
  "cosmolkit-model",
+ "cosmolkit-search",
  "cosmolkit-types",
+ "lexical-core",
  "musli",
  "postcard",
  "serde",
@@ -208,6 +311,19 @@ version = "0.5.1-rc.4"
 dependencies = [
  "cosmolkit-types",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-reaction"
+version = "0.5.1-rc.4"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-cx",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-smiles",
+ "cosmolkit-types",
  "thiserror",
 ]
 
@@ -247,8 +363,23 @@ dependencies = [
 name = "cosmolkit-stereo"
 version = "0.5.1-rc.4"
 dependencies = [
+ "cosmolkit-conformer",
  "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-smiles",
+ "cosmolkit-types",
+ "num-bigint",
+ "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-tautomer"
+version = "0.5.1-rc.4"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-smiles",
  "cosmolkit-types",
  "thiserror",
 ]
@@ -355,6 +486,7 @@ name = "fixed-python-projection"
 version = "0.0.0"
 dependencies = [
  "cosmolkit",
+ "num-bigint",
  "numpy",
  "paste",
  "pyo3",
@@ -473,6 +605,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "hexf-parse"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
+
+[[package]]
 name = "imagesize"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -525,6 +663,41 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "lexical-core"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8d125a277f807e55a77304455eb7b1cb52f2b18c143b60e766c120bd64a594"
+dependencies = [
+ "lexical-parse-float",
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-parse-float"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52a9f232fbd6f550bc0137dcb5f99ab674071ac2d690ac69704593cb4abbea56"
+dependencies = [
+ "lexical-parse-integer",
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-parse-integer"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a7a039f8fb9c19c996cd7b2fcce303c1b2874fe1aca544edc85c4a5f8489b34"
+dependencies = [
+ "lexical-util",
+]
+
+[[package]]
+name = "lexical-util"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2604dd126bb14f13fb5d1bd6a66155079cb9fa655b37f875b3a742c705dbed17"
 
 [[package]]
 name = "libc"
@@ -650,6 +823,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys",
+]
+
+[[package]]
+name = "num-bigint"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
+dependencies = [
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]
@@ -779,10 +962,13 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.30.0"
-source = "git+https://github.com/PyO3/pyo3?rev=4045f8d92045fbf55438eb6cae175b853c5835ce#4045f8d92045fbf55438eb6cae175b853c5835ce"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
  "libc",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",
@@ -792,16 +978,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.30.0"
-source = "git+https://github.com/PyO3/pyo3?rev=4045f8d92045fbf55438eb6cae175b853c5835ce#4045f8d92045fbf55438eb6cae175b853c5835ce"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.30.0"
-source = "git+https://github.com/PyO3/pyo3?rev=4045f8d92045fbf55438eb6cae175b853c5835ce#4045f8d92045fbf55438eb6cae175b853c5835ce"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -809,8 +997,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.30.0"
-source = "git+https://github.com/PyO3/pyo3?rev=4045f8d92045fbf55438eb6cae175b853c5835ce#4045f8d92045fbf55438eb6cae175b853c5835ce"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -820,8 +1009,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.30.0"
-source = "git+https://github.com/PyO3/pyo3?rev=4045f8d92045fbf55438eb6cae175b853c5835ce#4045f8d92045fbf55438eb6cae175b853c5835ce"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1058,6 +1248,12 @@ name = "smallvec"
 version = "1.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strict-num"

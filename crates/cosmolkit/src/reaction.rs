@@ -100,6 +100,10 @@ impl Reaction {
             .with_match_params(params)
             .map(|inner| Self { inner })
     }
+    /// Replace matching options in place; template storage is unchanged.
+    pub fn set_match_params(&mut self, params: &SubstructMatchParams) {
+        self.inner.set_match_params(params);
+    }
     pub fn to_smirks(&self) -> Result<PropertyText, ReactionWriteError> {
         self.inner.to_smirks()
     }

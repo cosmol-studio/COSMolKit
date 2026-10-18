@@ -73,7 +73,7 @@ enum PdbReaderStage {
 }
 
 #[derive(Debug)]
-enum PdbReaderCause {
+pub enum PdbReaderCause {
     LineNumberOutsideSourceIntRange,
     InputFormat(PdbInputFormatError),
     AtomFields(PdbAtomFieldError),
@@ -3619,13 +3619,13 @@ enum PdbDbRefAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbDbRefError {
+pub enum PdbDbRefError {
     SourceIntegerOutsideDefinedRange { field_offset: usize },
     MissingCurrentDbRef,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum PdbCrystalError {
+pub enum PdbCrystalError {
     BioStructureData(BioStructureError),
     TextFieldNotUtf8 {
         field_offset: usize,
@@ -3640,7 +3640,7 @@ impl From<BioStructureError> for PdbCrystalError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbMtrixError {
+pub enum PdbMtrixError {
     TextFieldNotUtf8 {
         field_offset: usize,
         valid_up_to: usize,
@@ -3648,12 +3648,12 @@ enum PdbMtrixError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbConectError {
+pub enum PdbConectError {
     SourceSerialOutsideDefinedRange { field_offset: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbModResError {
+pub enum PdbModResError {
     ChainNameNotRepresentable {
         width: usize,
         non_ascii: Option<u8>,
@@ -3666,7 +3666,7 @@ enum PdbModResError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbHelixError {
+pub enum PdbHelixError {
     ChainNameNotRepresentable {
         field_offset: usize,
         width: usize,
@@ -3680,7 +3680,7 @@ enum PdbHelixError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbSheetError {
+pub enum PdbSheetError {
     TextFieldNotUtf8 {
         field_offset: usize,
         valid_up_to: usize,
@@ -3701,7 +3701,7 @@ enum PdbSheetError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbHeaderError {
+pub enum PdbHeaderError {
     TextFieldNotUtf8 {
         field_offset: usize,
         valid_up_to: usize,
@@ -3709,13 +3709,13 @@ enum PdbHeaderError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemarkError {
+pub enum PdbRemarkError {
     LineLengthOutsideBuffer { line_len: usize },
     TextFieldNotUtf8 { valid_up_to: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemark3Error {
+pub enum PdbRemark3Error {
     IntegerOutsideSourceDefinedRange,
     TextNotUtf8 { valid_up_to: usize },
     MissingContinuationTarget,
@@ -3723,7 +3723,7 @@ enum PdbRemark3Error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemark200Error {
+pub enum PdbRemark200Error {
     IntegerOutsideSourceDefinedRange,
     TextNotUtf8 { valid_up_to: usize },
     MissingExperimentalRows,
@@ -3732,14 +3732,14 @@ enum PdbRemark200Error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemarkMetadataError {
+pub enum PdbRemarkMetadataError {
     IntegerOutsideSourceDefinedRange,
     UndefinedResolutionField { remark_length: usize },
     TextBoundaryNotUtf8 { offset: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemark350Error {
+pub enum PdbRemark350Error {
     IntegerOutsideSourceDefinedRange,
     SourceUndefinedAccess {
         offset: usize,
@@ -4476,9 +4476,21 @@ struct PdbModelGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PdbSsbondResolutionError {
+pub struct PdbSsbondResolutionError {
     partner: u8,
     atom_name: String,
+}
+
+impl PdbSsbondResolutionError {
+    /// Source connection partner whose atom resolution failed.
+    pub const fn partner(&self) -> u8 {
+        self.partner
+    }
+
+    /// Actual source atom name from the failed connection lookup.
+    pub fn atom_name(&self) -> &str {
+        &self.atom_name
+    }
 }
 
 impl std::fmt::Display for PdbSsbondResolutionError {
@@ -4490,13 +4502,13 @@ impl std::fmt::Display for PdbSsbondResolutionError {
 impl std::error::Error for PdbSsbondResolutionError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbLinkNameCounter {
+pub enum PdbLinkNameCounter {
     Covale,
     MetalC,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbLinkRecordError {
+pub enum PdbLinkRecordError {
     ChainNameNotAscii {
         partner: u8,
         byte: u8,
@@ -4518,7 +4530,7 @@ enum PdbLinkRecordError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbCisPepRecordError {
+pub enum PdbCisPepRecordError {
     RequiredFieldsPastRecord {
         record_len: usize,
         required_len: usize,
@@ -5686,7 +5698,7 @@ fn associate_pdb_entity_subchains(models: &[PdbModelGroup], entities: &mut PdbEn
 }
 
 #[derive(Debug)]
-enum PdbModelTransitionError {
+pub enum PdbModelTransitionError {
     ModelWithoutEnd,
     DuplicateModelNumber { number: i32 },
     AtomBetweenModels,
@@ -6164,7 +6176,7 @@ impl PdbModelTransition {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdbRemarkFinalizationError {
+pub enum PdbRemarkFinalizationError {
     IntegerOutsideSourceDefinedRange,
     Remark3(PdbRemark3Error),
     Remark200(PdbRemark200Error),
@@ -6173,7 +6185,7 @@ enum PdbRemarkFinalizationError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PdbSsbondRecordError {
+pub enum PdbSsbondRecordError {
     EmptyRecord,
     ChainNameNotAscii {
         partner: u8,
@@ -6187,7 +6199,7 @@ enum PdbSsbondRecordError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum PdbConnectionFinalizationError {
+pub enum PdbConnectionFinalizationError {
     SsbondRecord(PdbSsbondRecordError),
     LinkRecord(PdbLinkRecordError),
     CisPepRecord(PdbCisPepRecordError),
@@ -6195,7 +6207,7 @@ enum PdbConnectionFinalizationError {
 }
 
 #[derive(Debug)]
-enum PdbStructureFinalizationError {
+pub enum PdbStructureFinalizationError {
     Model(PdbModelTransitionError),
     Connection(PdbConnectionFinalizationError),
     Remarks(PdbRemarkFinalizationError),
@@ -6742,7 +6754,7 @@ fn finalize_pdb_structure(
 }
 
 #[derive(Debug)]
-enum PdbAtomFieldError {
+pub enum PdbAtomFieldError {
     TooShort { len: usize },
     SerialOutsideSourceDefinedRange,
     ChainNameNotRepresentable { bytes: [u8; 2] },
@@ -6856,7 +6868,7 @@ fn decode_pdb_atom_fields(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PdbInputFormatError {
+pub enum PdbInputFormatError {
     Cif { source: String },
     Mmjson { source: String },
 }
@@ -7754,13 +7766,25 @@ fn read_matrix(transform: &mut BioTransform, line: &[u8]) -> i32 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PdbChargeError {
+pub struct PdbChargeError {
     digit: u8,
     sign: u8,
 }
 
+impl PdbChargeError {
+    /// Actual source charge digit byte, without reinterpretation.
+    pub const fn digit(&self) -> u8 {
+        self.digit
+    }
+
+    /// Actual source charge sign byte, without reinterpretation.
+    pub const fn sign(&self) -> u8 {
+        self.sign
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PdbResidueKeyError {
+pub enum PdbResidueKeyError {
     SequenceIdNotRepresentable,
     ResidueNameTooWide { width: usize },
     ResidueNameNotAscii { byte: u8 },

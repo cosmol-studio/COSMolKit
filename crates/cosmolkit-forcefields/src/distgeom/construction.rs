@@ -45,7 +45,7 @@ fn point(row: &[f64]) -> Point3 {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DistGeomForceFieldError {
+pub enum DistGeomForceFieldError {
     Kernel(ForceFieldKernelError),
     Inversion(InversionContributionError),
     IndexOverflow(usize),
@@ -986,9 +986,15 @@ pub struct ConformerOptimizerError {
     cause: ConformerOptimizerCause,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ConformerOptimizerCause {
+pub enum ConformerOptimizerCause {
     Input(&'static str),
     Construction(DistGeomForceFieldError),
+}
+impl ConformerOptimizerError {
+    /// Actual readonly numeric input/construction context, not kernel access.
+    pub fn cause(&self) -> &ConformerOptimizerCause {
+        &self.cause
+    }
 }
 impl std::fmt::Display for ConformerOptimizerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

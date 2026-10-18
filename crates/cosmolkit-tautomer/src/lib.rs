@@ -14,9 +14,9 @@ pub use engine::{
 };
 pub use enumeration::{
     TautomerEnumerationCallback, TautomerEnumerationOutput, TautomerProgress,
-    canonicalize_with_catalog, enumerate_with_catalog, finalize_canonical_candidate,
-    pick_canonical_with, select_canonical_index_by, select_canonical_index_from_iterable_with,
-    select_canonical_index_with, specified_stereo_count,
+    TautomerProgressIndex, canonicalize_with_catalog, enumerate_with_catalog,
+    finalize_canonical_candidate, pick_canonical_with, select_canonical_index_by,
+    select_canonical_index_from_iterable_with, select_canonical_index_with, specified_stereo_count,
 };
 pub use params::{TautomerEnumerationStatus, TautomerParams};
 pub use score::{

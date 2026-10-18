@@ -498,6 +498,13 @@ impl Reaction {
         result.match_params_mut_source().clone_from(params);
         Ok(result)
     }
+
+    /// Replace matching configuration without copying any template data.
+    pub fn set_match_params(&mut self, params: &SubstructMatchParams) {
+        // RDKit❗✔️:   SubstructMatchParameters &getSubstructParams() { return d_substructParams; }
+        // Configuration assignment only: no template initialization/copy.
+        self.match_params_mut_source().clone_from(params);
+    }
 }
 
 #[cfg(test)]

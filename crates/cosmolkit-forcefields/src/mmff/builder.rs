@@ -28,7 +28,7 @@ const RELATION_1_4: u8 = 2;
 const RELATION_1_X: u8 = 3;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum MmffBuilderError {
+pub enum MmffBuilderError {
     #[error(transparent)]
     MolProperties(#[from] MmffMolPropertiesError),
     #[error(transparent)]

@@ -45,7 +45,7 @@ impl SingleConformerOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UffThreadCountError {
+pub enum UffThreadCountError {
     UndefinedSignedNegation,
 }
 
@@ -402,16 +402,58 @@ fn partition_worker_lanes<'rows, 'coordinates>(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SerialResultCapacityError {
+pub struct SerialResultCapacityError {
     pub(super) conformers: usize,
     pub(super) result_slots: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SerialCoordinateCountError {
+pub struct SerialCoordinateCountError {
     pub(super) conformer_id: usize,
     pub(super) atoms: usize,
     pub(super) coordinates: usize,
+}
+impl SerialResultCapacityError {
+    pub fn conformers(&self) -> usize {
+        let Self {
+            conformers,
+            result_slots: _,
+        } = *self;
+        conformers
+    }
+    pub fn result_slots(&self) -> usize {
+        let Self {
+            conformers: _,
+            result_slots,
+        } = *self;
+        result_slots
+    }
+}
+impl SerialCoordinateCountError {
+    pub fn conformer_id(&self) -> usize {
+        let Self {
+            conformer_id,
+            atoms: _,
+            coordinates: _,
+        } = *self;
+        conformer_id
+    }
+    pub fn atoms(&self) -> usize {
+        let Self {
+            conformer_id: _,
+            atoms,
+            coordinates: _,
+        } = *self;
+        atoms
+    }
+    pub fn coordinates(&self) -> usize {
+        let Self {
+            conformer_id: _,
+            atoms: _,
+            coordinates,
+        } = *self;
+        coordinates
+    }
 }
 
 impl std::fmt::Display for SerialResultCapacityError {
@@ -439,7 +481,7 @@ impl std::error::Error for SerialCoordinateCountError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SerialConformerOptimizationError {
+pub enum SerialConformerOptimizationError {
     ResultCapacity(SerialResultCapacityError),
     CoordinateCount {
         input_index: usize,
@@ -465,14 +507,14 @@ pub(crate) enum PreparedConformerDispatchOutcome {
 }
 
 #[derive(Debug)]
-pub(super) enum SerialUffOptimizationError {
+pub enum SerialUffOptimizationError {
     Construction(AutomaticForceFieldConstructionError),
     Optimization(SerialConformerOptimizationError),
 }
 
 #[cfg(not(target_family = "wasm"))]
 #[derive(Debug)]
-pub(super) enum DispatchedUffOptimizationError {
+pub enum DispatchedUffOptimizationError {
     Construction(AutomaticForceFieldConstructionError),
     ThreadCount(UffThreadCountError),
     ThreadObservation(cosmolkit_core::ThreadCountError),
@@ -652,14 +694,14 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptimizationStageError {
+pub enum OptimizationStageError {
     Initialize(ForceFieldKernelError),
     Minimize(ForceFieldKernelError),
     FinalEnergy(ForceFieldKernelError),
 }
 
 #[derive(Debug)]
-pub(super) enum SingleConformerOptimizationError {
+pub enum SingleConformerOptimizationError {
     Construction(AutomaticForceFieldConstructionError),
     Optimization(OptimizationStageError),
 }

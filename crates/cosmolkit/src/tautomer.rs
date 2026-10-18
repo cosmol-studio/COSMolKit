@@ -29,6 +29,40 @@ pub struct TautomerMoleculeView<'a> {
 enum TautomerViewStorage<'a> {
     Borrowed(cosmolkit_tautomer::TautomerScoreView<'a>),
     Owned(Arc<TautomerViewSnapshot>),
+    Candidate {
+        record: &'a mut Arc<cosmolkit_tautomer::TautomerRecord>,
+        coordinates: TautomerCoordinates<'a>,
+    },
+    Shared {
+        record: Arc<cosmolkit_tautomer::TautomerRecord>,
+        coordinates: Arc<CoordinateBlock>,
+    },
+}
+#[derive(Clone)]
+enum TautomerCoordinates<'a> {
+    Borrowed {
+        value: &'a CoordinateBlock,
+        owner: &'a OnceLock<Arc<CoordinateBlock>>,
+    },
+    Owned(Arc<CoordinateBlock>),
+}
+impl TautomerCoordinates<'_> {
+    fn get(&self) -> &CoordinateBlock {
+        match self {
+            Self::Borrowed { value, .. } => value,
+            Self::Owned(value) => value,
+        }
+    }
+    fn retain(&self) -> Arc<CoordinateBlock> {
+        match self {
+            // Domain inputs are detached borrowed values. Acquire their fallback
+            // coordinates once per run, on the first explicit snapshot only.
+            Self::Borrowed { value, owner } => {
+                owner.get_or_init(|| Arc::new((*value).clone())).clone()
+            }
+            Self::Owned(value) => value.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 struct TautomerViewSnapshot {
@@ -54,6 +88,14 @@ impl<'a> TautomerMoleculeView<'a> {
                 valence: value.valence.as_ref(),
                 rings: value.rings.as_ref(),
             },
+            TautomerViewStorage::Candidate {
+                record,
+                coordinates,
+            } => record.view(coordinates.get()),
+            TautomerViewStorage::Shared {
+                record,
+                coordinates,
+            } => record.view(coordinates),
         }
     }
     /// Retain an independent owned inspection/score snapshot after the loan.
@@ -62,8 +104,30 @@ impl<'a> TautomerMoleculeView<'a> {
             TautomerViewStorage::Owned(value) => TautomerMoleculeView {
                 storage: TautomerViewStorage::Owned(value.clone()),
             },
-            TautomerViewStorage::Borrowed(view) => Self::snapshot(view.as_record_view()),
+            TautomerViewStorage::Borrowed(view) => Self::from_record(view.as_record_view()),
+            TautomerViewStorage::Candidate {
+                record,
+                coordinates,
+            } => TautomerMoleculeView {
+                storage: TautomerViewStorage::Shared {
+                    record: Arc::clone(record),
+                    coordinates: coordinates.retain(),
+                },
+            },
+            TautomerViewStorage::Shared {
+                record,
+                coordinates,
+            } => TautomerMoleculeView {
+                storage: TautomerViewStorage::Shared {
+                    record: record.clone(),
+                    coordinates: coordinates.clone(),
+                },
+            },
         }
+    }
+    /// Retain an independently owned view. Candidate molecular blocks are shared.
+    pub fn snapshot(&self) -> TautomerMoleculeView<'static> {
+        self.to_owned()
     }
     pub fn num_atoms(&self) -> usize {
         self.record().topology.atoms.len()
@@ -117,6 +181,12 @@ enum TautomerProgressStorage<'a> {
     Borrowed {
         inner: cosmolkit_tautomer::TautomerProgress<'a>,
         coordinates: &'a CoordinateBlock,
+        snapshot_coordinates: &'a OnceLock<Arc<CoordinateBlock>>,
+    },
+    Indexed {
+        inner: cosmolkit_tautomer::TautomerProgressIndex<'a>,
+        coordinates: &'a CoordinateBlock,
+        snapshot_coordinates: &'a OnceLock<Arc<CoordinateBlock>>,
     },
     Owned {
         entries: Vec<(cosmolkit_model::PropertyText, TautomerMoleculeView<'static>)>,
@@ -129,13 +199,56 @@ enum TautomerProgressStorage<'a> {
 impl TautomerProgress<'_> {
     /// Preserve this exact pre-application snapshot for a language callback.
     pub fn to_owned(&self) -> TautomerProgress<'static> {
+        // RDKit✔️✔️:   TautomerEnumeratorResult(const TautomerEnumeratorResult &other)
+        // RDKit✔️✔️:       : d_tautomers(other.d_tautomers),
+        // RDKit✔️✔️:         d_status(other.d_status),
+        // RDKit✔️✔️:         d_modifiedAtoms(other.d_modifiedAtoms),
+        // RDKit✔️✔️:         d_modifiedBonds(other.d_modifiedBonds) {
+        // RDKit✔️✔️:     fillTautomersItVec();
+        // RDKit✔️✔️:   }
+        // Source Tautomer values contain ROMOL_SPTR, so copying the result
+        // retains molecules rather than copying molecular graphs. CK freezes
+        // metadata/keys and retains those same candidate owners through Arc.
+        // Borrowed fallback coordinates acquire ownership lazily, once per run.
         let entries = match &self.storage {
-            TautomerProgressStorage::Borrowed { inner, coordinates } => inner
-                .entries_readonly()
+            TautomerProgressStorage::Borrowed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } => inner
+                .entries_shared()
                 .map(|(key, record)| {
                     (
                         key.to_owned(),
-                        TautomerMoleculeView::snapshot(record.view(coordinates)),
+                        TautomerMoleculeView {
+                            storage: TautomerViewStorage::Shared {
+                                record: record.clone(),
+                                coordinates: snapshot_coordinates
+                                    .get_or_init(|| Arc::new((*coordinates).clone()))
+                                    .clone(),
+                            },
+                        },
+                    )
+                })
+                .collect(),
+            TautomerProgressStorage::Indexed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } => inner
+                .entries
+                .iter()
+                .map(|(key, record)| {
+                    (
+                        (*key).clone(),
+                        TautomerMoleculeView {
+                            storage: TautomerViewStorage::Shared {
+                                record: Arc::clone(record),
+                                coordinates: snapshot_coordinates
+                                    .get_or_init(|| Arc::new((*coordinates).clone()))
+                                    .clone(),
+                            },
+                        },
                     )
                 })
                 .collect(),
@@ -154,9 +267,15 @@ impl TautomerProgress<'_> {
             },
         }
     }
+    /// Freeze the current ordered candidates and metadata for later inspection.
+    /// O(n) keys and shared handles are retained, not n molecular graph copies.
+    pub fn snapshot(&self) -> TautomerProgress<'static> {
+        self.to_owned()
+    }
     pub fn len(&self) -> usize {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, .. } => inner.len(),
+            TautomerProgressStorage::Indexed { inner, .. } => inner.entries.len(),
             TautomerProgressStorage::Owned { entries, .. } => entries.len(),
         }
     }
@@ -166,24 +285,28 @@ impl TautomerProgress<'_> {
     pub fn status(&self) -> TautomerEnumerationStatus {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, .. } => inner.status(),
+            TautomerProgressStorage::Indexed { inner, .. } => inner.status,
             TautomerProgressStorage::Owned { status, .. } => *status,
         }
     }
     pub fn num_transforms(&self) -> u32 {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, .. } => inner.num_transforms(),
+            TautomerProgressStorage::Indexed { inner, .. } => inner.num_transforms,
             TautomerProgressStorage::Owned { num_transforms, .. } => *num_transforms,
         }
     }
     pub fn modified_atoms(&self) -> &BTreeSet<AtomId> {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, .. } => inner.modified_atoms(),
+            TautomerProgressStorage::Indexed { inner, .. } => inner.modified_atoms,
             TautomerProgressStorage::Owned { modified_atoms, .. } => modified_atoms,
         }
     }
     pub fn modified_bonds(&self) -> &BTreeSet<BondId> {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, .. } => inner.modified_bonds(),
+            TautomerProgressStorage::Indexed { inner, .. } => inner.modified_bonds,
             TautomerProgressStorage::Owned { modified_bonds, .. } => modified_bonds,
         }
     }
@@ -194,16 +317,107 @@ impl TautomerProgress<'_> {
             + '_,
     > {
         match &mut self.storage {
-            TautomerProgressStorage::Borrowed { inner, coordinates } => Box::new(
-                inner
-                    .entries_mut(coordinates)
-                    .map(|(key, view)| (key, TautomerMoleculeView::borrowed(view))),
-            ),
-            TautomerProgressStorage::Owned { entries, .. } => Box::new(
-                entries
-                    .iter_mut()
-                    .map(|(key, view)| (&*key, view.reborrow())),
-            ),
+            TautomerProgressStorage::Borrowed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } => Box::new(inner.entries_shared_mut().map(|(key, record)| {
+                (
+                    key,
+                    TautomerMoleculeView {
+                        storage: TautomerViewStorage::Candidate {
+                            record,
+                            coordinates: TautomerCoordinates::Borrowed {
+                                value: coordinates,
+                                owner: snapshot_coordinates,
+                            },
+                        },
+                    },
+                )
+            })),
+            TautomerProgressStorage::Indexed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } => Box::new(inner.entries.iter_mut().map(|(key, record)| {
+                (
+                    *key,
+                    TautomerMoleculeView {
+                        storage: TautomerViewStorage::Candidate {
+                            record,
+                            coordinates: TautomerCoordinates::Borrowed {
+                                value: coordinates,
+                                owner: snapshot_coordinates,
+                            },
+                        },
+                    },
+                )
+            })),
+            TautomerProgressStorage::Owned { entries, .. } => {
+                Box::new(entries.iter_mut().map(|(key, view)| (&*key, view.lend())))
+            }
+        }
+    }
+    /// Inspect a candidate with a short loan, without retaining an iterator loan.
+    /// Live progress builds a reference-only O(n) index on its first valid
+    /// access; subsequent access is O(1). No key, record or graph is cloned.
+    pub fn entry(
+        &mut self,
+        index: usize,
+    ) -> Option<(&cosmolkit_model::PropertyText, TautomerMoleculeView<'_>)> {
+        if index >= self.len() {
+            return None;
+        }
+        if matches!(self.storage, TautomerProgressStorage::Borrowed { .. }) {
+            let previous = std::mem::replace(
+                &mut self.storage,
+                TautomerProgressStorage::Owned {
+                    entries: Vec::new(),
+                    status: TautomerEnumerationStatus::Completed,
+                    num_transforms: 0,
+                    modified_atoms: BTreeSet::new(),
+                    modified_bonds: BTreeSet::new(),
+                },
+            );
+            let TautomerProgressStorage::Borrowed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } = previous
+            else {
+                unreachable!("checked borrowed progress")
+            };
+            self.storage = TautomerProgressStorage::Indexed {
+                inner: inner.into_index(),
+                coordinates,
+                snapshot_coordinates,
+            };
+        }
+        match &mut self.storage {
+            TautomerProgressStorage::Indexed {
+                inner,
+                coordinates,
+                snapshot_coordinates,
+            } => {
+                let (key, record) = inner.entries.get_mut(index)?;
+                Some((
+                    *key,
+                    TautomerMoleculeView {
+                        storage: TautomerViewStorage::Candidate {
+                            record,
+                            coordinates: TautomerCoordinates::Borrowed {
+                                value: coordinates,
+                                owner: snapshot_coordinates,
+                            },
+                        },
+                    },
+                ))
+            }
+            TautomerProgressStorage::Owned { entries, .. } => {
+                let (key, view) = entries.get_mut(index)?;
+                Some((key, view.lend()))
+            }
+            TautomerProgressStorage::Borrowed { .. } => unreachable!("index initialized"),
         }
     }
 }
@@ -389,6 +603,7 @@ impl TautomerParams {
 
 pub(crate) struct CallbackAdapter<'a> {
     pub(crate) params: &'a TautomerParams,
+    pub(crate) snapshot_coordinates: OnceLock<Arc<CoordinateBlock>>,
 }
 impl cosmolkit_tautomer::TautomerEnumerationCallback for CallbackAdapter<'_> {
     fn should_continue(
@@ -404,6 +619,7 @@ impl cosmolkit_tautomer::TautomerEnumerationCallback for CallbackAdapter<'_> {
                     storage: TautomerProgressStorage::Borrowed {
                         inner: progress,
                         coordinates,
+                        snapshot_coordinates: &self.snapshot_coordinates,
                     },
                 },
             ),
@@ -871,6 +1087,135 @@ mod canonical_selection_tests {
             .collect::<Vec<_>>();
         assert_eq!(entries, [("CC(C)=O".into(), "CC(C)=O".into())]);
     }
+
+    #[test]
+    fn progress_snapshots_share_records_and_index_reads_do_not_force_cow() {
+        struct Capture(std::sync::Mutex<Vec<TautomerProgress<'static>>>);
+        impl TautomerEnumerationCallback for Capture {
+            fn should_continue(
+                &self,
+                _: TautomerMoleculeView<'_>,
+                mut progress: TautomerProgress<'_>,
+            ) -> Result<bool, TautomerRunError> {
+                assert!(matches!(
+                    progress.storage,
+                    TautomerProgressStorage::Borrowed { .. }
+                ));
+                assert!(progress.entry(progress.len()).is_none());
+                assert!(matches!(
+                    progress.storage,
+                    TautomerProgressStorage::Borrowed { .. }
+                ));
+                let mut saved = progress.snapshot();
+                let before = saved.entry(0).unwrap().1.record().topology as *const _;
+                {
+                    let (_, mut candidate) = progress.entry(0).unwrap();
+                    assert_eq!(candidate.record().topology as *const _, before);
+                    let owned = candidate.snapshot();
+                    assert_eq!(owned.record().topology as *const _, before);
+                    candidate.tautomer_score()?;
+                    assert_eq!(candidate.record().topology as *const _, before);
+                }
+                assert!(matches!(
+                    progress.storage,
+                    TautomerProgressStorage::Indexed { .. }
+                ));
+                assert_eq!(
+                    progress.entries().next().unwrap().1.record().topology as *const _,
+                    before
+                );
+                assert_eq!(
+                    saved.entry(0).unwrap().1.record().topology as *const _,
+                    before
+                );
+                let mut captures = self.0.lock().unwrap();
+                if let Some(previous) = captures.first() {
+                    let TautomerProgressStorage::Owned {
+                        entries: previous, ..
+                    } = &previous.storage
+                    else {
+                        panic!("owned snapshot")
+                    };
+                    let TautomerProgressStorage::Owned {
+                        entries: current, ..
+                    } = &saved.storage
+                    else {
+                        panic!("owned snapshot")
+                    };
+                    let TautomerViewStorage::Shared { coordinates: a, .. } = &previous[0].1.storage
+                    else {
+                        panic!("shared candidate")
+                    };
+                    let TautomerViewStorage::Shared { coordinates: b, .. } = &current[0].1.storage
+                    else {
+                        panic!("shared candidate")
+                    };
+                    assert!(Arc::ptr_eq(a, b));
+                }
+                captures.push(saved);
+                Ok(true)
+            }
+        }
+        let capture = Arc::new(Capture(std::sync::Mutex::new(Vec::new())));
+        let mut params = TautomerParams::default();
+        params.set_callback(Some(capture.clone()));
+        let source = Molecule::from_smiles("CC(C)=O").unwrap();
+        let result = source.enumerate_tautomers_with_params(&params).unwrap();
+        assert!(result.len() > 1);
+        drop(result);
+        drop(source);
+        let mut saved = capture.0.lock().unwrap();
+        assert!(saved.len() > 1);
+        assert_eq!(saved[0].len(), 1);
+        assert_eq!(saved[0].num_transforms(), 1);
+        assert_eq!(
+            saved[0].entry(0).unwrap().1.to_smiles().unwrap().as_bytes(),
+            b"CC(C)=O"
+        );
+    }
+
+    #[test]
+    fn scoring_a_shared_cold_snapshot_isolates_only_the_written_record() {
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        let input = record_view(&molecule);
+        let record = Arc::new(cosmolkit_tautomer::TautomerRecord {
+            topology: input.topology.clone(),
+            properties: input.properties.clone(),
+            valence: input.valence.unwrap().clone(),
+            rings: cosmolkit_core::RingInfo::new(
+                cosmolkit_core::RingFindType::OtherOrUnknown,
+                6,
+                6,
+            ),
+            coordinates: None,
+        });
+        let mut current = TautomerMoleculeView {
+            storage: TautomerViewStorage::Shared {
+                record: record.clone(),
+                coordinates: Arc::new(CoordinateBlock::default()),
+            },
+        };
+        let history = current.snapshot();
+        assert!(std::ptr::eq(
+            current.record().topology,
+            history.record().topology
+        ));
+        let score = current.tautomer_score().unwrap();
+        assert_eq!(score.total(), molecule.tautomer_score().unwrap().total());
+        assert!(!std::ptr::eq(
+            current.record().topology,
+            history.record().topology
+        ));
+        assert!(!history.record().rings.unwrap().is_symm_sssr());
+        assert!(current.record().rings.unwrap().is_symm_sssr());
+        let warm = current.snapshot();
+        current.tautomer_score().unwrap();
+        assert!(std::ptr::eq(
+            current.record().topology,
+            warm.record().topology
+        ));
+        assert!(!record.rings.is_symm_sssr());
+    }
 }
 
 #[cfg(all(test, feature = "cap-smiles"))]
@@ -883,18 +1228,15 @@ mod configuration_tests;
 
 impl Clone for TautomerMoleculeView<'_> {
     fn clone(&self) -> Self {
-        match &self.storage {
-            TautomerViewStorage::Owned(value) => Self {
-                storage: TautomerViewStorage::Owned(value.clone()),
-            },
-            TautomerViewStorage::Borrowed(value) => Self {
-                storage: Self::snapshot(value.as_record_view()).storage,
-            },
+        Self {
+            storage: self.to_owned().storage,
         }
     }
 }
 impl TautomerMoleculeView<'_> {
-    fn snapshot(view: cosmolkit_tautomer::TautomerRecordView<'_>) -> TautomerMoleculeView<'static> {
+    fn from_record(
+        view: cosmolkit_tautomer::TautomerRecordView<'_>,
+    ) -> TautomerMoleculeView<'static> {
         TautomerMoleculeView {
             storage: TautomerViewStorage::Owned(Arc::new(TautomerViewSnapshot {
                 topology: view.topology.clone(),
@@ -903,6 +1245,36 @@ impl TautomerMoleculeView<'_> {
                 valence: view.valence.cloned(),
                 rings: view.rings.cloned(),
             })),
+        }
+    }
+    /// A candidate read loan must not eagerly force the record's COW boundary.
+    fn lend(&mut self) -> TautomerMoleculeView<'_> {
+        if matches!(
+            self.storage,
+            TautomerViewStorage::Borrowed(_) | TautomerViewStorage::Owned(_)
+        ) {
+            return self.reborrow();
+        }
+        match &mut self.storage {
+            TautomerViewStorage::Candidate {
+                record,
+                coordinates,
+            } => TautomerMoleculeView {
+                storage: TautomerViewStorage::Candidate {
+                    record,
+                    coordinates: coordinates.clone(),
+                },
+            },
+            TautomerViewStorage::Shared {
+                record,
+                coordinates,
+            } => TautomerMoleculeView {
+                storage: TautomerViewStorage::Candidate {
+                    record,
+                    coordinates: TautomerCoordinates::Owned(coordinates.clone()),
+                },
+            },
+            _ => unreachable!("non-candidate loans handled before borrowing storage"),
         }
     }
     fn reborrow(&mut self) -> TautomerMoleculeView<'_> {
@@ -928,13 +1300,34 @@ impl TautomerMoleculeView<'_> {
                     view, rings,
                 ))
             }
+            TautomerViewStorage::Candidate {
+                record,
+                coordinates,
+            } => {
+                TautomerMoleculeView::borrowed(Arc::make_mut(record).score_view(coordinates.get()))
+            }
+            TautomerViewStorage::Shared {
+                record,
+                coordinates,
+            } => TautomerMoleculeView::borrowed(Arc::make_mut(record).score_view(coordinates)),
         }
     }
     pub fn tautomer_score(&mut self) -> Result<TautomerScore, TautomerRunError> {
+        // The native scorer only writes when SymmSSSR is absent. In particular,
+        // retaining a snapshot must not copy a warm candidate just to read it.
+        if self
+            .record()
+            .rings
+            .is_some_and(cosmolkit_core::RingInfo::is_symm_sssr)
+        {
+            return cosmolkit_tautomer::score_tautomer_from_retained_cache(self.record(), None);
+        }
         let mut loan = self.reborrow();
         match &mut loan.storage {
             TautomerViewStorage::Borrowed(view) => score_view(view, &Default::default()),
-            TautomerViewStorage::Owned(_) => {
+            TautomerViewStorage::Owned(_)
+            | TautomerViewStorage::Candidate { .. }
+            | TautomerViewStorage::Shared { .. } => {
                 unreachable!("reborrow is an exclusive restricted cache loan")
             }
         }
@@ -963,7 +1356,9 @@ impl TautomerMoleculeView<'_> {
         let mut loan = self.reborrow();
         match &mut loan.storage {
             TautomerViewStorage::Borrowed(view) => view.retain_scored_cache_from(snapshot.record()),
-            TautomerViewStorage::Owned(_) => {
+            TautomerViewStorage::Owned(_)
+            | TautomerViewStorage::Candidate { .. }
+            | TautomerViewStorage::Shared { .. } => {
                 unreachable!("reborrow is an exclusive restricted cache loan")
             }
         }
@@ -1169,7 +1564,7 @@ mod recovery_search06_full_tests {
             },
         )
         .unwrap();
-        let mut snapshot = TautomerMoleculeView::snapshot(record_view(&source));
+        let mut snapshot = TautomerMoleculeView::from_record(record_view(&source));
         let peer = snapshot.clone();
         assert!(snapshot.record().rings.is_none());
         assert_eq!(snapshot.tautomer_score().unwrap().ring(), 250);
@@ -1370,8 +1765,8 @@ mod recovery_search06_transport_host_tests {
     fn recovery_search06_transport_rejects_wrong_graph_before_cache_write() {
         let source = cold("CC");
         let other = cold("c1ccccc1");
-        let mut target = TautomerMoleculeView::snapshot(record_view(&source));
-        let mut snapshot = TautomerMoleculeView::snapshot(record_view(&other));
+        let mut target = TautomerMoleculeView::from_record(record_view(&source));
+        let mut snapshot = TautomerMoleculeView::from_record(record_view(&other));
         snapshot.tautomer_score().unwrap();
         assert!(matches!(
             target.retain_score_cache_from(&snapshot),

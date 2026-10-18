@@ -57,20 +57,43 @@ mod sdf_sgroups;
 pub mod xyz;
 
 #[cfg(feature = "bio")]
+pub use bio_chemcomp::{ChemCompAtomError, ChemCompModelError};
+#[cfg(feature = "bio")]
 pub use bio_cid::{
     BioSelectionParseError, SelectionSeqidRangeError, SelectionSyntaxError, read_bio_selection,
     write_bio_selection,
 };
 #[cfg(feature = "bio")]
-pub use bio_mmcif::{BioMmcifReadError, BioMmcifReadStage, read_mmcif_bio_structure};
+pub use bio_mmcif::{
+    AtomSiteIdentityField, BioMmcifReadError, BioMmcifReadStage, CoordinateBlockSelectionError,
+    MissingAtomSiteIdentityField, MmcifAssemblyError, MmcifAtomSiteGroupingError,
+    MmcifAtomSiteRowOutOfBounds, MmcifAtomSiteScalarError, MmcifCcdRestoreError, MmcifCisPepError,
+    MmcifConnectionError, MmcifCrystalInfoError, MmcifEntityInfoError, MmcifHelixError,
+    MmcifLabelAddressError, MmcifModResError, MmcifOperationExprError, MmcifSequenceIdError,
+    MmcifSheetError, MmcifSiftsUnpError, MmcifTlsInfoError, read_mmcif_bio_structure,
+};
 #[cfg(feature = "bio")]
-pub use bio_pdb::{BioPdbReadError, BioPdbReadParams, BioPdbReadStage, read_pdb_bio_structure};
+pub use bio_pdb::{
+    BioPdbReadError, BioPdbReadParams, BioPdbReadStage, PdbAtomFieldError, PdbChargeError,
+    PdbCisPepRecordError, PdbConectError, PdbConnectionFinalizationError, PdbCrystalError,
+    PdbDbRefError, PdbHeaderError, PdbHelixError, PdbInputFormatError, PdbLinkNameCounter,
+    PdbLinkRecordError, PdbModResError, PdbModelTransitionError, PdbMtrixError, PdbReaderCause,
+    PdbRemark3Error, PdbRemark200Error, PdbRemark350Error, PdbRemarkError,
+    PdbRemarkFinalizationError, PdbRemarkMetadataError, PdbResidueKeyError, PdbSheetError,
+    PdbSsbondRecordError, PdbSsbondResolutionError, PdbStructureFinalizationError,
+    read_pdb_bio_structure,
+};
 #[cfg(feature = "bio")]
 pub use bio_read::{BioReadError, BioReadParams, read_bio_structure, read_bio_structure_file};
 #[cfg(feature = "bio")]
 pub use bio_write::{
     BioMmcifWriteError, BioMmcifWriteParams, bio_structure_to_mmcif_text,
     write_bio_structure_mmcif_file,
+};
+#[cfg(feature = "bio")]
+pub use cif::{
+    JsonError, JsonErrorKind, MmjsonReadError, MmjsonStructureError, MmjsonUnexpectedType,
+    MmjsonValueError,
 };
 #[cfg(feature = "molecule")]
 pub use mol_post::{

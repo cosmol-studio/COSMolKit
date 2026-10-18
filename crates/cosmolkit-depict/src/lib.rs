@@ -1047,6 +1047,8 @@ pub fn layout_2d(
 }
 
 pub use draw::DrawingError;
+pub use usvg::Error as SvgParseError;
+pub use usvg::roxmltree::{Error as XmlParseError, TextPos as XmlTextPos};
 
 /// Borrowed input to detached drawing preparation. Stored 2D layouts take
 /// priority; missing 2D is generated without replacing stored 3D conformers.

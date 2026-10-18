@@ -15,7 +15,7 @@ use super::convenience::{
 use super::convenience::{DispatchedUffOptimizationError, PreparedConformerDispatchOutcome};
 
 #[derive(Debug)]
-pub(super) enum UffPreparedOptimizationError {
+pub enum UffPreparedOptimizationError {
     Preparation(UffParameterError),
     Single(SingleConformerOptimizationError),
     Serial(SerialUffOptimizationError),

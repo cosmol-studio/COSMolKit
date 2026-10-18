@@ -29,13 +29,13 @@ use cosmolkit_search::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PreparedValenceField {
+pub enum PreparedValenceField {
     Explicit,
     ImplicitHydrogen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum UffBuilderError {
+pub enum UffBuilderError {
     NeighborMatrixIndexOutOfRange {
         n_atoms: usize,
         i: usize,
@@ -167,13 +167,13 @@ impl std::error::Error for UffBuilderError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DefaultTorsionQueryError {
+pub enum DefaultTorsionQueryError {
     Parse(SmartsParseError),
     Compile(QueryCompileError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TorsionBondQueryError {
+pub enum TorsionBondQueryError {
     DefaultQuery(DefaultTorsionQueryError),
     Parse(SmartsParseError),
     Compile(QueryCompileError),
@@ -228,7 +228,7 @@ pub(crate) const DEFAULT_TORSION_BOND_SMARTS: &str = "[!$(*#*)&!D1]~[!$(*#*)&!D1
 type UffParamsByAtom<'a> = [Option<&'a AtomicParams>];
 
 #[derive(Debug)]
-pub(crate) enum NonbondedFragmentMappingError {
+pub enum NonbondedFragmentMappingError {
     FragmentCopy(MoleculeFragmentsError),
     CoordinateView(FragmentCoordinateViewError),
     RequestedMappingMissing,
@@ -254,7 +254,7 @@ impl From<MoleculeFragmentsError> for NonbondedFragmentMappingError {
 }
 
 #[derive(Debug)]
-pub(super) enum NonbondedAssemblyError {
+pub enum NonbondedAssemblyError {
     FragmentMapping(NonbondedFragmentMappingError),
     PairBuilder(UffBuilderError),
 }
@@ -294,13 +294,13 @@ impl std::error::Error for NonbondedAssemblyError {
 }
 
 #[derive(Debug)]
-pub(crate) enum ForceFieldConstructionError {
+pub enum ForceFieldConstructionError {
     Builder(UffBuilderError),
     Nonbonded(NonbondedAssemblyError),
 }
 
 #[derive(Debug)]
-pub(crate) enum AutomaticForceFieldConstructionError {
+pub enum AutomaticForceFieldConstructionError {
     ParameterTable(UffParamError),
     Typing(UffTypingError),
     Construction(ForceFieldConstructionError),

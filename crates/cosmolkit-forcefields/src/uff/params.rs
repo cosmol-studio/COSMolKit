@@ -121,7 +121,7 @@ impl AtomicParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum UffParamError {
+pub enum UffParamError {
     EmptyLine {
         line_number: usize,
     },

@@ -65,11 +65,15 @@ where
             let indices = slice.indices(values.len() as isize)?;
             let mut at = indices.start;
             let selected = (0..indices.slicelength)
-                .map(|_| {
+                .map(|position| {
                     let item = values[at as usize]
                         .as_ref()
                         .map(|value| value.clone_ref(py));
-                    at += indices.step;
+                    // Python normalizes every selected index, not the unused
+                    // index after the final item (which can overflow).
+                    if position + 1 < indices.slicelength {
+                        at += indices.step;
+                    }
                     item
                 })
                 .collect();

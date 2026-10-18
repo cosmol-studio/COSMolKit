@@ -1,27 +1,57 @@
+"""Fixed consumer examples for the shared binding protocols.
+
+HARD CONSTRAINT: Rust/PyO3 types and explicit projection metadata determine
+public types. These examples are not a second business-API inventory.
+Do not extend them for ordinary new APIs or move removed assertions elsewhere.
+Changing this fixed protocol set requires an explicit framework design decision.
+"""
+
+from collections.abc import Mapping
 from typing import assert_type
+
 import numpy as np
 import fixed_projection as ck
 
-mol = ck.mol_from_smiles("CCO")
-assert_type(mol, ck.Molecule)
-assert_type(mol.num_atoms(), int)
-params = ck.MaccsFingerprintParams(n_bits=166)
-assert_type(params.n_bits, int)
-params.n_bits = 166
-assert_type(mol.fingerprint_maccs(), ck.Fingerprint)
-assert_type(mol.fingerprint_maccs(params), ck.Fingerprint)
-assert_type(mol.fingerprint_maccs(n_bits=166), ck.Fingerprint)
-fp = ck.Fingerprint.from_on_bits(8, [1, 4])
-batch = ck.FingerprintBatch([fp, None])
-assert_type(batch[0], ck.Fingerprint | None)
-assert_type(batch[:1], ck.FingerprintBatch)
-assert_type(batch[np.int64(0)], ck.Fingerprint | None)
-params.n_bits = np.int64(166)
-assert_type(fp.to_numpy(), np.ndarray[tuple[int], np.dtype[np.uint8]])
-assert_type(batch.to_numpy(), np.ndarray[tuple[int, int], np.dtype[np.uint8]])
 
-try:
-    fp.get_bit(9)
-except ck.FingerprintError as error:
-    assert_type(error.kind, ck.FingerprintErrorKind)
-    assert_type(error.index, int | None)
+def facade_projection(molecule: ck.Molecule) -> None:
+    assert_type(molecule.num_atoms(), int)
+    assert_type(molecule.with_hydrogens(), ck.Molecule)
+
+
+def params_and_keywords(molecule: ck.Molecule) -> None:
+    params = ck.MaccsFingerprintParams()
+    params.n_bits = 166
+    assert_type(params.n_bits, int)
+    assert_type(molecule.fingerprint_maccs(), ck.Fingerprint)
+    assert_type(molecule.fingerprint_maccs(params), ck.Fingerprint)
+    assert_type(molecule.fingerprint_maccs(n_bits=None), ck.Fingerprint)
+
+
+def integer_and_slice(batch: ck.FingerprintBatch) -> None:
+    assert_type(batch[0], ck.Fingerprint | None)
+    assert_type(batch[1:], ck.FingerprintBatch)
+
+
+def readonly_configuration(params: ck.SmartsParseParams) -> None:
+    params.replacements = {"{A}": "O"}
+    assert_type(params.replacements, Mapping[str, str])
+
+
+def numpy_returns(fingerprint: ck.Fingerprint, batch: ck.FingerprintBatch) -> None:
+    assert_type(
+        fingerprint.to_numpy(), np.ndarray[tuple[int], np.dtype[np.uint8]]
+    )
+    assert_type(
+        batch.to_numpy(), np.ndarray[tuple[int, int], np.dtype[np.uint8]]
+    )
+
+
+def precise_errors(text: str) -> None:
+    try:
+        ck.mol_from_smiles(text)
+    except ck.SmilesError as error:
+        assert_type(error.variant, ck.SmilesErrorKind)
+        cause = error.source
+        if isinstance(cause, ck.SmilesParseError):
+            assert_type(cause.offset, int | None)
+            assert_type(cause.message, str | None)

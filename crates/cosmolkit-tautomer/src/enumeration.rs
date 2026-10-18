@@ -15,6 +15,42 @@ use std::{collections::BTreeSet, sync::Arc};
 pub struct TautomerProgress<'a> {
     state: &'a mut TautomerExpansionState<Arc<TautomerRecord>>,
 }
+/// Disjoint callback loans. Building the optional index copies references only;
+/// it does not retain records or create writable molecular blocks.
+pub struct TautomerProgressIndex<'a> {
+    pub entries: Vec<(
+        &'a cosmolkit_model::PropertyText,
+        &'a mut Arc<TautomerRecord>,
+    )>,
+    pub status: TautomerEnumerationStatus,
+    pub num_transforms: u32,
+    pub modified_atoms: &'a BTreeSet<AtomId>,
+    pub modified_bonds: &'a BTreeSet<BondId>,
+}
+impl<'a> TautomerProgress<'a> {
+    pub fn into_index(self) -> TautomerProgressIndex<'a> {
+        TautomerProgressIndex {
+            entries: self
+                .state
+                .candidates
+                .iter_mut()
+                .map(|(key, candidate)| {
+                    (
+                        key,
+                        candidate
+                            .tautomer
+                            .as_mut()
+                            .expect("enumeration owns materialized candidates"),
+                    )
+                })
+                .collect(),
+            status: self.state.status,
+            num_transforms: self.state.num_transforms,
+            modified_atoms: &self.state.modified_atoms,
+            modified_bonds: &self.state.modified_bonds,
+        }
+    }
+}
 impl TautomerProgress<'_> {
     pub fn len(&self) -> usize {
         self.state.candidates.len()
@@ -68,6 +104,38 @@ impl TautomerProgress<'_> {
                 );
                 (&*key, record.score_view(coordinates))
             })
+    }
+
+    /// Borrow candidate owners without materializing a writable record.
+    /// The caller may retain an Arc snapshot, or defer COW until scoring.
+    pub fn entries_shared_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&cosmolkit_model::PropertyText, &mut Arc<TautomerRecord>)>
+    {
+        self.state.candidates.iter_mut().map(|(key, candidate)| {
+            (
+                key,
+                candidate
+                    .tautomer
+                    .as_mut()
+                    .expect("enumeration owns materialized candidates"),
+            )
+        })
+    }
+
+    /// Share materialized records; neither keys nor molecular blocks are copied.
+    pub fn entries_shared(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&cosmolkit_model::PropertyText, &Arc<TautomerRecord>)> {
+        self.state.candidates.iter().map(|(key, candidate)| {
+            (
+                key,
+                candidate
+                    .tautomer
+                    .as_ref()
+                    .expect("enumeration owns materialized candidates"),
+            )
+        })
     }
 }
 /// Borrowed cancellation hook. Errors abort the detached run atomically.

@@ -5,6 +5,17 @@ mod kernel;
 mod mmff;
 mod optimizer;
 mod uff;
+pub use kernel::{
+    AngleIndexArgument as ForceFieldAngleIndexArgument,
+    AngleRangeBound as ForceFieldAngleRangeBound, BondIndexArgument as ForceFieldBondIndexArgument,
+    ForceFieldIndexArgument, ForceFieldKernelError,
+    TorsionIndexArgument as ForceFieldTorsionIndexArgument,
+};
+pub use uff::{
+    UffBondMathError, UffBuilderError, UffDefaultTorsionQueryError, UffInversionContributionError,
+    UffInversionIndexArgument, UffParamError, UffPreparedValenceField, UffTorsionBondQueryError,
+    UffTypingError, UffTypingInput,
+};
 
 pub use uff::{
     UffConformerError, UffConformerOptions, UffConformerOutcome, UffSingleError, UffSingleOptions,
@@ -15,6 +26,10 @@ pub use uff::{UffParameterError, UffParameterErrorKind, uff_has_all_molecule_par
 pub use mmff::mol_properties::{MmffAtomProperties, MmffMolPropertiesError, MmffVariant};
 pub use mmff::properties_api::{
     MmffProperties, MmffPropertiesParams, mmff_has_all_molecule_params, mmff_properties,
+};
+pub use mmff::{
+    MmffAngleLookupError, MmffOopLookupError, MmffParamError, MmffParamParseCause,
+    MmffParamParseError, MmffParamTable, MmffTorLookupError, MmffVdwParseError,
 };
 
 pub use mmff::optimization::{
@@ -36,12 +51,23 @@ pub use crystalff::{
     get_experimental_torsions_without_bonds,
 };
 pub use distgeom::{
-    ChiralSet, ChiralSetPtr, ChiralSetStructureFlags, ConformerOptimizer, ConformerOptimizerError,
-    DistanceBoundsRead, DistanceGeometryForceFieldParams, calc_chiral_volume_rows,
+    ChiralSet, ChiralSetPtr, ChiralSetStructureFlags, ConformerOptimizer, ConformerOptimizerCause,
+    ConformerOptimizerError, DistGeomForceFieldError, DistanceBoundsRead,
+    DistanceGeometryForceFieldParams, calc_chiral_volume_rows,
 };
 
-pub use uff::{UffBoundsError, uff_bond_rest_lengths};
+pub use uff::{UffBoundsCause, UffBoundsError, uff_bond_rest_lengths};
 
+pub use mmff::{builder::MmffBuilderError, optimization::Failure as MmffOptimizationFailure};
+#[cfg(not(target_family = "wasm"))]
+pub use uff::DispatchedUffOptimizationError;
+pub use uff::{
+    AutomaticForceFieldConstructionError, ForceFieldConstructionError, NonbondedAssemblyError,
+    NonbondedFragmentMappingError, OptimizationStageError, SerialConformerOptimizationError,
+    SerialCoordinateCountError, SerialResultCapacityError, SerialUffOptimizationError,
+    SingleConformerOptimizationError, UffEvaluationFailure, UffPreparedOptimizationError,
+    UffThreadCountError,
+};
 pub use uff::{MissingExplicitHydrogensError, needs_explicit_hydrogens};
 
 #[doc(hidden)]

@@ -83,6 +83,7 @@ pub struct SearchTarget<'a> {
     valence: Option<&'a ValenceAssignment>,
     atomic_number_overrides: Option<&'a [Option<u8>]>,
     query_state: Option<QueryStateRef<'a>>,
+    input_index: Option<usize>,
 }
 
 impl<'a> SearchTarget<'a> {
@@ -102,6 +103,7 @@ impl<'a> SearchTarget<'a> {
             valence,
             atomic_number_overrides: None,
             query_state: None,
+            input_index: None,
         }
     }
 
@@ -117,7 +119,19 @@ impl<'a> SearchTarget<'a> {
             valence: self.valence,
             atomic_number_overrides: self.atomic_number_overrides,
             query_state: self.query_state,
+            input_index: self.input_index,
         }
+    }
+
+    /// Retain the caller's input ordinal for callbacks over multiple inputs.
+    /// This is provenance only; query evaluation does not interpret it.
+    pub fn with_input_index(mut self, index: usize) -> Self {
+        self.input_index = Some(index);
+        self
+    }
+
+    pub const fn input_index(&self) -> Option<usize> {
+        self.input_index
     }
 
     /// Attach query predicates and source query origins aligned with this

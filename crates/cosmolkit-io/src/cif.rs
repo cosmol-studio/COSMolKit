@@ -35,7 +35,11 @@ pub(crate) fn bio_coordinate_document_to_string(
 ) -> std::io::Result<String> {
     writer::cif_document_to_string(document, &writer::CifWriteLayout::from(params))
 }
-pub(crate) use mmjson::{MmjsonReadError, read_mmjson_insitu};
+pub(crate) use mmjson::read_mmjson_insitu;
+pub use mmjson::{
+    JsonError, JsonErrorKind, MmjsonReadError, MmjsonStructureError, MmjsonUnexpectedType,
+    MmjsonValueError,
+};
 
 /// Validation performed after the CIF grammar has been parsed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

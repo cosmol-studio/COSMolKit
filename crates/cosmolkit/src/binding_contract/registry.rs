@@ -545,6 +545,10 @@ binding_contract! {
           parameters:[], output:crate::TautomerMoleculeView<'static>, error:none, state:value_returning, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> crate::TautomerMoleculeView<'static>, },
         #[cfg(feature="cap-tautomer")]
+        { semantic_id:"TautomerMoleculeView.snapshot", item:callable, owner:type_, rust:crate::TautomerMoleculeView::snapshot, python:"snapshot", javascript:"snapshot", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+          parameters:[], output:crate::TautomerMoleculeView<'static>, error:none, state:value_returning, operation:none,
+          signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> crate::TautomerMoleculeView<'static>, },
+        #[cfg(feature="cap-tautomer")]
         { semantic_id:"TautomerMoleculeView.num_atoms", item:callable, owner:type_, rust:crate::TautomerMoleculeView::num_atoms, python:"num_atoms", javascript:"numAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> usize, },
@@ -592,6 +596,14 @@ binding_contract! {
         { semantic_id:"TautomerProgress.to_owned", item:callable, owner:type_, rust:crate::TautomerProgress::to_owned, python:"to_owned", javascript:"toOwned", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:crate::TautomerProgress<'static>, error:none, state:value_returning, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> crate::TautomerProgress<'static>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"TautomerProgress.snapshot", item:callable, owner:type_, rust:crate::TautomerProgress::snapshot, python:"snapshot", javascript:"snapshot", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+          parameters:[], output:crate::TautomerProgress<'static>, error:none, state:value_returning, operation:none,
+          signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> crate::TautomerProgress<'static>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"TautomerProgress.entry", item:callable, owner:type_, rust:crate::TautomerProgress::entry, python:"entry", javascript:"entry", feature:"cap-tautomer", status:experimental, kind:instance, receiver:mutable,
+          parameters:[{name:index,type:usize,default:required}], output:Option<(&'a cosmolkit_model::PropertyText,crate::TautomerMoleculeView<'a>)>, error:none, state:in_place, operation:none,
+          signature:for<'a,'b:'a> fn(&'a mut crate::TautomerProgress<'b>,usize) -> Option<(&'a cosmolkit_model::PropertyText,crate::TautomerMoleculeView<'a>)>, },
         #[cfg(feature="cap-tautomer")]
         { semantic_id:"TautomerProgress.len", item:callable, owner:type_, rust:crate::TautomerProgress::len, python:"len", javascript:"len", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
@@ -1632,7 +1644,6 @@ binding_contract! {
             rust: crate::BioMmcifWriteParams, python: "BioMmcifWriteParams", javascript: "BioMmcifWriteParams",
             feature: "cap-bio", status: experimental,
             python_configuration: [
-                { name: all_groups, python_type: "builtins.bool", default: "True" },
                 { name: atoms, python_type: "typing.Optional[builtins.bool]", default: "None" },
                 { name: block_name, python_type: "typing.Optional[builtins.bool]", default: "None" },
                 { name: entry, python_type: "typing.Optional[builtins.bool]", default: "None" },
@@ -2762,6 +2773,14 @@ binding_contract! {
             ]}],
         },
         {
+            semantic_id: "Molecule.copy", item: callable, owner: molecule,
+            rust: crate::Molecule::copy, python: "copy", javascript: "copy",
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: shared, parameters: [],
+            output: crate::Molecule, error: none, state: value_returning, operation: none,
+            signature: for<'a> fn(&'a crate::Molecule) -> crate::Molecule,
+        },
+        {
             semantic_id: "types.MoleculeBuilder",
             item: type,
             owner: type_,
@@ -3472,6 +3491,67 @@ binding_contract! {
             operation: none,
             signature: fn(crate::MoleculeBuilder, crate::MoleculeProperties)
                 -> crate::MoleculeBuilder,
+        },
+        {
+            semantic_id: "types.StereoGroup", item: type, owner: type_,
+            rust: crate::StereoGroup, python: "StereoGroup", javascript: "StereoGroup",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
+            semantic_id: "types.StereoGroupKind", item: type, owner: type_,
+            rust: crate::StereoGroupKind, python: "StereoGroupKind", javascript: "StereoGroupKind",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
+            semantic_id: "StereoGroup.new", item: callable, owner: type_,
+            rust: crate::StereoGroup::new, python: "new", javascript: "new",
+            feature: "runtime", status: experimental, kind: static_,
+            parameters: [{name:kind,type:crate::StereoGroupKind,default:required},{name:atoms,type:Vec<crate::AtomId>,default:required},{name:bonds,type:Vec<crate::BondId>,default:required}],
+            output: crate::StereoGroup, error: crate::StereoGroupError, state: value_returning, operation: none,
+            signature: fn(crate::StereoGroupKind,Vec<crate::AtomId>,Vec<crate::BondId>)->Result<crate::StereoGroup,crate::StereoGroupError>,
+        },
+        {
+            semantic_id: "StereoGroup.with_id", item: callable, owner: type_,
+            rust: crate::StereoGroup::with_id, python: "with_id", javascript: "withId",
+            feature: "runtime", status: experimental, kind: instance, receiver: owned,
+            parameters: [{name:id,type:u32,default:required}], output: crate::StereoGroup, error:none,
+            state:value_returning, operation:none, signature:fn(crate::StereoGroup,u32)->crate::StereoGroup,
+        },
+        {
+            semantic_id: "StereoGroup.id", item:callable, owner:type_, rust:crate::StereoGroup::id,
+            python:"id",javascript:"id",feature:"runtime",status:experimental,kind:instance,
+            parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,
+            signature:fn(&crate::StereoGroup)->Option<u32>,
+        },
+        {
+            semantic_id: "StereoGroup.write_id", item:callable, owner:type_,rust:crate::StereoGroup::write_id,
+            python:"write_id",javascript:"writeId",feature:"runtime",status:experimental,kind:instance,
+            parameters:[],output:u32,error:none,state:read_only,operation:none,
+            signature:fn(&crate::StereoGroup)->u32,
+        },
+        {
+            semantic_id: "StereoGroup.with_write_id", item:callable, owner:type_,rust:crate::StereoGroup::with_write_id,
+            python:"with_write_id",javascript:"withWriteId",feature:"runtime",status:experimental,kind:instance,receiver:owned,
+            parameters:[{name:write_id,type:u32,default:required}],output:crate::StereoGroup,error:none,
+            state:value_returning,operation:none,signature:fn(crate::StereoGroup,u32)->crate::StereoGroup,
+        },
+        {
+            semantic_id:"StereoGroup.kind",item:callable,owner:type_,rust:crate::StereoGroup::kind,
+            python:"kind",javascript:"kind",feature:"runtime",status:experimental,kind:instance,
+            parameters:[],output:crate::StereoGroupKind,error:none,state:read_only,operation:none,
+            signature:fn(&crate::StereoGroup)->crate::StereoGroupKind,
+        },
+        {
+            semantic_id:"StereoGroup.atoms",item:callable,owner:type_,rust:crate::StereoGroup::atoms,
+            python:"atoms",javascript:"atoms",feature:"runtime",status:experimental,kind:instance,
+            parameters:[],output:&[crate::AtomId],error:none,state:read_only,operation:none,
+            signature:fn(&crate::StereoGroup)->&[crate::AtomId],
+        },
+        {
+            semantic_id:"StereoGroup.bonds",item:callable,owner:type_,rust:crate::StereoGroup::bonds,
+            python:"bonds",javascript:"bonds",feature:"runtime",status:experimental,kind:instance,
+            parameters:[],output:&[crate::BondId],error:none,state:read_only,operation:none,
+            signature:fn(&crate::StereoGroup)->&[crate::BondId],
         },
         {
             semantic_id: "types.SubstanceGroupId",
@@ -10667,6 +10747,7 @@ binding_contract! {
                 { name: use_bond_order, python_type: "builtins.bool", default: "True" },
                 { name: atom_invariants, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: from_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
+                { name: ignore_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
             ], role:parameter,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"types.TopologicalFingerprintOutputRequest",item:type,owner:type_,rust:crate::TopologicalFingerprintOutputRequest,python:"TopologicalFingerprintOutputRequest",javascript:"TopologicalFingerprintOutputRequest",feature:"cap-fingerprints",status:experimental,
@@ -11448,6 +11529,8 @@ binding_contract! {
 {semantic_id:"Reaction.match_params",item:callable,owner:type_,rust:crate::Reaction::match_params,python:"match_params",javascript:"matchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::SubstructMatchParams,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a crate::SubstructMatchParams,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_match_params",item:callable,owner:type_,rust:crate::Reaction::with_match_params,python:"with_match_params",javascript:"withMatchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::SubstructMatchParams,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,&'b crate::SubstructMatchParams)->Result<crate::Reaction,crate::ReactionModelError>,},
+#[cfg(feature="cap-reaction")]
+{semantic_id:"Reaction.set_match_params",item:callable,owner:type_,rust:crate::Reaction::set_match_params,python:"set_match_params",javascript:"setMatchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::SubstructMatchParams,default:required}],output:(),error:none,state:in_place,operation:none,signature:for<'a,'b> fn(&'a mut crate::Reaction,&'b crate::SubstructMatchParams),},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Molecule.reaction_products",item:callable,owner:molecule,rust:crate::Molecule::reaction_products,python:"reaction_products",javascript:"reactionProducts",feature:"cap-reaction",kind:instance,receiver:shared,parameters:[{name:reaction,type:&mut crate::Reaction,default:required},{name:reactant_template,type:usize,default:required}],output:Vec<Vec<crate::Molecule>>,error:crate::OperationError,state:value_returning,operation:"reaction_products",signature:for<'a,'b> fn(&'a crate::Molecule,&'b mut crate::Reaction,usize)->Result<Vec<Vec<crate::Molecule>>,crate::OperationError>,},
 #[cfg(feature="cap-reaction")]

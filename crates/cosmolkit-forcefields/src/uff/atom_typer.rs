@@ -13,13 +13,13 @@ use cosmolkit_core::{
 use cosmolkit_model::{Atom, AtomId, Bond, BondId, Hybridization, TopologyBlock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum UffTypingInput {
+pub enum UffTypingInput {
     TotalValence,
     ConjugatedBondPresence,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum UffTypingError {
+pub enum UffTypingError {
     CoreValence(ValenceError),
     CorePropertyString(PropertyStringError),
     BondMath(BondMathError),

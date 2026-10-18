@@ -408,6 +408,28 @@ fn construction_has_no_live_operation_multiple_output_cache_or_storage_bypass() 
             .count(),
         1
     );
+    // Shared construction owns only detached block handles, never live state
+    // or runtime authority. Check the complete private storage shape rather
+    // than prohibiting the approved block-level COW representation.
+    let fields = builder_source
+        .split_once("pub struct MoleculeBuilder {")
+        .unwrap()
+        .1
+        .split_once('}')
+        .unwrap()
+        .0
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fields,
+        [
+            "topology: Arc<TopologyBlock>,",
+            "coordinates: Arc<CoordinateBlock>,",
+            "properties: Arc<MoleculeProperties>,",
+        ]
+    );
     for forbidden in [
         "pub topology:",
         "pub coordinates:",
@@ -416,7 +438,8 @@ fn construction_has_no_live_operation_multiple_output_cache_or_storage_bypass() 
         "MoleculeState",
         "OpParts",
         "MultiOutput",
-        "Arc<",
+        "Arc<Molecule>",
+        "Arc<crate::Molecule>",
         "topology_mut",
         "trust",
     ] {

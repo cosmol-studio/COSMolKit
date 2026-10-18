@@ -10,7 +10,7 @@ use super::params::{clip_to_one, is_double_zero};
 use super::utils::{calc_inversion_coefficients, calculate_cos_y};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum InversionIndexArgument {
+pub enum InversionIndexArgument {
     First,
     Second,
     Third,
@@ -18,7 +18,7 @@ pub(crate) enum InversionIndexArgument {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum InversionContributionError {
+pub enum InversionContributionError {
     IndexOutOfRange {
         argument: InversionIndexArgument,
         index: u32,

@@ -145,7 +145,7 @@ pub struct UffBoundsError {
     cause: UffBoundsCause,
 }
 #[derive(Debug)]
-enum UffBoundsCause {
+pub enum UffBoundsCause {
     Parameter(UffParameterError),
     BondOrder(cosmolkit_core::ValenceError),
     BondMath(super::bond::BondMathError),
@@ -154,6 +154,12 @@ enum UffBoundsCause {
         actual: usize,
         expected: usize,
     },
+}
+impl UffBoundsError {
+    /// The immutable native reason, including source-free assignment context.
+    pub fn cause(&self) -> &UffBoundsCause {
+        &self.cause
+    }
 }
 impl fmt::Display for UffBoundsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

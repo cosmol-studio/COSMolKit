@@ -8,6 +8,7 @@ mod model_error;
 mod product;
 mod public_api;
 mod reaction;
+pub use cosmolkit_cx::CxParseError;
 pub use cosmolkit_search::SubstructMatchParams;
 pub use cosmolkit_smiles::CxSmilesFields;
 

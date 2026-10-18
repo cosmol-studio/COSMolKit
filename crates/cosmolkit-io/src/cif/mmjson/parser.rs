@@ -3,7 +3,7 @@
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum JsonErrorKind {
+pub enum JsonErrorKind {
     NoError,
     OutOfMemory,
     UnexpectedEnd,
@@ -87,7 +87,7 @@ impl JsonErrorKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct JsonError {
+pub struct JsonError {
     kind: JsonErrorKind,
     byte_offset: usize,
     line: usize,
@@ -163,17 +163,22 @@ impl JsonError {
         }
     }
 
-    pub(super) const fn kind(&self) -> JsonErrorKind {
+    pub const fn kind(&self) -> JsonErrorKind {
         self.kind
     }
-    pub(super) const fn byte_offset(&self) -> usize {
+    pub const fn byte_offset(&self) -> usize {
         self.byte_offset
     }
-    pub(super) const fn line(&self) -> usize {
+    pub const fn line(&self) -> usize {
         self.line
     }
-    pub(super) const fn column(&self) -> usize {
+    pub const fn column(&self) -> usize {
         self.column
+    }
+
+    #[must_use]
+    pub const fn argument(&self) -> Option<i32> {
+        self.argument
     }
 }
 

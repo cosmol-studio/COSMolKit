@@ -5,6 +5,9 @@ mod nonbonded;
 mod numerical;
 mod params;
 mod params_text;
+pub use mol_properties::MmffParamError;
+pub use params::{MmffAngleLookupError, MmffOopLookupError, MmffTorLookupError, MmffVdwParseError};
+pub use params_text::{MmffParamParseCause, MmffParamParseError, MmffParamTable};
 mod stretch_bend;
 
 mod oop_bend;

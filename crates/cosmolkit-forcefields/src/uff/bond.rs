@@ -7,7 +7,7 @@ use super::params::{AtomicParams, PARAMS_G, PARAMS_LAMBDA};
 use crate::kernel::{BondIndexArgument, EvaluationContext, ForceFieldKernelError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum BondMathError {
+pub enum BondMathError {
     InvalidBondOrder { bond_order: f64 },
 }
 

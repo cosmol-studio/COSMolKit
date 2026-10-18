@@ -799,23 +799,38 @@ impl MoleculeState {
 
     fn try_new(
         topology: TopologyBlock,
-        mut coordinates: CoordinateBlock,
+        coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Result<Self, OperationError> {
+        Self::try_new_shared(
+            Arc::new(topology),
+            Arc::new(coordinates),
+            Arc::new(properties),
+        )
+    }
+
+    fn try_new_shared(
+        topology: Arc<TopologyBlock>,
+        mut coordinates: Arc<CoordinateBlock>,
+        properties: Arc<MoleculeProperties>,
+    ) -> Result<Self, OperationError> {
         if coordinates.source_coordinate_dim.is_none() {
-            coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
+            let dimension = if coordinates.conformers_3d.is_empty() {
                 (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
             } else {
                 Some(CoordinateDimension::ThreeD)
             };
+            if dimension.is_some() {
+                Arc::make_mut(&mut coordinates).source_coordinate_dim = dimension;
+            }
         }
         #[cfg(feature = "runtime-invariants")]
         Self::validate_parts(&topology, &coordinates, &properties)?;
 
         Ok(Self {
-            topology: Arc::new(topology),
-            coordinates: Arc::new(coordinates),
-            properties: Arc::new(properties),
+            topology,
+            coordinates,
+            properties,
             derived_cache: Arc::new(DerivedCacheBlock::default()),
         })
     }
@@ -901,6 +916,16 @@ impl PartialEq for Molecule {
 }
 
 impl Molecule {
+    /// Returns an independent value using the existing copy-on-write Clone.
+    ///
+    /// Molecular storage is initially shared, not eagerly deep-copied. Writes
+    /// to either value are isolated by the operation runtime. The descriptor
+    /// query memo follows Clone's existing independent-copy policy.
+    #[must_use]
+    pub fn copy(&self) -> Self {
+        self.clone()
+    }
+
     /// Query-specific detached memo borrow. This grants no authority over the
     /// four operation-managed runtime blocks. Algorithms see only typed state.
     #[cfg(feature = "cap-descriptors")]
@@ -1004,6 +1029,26 @@ impl Molecule {
     ) -> Result<Self, OperationError> {
         Ok(Self {
             state: Arc::new(MoleculeState::try_new(topology, coordinates, properties)?),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::default(),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: false,
+        })
+    }
+
+    /// Constructor-only publication of shared detached Builder blocks, with
+    /// the same coordinate normalization and invariant audit as owned input.
+    pub(super) fn from_builder_parts(
+        topology: Arc<TopologyBlock>,
+        coordinates: Arc<CoordinateBlock>,
+        properties: Arc<MoleculeProperties>,
+    ) -> Result<Self, OperationError> {
+        Ok(Self {
+            state: Arc::new(MoleculeState::try_new_shared(
+                topology,
+                coordinates,
+                properties,
+            )?),
             #[cfg(feature = "cap-descriptors")]
             descriptor_queries: std::sync::Mutex::default(),
             #[cfg(feature = "cap-descriptors")]
@@ -1120,10 +1165,10 @@ impl Molecule {
     /// Returns detached semantic blocks for checked construction of a new value.
     #[must_use]
     pub fn to_builder(&self) -> MoleculeBuilder {
-        MoleculeBuilder::from_parts(
-            self.state.topology.as_ref().clone(),
-            self.state.coordinates.as_ref().clone(),
-            self.state.properties.as_ref().clone(),
+        MoleculeBuilder::from_shared_parts(
+            Arc::clone(&self.state.topology),
+            Arc::clone(&self.state.coordinates),
+            Arc::clone(&self.state.properties),
         )
     }
 

@@ -1,9 +1,10 @@
 mod parser;
 
-use parser::{JsonArena, JsonArenaValue, JsonCursor, JsonError};
+use parser::{JsonArena, JsonArenaValue, JsonCursor};
+pub use parser::{JsonError, JsonErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MmjsonReadError {
+pub enum MmjsonReadError {
     Parse {
         source_name: String,
         error: JsonError,
@@ -77,7 +78,7 @@ pub(crate) fn read_mmjson_insitu(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmjsonStructureError {
+pub enum MmjsonStructureError {
     RootNotObject,
     BlockKeyPrefix {
         block: usize,
@@ -401,7 +402,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MmjsonUnexpectedType {
+pub enum MmjsonUnexpectedType {
     Null,
     False,
     True,
@@ -438,7 +439,7 @@ impl MmjsonUnexpectedType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmjsonValueError {
+pub enum MmjsonValueError {
     UnexpectedType(MmjsonUnexpectedType),
     InvalidArrayElement(MmjsonUnexpectedType),
     MissingArrayFirstElement,

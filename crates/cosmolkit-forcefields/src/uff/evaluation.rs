@@ -35,7 +35,7 @@ impl UffEnergyGradient {
     }
 }
 #[derive(Debug)]
-enum Failure {
+pub enum Failure {
     MissingConformer { requested: Option<usize> },
     Preparation(super::api::UffParameterError),
     Construction(super::builder::AutomaticForceFieldConstructionError),
@@ -43,6 +43,12 @@ enum Failure {
 }
 #[derive(Debug)]
 pub struct UffEvaluationError(Failure);
+impl UffEvaluationError {
+    /// The immutable native failure, including source-free selector context.
+    pub fn failure(&self) -> &Failure {
+        &self.0
+    }
+}
 impl fmt::Display for UffEvaluationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {

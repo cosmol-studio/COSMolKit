@@ -110,6 +110,30 @@ mod tests {
     };
     use std::sync::Arc;
 
+    #[test]
+    fn reaction_invocation_matching_configuration_keeps_template_storage_and_input_ordinals() {
+        let source = molecule(&[Element::C], &[]);
+        let mut reaction = crate::Reaction::from_smirks("[C:1].[C:2]>>[N:1].[O:2]").unwrap();
+        let template = reaction.reactant_templates().as_ptr();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&seen);
+        let mut params = crate::SubstructMatchParams::default();
+        params.extra_final_check = Some(Arc::new(move |target, _| {
+            recorded.lock().unwrap().push(target.input_index());
+            true
+        }));
+        reaction.set_match_params(&params);
+        assert_eq!(reaction.reactant_templates().as_ptr(), template);
+        let result = reaction
+            .run(&[&source, &source], &crate::ReactionRunParams::default())
+            .unwrap();
+        assert_eq!(*seen.lock().unwrap(), vec![Some(0), Some(1)]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 2);
+        assert!(reaction.is_initialized());
+        assert_eq!(source.topology().atoms[0].element(), Element::C);
+    }
+
     fn molecule(elements: &[Element], edges: &[(usize, usize)]) -> Molecule {
         let atoms = elements
             .iter()

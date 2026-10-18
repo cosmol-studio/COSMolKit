@@ -91,7 +91,7 @@ pub struct MmffConformerOutcomes {
     pub acquired_rings: Option<cosmolkit_core::RingInfo>,
 }
 #[derive(Debug, thiserror::Error)]
-enum Failure {
+pub enum Failure {
     #[error(transparent)]
     Properties(#[from] MmffMolPropertiesError),
     #[error(transparent)]

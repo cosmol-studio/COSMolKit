@@ -261,7 +261,7 @@ pub(super) struct MmffAngleCollection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MmffAngleLookupError {
+pub enum MmffAngleLookupError {
     MissingDefinition { atom_type: u32 },
 }
 
@@ -672,7 +672,7 @@ pub(super) struct MmffOopCollection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MmffOopLookupError {
+pub enum MmffOopLookupError {
     MissingDefinition { atom_type: u32 },
 }
 
@@ -1069,7 +1069,7 @@ pub(super) struct MmffTorCollection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MmffTorLookupError {
+pub enum MmffTorLookupError {
     MissingDefinition { atom_type: u32 },
     InvalidEquivalentLevel { level: usize },
 }
@@ -4261,7 +4261,7 @@ pub(super) struct MmffVdwCollection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum MmffVdwParseError {
+pub enum MmffVdwParseError {
     Table(MmffParamParseError),
     MissingHeader,
 }

@@ -10,13 +10,14 @@ use cosmolkit_model::{
 };
 
 use crate::{Molecule, OperationError};
+use std::sync::Arc;
 
 /// Detached construction state for one new [`Molecule`].
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct MoleculeBuilder {
-    topology: TopologyBlock,
-    coordinates: CoordinateBlock,
-    properties: MoleculeProperties,
+    topology: Arc<TopologyBlock>,
+    coordinates: Arc<CoordinateBlock>,
+    properties: Arc<MoleculeProperties>,
 }
 
 impl MoleculeBuilder {
@@ -33,6 +34,18 @@ impl MoleculeBuilder {
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Self {
+        Self::from_shared_parts(
+            Arc::new(topology),
+            Arc::new(coordinates),
+            Arc::new(properties),
+        )
+    }
+
+    pub(crate) fn from_shared_parts(
+        topology: Arc<TopologyBlock>,
+        coordinates: Arc<CoordinateBlock>,
+        properties: Arc<MoleculeProperties>,
+    ) -> Self {
         Self {
             topology,
             coordinates,
@@ -44,7 +57,7 @@ impl MoleculeBuilder {
     ///
     /// Whole-state invariant auditing requires `runtime-invariants`.
     pub fn build(self) -> Result<Molecule, OperationError> {
-        Molecule::from_validated_parts(self.topology, self.coordinates, self.properties)
+        Molecule::from_builder_parts(self.topology, self.coordinates, self.properties)
     }
 
     /// Appends an isolated atom with its canonical row id.
@@ -63,15 +76,15 @@ impl MoleculeBuilder {
         ) {
             Ok(topology) => {
                 let mapping = TopologyMapping::with_appended(old_atom_count, old_bond_count, 1, 0);
-                self.properties
+                Arc::make_mut(&mut self.properties)
                     .remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
-                self.topology = topology;
+                self.topology = Arc::new(topology);
             }
             Err(_) => {
                 // `from_parts` deliberately accepts invalid detached input and
                 // `add_atom` has an infallible canonical signature. Preserve
                 // that state for the `runtime-invariants` audit at `build`.
-                self.topology.atoms.push(atom);
+                Arc::make_mut(&mut self.topology).atoms.push(atom);
             }
         }
         id
@@ -87,9 +100,9 @@ impl MoleculeBuilder {
             .add_bond(bond)
             .map_err(OperationError::InvalidTopologyEdit)?;
         let (topology, mapping) = edit.finish().map_err(OperationError::InvalidTopologyEdit)?;
-        self.properties
+        Arc::make_mut(&mut self.properties)
             .remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
-        self.topology = topology;
+        self.topology = Arc::new(topology);
         Ok(id)
     }
 
@@ -113,13 +126,15 @@ impl MoleculeBuilder {
         let mut atoms = self.topology.atoms.clone();
         atoms[atom_id.index()] = atom.clone();
         atoms[atom_id.index()].set_formal_charge(formal_charge);
-        self.topology = TopologyBlock::try_from_parts(
-            atoms,
-            self.topology.bonds.clone(),
-            self.topology.substance_groups.clone(),
-            self.topology.stereo_groups.clone(),
-        )
-        .map_err(OperationError::InvalidTopology)?;
+        self.topology = Arc::new(
+            TopologyBlock::try_from_parts(
+                atoms,
+                self.topology.bonds.clone(),
+                self.topology.substance_groups.clone(),
+                self.topology.stereo_groups.clone(),
+            )
+            .map_err(OperationError::InvalidTopology)?,
+        );
         Ok(())
     }
 
@@ -143,13 +158,15 @@ impl MoleculeBuilder {
         let mut bonds = self.topology.bonds.clone();
         bonds[bond_id.index()] = bond.clone();
         bonds[bond_id.index()].set_order(order);
-        self.topology = TopologyBlock::try_from_parts(
-            self.topology.atoms.clone(),
-            bonds,
-            self.topology.substance_groups.clone(),
-            self.topology.stereo_groups.clone(),
-        )
-        .map_err(OperationError::InvalidTopology)?;
+        self.topology = Arc::new(
+            TopologyBlock::try_from_parts(
+                self.topology.atoms.clone(),
+                bonds,
+                self.topology.substance_groups.clone(),
+                self.topology.stereo_groups.clone(),
+            )
+            .map_err(OperationError::InvalidTopology)?,
+        );
         Ok(())
     }
 
@@ -181,9 +198,9 @@ impl MoleculeBuilder {
         edit.remove_bond(bond_id)
             .map_err(OperationError::InvalidTopologyEdit)?;
         let (topology, mapping) = edit.finish().map_err(OperationError::InvalidTopologyEdit)?;
-        self.properties
+        Arc::make_mut(&mut self.properties)
             .remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
-        self.topology = topology;
+        self.topology = Arc::new(topology);
         Ok(true)
     }
 
@@ -243,12 +260,12 @@ impl MoleculeBuilder {
     }
 
     #[must_use]
-    pub const fn coordinates(&self) -> &CoordinateBlock {
+    pub fn coordinates(&self) -> &CoordinateBlock {
         &self.coordinates
     }
 
     #[must_use]
-    pub const fn properties(&self) -> &MoleculeProperties {
+    pub fn properties(&self) -> &MoleculeProperties {
         &self.properties
     }
 
@@ -258,11 +275,12 @@ impl MoleculeBuilder {
         conformer
             .validate_checked_for_atom_count(self.topology.atoms.len())
             .map_err(OperationError::InvalidCoordinates)?;
-        self.coordinates.clear_2d_conformers();
-        self.coordinates
+        let storage = Arc::make_mut(&mut self.coordinates);
+        storage.clear_2d_conformers();
+        storage
             .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
             .map_err(OperationError::InvalidCoordinates)?;
-        self.coordinates.conformers_2d.push(conformer);
+        storage.conformers_2d.push(conformer);
         Ok(())
     }
 
@@ -293,13 +311,15 @@ impl MoleculeBuilder {
         group.set_id(id);
         let mut groups = self.topology.substance_groups.clone();
         groups.push(group);
-        self.topology = TopologyBlock::try_from_parts(
-            self.topology.atoms.clone(),
-            self.topology.bonds.clone(),
-            groups,
-            self.topology.stereo_groups.clone(),
-        )
-        .map_err(OperationError::InvalidTopology)?;
+        self.topology = Arc::new(
+            TopologyBlock::try_from_parts(
+                self.topology.atoms.clone(),
+                self.topology.bonds.clone(),
+                groups,
+                self.topology.stereo_groups.clone(),
+            )
+            .map_err(OperationError::InvalidTopology)?,
+        );
         Ok(id)
     }
 
@@ -310,24 +330,26 @@ impl MoleculeBuilder {
         let id = self.topology.stereo_groups.len();
         let mut groups = self.topology.stereo_groups.clone();
         groups.push(group);
-        self.topology = TopologyBlock::try_from_parts(
-            self.topology.atoms.clone(),
-            self.topology.bonds.clone(),
-            self.topology.substance_groups.clone(),
-            groups,
-        )
-        .map_err(OperationError::InvalidTopology)?;
+        self.topology = Arc::new(
+            TopologyBlock::try_from_parts(
+                self.topology.atoms.clone(),
+                self.topology.bonds.clone(),
+                self.topology.substance_groups.clone(),
+                groups,
+            )
+            .map_err(OperationError::InvalidTopology)?,
+        );
         Ok(id)
     }
 
     #[must_use]
     pub fn with_name(mut self, name: String) -> Self {
-        self.properties = self.properties.with_name(name);
+        self.properties = Arc::new(Arc::unwrap_or_clone(self.properties).with_name(name));
         self
     }
 
     pub fn with_property(mut self, key: String, value: String) -> Result<Self, OperationError> {
-        self.properties
+        Arc::make_mut(&mut self.properties)
             .set_prop(key, value)
             .map_err(OperationError::InvalidProperty)?;
         Ok(self)
@@ -335,13 +357,14 @@ impl MoleculeBuilder {
 
     #[must_use]
     pub fn with_sdf_data_field(mut self, key: String, value: String) -> Self {
-        self.properties = self.properties.with_sdf_data_field(key, value);
+        self.properties =
+            Arc::new(Arc::unwrap_or_clone(self.properties).with_sdf_data_field(key, value));
         self
     }
 
     #[must_use]
     pub fn with_properties(mut self, properties: MoleculeProperties) -> Self {
-        self.properties = properties;
+        self.properties = Arc::new(properties);
         self
     }
 
@@ -375,10 +398,11 @@ impl MoleculeBuilder {
                 conformer
                     .validate_checked_for_atom_count(self.topology.atoms.len())
                     .map_err(OperationError::InvalidCoordinates)?;
-                self.coordinates
+                let storage = Arc::make_mut(&mut self.coordinates);
+                storage
                     .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
                     .map_err(OperationError::InvalidCoordinates)?;
-                self.coordinates.conformers_2d.push(conformer);
+                storage.conformers_2d.push(conformer);
                 Ok(id)
             }
             DetachedConformer::ThreeD(coordinates) => {
@@ -388,10 +412,11 @@ impl MoleculeBuilder {
                 conformer
                     .validate_checked_for_atom_count(self.topology.atoms.len())
                     .map_err(OperationError::InvalidCoordinates)?;
-                self.coordinates
+                let storage = Arc::make_mut(&mut self.coordinates);
+                storage
                     .record_source_conformer_append(cosmolkit_model::CoordinateDimension::ThreeD)
                     .map_err(OperationError::InvalidCoordinates)?;
-                self.coordinates.conformers_3d.push(conformer);
+                storage.conformers_3d.push(conformer);
                 Ok(id)
             }
         }
@@ -408,4 +433,94 @@ fn next_conformer_id(ids: impl Iterator<Item = usize> + Clone) -> usize {
     (0..=count)
         .find(|candidate| !ids.clone().any(|id| id == *candidate))
         .expect("a finite conformer table always has a free id")
+}
+
+#[cfg(test)]
+mod shared_builder_tests {
+    use super::*;
+
+    #[test]
+    fn shared_builder_detaches_only_written_blocks_and_publishes_checked_values() {
+        let mut source = MoleculeBuilder::new();
+        source.add_atom(AtomSpec::new(cosmolkit_model::Element::C));
+        source.set_2d_coordinates(vec![[1.0, -0.0]]).unwrap();
+        // Construction infers a missing source dimension. That is a real
+        // coordinate-block write, so only this first publication detaches it.
+        assert_eq!(source.coordinates.source_coordinate_dim, None);
+        let normalized = source.clone().build().unwrap();
+        assert_eq!(source.coordinates.source_coordinate_dim, None);
+        assert_ne!(
+            normalized.coordinates_2d().unwrap().as_ptr(),
+            source.coordinates.conformers_2d[0].coordinates().as_ptr()
+        );
+        source = normalized.to_builder();
+        assert_eq!(
+            source.coordinates.source_coordinate_dim,
+            Some(CoordinateDimension::TwoD)
+        );
+        let peer = source.clone();
+        assert!(Arc::ptr_eq(&source.topology, &peer.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &peer.coordinates));
+        assert!(Arc::ptr_eq(&source.properties, &peer.properties));
+
+        let molecule = source.clone().build().unwrap();
+        assert!(std::ptr::eq(molecule.topology(), source.topology.as_ref()));
+        assert!(std::ptr::eq(
+            molecule.properties(),
+            source.properties.as_ref()
+        ));
+        assert_eq!(
+            molecule.coordinates_2d().unwrap().as_ptr(),
+            source.coordinates.conformers_2d[0].coordinates().as_ptr()
+        );
+        let rebuilt = molecule.to_builder();
+        assert!(Arc::ptr_eq(&source.topology, &rebuilt.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &rebuilt.coordinates));
+        assert!(Arc::ptr_eq(&source.properties, &rebuilt.properties));
+
+        let named = source.clone().with_name("changed".into());
+        assert!(Arc::ptr_eq(&source.topology, &named.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &named.coordinates));
+        assert!(!Arc::ptr_eq(&source.properties, &named.properties));
+        assert!(source.properties().name().is_none());
+        let tagged = source
+            .clone()
+            .with_property("key".into(), "value".into())
+            .unwrap();
+        assert!(Arc::ptr_eq(&source.topology, &tagged.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &tagged.coordinates));
+        assert!(!Arc::ptr_eq(&source.properties, &tagged.properties));
+        let with_field = source
+            .clone()
+            .with_sdf_data_field("field".into(), "text".into());
+        assert!(source.properties().sdf_data_fields().is_empty());
+        assert_eq!(with_field.properties().sdf_data_fields().len(), 1);
+        let replaced = source
+            .clone()
+            .with_properties(MoleculeProperties::default().with_name("replacement"));
+        assert!(Arc::ptr_eq(&source.topology, &replaced.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &replaced.coordinates));
+
+        let mut edited = source.clone();
+        edited.set_atom_formal_charge(AtomId::new(0), 1).unwrap();
+        assert!(!Arc::ptr_eq(&source.topology, &edited.topology));
+        assert!(Arc::ptr_eq(&source.coordinates, &edited.coordinates));
+        assert!(Arc::ptr_eq(&source.properties, &edited.properties));
+        assert_eq!(source.atoms()[0].formal_charge(), 0);
+        let mut moved = source.clone();
+        moved.set_2d_coordinates(vec![[2.0, 3.0]]).unwrap();
+        assert!(Arc::ptr_eq(&source.topology, &moved.topology));
+        assert!(!Arc::ptr_eq(&source.coordinates, &moved.coordinates));
+        assert!(Arc::ptr_eq(&source.properties, &moved.properties));
+        let mut invalid = source.clone();
+        assert!(invalid.set_2d_coordinates(vec![]).is_err());
+        assert!(Arc::ptr_eq(&source.coordinates, &invalid.coordinates));
+        assert!(
+            source
+                .clone()
+                .with_property(String::new(), "x".into())
+                .is_err()
+        );
+        assert_eq!(source, peer);
+    }
 }

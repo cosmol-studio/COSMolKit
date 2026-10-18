@@ -121,7 +121,7 @@ impl Error for BioMmcifReadError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum CoordinateBlockSelectionError {
+pub enum CoordinateBlockSelectionError {
     EmptyDocument { source: String },
     LaterCoordinateBlock { block_number: usize, source: String },
 }
@@ -178,7 +178,7 @@ fn select_coordinate_block<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifCrystalInfoError {
+pub enum MmcifCrystalInfoError {
     Cif(CifReadError),
     Bio(BioStructureError),
     StagingInvariant { stage: &'static str },
@@ -461,7 +461,7 @@ fn append_mmcif_audit_authors(block: &CifBlock, metadata: &mut BioMetadata) {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifTlsInfoError {
+pub enum MmcifTlsInfoError {
     Cif(CifReadError),
     SequenceId(MmcifSequenceIdError),
     NumericIdOutsideSourceDefinedRange { id: String },
@@ -1271,7 +1271,7 @@ fn parse_mmcif_reflns_info(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifHelixError {
+pub enum MmcifHelixError {
     Cif(CifReadError),
     ChainNameNotRepresentable {
         endpoint: &'static str,
@@ -1293,7 +1293,7 @@ enum MmcifHelixError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifSheetError {
+pub enum MmcifSheetError {
     Cif(CifReadError),
     ChainNameNotRepresentable {
         address: &'static str,
@@ -2114,7 +2114,7 @@ struct MmcifEntityBuildState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifSiftsUnpError {
+pub enum MmcifSiftsUnpError {
     Cif(CifReadError),
     EntityNotFound { entity_id: String },
     SubchainNotFound { asym_id: String },
@@ -2166,7 +2166,7 @@ impl std::error::Error for MmcifSiftsUnpError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifEntityInfoError {
+pub enum MmcifEntityInfoError {
     Cif(CifReadError),
     SequenceId(MmcifSequenceIdError),
     Sifts(MmcifSiftsUnpError),
@@ -2803,7 +2803,7 @@ fn polymer_kind_from_mmcif_type(value: &str) -> PolymerKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AtomSiteIdentityField {
+pub enum AtomSiteIdentityField {
     AsymId,
     CompId,
     AtomId,
@@ -2823,7 +2823,14 @@ impl fmt::Display for AtomSiteIdentityField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MissingAtomSiteIdentityField(AtomSiteIdentityField);
+pub struct MissingAtomSiteIdentityField(AtomSiteIdentityField);
+
+impl MissingAtomSiteIdentityField {
+    #[must_use]
+    pub const fn field(&self) -> AtomSiteIdentityField {
+        self.0
+    }
+}
 
 impl fmt::Display for MissingAtomSiteIdentityField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -3006,7 +3013,7 @@ fn bind_atom_site_identity_columns(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifSequenceIdError {
+pub enum MmcifSequenceIdError {
     InconsistentInsertionCode { sequence_id: String },
     InvalidInsertionCode(CifReadError),
     InvalidSequenceNumber(CifReadError),
@@ -3121,7 +3128,7 @@ fn make_mmcif_residue_address(name: ResidueName, sequence_id: PdbSeqId) -> Optio
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifAtomSiteGroupingError {
+pub enum MmcifAtomSiteGroupingError {
     IdentityField(MissingAtomSiteIdentityField),
     SequenceId(MmcifSequenceIdError),
     AtomNameNotRepresentable {
@@ -3241,7 +3248,7 @@ struct MmcifAtomSiteGrouping {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifLabelAddressError {
+pub enum MmcifLabelAddressError {
     LabelSequenceId(CifReadError),
     ChainNameNotRepresentable { value: String },
 }
@@ -3268,7 +3275,7 @@ impl std::error::Error for MmcifLabelAddressError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifConnectionError {
+pub enum MmcifConnectionError {
     Cif(CifReadError),
     SequenceId(MmcifSequenceIdError),
     LabelAddress(MmcifLabelAddressError),
@@ -3789,7 +3796,7 @@ fn resolve_mmcif_label_address(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifCisPepError {
+pub enum MmcifCisPepError {
     Cif(CifReadError),
     ChainNameNotRepresentable {
         partner: &'static str,
@@ -3999,7 +4006,7 @@ fn parse_mmcif_cis_peptides(block: &CifBlock) -> Result<Vec<BioCisPep>, MmcifCis
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifModResError {
+pub enum MmcifModResError {
     Cif(CifReadError),
     ChainNameNotRepresentable { value: String },
     ResidueNameNotRepresentable { value: String },
@@ -4123,7 +4130,7 @@ fn parse_mmcif_modified_residues(block: &CifBlock) -> Result<Vec<BioModRes>, Mmc
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifOperationExprError {
+pub enum MmcifOperationExprError {
     SourceUndefinedIntegerOverflow,
     SourceUndefinedRangeIncrement,
 }
@@ -4228,7 +4235,7 @@ fn parse_mmcif_operation_expr(expr: &str) -> Result<Vec<String>, MmcifOperationE
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifAssemblyError {
+pub enum MmcifAssemblyError {
     Cif(CifReadError),
     Transform(MmcifCrystalInfoError),
     OperationExpr(MmcifOperationExprError),
@@ -4916,7 +4923,7 @@ struct MmcifParsedAtomSite {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MmcifAtomSiteScalarError {
+pub enum MmcifAtomSiteScalarError {
     SerialOutsideSourceDefinedRange { value: String },
     TlsOutsideSourceDefinedRange { value: String },
     CifCharacter(CifReadError),
@@ -5450,9 +5457,21 @@ where
 }
 
 #[derive(Debug)]
-struct MmcifAtomSiteRowOutOfBounds {
+pub struct MmcifAtomSiteRowOutOfBounds {
     row_index: usize,
     parsed_count: usize,
+}
+
+impl MmcifAtomSiteRowOutOfBounds {
+    #[must_use]
+    pub const fn row_index(&self) -> usize {
+        self.row_index
+    }
+
+    #[must_use]
+    pub const fn parsed_count(&self) -> usize {
+        self.parsed_count
+    }
 }
 
 impl fmt::Display for MmcifAtomSiteRowOutOfBounds {
@@ -5468,7 +5487,7 @@ impl fmt::Display for MmcifAtomSiteRowOutOfBounds {
 impl Error for MmcifAtomSiteRowOutOfBounds {}
 
 #[derive(Debug)]
-enum MmcifCcdRestoreError {
+pub enum MmcifCcdRestoreError {
     Residue(PdbResidueKeyError),
     SequenceUtf8(std::string::FromUtf8Error),
 }

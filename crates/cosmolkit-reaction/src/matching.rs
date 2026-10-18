@@ -68,7 +68,8 @@ pub(crate) fn matches_to_template(
         &input.topology.stereo_groups,
         input.rings,
         input.valence,
-    );
+    )
+    .with_input_index(reactant_index);
     let context = build_query_match_context(&target);
     let mut source_params = params.clone();
     source_params.uniquify = false;

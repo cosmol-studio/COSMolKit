@@ -145,26 +145,26 @@ fn record_uff_one_term_copy() {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ForceFieldIndexArgument {
+pub enum ForceFieldIndexArgument {
     I,
     J,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum BondIndexArgument {
+pub enum BondIndexArgument {
     First,
     Second,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AngleIndexArgument {
+pub enum AngleIndexArgument {
     First,
     Second,
     Third,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum TorsionIndexArgument {
+pub enum TorsionIndexArgument {
     First,
     Second,
     Third,
@@ -172,13 +172,13 @@ pub(super) enum TorsionIndexArgument {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AngleRangeBound {
+pub enum AngleRangeBound {
     Minimum,
     Maximum,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ForceFieldKernelError {
+pub enum ForceFieldKernelError {
     NoPoints,
     NoDistanceMatrix,
     MatrixSizeMismatch,

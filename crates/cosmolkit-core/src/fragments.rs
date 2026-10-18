@@ -366,7 +366,7 @@ struct FragmentSubsetInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-enum SelectedBondCopyError {
+pub enum SelectedBondCopyError {
     #[error("{0}")]
     Stereo(#[from] cosmolkit_model::BondValueError),
     #[error("copyMolSubset: subset bonds contain atoms not contained in subset atoms")]
@@ -762,13 +762,13 @@ fn copy_selected_bonds(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubstanceGroupAtomList {
+pub enum SubstanceGroupAtomList {
     Atoms,
     ParentAtoms,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-enum SelectedSubstanceGroupCopyError {
+pub enum SelectedSubstanceGroupCopyError {
     #[error("subset SGroup {group:?} {list:?} atom {atom:?} has no atom mapping")]
     MissingAtomMapping {
         group: SubstanceGroupId,
@@ -1225,7 +1225,7 @@ struct FullCopyComponent {
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-enum FullCopyComponentError {
+pub enum FullCopyComponentError {
     #[error(transparent)]
     SourceUInt(#[from] crate::PropertyUIntReadError),
     #[error(transparent)]
@@ -1882,7 +1882,7 @@ struct AtomPathSubsetCopy {
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-enum AtomPathSubsetCopyError {
+pub enum AtomPathSubsetCopyError {
     #[error("{0}")]
     StereoGroup(#[from] cosmolkit_model::StereoGroupError),
 
@@ -2196,7 +2196,7 @@ struct OrderedFragmentCopy {
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-enum OrderedFragmentBuildError {
+pub enum OrderedFragmentBuildError {
     #[error(transparent)]
     ComponentLabels(#[from] crate::paths::PathError),
     #[error("fast subset construction failed for component {component_index}: {source}")]
@@ -2214,7 +2214,7 @@ enum OrderedFragmentBuildError {
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-enum MoleculeFragmentsFailure {
+pub enum MoleculeFragmentsFailure {
     #[error("computed property clearing failed for fragment {component_index}: {source}")]
     FinalComputedProperties {
         component_index: usize,
@@ -2311,6 +2311,11 @@ pub struct MoleculeFragmentsError {
 }
 
 impl MoleculeFragmentsError {
+    /// The concrete failure also returned by [`std::error::Error::source`].
+    pub fn failure(&self) -> &MoleculeFragmentsFailure {
+        &self.failure
+    }
+
     /// Component index for component-local failures; component labeling errors
     /// occur before a component index exists.
     pub fn component_index(&self) -> Option<usize> {
